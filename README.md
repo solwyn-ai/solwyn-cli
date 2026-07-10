@@ -1,0 +1,2 @@
+# solwyn-cli
+Solwyn CLI
