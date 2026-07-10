@@ -12,8 +12,9 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.errors import ApiError
-from solwyn_cli.exit_codes import ErrorSemantic, exit_code_for_error
+from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -48,16 +49,6 @@ class _WhoamiData(BaseModel):
 _PROJECTS = TypeAdapter(list[_Project])
 
 
-def _exit_with_error(
-    context: typer.Context,
-    error: ApiError | OutputError,
-    *,
-    semantic: ErrorSemantic | None = None,
-) -> None:
-    output_engine(context).write_error(error)
-    raise typer.Exit(code=int(exit_code_for_error(error, semantic=semantic)))
-
-
 def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiData:
     return _WhoamiData(
         auth_type="project_key",
@@ -85,15 +76,15 @@ def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
         identity = _Identity.model_validate(identity_response.json())
         projects = _PROJECTS.validate_python(projects_response.json())
     except ApiError as error:
-        _exit_with_error(context, error)
+        exit_with_error(context, error)
     except AuthError as error:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(code="authentication_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,
         )
     except (ValidationError, ValueError, TypeError):
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(
                 code="invalid_identity_response",
@@ -142,13 +133,13 @@ def whoami(context: typer.Context) -> None:
     try:
         credential = resolve_credential()
     except AuthError as error:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(code="authentication_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,
         )
     if credential is None:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(
                 code="authentication_required",

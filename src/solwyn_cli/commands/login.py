@@ -15,8 +15,9 @@ from solwyn_cli.auth import (
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.errors import ApiError
-from solwyn_cli.exit_codes import ErrorSemantic, exit_code_for_error
+from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -33,16 +34,6 @@ class _LoginTokenResponse(BaseModel):
 
 def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
-
-
-def _exit_with_error(
-    context: typer.Context,
-    error: ApiError | OutputError,
-    *,
-    semantic: ErrorSemantic,
-) -> None:
-    output_engine(context).write_error(error)
-    raise typer.Exit(code=int(exit_code_for_error(error, semantic=semantic)))
 
 
 def _login_success(context: typer.Context, auth_type: str) -> None:
@@ -66,13 +57,13 @@ def _login_with_key(context: typer.Context) -> None:
     try:
         store_project_key(project_key)
     except CredentialStorageError as error:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(code="credential_storage_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,
         )
     except AuthError:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(
                 code="invalid_project_key",
@@ -85,7 +76,7 @@ def _login_with_key(context: typer.Context) -> None:
 
 def _login_with_password(context: typer.Context) -> None:
     if not _stdin_is_tty():
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(
                 code="interactive_auth_required",
@@ -119,15 +110,15 @@ def _login_with_password(context: typer.Context) -> None:
                 hint="Verify your email in the dashboard, then try logging in again.",
                 detail=error.detail,
             )
-        _exit_with_error(context, error, semantic=ErrorSemantic.AUTH)
+        exit_with_error(context, error, semantic=ErrorSemantic.AUTH)
     except CredentialStorageError as error:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(code="credential_storage_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,
         )
     except (ValidationError, ValueError, TypeError):
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(
                 code="invalid_auth_response",
@@ -160,7 +151,7 @@ def logout(context: typer.Context) -> None:
     try:
         clear_credentials()
     except CredentialStorageError as error:
-        _exit_with_error(
+        exit_with_error(
             context,
             OutputError(code="credential_storage_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,

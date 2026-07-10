@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from solwyn_cli import __version__
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.login import login, logout
+from solwyn_cli.commands.status import status
 from solwyn_cli.commands.whoami import whoami
 from solwyn_cli.config import ConfigLoadError
 from solwyn_cli.output import OutputUsageError
@@ -19,6 +20,7 @@ app = typer.Typer(
 app.add_typer(config_app, name="config")
 app.command("login")(login)
 app.command("logout")(logout)
+app.command("status")(status)
 app.command("whoami")(whoami)
 
 
