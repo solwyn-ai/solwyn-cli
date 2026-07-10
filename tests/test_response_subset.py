@@ -73,6 +73,7 @@ PROJECT_RESPONSE_OPERATIONS = {
     "/api/v1/projects": "array",
     "/api/v1/projects/{project_id}": "object",
 }
+BUDGET_STATUS_OPERATION = "/api/v1/projects/{project_id}/budget"
 
 
 def _assert_field_path(
@@ -169,6 +170,18 @@ def assert_project_response_operations(snapshot: dict[str, Any]) -> None:
         )
 
 
+def assert_budget_status_operation(snapshot: dict[str, Any]) -> None:
+    """Require the pure budget GET to keep returning BudgetStatusResponse."""
+    operation = snapshot["paths"][BUDGET_STATUS_OPERATION]
+    assert "get" in operation, f"GET {BUDGET_STATUS_OPERATION}: operation is missing"
+    response_schema = operation["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert response_schema.get("$ref") == (
+        "#/components/schemas/BudgetStatusResponse"
+    ), f"GET {BUDGET_STATUS_OPERATION}: response no longer uses BudgetStatusResponse"
+
+
 def _snapshot() -> dict[str, Any]:
     return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
 
@@ -179,6 +192,10 @@ def test_every_current_response_read_exists_in_snapshot() -> None:
 
 def test_both_project_operations_return_the_consumed_response_component() -> None:
     assert_project_response_operations(_snapshot())
+
+
+def test_budget_status_get_returns_the_consumed_response_component() -> None:
+    assert_budget_status_operation(_snapshot())
 
 
 @pytest.mark.parametrize("path", PROJECT_RESPONSE_OPERATIONS)
@@ -195,6 +212,19 @@ def test_project_operation_response_drift_trips_guard(path: str) -> None:
         match=rf"GET {re.escape(path)}.*ProjectResponse",
     ):
         assert_project_response_operations(mutated)
+
+
+def test_budget_status_operation_response_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    mutated["paths"][BUDGET_STATUS_OPERATION]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]["$ref"] = "#/components/schemas/ProviderHealthResponse"
+
+    with pytest.raises(
+        AssertionError,
+        match=r"GET /api/v1/projects/\{project_id\}/budget.*BudgetStatusResponse",
+    ):
+        assert_budget_status_operation(mutated)
 
 
 def test_removed_consumed_union_field_trips_response_subset_guard() -> None:

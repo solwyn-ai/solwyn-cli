@@ -6,6 +6,7 @@ import typer
 from pydantic import ValidationError
 
 from solwyn_cli import __version__
+from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import costs
 from solwyn_cli.commands.login import login, logout
@@ -19,6 +20,7 @@ from solwyn_cli.runtime import resolve_command_context
 app = typer.Typer(
     add_completion=False, invoke_without_command=True, no_args_is_help=True
 )
+app.add_typer(budget_app, name="budget")
 app.add_typer(config_app, name="config")
 app.add_typer(projects_app, name="projects")
 app.command("costs")(costs)
