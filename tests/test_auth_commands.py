@@ -227,6 +227,44 @@ def test_tty_key_and_password_prompts_are_hidden_and_write_prompts_to_stderr(
         assert secret not in rendered
 
 
+def test_password_login_table_matches_jwt_golden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt_values = iter(["person@example.com", "password-value"])
+
+    def store_pair(access: str, refresh: str) -> None:
+        assert access == ACCESS_TOKEN
+        assert refresh == REFRESH_TOKEN
+
+    monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(
+        login_module.typer,
+        "prompt",
+        lambda label, **kwargs: next(prompt_values),
+    )
+    monkeypatch.setattr(login_module, "SolwynClient", FakeClient)
+    monkeypatch.setattr(login_module, "store_jwt_pair", store_pair)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "access_token": ACCESS_TOKEN,
+                "refresh_token": REFRESH_TOKEN,
+                "token_type": "bearer",
+            },
+        )
+    ]
+
+    result = runner.invoke(app, ["--no-color", "login"])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert_matches_golden(result.stdout, GOLDEN_DIR / "login-jwt-table.txt")
+    rendered = result.stdout + result.stderr + repr(result.exception)
+    for secret in ("password-value", ACCESS_TOKEN, REFRESH_TOKEN):
+        assert secret not in rendered
+
+
 def test_tty_project_key_prompt_is_hidden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -268,6 +306,32 @@ def test_invalid_piped_key_fails_without_echoing_secret(
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "invalid_project_key"
     assert invalid not in result.stdout + result.stderr + repr(result.exception)
+
+
+def test_project_key_storage_failure_is_structured_exit_three_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_store(value: str) -> None:
+        assert value == VALID_KEY
+        raise auth.CredentialStorageError(
+            "Could not update credentials in the operating-system keychain."
+        )
+
+    monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(login_module, "store_project_key", fail_store)
+
+    result = runner.invoke(
+        app,
+        ["--json", "login", "--with-key"],
+        input=f"{VALID_KEY}\n",
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "credential_storage_failed"
+    assert VALID_KEY not in result.stderr + repr(result.exception)
 
 
 def test_email_not_verified_preserves_error_and_adds_dashboard_hint(
@@ -348,6 +412,50 @@ def test_login_rejects_non_bearer_token_response_without_storing_it(
     assert REFRESH_TOKEN not in result.stderr + repr(result.exception)
 
 
+def test_jwt_storage_failure_is_structured_exit_three_without_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    password = "synthetic-password-value"
+    prompt_values = iter(["person@example.com", password])
+    monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(
+        login_module.typer,
+        "prompt",
+        lambda label, **kwargs: next(prompt_values),
+    )
+    monkeypatch.setattr(login_module, "SolwynClient", FakeClient)
+
+    def fail_store(access: str, refresh: str) -> None:
+        assert access == ACCESS_TOKEN
+        assert refresh == REFRESH_TOKEN
+        raise auth.CredentialStorageError(
+            "Could not update credentials in the operating-system keychain."
+        )
+
+    monkeypatch.setattr(login_module, "store_jwt_pair", fail_store)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "access_token": ACCESS_TOKEN,
+                "refresh_token": REFRESH_TOKEN,
+                "token_type": "bearer",
+            },
+        )
+    ]
+
+    result = runner.invoke(app, ["--json", "login"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "credential_storage_failed"
+    rendered = result.stderr + repr(result.exception)
+    for secret in (password, ACCESS_TOKEN, REFRESH_TOKEN):
+        assert secret not in rendered
+
+
 def test_logout_clears_all_credentials_and_matches_both_format_goldens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -363,6 +471,35 @@ def test_logout_clears_all_credentials_and_matches_both_format_goldens(
     assert_matches_golden(json_result.stdout, GOLDEN_DIR / "logout.json")
     assert_matches_golden(table_result.stdout, GOLDEN_DIR / "logout-table.txt")
     assert json_result.stderr == table_result.stderr == ""
+
+
+def test_logout_clear_failure_is_structured_exit_three_without_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synthetic_secrets = (
+        VALID_KEY,
+        "synthetic-password-value",
+        ACCESS_TOKEN,
+        REFRESH_TOKEN,
+    )
+
+    def fail_clear() -> None:
+        raise auth.CredentialStorageError(
+            "Could not clear credentials from the operating-system keychain."
+        )
+
+    monkeypatch.setattr(login_module, "clear_credentials", fail_clear)
+
+    result = runner.invoke(app, ["--json", "logout"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "credential_storage_failed"
+    rendered = result.stderr + repr(result.exception)
+    for secret in synthetic_secrets:
+        assert secret not in rendered
 
 
 def test_whoami_project_key_uses_configured_project_without_http(
