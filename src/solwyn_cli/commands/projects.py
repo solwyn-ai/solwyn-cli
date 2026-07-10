@@ -106,12 +106,17 @@ def list_projects(context: typer.Context) -> None:
     """List projects available to the logged-in user."""
     credential = _credential(context)
     if isinstance(credential, ProjectKeyCredential):
+        hint = (
+            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects list."
+            if credential.source == "environment"
+            else "Run solwyn logout, then solwyn login, and retry projects list."
+        )
         exit_with_error(
             context,
             OutputError(
                 code="authentication_required",
                 message="User login is required to list projects.",
-                hint=("Run solwyn login without --with-key, then retry projects list."),
+                hint=hint,
             ),
             semantic=ErrorSemantic.AUTH,
         )

@@ -130,11 +130,24 @@ def test_projects_list_is_jwt_only_and_matches_goldens(
     assert result.stderr == ""
 
 
-@pytest.mark.parametrize("source", ["environment", "keyring"])
+@pytest.mark.parametrize(
+    ("source", "expected_hint"),
+    [
+        (
+            "environment",
+            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects list.",
+        ),
+        (
+            "keyring",
+            "Run solwyn logout, then solwyn login, and retry projects list.",
+        ),
+    ],
+)
 @pytest.mark.parametrize("output_format", ["table", "json"])
 def test_projects_list_rejects_both_key_sources_without_a_request(
     monkeypatch: pytest.MonkeyPatch,
     source: str,
+    expected_hint: str,
     output_format: str,
 ) -> None:
     monkeypatch.setattr(projects_module, "resolve_credential", lambda: _key(source))
@@ -144,10 +157,11 @@ def test_projects_list_rejects_both_key_sources_without_a_request(
 
     assert result.exit_code == 3
     assert result.stdout == ""
+    assert expected_hint in result.stderr
     suffix = "json" if output_format == "json" else "txt"
     assert_matches_golden(
         result.stderr,
-        GOLDEN_DIR / f"projects-list-key-refusal-{output_format}.{suffix}",
+        GOLDEN_DIR / f"projects-list-{source}-key-refusal-{output_format}.{suffix}",
     )
     assert FakeClient.instances == []
 
