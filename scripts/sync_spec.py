@@ -2,7 +2,9 @@
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -35,11 +37,32 @@ def sync_spec(checkout: Path, destination: Path = SNAPSHOT_PATH) -> None:
     source_path = checkout.expanduser().resolve() / "shared" / "openapi.json"
     document = _read_source(source_path)
     document["x-solwyn-snapshot-date"] = datetime.now(UTC).date().isoformat()
+    serialized = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(serialized)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+
+        temporary_path.replace(destination)
+    except BaseException:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
 
 
 def _parser() -> argparse.ArgumentParser:
