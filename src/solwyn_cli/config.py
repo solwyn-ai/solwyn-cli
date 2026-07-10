@@ -54,7 +54,7 @@ def load_config() -> Config:
 def save_config(config: Config) -> None:
     """Atomically persist only modeled, non-null settings."""
     path = get_config_path()
-    content = tomli_w.dumps(config.model_dump(exclude_none=True))
+    content = tomli_w.dumps(config.model_dump(include=CONFIG_KEYS, exclude_none=True))
     temporary_path: Path | None = None
 
     try:

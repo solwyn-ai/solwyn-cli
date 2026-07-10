@@ -1,5 +1,6 @@
 """Tests for allowlisted local CLI configuration."""
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,29 @@ def test_config_round_trip_omits_none_and_unknown_fields(config_path: Path) -> N
     assert "api_key" not in persisted
     assert "default_project" not in persisted
     assert set(loaded.model_dump()) == CONFIG_KEYS
+
+
+def test_save_intersects_subclass_fields_with_config_allowlist(
+    config_path: Path,
+) -> None:
+    class ExtendedConfig(Config):
+        api_key: str
+
+    save_config(
+        ExtendedConfig(
+            api_url="https://example.test",
+            default_project="proj_safe",
+            format="json",
+            api_key="must-not-persist",
+        )
+    )
+
+    persisted = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert persisted == {
+        "api_url": "https://example.test",
+        "default_project": "proj_safe",
+        "format": "json",
+    }
 
 
 def test_save_atomically_overwrites_without_temp_residue(config_path: Path) -> None:
