@@ -49,6 +49,17 @@ RESPONSE_READS = {
         "avg_latency_ms",
         "circuit_state",
     ),
+    "CostQueryResponse": ("project_id", "range", "group_by", "groups"),
+    "CostGroup": (
+        "group_key",
+        "provider",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "call_count",
+        "unpriced_call_count",
+        "local_call_count",
+    ),
 }
 
 
@@ -205,6 +216,18 @@ def test_all_of_without_consumed_path_trips_response_subset_guard() -> None:
         ("ProviderHealthResponse", "success_rate"),
         ("ProviderHealthResponse", "avg_latency_ms"),
         ("ProviderHealthResponse", "circuit_state"),
+        ("CostQueryResponse", "project_id"),
+        ("CostQueryResponse", "range"),
+        ("CostQueryResponse", "group_by"),
+        ("CostQueryResponse", "groups"),
+        ("CostGroup", "group_key"),
+        ("CostGroup", "provider"),
+        ("CostGroup", "total_cost"),
+        ("CostGroup", "total_input_tokens"),
+        ("CostGroup", "total_output_tokens"),
+        ("CostGroup", "call_count"),
+        ("CostGroup", "unpriced_call_count"),
+        ("CostGroup", "local_call_count"),
     ],
 )
 def test_command_response_field_removal_trips_subset_guard(

@@ -1,0 +1,2 @@
+Group       Provider      Cost  Input  Output  Calls  Unpriced  Local
+2026-07-09  -         1.250000   1200     340      4         1      0

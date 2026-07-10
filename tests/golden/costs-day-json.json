@@ -1,0 +1,1 @@
+{"schema":"solwyn.costs.v1","project_id":"proj_alpha","range":"7d","group_by":"day","groups":[{"group_key":"2026-07-09","provider":null,"total_cost":1.25,"total_input_tokens":1200,"total_output_tokens":340,"call_count":4,"unpriced_call_count":1,"local_call_count":0}]}
