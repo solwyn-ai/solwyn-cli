@@ -1,0 +1,1 @@
+{"schema":"solwyn.error.v1","code":"authentication_required","message":"User login is required to list projects.","hint":"Run solwyn logout, then solwyn login, and retry projects list.","detail":null}

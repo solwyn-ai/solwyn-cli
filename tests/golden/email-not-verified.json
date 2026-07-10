@@ -1,0 +1,1 @@
+{"schema":"solwyn.error.v1","code":"email_not_verified","message":"Email verification is required.","hint":"Verify your email in the dashboard, then try logging in again.","detail":{"code":"email_not_verified","message":"Email verification is required."}}

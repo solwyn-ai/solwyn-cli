@@ -1,0 +1,2 @@
+Group      Provider       Cost  Input  Output  Calls  Unpriced  Local
+anthropic  anthropic  3.750000   3600    1020     12         0      0

@@ -1,0 +1,1 @@
+{"schema":"solwyn.whoami.v1","auth_type":"jwt","auth_source":"keyring","configured_project":null,"user":{"user_id":"user_123","email":"person@example.com","display_name":"Person Example","subscription_tier":"team"},"projects":[{"id":"proj_alpha","name":"Alpha"},{"id":"proj_beta","name":"Beta"}],"hint":null}

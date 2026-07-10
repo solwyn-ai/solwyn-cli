@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
 
 
 class _WireModel(BaseModel):
@@ -111,10 +111,17 @@ class TokenDetails(_WireModel):
 
 
 class LoginRequest(_WireModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
     email: str
-    password: Annotated[str, Field(max_length=128)]
+    password: Annotated[SecretStr, Field(max_length=128)]
     plan: Literal["founder", "team", "scale"] | None = None
     billing_interval: Literal["month", "year"] | None = None
+
+    @field_serializer("password")
+    def serialize_password(self, value: SecretStr) -> str:
+        """Reveal the password only while constructing the login wire body."""
+        return value.get_secret_value()
 
 
 class RefreshRequest(_WireModel):

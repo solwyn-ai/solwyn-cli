@@ -1,0 +1,2 @@
+Error [authentication_required]: User login is required to list projects.
+Hint: Unset SOLWYN_API_KEY, run solwyn login, then retry projects list.

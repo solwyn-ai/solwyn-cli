@@ -16,6 +16,7 @@ from solwyn_cli._vendor.wire import (
     ProjectCreateRequest,
     RefreshRequest,
 )
+from solwyn_cli.commands.costs import CostGrouping, CostRange
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
@@ -237,8 +238,192 @@ def _schema(snapshot: dict[str, Any], component: str) -> dict[str, Any]:
     return snapshot["components"]["schemas"][component]
 
 
+def _operation_parameter(
+    snapshot: dict[str, Any],
+    *,
+    path: str,
+    method: str,
+    location: str,
+    name: str,
+) -> dict[str, Any]:
+    parameters = snapshot["paths"][path][method]["parameters"]
+    matches = [
+        parameter
+        for parameter in parameters
+        if parameter.get("in") == location and parameter.get("name") == name
+    ]
+    assert len(matches) == 1, (
+        f"{method.upper()} {path}: expected one {location} parameter {name!r}, "
+        f"found {len(matches)}"
+    )
+    return matches[0]
+
+
+def _assert_string_parameter_domain(
+    parameter: dict[str, Any],
+    *,
+    values: set[str],
+    context: str,
+) -> None:
+    schema = parameter["schema"]
+    assert schema.get("type") == "string", f"{context}: parameter is not a string"
+    if "enum" in schema:
+        assert set(schema["enum"]) == values, (
+            f"{context}: allowed values differ; "
+            f"CLI={sorted(values)}, snapshot={sorted(schema['enum'])}"
+        )
+    pattern = schema.get("pattern")
+    if isinstance(pattern, str):
+        try:
+            compiled_pattern = re.compile(pattern)
+        except re.error:
+            raise AssertionError(f"{context}: invalid pattern") from None
+        for value in values:
+            assert compiled_pattern.search(value) is not None, (
+                f"{context}: pattern rejects frozen value {value!r}"
+            )
+        if match := _FINITE_ALTERNATION.fullmatch(pattern):
+            assert set(match.group(1).split("|")) == values, (
+                f"{context}: allowed values differ; "
+                f"CLI={sorted(values)}, snapshot={sorted(match.group(1).split('|'))}"
+            )
+
+
+def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
+    """Guard the exact query mapping and frozen CLI domains for costs."""
+    path = "/api/v1/projects/{project_id}/costs"
+    contracts = {
+        "range": ({member.value for member in CostRange}, "7d"),
+        "group_by": ({member.value for member in CostGrouping}, "model"),
+    }
+    for name, (values, default) in contracts.items():
+        parameter = _operation_parameter(
+            snapshot,
+            path=path,
+            method="get",
+            location="query",
+            name=name,
+        )
+        context = f"GET {path} query {name}"
+        assert parameter.get("required") is False, f"{context}: requiredness differs"
+        assert parameter["schema"].get("default") == default, (
+            f"{context}: default differs"
+        )
+        _assert_string_parameter_domain(parameter, values=values, context=context)
+
+
 def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
+
+
+def test_costs_query_contract_matches_snapshot() -> None:
+    assert_costs_query_contract(_snapshot())
+
+
+def test_costs_cli_domains_are_frozen() -> None:
+    assert {member.value for member in CostRange} == {"7d", "30d", "90d", "365d"}
+    assert {member.value for member in CostGrouping} == {"day", "model", "provider"}
+
+
+@pytest.mark.parametrize(
+    ("name", "replacement"),
+    [("range", "date_range"), ("group_by", "grouping")],
+)
+def test_costs_query_name_drift_trips_guard(name: str, replacement: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name=name,
+    )
+    parameter["name"] = replacement
+
+    with pytest.raises(AssertionError, match=rf"query parameter {name!r}"):
+        assert_costs_query_contract(mutated)
+
+
+def test_costs_query_requiredness_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="range",
+    )
+    parameter["required"] = True
+
+    with pytest.raises(AssertionError, match="range: requiredness differs"):
+        assert_costs_query_contract(mutated)
+
+
+@pytest.mark.parametrize(
+    ("name", "replacement"),
+    [("range", "30d"), ("group_by", "day")],
+)
+def test_costs_query_default_drift_trips_guard(
+    name: str,
+    replacement: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name=name,
+    )
+    parameter["schema"]["default"] = replacement
+
+    with pytest.raises(AssertionError, match=rf"{name}: default differs"):
+        assert_costs_query_contract(mutated)
+
+
+def test_costs_query_allowed_value_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="range",
+    )
+    parameter["schema"]["enum"] = ["7d", "30d", "90d"]
+
+    with pytest.raises(AssertionError, match="range: allowed values differ"):
+        assert_costs_query_contract(mutated)
+
+
+def test_costs_query_noncanonical_restrictive_pattern_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="range",
+    )
+    parameter["schema"]["pattern"] = "^(?:7d|30d)$"
+
+    with pytest.raises(AssertionError, match="range: pattern rejects frozen value"):
+        assert_costs_query_contract(mutated)
+
+
+def test_costs_query_unparseable_pattern_fails_closed() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="range",
+    )
+    parameter["schema"]["pattern"] = "["
+
+    with pytest.raises(AssertionError, match="range: invalid pattern"):
+        assert_costs_query_contract(mutated)
 
 
 def test_removed_request_field_trips_drift_guard() -> None:

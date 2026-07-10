@@ -54,6 +54,60 @@ def test_success_uses_normalized_base_url_auth_user_agent_and_exact_timeouts(
     }
 
 
+def test_unauthenticated_request_has_no_authorization_and_preserves_client_guards(
+    requests: list[httpx.Request],
+) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=None,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        response = client.request_unauthenticated(
+            "POST", "/api/v1/auth/login", json={"email": "person@example.com"}
+        )
+
+    assert response.json() == {"ok": True}
+    assert len(requests) == 1
+    request = requests[0]
+    assert "Authorization" not in request.headers
+    assert request.headers["User-Agent"] == "solwyn-cli/0.1.0"
+    assert request.extensions["timeout"] == {
+        "connect": 5.0,
+        "read": 30.0,
+        "write": 30.0,
+        "pool": 5.0,
+    }
+
+
+def test_unauthenticated_request_retries_429_once_then_raises_structured_error() -> (
+    None
+):
+    attempts = 0
+    waits: list[float] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(429, json={"detail": "Try later."})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=None,
+        transport=httpx.MockTransport(handle),
+        sleeper=waits.append,
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request_unauthenticated("POST", "/api/v1/auth/login", json={})
+
+    assert attempts == 2
+    assert waits == [0.0]
+    assert exc_info.value.code == "rate_limited"
+
+
 def test_context_manager_and_explicit_close_close_the_underlying_client() -> None:
     client = SolwynClient(
         api_url=API_URL,
@@ -301,6 +355,65 @@ def test_jwt_refresh_uses_client_user_agent_and_timeout_then_retries_once(
         "write": 30.0,
         "pool": 5.0,
     }
+
+
+def test_explicit_jwt_client_reuses_rotated_pair_on_next_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = auth.JwtCredential(
+        access_token="old-access-secret",
+        refresh_token="single-use-refresh-secret",
+    )
+    authorization_headers: list[str | None] = []
+    refresh_attempts = 0
+
+    def store(access_token: str, refresh_token: str) -> auth.JwtCredential:
+        return auth.JwtCredential(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+
+    monkeypatch.setattr(auth, "store_jwt_pair", store)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal refresh_attempts
+        if request.url.path.endswith("/auth/refresh"):
+            refresh_attempts += 1
+            if refresh_attempts > 1:
+                return httpx.Response(
+                    401,
+                    json={"detail": "Refresh token was already consumed."},
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "new-access-secret",
+                    "refresh_token": "new-refresh-secret",
+                    "token_type": "bearer",
+                },
+            )
+        authorization = request.headers.get("Authorization")
+        authorization_headers.append(authorization)
+        if authorization == "Bearer old-access-secret":
+            return httpx.Response(401, json={"detail": "Expired access token."})
+        return httpx.Response(200, json={"ok": True})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=original,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        first = client.request("GET", "/api/v1/account/me")
+        second = client.request("GET", "/api/v1/projects")
+
+    assert first.json() == {"ok": True}
+    assert second.json() == {"ok": True}
+    assert refresh_attempts == 1
+    assert authorization_headers == [
+        "Bearer old-access-secret",
+        "Bearer new-access-secret",
+        "Bearer new-access-secret",
+    ]
 
 
 @pytest.mark.parametrize(
