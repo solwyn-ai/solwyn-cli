@@ -297,6 +297,68 @@ def test_human_error_and_hint_match_golden_without_dumping_detail() -> None:
     assert "never-render-this" not in stderr.getvalue()
 
 
+def test_human_table_neutralizes_terminal_controls_and_rich_markup() -> None:
+    attack = "[bold red]literal[/bold red]\x1b]8;;x\x07link\x1b]8;;\x07\rreplace\b\x9b"
+    engine, stdout, stderr = _engine(OutputFormat.TABLE, stdout_is_tty=True)
+
+    engine.write_success(
+        schema="solwyn.costs.summary.v1",
+        data={"value": attack},
+        table=TableData(columns=(attack,), rows=((attack,),)),
+    )
+
+    rendered = stdout.getvalue()
+    assert stderr.getvalue() == ""
+    assert "[bold red]literal[/bold red]" in rendered
+    assert "\x1b[" in rendered  # CLI-owned Rich styling remains enabled.
+    assert "\x1b]" not in rendered
+    assert "\x07" not in rendered
+    assert "\r" not in rendered
+    assert "\b" not in rendered
+    assert "\x9b" not in rendered
+
+
+def test_human_error_fields_neutralize_controls_without_parsing_markup() -> None:
+    attack = (
+        "[link=https://attacker.example]literal[/link]"
+        "\x1b]8;;https://attacker.example\x07link\x1b]8;;\x07"
+        "\rreplace\b\x9bcontrol"
+    )
+    engine, stdout, stderr = _engine(OutputFormat.TABLE, stderr_is_tty=True)
+
+    engine.write_error(OutputError(code=attack, message=attack, hint=attack))
+
+    rendered = stderr.getvalue()
+    assert stdout.getvalue() == ""
+    assert "[link=https://attacker.example]literal[/link]" in rendered
+    assert "\x1b[" in rendered  # CLI-owned Rich styling remains enabled.
+    assert "\x1b]" not in rendered
+    assert "\x07" not in rendered
+    assert "\r" not in rendered
+    assert "\b" not in rendered
+    assert "\x9b" not in rendered
+
+
+def test_json_escapes_terminal_controls_but_preserves_machine_data() -> None:
+    attack = "escape\x1b osc\x9b bell\x07 return\r backspace\b"
+    engine, stdout, stderr = _engine(OutputFormat.JSON)
+
+    engine.write_success(
+        schema="solwyn.costs.summary.v1",
+        data={"value": attack},
+    )
+    engine.write_error(OutputError(code="unsafe", message=attack, hint=attack))
+
+    assert json.loads(stdout.getvalue())["value"] == attack
+    assert json.loads(stderr.getvalue())["message"] == attack
+    for rendered in (stdout.getvalue(), stderr.getvalue()):
+        assert "\x1b" not in rendered
+        assert "\x9b" not in rendered
+        assert "\x07" not in rendered
+        assert "\r" not in rendered
+        assert "\b" not in rendered
+
+
 def test_table_shape_is_validated_before_rendering() -> None:
     with pytest.raises(ValueError, match="same number of cells"):
         TableData(columns=("Project", "Cost"), rows=(("alpha",),))

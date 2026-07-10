@@ -117,6 +117,16 @@ def _json_value(value: object) -> Any:
     return _JSON_ADAPTER.dump_python(value, mode="json")
 
 
+def _terminal_safe(value: object) -> str:
+    """Neutralize terminal control characters in caller-provided human text."""
+    return "".join(
+        "\N{REPLACEMENT CHARACTER}"
+        if ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
+        else character
+        for character in str(value)
+    )
+
+
 def _success_data(data: Mapping[str, object] | BaseModel) -> dict[str, Any]:
     serialized = _json_value(data)
     if not isinstance(serialized, dict):
@@ -174,7 +184,7 @@ class OutputEngine:
         stream = self._stderr if error else self._stdout
         serialized = _json_value(value)
         stream.write(
-            json.dumps(serialized, ensure_ascii=False, separators=(",", ":")) + "\n"
+            json.dumps(serialized, ensure_ascii=True, separators=(",", ":")) + "\n"
         )
 
     def write_success(
@@ -201,11 +211,11 @@ class OutputEngine:
         )
         for column in table.columns:
             rich_table.add_column(
-                column,
+                Text(_terminal_safe(column)),
                 justify="right" if column in table.right_align else "left",
             )
         for row in table.rows:
-            rich_table.add_row(*(str(cell) for cell in row))
+            rich_table.add_row(*(Text(_terminal_safe(cell)) for cell in row))
         self._console(error=False).print(rich_table)
 
     def write_error(self, error: ApiError | OutputError) -> None:
@@ -222,11 +232,11 @@ class OutputEngine:
             return
 
         message = Text("Error ", style="bold red")
-        message.append(f"[{error.code}]: ", style="bold")
-        message.append(error.message)
+        message.append(Text(f"[{_terminal_safe(error.code)}]: ", style="bold"))
+        message.append(Text(_terminal_safe(error.message)))
         console = self._console(error=True)
         console.print(message)
         if error.hint is not None:
             hint = Text("Hint: ", style="bold yellow")
-            hint.append(error.hint)
+            hint.append(Text(_terminal_safe(error.hint)))
             console.print(hint)

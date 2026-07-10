@@ -7,7 +7,7 @@ from solwyn_cli.errors import ApiError
 
 
 class ExitCode(IntEnum):
-    """Frozen exit meanings for the CLI's current major version."""
+    """Permanently frozen exit meanings across all CLI major versions."""
 
     SUCCESS = 0
     GENERIC_ERROR = 1
@@ -49,7 +49,7 @@ def exit_code_for_error(
     if isinstance(error, AuthError):
         return ExitCode.AUTH_ERROR
     if isinstance(error, ApiError):
-        if error.status_code in {401, 403}:
+        if error.status_code == 401:
             return ExitCode.AUTH_ERROR
         if error.status_code == 404:
             return ExitCode.NOT_FOUND
