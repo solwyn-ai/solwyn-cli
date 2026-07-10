@@ -54,6 +54,60 @@ def test_success_uses_normalized_base_url_auth_user_agent_and_exact_timeouts(
     }
 
 
+def test_unauthenticated_request_has_no_authorization_and_preserves_client_guards(
+    requests: list[httpx.Request],
+) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=None,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        response = client.request_unauthenticated(
+            "POST", "/api/v1/auth/login", json={"email": "person@example.com"}
+        )
+
+    assert response.json() == {"ok": True}
+    assert len(requests) == 1
+    request = requests[0]
+    assert "Authorization" not in request.headers
+    assert request.headers["User-Agent"] == "solwyn-cli/0.1.0"
+    assert request.extensions["timeout"] == {
+        "connect": 5.0,
+        "read": 30.0,
+        "write": 30.0,
+        "pool": 5.0,
+    }
+
+
+def test_unauthenticated_request_retries_429_once_then_raises_structured_error() -> (
+    None
+):
+    attempts = 0
+    waits: list[float] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(429, json={"detail": "Try later."})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=None,
+        transport=httpx.MockTransport(handle),
+        sleeper=waits.append,
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request_unauthenticated("POST", "/api/v1/auth/login", json={})
+
+    assert attempts == 2
+    assert waits == [0.0]
+    assert exc_info.value.code == "rate_limited"
+
+
 def test_context_manager_and_explicit_close_close_the_underlying_client() -> None:
     client = SolwynClient(
         api_url=API_URL,

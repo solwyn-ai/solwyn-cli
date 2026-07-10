@@ -113,13 +113,12 @@ class SolwynClient:
             raise AuthError("Authentication required. Configure credentials and retry.")
         return credential
 
-    def request(
+    def _prepare_request(
         self,
-        method: str,
         path: str,
-        **kwargs: Any,
-    ) -> httpx.Response:
-        """Make one logical request with bounded rate-limit and auth retries."""
+        kwargs: dict[str, Any],
+    ) -> tuple[str, httpx.Headers]:
+        """Validate a relative path and fixed-timeout request options."""
         parsed_path = urlsplit(path)
         if parsed_path.scheme or parsed_path.netloc:
             raise ApiError(
@@ -148,36 +147,97 @@ class SolwynClient:
                 hint=None,
                 detail=None,
             )
-        credential = self._resolve_credential()
-        retried_rate_limit = False
         request_headers = httpx.Headers(kwargs.pop("headers", None))
         request_headers["User-Agent"] = f"solwyn-cli/{__version__}"
+        return path.lstrip("/"), request_headers
 
-        def send(resolved: ResolvedCredential) -> httpx.Response:
-            nonlocal retried_rate_limit
-            headers = request_headers.copy()
-            headers["Authorization"] = f"Bearer {resolved.bearer_value()}"
+    def _send_with_rate_limit_retry(
+        self,
+        *,
+        method: str,
+        path: str,
+        headers: httpx.Headers,
+        kwargs: dict[str, Any],
+        retry_state: list[bool],
+    ) -> httpx.Response:
+        """Send with the one shared bounded 429 retry budget."""
+        response = self._client.request(
+            method,
+            path,
+            headers=headers,
+            **kwargs,
+        )
+        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+            if retry_state[0]:
+                return response
+            retry_state[0] = True
+            delay = _retry_after_seconds(
+                response.headers.get("Retry-After"), self._clock()
+            )
+            self._sleeper(delay)
             response = self._client.request(
                 method,
-                path.lstrip("/"),
+                path,
                 headers=headers,
                 **kwargs,
             )
-            if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-                if retried_rate_limit:
-                    return response
-                retried_rate_limit = True
-                delay = _retry_after_seconds(
-                    response.headers.get("Retry-After"), self._clock()
-                )
-                self._sleeper(delay)
-                response = self._client.request(
-                    method,
-                    path.lstrip("/"),
-                    headers=headers,
-                    **kwargs,
-                )
-            return response
+        return response
+
+    @staticmethod
+    def _raise_for_unsuccessful_response(response: httpx.Response) -> None:
+        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+            raise error_from_response(response, code_override="rate_limited")
+        if not response.is_success:
+            raise error_from_response(response)
+
+    def request_unauthenticated(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Make a guarded request without resolving or sending credentials."""
+        relative_path, request_headers = self._prepare_request(path, kwargs)
+        try:
+            response = self._send_with_rate_limit_retry(
+                method=method,
+                path=relative_path,
+                headers=request_headers,
+                kwargs=kwargs,
+                retry_state=[False],
+            )
+        except httpx.HTTPError:
+            raise ApiError(
+                status_code=None,
+                code="transport_error",
+                message="Could not connect to the Solwyn API.",
+                hint=None,
+                detail=None,
+            ) from None
+        self._raise_for_unsuccessful_response(response)
+        return response
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Make one logical request with bounded rate-limit and auth retries."""
+        relative_path, request_headers = self._prepare_request(path, kwargs)
+        credential = self._resolve_credential()
+        retry_state = [False]
+
+        def send(resolved: ResolvedCredential) -> httpx.Response:
+            headers = request_headers.copy()
+            headers["Authorization"] = f"Bearer {resolved.bearer_value()}"
+            return self._send_with_rate_limit_retry(
+                method=method,
+                path=relative_path,
+                headers=headers,
+                kwargs=kwargs,
+                retry_state=retry_state,
+            )
 
         try:
             response = request_with_refresh_retry(
@@ -195,8 +255,5 @@ class SolwynClient:
                 detail=None,
             ) from None
 
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            raise error_from_response(response, code_override="rate_limited")
-        if not response.is_success:
-            raise error_from_response(response)
+        self._raise_for_unsuccessful_response(response)
         return response

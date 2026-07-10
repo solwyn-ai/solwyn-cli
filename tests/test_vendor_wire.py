@@ -135,6 +135,16 @@ def test_login_and_project_create_preserve_wire_defaults() -> None:
     }
 
 
+def test_login_request_redacts_password_but_serializes_wire_value() -> None:
+    password = "synthetic-password-value"
+
+    request = LoginRequest(email="dev@example.com", password=password)
+
+    assert password not in repr(request)
+    assert password not in str(request)
+    assert request.model_dump()["password"] == password
+
+
 def test_budget_update_accepts_each_rule_union_and_preserves_defaults() -> None:
     rules = [
         {"percent": 80},

@@ -22,6 +22,13 @@ RESPONSE_READS = {
     "ProjectLimitReachedDetail": ("code", "message", "cta_path"),
     # Generic HTTP error parsing consumes detail; retry timing uses the header.
     "RateLimitErrorResponse": ("detail",),
+    "MeResponse": (
+        "user_id",
+        "email",
+        "display_name",
+        "subscription_tier",
+    ),
+    "ProjectResponse": ("id", "name"),
 }
 
 
@@ -152,4 +159,23 @@ def test_all_of_without_consumed_path_trips_response_subset_guard() -> None:
         AssertionError,
         match=r"Error402Response\.detail\.code.*no allOf branch",
     ):
+        assert_response_reads_exist(mutated)
+
+
+@pytest.mark.parametrize(
+    ("component", "field"),
+    [
+        ("TokenResponse", "access_token"),
+        ("TokenResponse", "token_type"),
+        ("MeResponse", "display_name"),
+        ("ProjectResponse", "name"),
+    ],
+)
+def test_command_response_field_removal_trips_subset_guard(
+    component: str, field: str
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    mutated["components"]["schemas"][component]["properties"].pop(field)
+
+    with pytest.raises(AssertionError, match=rf"{component}\.{field}"):
         assert_response_reads_exist(mutated)

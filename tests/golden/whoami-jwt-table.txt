@@ -1,0 +1,7 @@
+Field                        Value
+Authentication                 jwt
+Source                     keyring
+User                Person Example
+Email           person@example.com
+Tier                          team
+Project         proj_alpha (Alpha)
