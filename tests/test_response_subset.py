@@ -69,11 +69,26 @@ RESPONSE_READS = {
         "local_call_count",
     ),
 }
-PROJECT_RESPONSE_OPERATIONS = {
-    "/api/v1/projects": "array",
-    "/api/v1/projects/{project_id}": "object",
+# method/path -> (JSON shape, consumed response component)
+OPERATION_RESPONSE_BINDINGS = {
+    ("POST", "/api/v1/auth/login"): ("object", "TokenResponse"),
+    ("POST", "/api/v1/auth/refresh"): ("object", "TokenResponse"),
+    ("GET", "/api/v1/account/me"): ("object", "MeResponse"),
+    ("GET", "/api/v1/projects"): ("array", "ProjectResponse"),
+    ("GET", "/api/v1/projects/{project_id}"): ("object", "ProjectResponse"),
+    ("GET", "/api/v1/projects/{project_id}/budget"): (
+        "object",
+        "BudgetStatusResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/providers"): (
+        "array",
+        "ProviderHealthResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/costs"): (
+        "object",
+        "CostQueryResponse",
+    ),
 }
-BUDGET_STATUS_OPERATION = "/api/v1/projects/{project_id}/budget"
 
 
 def _assert_field_path(
@@ -153,33 +168,47 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
             )
 
 
-def assert_project_response_operations(snapshot: dict[str, Any]) -> None:
-    """Require both consumed project GETs to keep returning ProjectResponse."""
-    for path, shape in PROJECT_RESPONSE_OPERATIONS.items():
-        response_schema = snapshot["paths"][path]["get"]["responses"]["200"]["content"][
-            "application/json"
-        ]["schema"]
-        project_schema = (
-            response_schema.get("items") if shape == "array" else response_schema
+def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
+    """Validate every consumed success operation against its response component."""
+    paths = snapshot["paths"]
+    for (method, path), (shape, component) in OPERATION_RESPONSE_BINDINGS.items():
+        assert path in paths, f"{method} {path}: path is missing for {component}"
+        method_key = method.lower()
+        assert method_key in paths[path], (
+            f"{method} {path}: operation is missing for {component}"
         )
-        assert isinstance(project_schema, dict), (
-            f"GET {path}: expected {shape} ProjectResponse payload"
+        responses = paths[path][method_key].get("responses", {})
+        assert "200" in responses, (
+            f"{method} {path}: 200 response is missing for {component}"
         )
-        assert project_schema.get("$ref") == ("#/components/schemas/ProjectResponse"), (
-            f"GET {path}: response no longer uses ProjectResponse"
+        content = responses["200"].get("content", {})
+        assert "application/json" in content, (
+            f"{method} {path}: 200 application/json response is missing for {component}"
+        )
+        response_schema = content["application/json"].get("schema")
+        assert isinstance(response_schema, dict), (
+            f"{method} {path}: expected {shape} {component} response schema"
         )
 
+        if shape == "array":
+            assert response_schema.get("type") == "array", (
+                f"{method} {path}: expected array response of {component}"
+            )
+            component_schema = response_schema.get("items")
+        else:
+            assert response_schema.get("type") != "array", (
+                f"{method} {path}: expected object response of {component}"
+            )
+            component_schema = response_schema
 
-def assert_budget_status_operation(snapshot: dict[str, Any]) -> None:
-    """Require the pure budget GET to keep returning BudgetStatusResponse."""
-    operation = snapshot["paths"][BUDGET_STATUS_OPERATION]
-    assert "get" in operation, f"GET {BUDGET_STATUS_OPERATION}: operation is missing"
-    response_schema = operation["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
-    assert response_schema.get("$ref") == (
-        "#/components/schemas/BudgetStatusResponse"
-    ), f"GET {BUDGET_STATUS_OPERATION}: response no longer uses BudgetStatusResponse"
+        assert isinstance(component_schema, dict), (
+            f"{method} {path}: expected {shape} response using {component}"
+        )
+        expected_ref = f"#/components/schemas/{component}"
+        assert component_schema.get("$ref") == expected_ref, (
+            f"{method} {path}: expected {shape} response using {component} "
+            f"({expected_ref})"
+        )
 
 
 def _snapshot() -> dict[str, Any]:
@@ -190,41 +219,91 @@ def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
 
 
-def test_both_project_operations_return_the_consumed_response_component() -> None:
-    assert_project_response_operations(_snapshot())
+def test_every_consumed_success_operation_returns_its_response_component() -> None:
+    assert_operation_response_bindings(_snapshot())
 
 
-def test_budget_status_get_returns_the_consumed_response_component() -> None:
-    assert_budget_status_operation(_snapshot())
-
-
-@pytest.mark.parametrize("path", PROJECT_RESPONSE_OPERATIONS)
-def test_project_operation_response_drift_trips_guard(path: str) -> None:
+@pytest.mark.parametrize(
+    ("method", "path", "shape", "component"),
+    [
+        (method, path, shape, component)
+        for (method, path), (shape, component) in OPERATION_RESPONSE_BINDINGS.items()
+    ],
+)
+def test_operation_response_drift_trips_binding_guard(
+    method: str,
+    path: str,
+    shape: str,
+    component: str,
+) -> None:
     mutated = copy.deepcopy(_snapshot())
-    schema = mutated["paths"][path]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
-    target = schema["items"] if path == "/api/v1/projects" else schema
-    target["$ref"] = "#/components/schemas/MeResponse"
+    response_schema = mutated["paths"][path][method.lower()]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    component_schema = response_schema["items"] if shape == "array" else response_schema
+    component_schema["$ref"] = "#/components/schemas/UnrelatedResponse"
 
     with pytest.raises(
         AssertionError,
-        match=rf"GET {re.escape(path)}.*ProjectResponse",
+        match=rf"{method} {re.escape(path)}.*{component}",
     ):
-        assert_project_response_operations(mutated)
+        assert_operation_response_bindings(mutated)
 
 
-def test_budget_status_operation_response_drift_trips_guard() -> None:
+def test_missing_consumed_operation_path_trips_binding_guard() -> None:
     mutated = copy.deepcopy(_snapshot())
-    mutated["paths"][BUDGET_STATUS_OPERATION]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]["$ref"] = "#/components/schemas/ProviderHealthResponse"
+    path = "/api/v1/auth/login"
+    mutated["paths"].pop(path)
 
     with pytest.raises(
         AssertionError,
-        match=r"GET /api/v1/projects/\{project_id\}/budget.*BudgetStatusResponse",
+        match=rf"POST {re.escape(path)}.*path is missing.*TokenResponse",
     ):
-        assert_budget_status_operation(mutated)
+        assert_operation_response_bindings(mutated)
+
+
+def test_missing_consumed_operation_method_trips_binding_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    path = "/api/v1/projects/{project_id}/providers"
+    mutated["paths"][path].pop("get")
+
+    with pytest.raises(
+        AssertionError,
+        match=rf"GET {re.escape(path)}.*operation is missing.*ProviderHealthResponse",
+    ):
+        assert_operation_response_bindings(mutated)
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "shape", "component"),
+    [
+        (method, path, shape, component)
+        for (method, path), (shape, component) in OPERATION_RESPONSE_BINDINGS.items()
+    ],
+)
+def test_operation_response_shape_drift_trips_binding_guard(
+    method: str,
+    path: str,
+    shape: str,
+    component: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    response = mutated["paths"][path][method.lower()]["responses"]["200"]["content"][
+        "application/json"
+    ]
+    if shape == "array":
+        response["schema"] = {"$ref": f"#/components/schemas/{component}"}
+    else:
+        response["schema"] = {
+            "type": "array",
+            "items": {"$ref": f"#/components/schemas/{component}"},
+        }
+
+    with pytest.raises(
+        AssertionError,
+        match=rf"{method} {re.escape(path)}.*{shape}.*{component}",
+    ):
+        assert_operation_response_bindings(mutated)
 
 
 def test_removed_consumed_union_field_trips_response_subset_guard() -> None:

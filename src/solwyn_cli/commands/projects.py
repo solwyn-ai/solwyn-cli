@@ -8,11 +8,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, TypeAdapter, Validati
 from solwyn_cli.auth import (
     AuthError,
     ProjectKeyCredential,
-    ResolvedCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.output import OutputError, TableData
@@ -44,28 +43,6 @@ _PROJECTS = TypeAdapter(list[_Project])
 
 def _date_time(value: AwareDatetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
-
-
-def _credential(context: typer.Context) -> ResolvedCredential:
-    try:
-        credential = resolve_credential()
-    except AuthError as error:
-        exit_with_error(
-            context,
-            OutputError(code="authentication_failed", message=str(error)),
-            semantic=ErrorSemantic.AUTH,
-        )
-    if credential is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="authentication_required",
-                message="Authentication is required.",
-                hint="Set SOLWYN_API_KEY or run solwyn login.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
-    return credential
 
 
 def _list_table(data: _ProjectsListData) -> TableData:
@@ -104,7 +81,7 @@ def _show_table(project: _Project) -> TableData:
 @app.command("list")
 def list_projects(context: typer.Context) -> None:
     """List projects available to the logged-in user."""
-    credential = _credential(context)
+    credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
         hint = (
             "Unset SOLWYN_API_KEY, run solwyn login, then retry projects list."
@@ -171,7 +148,7 @@ def show_project(context: typer.Context) -> None:
             semantic=ErrorSemantic.USAGE,
         )
 
-    credential = _credential(context)
+    credential = required_credential(context, resolve=resolve_credential)
     project_id = runtime.project
     project_path = quote(project_id, safe="")
     try:

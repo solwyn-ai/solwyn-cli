@@ -7,9 +7,9 @@ from urllib.parse import quote
 import typer
 from pydantic import BaseModel, ConfigDict, FiniteFloat, ValidationError
 
-from solwyn_cli.auth import AuthError, ResolvedCredential, resolve_credential
+from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
 from solwyn_cli.output import OutputError, TableData
@@ -45,28 +45,6 @@ def _table(data: _BudgetStatusData) -> TableData:
         ),
         right_align=("Value",),
     )
-
-
-def _credential(context: typer.Context) -> ResolvedCredential:
-    try:
-        credential = resolve_credential()
-    except AuthError as error:
-        exit_with_error(
-            context,
-            OutputError(code="authentication_failed", message=str(error)),
-            semantic=ErrorSemantic.AUTH,
-        )
-    if credential is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="authentication_required",
-                message="Authentication is required.",
-                hint="Set SOLWYN_API_KEY or run solwyn login.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
-    return credential
 
 
 @app.command("status")
@@ -107,7 +85,7 @@ def status(
             semantic=ErrorSemantic.USAGE,
         )
 
-    credential = _credential(context)
+    credential = required_credential(context, resolve=resolve_credential)
     project = quote(runtime.project, safe="")
     try:
         with SolwynClient(
