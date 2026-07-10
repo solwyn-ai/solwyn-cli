@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     SecretStr,
     ValidationError,
+    field_serializer,
     field_validator,
 )
 
@@ -83,6 +84,17 @@ class _TokenResponse(BaseModel):
     token_type: Literal["bearer"] = "bearer"
 
 
+class _RefreshRequest(RefreshRequest):
+    """Refresh request whose in-memory representation redacts its token."""
+
+    refresh_token: SecretStr
+
+    @field_serializer("refresh_token")
+    def serialize_refresh_token(self, value: SecretStr) -> str:
+        """Reveal the token only while constructing the authenticated POST body."""
+        return value.get_secret_value()
+
+
 ResolvedCredential: TypeAlias = ProjectKeyCredential | JwtCredential
 AuthenticatedRequest: TypeAlias = Callable[[ResolvedCredential], httpx.Response]
 
@@ -148,19 +160,21 @@ def _set_password(entry: str, value: str) -> None:
         ) from None
 
 
-def _delete_password(entry: str) -> None:
+def _confirm_entry_absent(entry: str) -> bool:
+    available, retained_value = _get_password(entry)
+    return available and retained_value is None
+
+
+def _delete_password(entry: str) -> bool:
     try:
         keyring.delete_password(KEYRING_SERVICE, entry)
     except PasswordDeleteError:
-        return
+        return _confirm_entry_absent(entry)
     except NoKeyringError:
-        raise CredentialStorageError(
-            "Could not clear credentials from the operating-system keychain."
-        ) from None
+        return _confirm_entry_absent(entry)
     except Exception:
-        raise CredentialStorageError(
-            "Could not clear credentials from the operating-system keychain."
-        ) from None
+        return _confirm_entry_absent(entry)
+    return True
 
 
 def store_project_key(project_key: str) -> ProjectKeyCredential:
@@ -186,8 +200,14 @@ def store_jwt_pair(access_token: str, refresh_token: str) -> JwtCredential:
 
 def clear_credentials() -> None:
     """Remove every supported credential entry from the OS keychain."""
+    all_entries_cleared = True
     for entry in (API_KEY_ENTRY, ACCESS_TOKEN_ENTRY, REFRESH_TOKEN_ENTRY):
-        _delete_password(entry)
+        if not _delete_password(entry):
+            all_entries_cleared = False
+    if not all_entries_cleared:
+        raise CredentialStorageError(
+            "Could not clear credentials from the operating-system keychain."
+        )
 
 
 def request_with_refresh_retry(
@@ -204,7 +224,7 @@ def request_with_refresh_retry(
     if not isinstance(credential, JwtCredential):
         raise AuthError("Authentication failed. Check your credentials.")
 
-    refresh_request = RefreshRequest(refresh_token=credential.refresh_value())
+    refresh_request = _RefreshRequest(refresh_token=credential.refresh_value())
     try:
         refresh_response = client.post(
             f"{api_url.rstrip('/')}/api/v1/auth/refresh",

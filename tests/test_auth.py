@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 import pytest
-from keyring.errors import NoKeyringError
+from keyring.errors import NoKeyringError, PasswordDeleteError
 
 from solwyn_cli import auth
 
@@ -247,6 +247,64 @@ def test_clear_credentials_deletes_all_entries(
     ]
 
 
+def test_clear_credentials_confirms_password_delete_error_means_absent(
+    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keychain.update(
+        access_token="access-secret",
+        refresh_token="refresh-secret",
+    )
+    deletes: list[str] = []
+
+    def delete_password(service: str, name: str) -> None:
+        deletes.append(name)
+        if name == auth.API_KEY_ENTRY:
+            raise PasswordDeleteError("entry was absent")
+        keychain.pop(name)
+
+    monkeypatch.setattr(auth.keyring, "delete_password", delete_password)
+
+    auth.clear_credentials()
+
+    assert keychain == {}
+    assert deletes == [
+        auth.API_KEY_ENTRY,
+        auth.ACCESS_TOKEN_ENTRY,
+        auth.REFRESH_TOKEN_ENTRY,
+    ]
+
+
+def test_clear_credentials_reports_retained_entry_after_trying_all_entries(
+    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keychain.update(
+        api_key=VALID_KEY,
+        access_token="access-secret",
+        refresh_token="refresh-secret",
+    )
+    deletes: list[str] = []
+
+    def delete_password(service: str, name: str) -> None:
+        deletes.append(name)
+        if name == auth.API_KEY_ENTRY:
+            raise PasswordDeleteError("backend refused deletion")
+        keychain.pop(name)
+
+    monkeypatch.setattr(auth.keyring, "delete_password", delete_password)
+
+    with pytest.raises(auth.CredentialStorageError) as exc_info:
+        auth.clear_credentials()
+
+    assert exc_info.value.exit_code == 3
+    assert VALID_KEY not in str(exc_info.value)
+    assert keychain == {auth.API_KEY_ENTRY: VALID_KEY}
+    assert deletes == [
+        auth.API_KEY_ENTRY,
+        auth.ACCESS_TOKEN_ENTRY,
+        auth.REFRESH_TOKEN_ENTRY,
+    ]
+
+
 @pytest.mark.parametrize("operation", ["set_password", "delete_password"])
 @pytest.mark.parametrize("backend_error", [NoKeyringError(), RuntimeError("down")])
 def test_keychain_write_failures_are_safe_exit_three_errors(
@@ -258,6 +316,8 @@ def test_keychain_write_failures_are_safe_exit_three_errors(
         raise backend_error
 
     monkeypatch.setattr(auth.keyring, operation, fail)
+    if operation == "delete_password":
+        monkeypatch.setattr(auth.keyring, "get_password", fail)
 
     with pytest.raises(auth.AuthError) as exc_info:
         if operation == "set_password":
@@ -267,6 +327,36 @@ def test_keychain_write_failures_are_safe_exit_three_errors(
 
     assert exc_info.value.exit_code == 3
     assert "down" not in str(exc_info.value)
+
+
+def test_jwt_access_write_failure_retains_new_refresh_without_leaking_tokens(
+    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_access = "old-access-secret"
+    old_refresh = "old-refresh-secret"
+    new_access = "new-access-secret"
+    new_refresh = "new-refresh-secret"
+    keychain.update(access_token=old_access, refresh_token=old_refresh)
+
+    def set_password(service: str, name: str, value: str) -> None:
+        if name == auth.ACCESS_TOKEN_ENTRY:
+            raise RuntimeError(f"backend rejected {new_access}")
+        keychain[name] = value
+
+    monkeypatch.setattr(auth.keyring, "set_password", set_password)
+
+    with pytest.raises(auth.CredentialStorageError) as exc_info:
+        auth.store_jwt_pair(new_access, new_refresh)
+
+    rendered = f"{exc_info.value!s} {exc_info.value!r}"
+    assert old_access not in rendered
+    assert old_refresh not in rendered
+    assert new_access not in rendered
+    assert new_refresh not in rendered
+    assert keychain == {
+        auth.ACCESS_TOKEN_ENTRY: old_access,
+        auth.REFRESH_TOKEN_ENTRY: new_refresh,
+    }
 
 
 def test_secret_models_and_validation_errors_are_redacted() -> None:
@@ -293,6 +383,16 @@ def test_project_key_model_enforces_format_without_echoing_secret() -> None:
         auth.ProjectKeyCredential(api_key=invalid_key, source="environment")
 
     assert invalid_key not in str(exc_info.value)
+
+
+def test_refresh_request_repr_is_redacted_while_model_dump_is_raw() -> None:
+    refresh_secret = "refresh-secret"
+
+    request = auth._RefreshRequest(refresh_token=refresh_secret)
+
+    assert refresh_secret not in repr(request)
+    assert refresh_secret not in str(request)
+    assert request.model_dump() == {"refresh_token": refresh_secret}
 
 
 def _response(status_code: int, payload: Any | None = None) -> httpx.Response:
