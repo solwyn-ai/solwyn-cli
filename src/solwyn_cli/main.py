@@ -5,10 +5,12 @@ from typing import Annotated
 import typer
 
 from solwyn_cli import __version__
+from solwyn_cli.commands.config import app as config_app
 
 app = typer.Typer(
     add_completion=False, invoke_without_command=True, no_args_is_help=True
 )
+app.add_typer(config_app, name="config")
 
 
 @app.callback()

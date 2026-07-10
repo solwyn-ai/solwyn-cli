@@ -1,0 +1,2 @@
+<ESC>[1;36mProject<ESC>[0m<ESC>[1;36m <ESC>[0m<ESC>[1;36m <ESC>[0m<ESC>[1;36m  Cost<ESC>[0m
+alpha    $12.34

@@ -1,0 +1,173 @@
+"""Pydantic v2 mirrors of the request bodies constructed by the CLI."""
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class _WireModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProviderName(StrEnum):
+    """Provider identifiers accepted by budget request endpoints."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GOOGLE = "google"
+    BEDROCK = "bedrock"
+    XAI = "xai"
+    DEEPSEEK = "deepseek"
+    MISTRAL = "mistral"
+    QWEN = "qwen"
+    GROQ = "groq"
+    TOGETHER = "together"
+    FIREWORKS = "fireworks"
+    PERPLEXITY = "perplexity"
+    AZURE_OPENAI = "azure_openai"
+    OPENROUTER = "openrouter"
+    ZAI = "zai"
+    OLLAMA = "ollama"
+    VLLM = "vllm"
+    LMSTUDIO = "lmstudio"
+    OPENAI_COMPATIBLE = "openai_compatible"
+
+
+class BudgetPeriod(StrEnum):
+    """Rolling window for budget accounting."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class BudgetMode(StrEnum):
+    """Budget enforcement mode."""
+
+    ALERT_ONLY = "alert_only"
+    HARD_DENY = "hard_deny"
+
+
+class _ThresholdConfig(_WireModel):
+    type: Literal["budget_threshold"] = "budget_threshold"
+    percent: Annotated[int, Field(ge=1, le=100)]
+    channel_ids: list[str] = Field(default_factory=list)
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
+class _ForecastOverrunConfig(_WireModel):
+    type: Literal["forecast_overrun"]
+    spend_threshold_usd: Annotated[float, Field(gt=0)]
+    period: Literal["month"] = "month"
+    channel_ids: list[str] = Field(default_factory=list)
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
+class _DailyAnomalyConfig(_WireModel):
+    type: Literal["daily_anomaly"]
+    multiplier: Annotated[float, Field(gt=1, le=100)]
+    lookback_days: Annotated[int, Field(ge=3, le=30)] = 7
+    channel_ids: list[str] = Field(default_factory=list)
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
+class _UnitCostAnomalyConfig(_WireModel):
+    type: Literal["unit_cost_anomaly"]
+    multiplier: Annotated[float, Field(gt=1, le=100)]
+    lookback_days: Annotated[int, Field(ge=3, le=30)] = 7
+    channel_ids: list[str] = Field(default_factory=list)
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
+_BudgetRule = (
+    _ThresholdConfig
+    | _ForecastOverrunConfig
+    | _DailyAnomalyConfig
+    | _UnitCostAnomalyConfig
+)
+
+
+class TokenDetails(_WireModel):
+    """Normalized provider token usage used to settle a reservation."""
+
+    input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    cached_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    cache_creation_5m_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    cache_creation_1h_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    reasoning_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    audio_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    audio_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    accepted_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    rejected_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    tool_use_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    is_estimated: bool = False
+
+
+class LoginRequest(_WireModel):
+    email: str
+    password: Annotated[str, Field(max_length=128)]
+    plan: Literal["founder", "team", "scale"] | None = None
+    billing_interval: Literal["month", "year"] | None = None
+
+
+class RefreshRequest(_WireModel):
+    refresh_token: str
+
+
+class ProjectCreateRequest(_WireModel):
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+    budget_limit: Annotated[float, Field(gt=0)] = 100.0
+    budget_period: Annotated[str, Field(pattern=r"^(daily|weekly|monthly)$")] = (
+        "monthly"
+    )
+    budget_mode: Annotated[str, Field(pattern=r"^(alert_only|hard_deny)$")] = (
+        "alert_only"
+    )
+
+
+class BudgetUpdateRequest(_WireModel):
+    limit_usd: Annotated[float, Field(gt=0)]
+    period: BudgetPeriod
+    mode: BudgetMode
+    sub_period: BudgetPeriod | None = None
+    sub_limit_usd: float | None = None
+    thresholds: Annotated[list[_BudgetRule], Field(max_length=50)]
+
+
+class BudgetCheckRequest(_WireModel):
+    estimated_input_tokens: Annotated[int, Field(ge=0)]
+    model: Annotated[str, Field(max_length=2048)]
+    provider: ProviderName
+    fallback_providers: list[ProviderName] = Field(default_factory=list)
+    fallback_models: Annotated[
+        list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)
+    ] = Field(default_factory=list)
+
+
+class BudgetConfirmRequest(_WireModel):
+    reservation_id: str
+    model: Annotated[str, Field(max_length=2048)]
+    provider: ProviderName
+    is_provider_fallback: bool = False
+    call_id: Annotated[str, Field(max_length=36)]
+    token_details: TokenDetails
+    provider_region: Annotated[str, Field(max_length=32)] | None = None
+    service_tier: (
+        Literal[
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized",
+        ]
+        | None
+    ) = None
