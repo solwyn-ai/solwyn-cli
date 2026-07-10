@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "solwyn-cli"
+version = "0.1.0"
+description = "Command-line client for Solwyn"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+  { name = "Solwyn", email = "hello@solwyn.ai" },
+]
+dependencies = [
+  "click>=8.1",
+  "httpx>=0.27",
+  "keyring>=25",
+  "mcp>=1,<2",
+  "platformdirs>=4",
+  "pydantic>=2",
+  "rich>=13",
+  "tomli-w>=1",
+  "typer>=0.12",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ruff>=0.12",
+]
+
+[project.scripts]
+solwyn = "solwyn_cli.main:app"
+solwyn-cli = "solwyn_cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/solwyn_cli"]
