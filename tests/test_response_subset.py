@@ -163,6 +163,12 @@ OPERATION_RESPONSE_BINDINGS = {
         "CostQueryResponse",
     ),
 }
+_BUDGET_THRESHOLD_COMPONENTS = {
+    "budget_threshold": "ThresholdStateResponse",
+    "forecast_overrun": "ForecastOverrunStateResponse",
+    "daily_anomaly": "DailyAnomalyStateResponse",
+    "unit_cost_anomaly": "UnitCostAnomalyStateResponse",
+}
 
 
 def _assert_field_path(
@@ -226,6 +232,125 @@ def _assert_field_path(
     )
 
 
+def _assert_component_ref(
+    schema: dict[str, Any],
+    *,
+    expected_component: str,
+    context: str,
+) -> None:
+    expected_ref = f"#/components/schemas/{expected_component}"
+    assert schema.get("$ref") == expected_ref, (
+        f"{context}: expected component {expected_component} ({expected_ref})"
+    )
+
+
+def _assert_nullable_component_ref(
+    schema: dict[str, Any],
+    *,
+    expected_component: str,
+    context: str,
+) -> None:
+    branches = schema.get("anyOf")
+    assert isinstance(branches, list), f"{context}: expected nullable component union"
+    refs = [
+        branch.get("$ref")
+        for branch in branches
+        if isinstance(branch, dict) and branch.get("type") != "null"
+    ]
+    null_branches = [
+        branch
+        for branch in branches
+        if isinstance(branch, dict) and branch.get("type") == "null"
+    ]
+    expected_ref = f"#/components/schemas/{expected_component}"
+    assert refs == [expected_ref] and len(null_branches) == 1, (
+        f"{context}: expected {expected_component} or null"
+    )
+
+
+def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
+    """Bind every nested response component validated by the budget command."""
+    schemas = snapshot["components"]["schemas"]
+    status_properties = schemas["BudgetStatusResponse"]["properties"]
+
+    thresholds = status_properties["thresholds"]
+    items = thresholds.get("items")
+    assert isinstance(items, dict), (
+        "BudgetStatusResponse.thresholds: expected array items schema"
+    )
+    branches = items.get("oneOf")
+    assert isinstance(branches, list), (
+        "BudgetStatusResponse.thresholds: expected oneOf state components"
+    )
+    expected_refs = {
+        f"#/components/schemas/{component}"
+        for component in _BUDGET_THRESHOLD_COMPONENTS.values()
+    }
+    actual_refs = [
+        branch.get("$ref") if isinstance(branch, dict) else None for branch in branches
+    ]
+    assert (
+        len(actual_refs) == len(expected_refs) and set(actual_refs) == expected_refs
+    ), "BudgetStatusResponse.thresholds: threshold state component refs differ"
+
+    discriminator = items.get("discriminator")
+    assert isinstance(discriminator, dict), (
+        "BudgetStatusResponse.thresholds: discriminator is missing"
+    )
+    assert discriminator.get("propertyName") == "type", (
+        "BudgetStatusResponse.thresholds: discriminator propertyName must be type"
+    )
+    expected_mapping = {
+        rule_type: f"#/components/schemas/{component}"
+        for rule_type, component in _BUDGET_THRESHOLD_COMPONENTS.items()
+    }
+    assert discriminator.get("mapping") == expected_mapping, (
+        "BudgetStatusResponse.thresholds: discriminator mapping differs"
+    )
+
+    _assert_component_ref(
+        status_properties["budget_period"],
+        expected_component="BudgetPeriod",
+        context="BudgetStatusResponse.budget_period",
+    )
+    _assert_component_ref(
+        status_properties["budget_mode"],
+        expected_component="BudgetMode",
+        context="BudgetStatusResponse.budget_mode",
+    )
+    _assert_nullable_component_ref(
+        status_properties["sub_period"],
+        expected_component="BudgetPeriod",
+        context="BudgetStatusResponse.sub_period",
+    )
+    _assert_component_ref(
+        status_properties["constraints"],
+        expected_component="BudgetConstraintsResponse",
+        context="BudgetStatusResponse.constraints",
+    )
+    for component in _BUDGET_THRESHOLD_COMPONENTS.values():
+        _assert_component_ref(
+            schemas[component]["properties"]["routing"],
+            expected_component="AlertRouting",
+            context=f"{component}.routing",
+        )
+
+    alert_routing = schemas["AlertRouting"]["properties"]
+    channels = alert_routing["channels"].get("items")
+    assert isinstance(channels, dict), "AlertRouting.channels: items schema is missing"
+    _assert_component_ref(
+        channels,
+        expected_component="RoutingChannel",
+        context="AlertRouting.channels",
+    )
+
+    _assert_nullable_component_ref(
+        alert_routing["muted"],
+        expected_component="RoutingMuted",
+        context="AlertRouting.muted",
+    )
+
+
 def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
     """Validate the explicit response-read registry against the snapshot."""
     schemas = snapshot["components"]["schemas"]
@@ -240,6 +365,7 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
                 registered_path,
                 component,
             )
+    assert_budget_nested_response_bindings(snapshot)
 
 
 def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
@@ -423,6 +549,122 @@ def test_all_of_without_consumed_path_trips_response_subset_guard() -> None:
         match=r"Error402Response\.detail\.code.*no allOf branch",
     ):
         assert_response_reads_exist(mutated)
+
+
+def test_replacing_every_budget_threshold_state_ref_trips_response_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    thresholds = mutated["components"]["schemas"]["BudgetStatusResponse"]["properties"][
+        "thresholds"
+    ]
+    for branch in thresholds["items"]["oneOf"]:
+        branch["$ref"] = "#/components/schemas/UnrelatedResponse"
+
+    with pytest.raises(AssertionError, match="BudgetStatusResponse.thresholds"):
+        assert_response_reads_exist(mutated)
+
+
+@pytest.mark.parametrize(
+    ("rule_type", "component"),
+    list(_BUDGET_THRESHOLD_COMPONENTS.items()),
+)
+@pytest.mark.parametrize(
+    "mutation", ["replace_ref", "remove_ref", "replace_mapping", "remove_mapping"]
+)
+def test_each_budget_threshold_component_binding_mutation_trips_guard(
+    rule_type: str,
+    component: str,
+    mutation: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    items = mutated["components"]["schemas"]["BudgetStatusResponse"]["properties"][
+        "thresholds"
+    ]["items"]
+    expected_ref = f"#/components/schemas/{component}"
+    if mutation in {"replace_ref", "remove_ref"}:
+        branch = next(
+            candidate
+            for candidate in items["oneOf"]
+            if candidate.get("$ref") == expected_ref
+        )
+        if mutation == "replace_ref":
+            branch["$ref"] = "#/components/schemas/UnrelatedResponse"
+        else:
+            branch.pop("$ref")
+    elif mutation == "replace_mapping":
+        items["discriminator"]["mapping"][rule_type] = (
+            "#/components/schemas/UnrelatedResponse"
+        )
+    else:
+        items["discriminator"]["mapping"].pop(rule_type)
+
+    with pytest.raises(AssertionError, match="BudgetStatusResponse.thresholds"):
+        assert_budget_nested_response_bindings(mutated)
+
+
+@pytest.mark.parametrize("mutation", ["replace", "remove"])
+def test_budget_threshold_discriminator_property_name_mutation_trips_guard(
+    mutation: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    discriminator = mutated["components"]["schemas"]["BudgetStatusResponse"][
+        "properties"
+    ]["thresholds"]["items"]["discriminator"]
+    if mutation == "replace":
+        discriminator["propertyName"] = "kind"
+    else:
+        discriminator.pop("propertyName")
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetStatusResponse\.thresholds.*propertyName",
+    ):
+        assert_budget_nested_response_bindings(mutated)
+
+
+@pytest.mark.parametrize(
+    ("parent", "field", "shape", "expected_component"),
+    [
+        ("BudgetStatusResponse", "budget_period", "direct", "BudgetPeriod"),
+        ("BudgetStatusResponse", "budget_mode", "direct", "BudgetMode"),
+        ("BudgetStatusResponse", "sub_period", "nullable", "BudgetPeriod"),
+        (
+            "BudgetStatusResponse",
+            "constraints",
+            "direct",
+            "BudgetConstraintsResponse",
+        ),
+        *[
+            (component, "routing", "direct", "AlertRouting")
+            for component in _BUDGET_THRESHOLD_COMPONENTS.values()
+        ],
+        ("AlertRouting", "channels", "array", "RoutingChannel"),
+        ("AlertRouting", "muted", "nullable", "RoutingMuted"),
+    ],
+)
+@pytest.mark.parametrize("mutation", ["replace", "remove"])
+def test_consumed_nested_component_ref_mutation_trips_guard(
+    parent: str,
+    field: str,
+    shape: str,
+    expected_component: str,
+    mutation: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    field_schema = mutated["components"]["schemas"][parent]["properties"][field]
+    if shape == "array":
+        target = field_schema["items"]
+    elif shape == "nullable":
+        target = next(branch for branch in field_schema["anyOf"] if "$ref" in branch)
+    else:
+        target = field_schema
+    assert target["$ref"] == f"#/components/schemas/{expected_component}"
+    if mutation == "replace":
+        target["$ref"] = "#/components/schemas/UnrelatedResponse"
+    else:
+        target.pop("$ref")
+
+    with pytest.raises(AssertionError, match=rf"{parent}\.{field}"):
+        assert_budget_nested_response_bindings(mutated)
 
 
 @pytest.mark.parametrize(
