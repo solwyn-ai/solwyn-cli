@@ -11,7 +11,7 @@ from solwyn_cli.config import (
     ConfigLoadError,
     ConfigWriteError,
     load_config,
-    save_config,
+    update_config_value,
 )
 
 
@@ -51,13 +51,15 @@ def set_config_value(
 ) -> None:
     """Validate and persist one configuration value."""
     validated_key = _validate_key(key)
-    config = _load_config_for_command()
     try:
-        updated = Config.model_validate({**config.model_dump(), validated_key: value})
-        save_config(updated)
+        update_config_value(validated_key, value)
     except ValidationError:
         raise typer.BadParameter(
             f"Invalid value for {validated_key}.", param_hint="value"
+        ) from None
+    except ConfigLoadError:
+        raise typer.BadParameter(
+            "Could not load configuration.", param_hint="config"
         ) from None
     except ConfigWriteError:
         raise typer.BadParameter(
