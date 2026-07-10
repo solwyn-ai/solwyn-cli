@@ -357,6 +357,65 @@ def test_jwt_refresh_uses_client_user_agent_and_timeout_then_retries_once(
     }
 
 
+def test_explicit_jwt_client_reuses_rotated_pair_on_next_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = auth.JwtCredential(
+        access_token="old-access-secret",
+        refresh_token="single-use-refresh-secret",
+    )
+    authorization_headers: list[str | None] = []
+    refresh_attempts = 0
+
+    def store(access_token: str, refresh_token: str) -> auth.JwtCredential:
+        return auth.JwtCredential(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+
+    monkeypatch.setattr(auth, "store_jwt_pair", store)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal refresh_attempts
+        if request.url.path.endswith("/auth/refresh"):
+            refresh_attempts += 1
+            if refresh_attempts > 1:
+                return httpx.Response(
+                    401,
+                    json={"detail": "Refresh token was already consumed."},
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "new-access-secret",
+                    "refresh_token": "new-refresh-secret",
+                    "token_type": "bearer",
+                },
+            )
+        authorization = request.headers.get("Authorization")
+        authorization_headers.append(authorization)
+        if authorization == "Bearer old-access-secret":
+            return httpx.Response(401, json={"detail": "Expired access token."})
+        return httpx.Response(200, json={"ok": True})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=original,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        first = client.request("GET", "/api/v1/account/me")
+        second = client.request("GET", "/api/v1/projects")
+
+    assert first.json() == {"ok": True}
+    assert second.json() == {"ok": True}
+    assert refresh_attempts == 1
+    assert authorization_headers == [
+        "Bearer old-access-secret",
+        "Bearer new-access-secret",
+        "Bearer new-access-secret",
+    ]
+
+
 @pytest.mark.parametrize(
     ("retry_after", "now", "expected_wait"),
     [

@@ -12,6 +12,7 @@ import httpx
 from solwyn_cli import __version__
 from solwyn_cli.auth import (
     AuthError,
+    JwtCredential,
     ResolvedCredential,
     request_with_refresh_retry,
     resolve_credential,
@@ -228,6 +229,10 @@ class SolwynClient:
         credential = self._resolve_credential()
         retry_state = [False]
 
+        def retain_rotated_credential(rotated: JwtCredential) -> None:
+            if self._credential is not _UNSET:
+                self._credential = rotated
+
         def send(resolved: ResolvedCredential) -> httpx.Response:
             headers = request_headers.copy()
             headers["Authorization"] = f"Bearer {resolved.bearer_value()}"
@@ -245,6 +250,7 @@ class SolwynClient:
                 api_url=self._api_url,
                 credential=credential,
                 request=send,
+                on_credential_rotated=retain_rotated_credential,
             )
         except httpx.HTTPError:
             raise ApiError(

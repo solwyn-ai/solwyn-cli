@@ -97,6 +97,7 @@ class _RefreshRequest(RefreshRequest):
 
 ResolvedCredential: TypeAlias = ProjectKeyCredential | JwtCredential
 AuthenticatedRequest: TypeAlias = Callable[[ResolvedCredential], httpx.Response]
+CredentialRotation: TypeAlias = Callable[[JwtCredential], None]
 
 
 def _project_key_credential(
@@ -216,6 +217,7 @@ def request_with_refresh_retry(
     api_url: str,
     credential: ResolvedCredential,
     request: AuthenticatedRequest,
+    on_credential_rotated: CredentialRotation | None = None,
 ) -> httpx.Response:
     """Run a request and make at most one JWT refresh plus one retry on 401."""
     response = request(credential)
@@ -242,6 +244,8 @@ def request_with_refresh_retry(
         token_response.access_token.get_secret_value(),
         token_response.refresh_token.get_secret_value(),
     )
+    if on_credential_rotated is not None:
+        on_credential_rotated(rotated)
     retry_response = request(rotated)
     if retry_response.status_code == httpx.codes.UNAUTHORIZED:
         raise AuthError("Authentication failed after refresh. Log in again.")
