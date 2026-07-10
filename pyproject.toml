@@ -24,6 +24,12 @@ dependencies = [
   "typer>=0.12",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ruff>=0.12",
+]
+
 [project.scripts]
 solwyn = "solwyn_cli.main:app"
 solwyn-cli = "solwyn_cli.main:app"
