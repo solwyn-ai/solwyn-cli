@@ -45,6 +45,95 @@ def _resolve_ref(document: dict[str, Any], reference: str) -> dict[str, Any]:
     return node
 
 
+def _effective_object_contract(
+    schema: dict[str, Any],
+    document: dict[str, Any],
+    active_refs: frozenset[str],
+) -> tuple[dict[str, Any], set[str], bool]:
+    """Flatten object properties and requiredness composed with allOf."""
+    reference = schema.get("$ref")
+    if isinstance(reference, str):
+        if reference in active_refs:
+            return {}, set(), False
+        return _effective_object_contract(
+            _resolve_ref(document, reference),
+            document,
+            active_refs | {reference},
+        )
+
+    raw_properties = schema.get("properties")
+    properties = dict(raw_properties) if isinstance(raw_properties, dict) else {}
+    required = set(schema.get("required", []))
+    is_object = isinstance(raw_properties, dict) or schema.get("type") == "object"
+
+    for branch in schema.get("allOf", []):
+        branch_properties, branch_required, branch_is_object = (
+            _effective_object_contract(branch, document, active_refs)
+        )
+        is_object = is_object or branch_is_object
+        required.update(branch_required)
+        for field, field_schema in branch_properties.items():
+            if field in properties and properties[field] != field_schema:
+                properties[field] = {"allOf": [properties[field], field_schema]}
+            else:
+                properties[field] = field_schema
+    return properties, required, is_object
+
+
+def _object_shapes(
+    schema: dict[str, Any],
+    document: dict[str, Any],
+    path: str,
+    active_refs: frozenset[str] = frozenset(),
+) -> dict[str, tuple[set[str], set[str]]]:
+    """Collect every nested object field and required set by stable path."""
+    reference = schema.get("$ref")
+    if isinstance(reference, str):
+        if reference in active_refs:
+            return {}
+        return _object_shapes(
+            _resolve_ref(document, reference),
+            document,
+            path,
+            active_refs | {reference},
+        )
+
+    shapes: dict[str, tuple[set[str], set[str]]] = {}
+
+    def merge(nested: dict[str, tuple[set[str], set[str]]]) -> None:
+        for nested_path, shape in nested.items():
+            if nested_path in shapes:
+                assert shapes[nested_path] == shape, (
+                    f"{nested_path}: ambiguous object shapes in one schema"
+                )
+            shapes[nested_path] = shape
+
+    properties, required, is_object = _effective_object_contract(
+        schema, document, active_refs
+    )
+    if is_object:
+        shapes[path] = (set(properties), required)
+        for field, field_schema in properties.items():
+            merge(
+                _object_shapes(
+                    field_schema,
+                    document,
+                    f"{path}.{field}" if path else field,
+                    active_refs,
+                )
+            )
+
+    items = schema.get("items")
+    if isinstance(items, dict):
+        merge(_object_shapes(items, document, f"{path}[]", active_refs))
+
+    for branch_key in ("oneOf", "anyOf"):
+        for index, branch in enumerate(schema.get(branch_key, [])):
+            branch_path = f"{path}<{_branch_identity(branch, index)}>"
+            merge(_object_shapes(branch, document, branch_path, active_refs))
+    return shapes
+
+
 def _enum_domains(
     schema: dict[str, Any],
     document: dict[str, Any],
@@ -110,21 +199,25 @@ def assert_request_mirrors_match(snapshot: dict[str, Any]) -> None:
     for mirror, component in REQUEST_MIRRORS.items():
         local = mirror.model_json_schema()
         remote = _schema(snapshot, component)
-        local_fields = set(local.get("properties", {}))
-        remote_fields = set(remote.get("properties", {}))
-        assert local_fields == remote_fields, (
-            f"{component}: field set differs; "
-            f"CLI-only={sorted(local_fields - remote_fields)}, "
-            f"snapshot-only={sorted(remote_fields - local_fields)}"
-        )
-
-        local_required = set(local.get("required", []))
-        remote_required = set(remote.get("required", []))
-        assert local_required == remote_required, (
-            f"{component}: required set differs; "
-            f"CLI-only={sorted(local_required - remote_required)}, "
-            f"snapshot-only={sorted(remote_required - local_required)}"
-        )
+        local_shapes = _object_shapes(local, local, component)
+        remote_shapes = _object_shapes(remote, snapshot, component)
+        for path in sorted(set(local_shapes) | set(remote_shapes)):
+            assert path in local_shapes and path in remote_shapes, (
+                f"{path}: object path missing; "
+                f"CLI={path in local_shapes}, snapshot={path in remote_shapes}"
+            )
+            local_fields, local_required = local_shapes[path]
+            remote_fields, remote_required = remote_shapes[path]
+            assert local_fields == remote_fields, (
+                f"{path}: field set differs; "
+                f"CLI-only={sorted(local_fields - remote_fields)}, "
+                f"snapshot-only={sorted(remote_fields - local_fields)}"
+            )
+            assert local_required == remote_required, (
+                f"{path}: required set differs; "
+                f"CLI-only={sorted(local_required - remote_required)}, "
+                f"snapshot-only={sorted(remote_required - local_required)}"
+            )
 
         local_domains = _enum_domains(local, local, component)
         remote_domains = _enum_domains(remote, snapshot, component)
@@ -162,6 +255,50 @@ def test_changed_request_requiredness_trips_drift_guard() -> None:
 
     with pytest.raises(AssertionError, match="LoginRequest: required set"):
         assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize("mutation", ["removed", "added"])
+def test_nested_token_detail_field_drift_trips_guard(mutation: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    properties = _schema(mutated, "TokenDetails")["properties"]
+    if mutation == "removed":
+        properties.pop("tool_use_input_tokens")
+    else:
+        properties["future_tokens"] = {"type": "integer"}
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetConfirmRequest\.token_details: field set",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize("mutation", ["removed", "added"])
+def test_changed_nested_threshold_requiredness_trips_drift_guard(
+    mutation: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    required = _schema(mutated, "DailyAnomalyConfig")["required"]
+    if mutation == "removed":
+        required.remove("multiplier")
+    else:
+        required.append("lookback_days")
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetUpdateRequest\.thresholds\[\]<DailyAnomalyConfig>: "
+        r"required set",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+def test_equivalent_all_of_object_shape_is_traversed() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schemas = mutated["components"]["schemas"]
+    token_details = schemas["TokenDetails"]
+    schemas["TokenDetails"] = {"allOf": [token_details]}
+
+    assert_request_mirrors_match(mutated)
 
 
 def test_changed_nested_request_enum_trips_drift_guard() -> None:
