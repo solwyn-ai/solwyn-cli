@@ -1,0 +1,1 @@
+{"schema":"solwyn.error.v1","code":"quota_exceeded","message":"Monthly analytics quota exceeded.","hint":"Review usage in the dashboard.","detail":{"limit":5000,"used":5001,"period":{"month":"2026-07"}}}
