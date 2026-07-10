@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a reproducible problem with the Solwyn CLI
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the Solwyn CLI.
+
+        **Protect your data:** Do not include credentials, Solwyn or provider API keys,
+        prompts, responses, request or response bodies, or any other sensitive or private
+        data. Redact secrets and identifying values before submitting this report.
+
+  - type: input
+    id: version
+    attributes:
+      label: Solwyn CLI version
+      description: Run `solwyn --version`. This command does not print credentials.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Redacted command or subcommand
+      description: Include only the command shape. Replace project IDs and other private values with placeholders, and never include credentials.
+      placeholder: "solwyn costs --project <redacted>"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Describe the smallest safe reproduction. Do not paste prompts, responses, payloads, credentials, API keys, or private data.
+      placeholder: |
+        1. Configure a test project using redacted values.
+        2. Run the command shown above.
+        3. Observe the behavior described below.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+      description: Describe the result and any sanitized error text. Remove secrets, payloads, prompts, responses, and identifying data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected the CLI to do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your operating system, Python version, shell, and installation method. Do not include environment variable values.
+      placeholder: |
+        - OS: macOS 15
+        - Python: 3.12
+        - Shell: zsh
+        - Install method: uv tool
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, API keys, prompts, responses, payloads, and all other sensitive or private data from this report.
+          required: true
+
+  - type: checkboxes
+    id: existing_issues
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched the existing issues and did not find a matching report.
+          required: true
