@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
+from click.utils import strip_ansi
 
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
@@ -72,15 +73,17 @@ def reset_fake_client() -> Iterator[None]:
 def test_auth_commands_are_registered_without_secret_argv_parameters() -> None:
     root_help = runner.invoke(app, ["--help"])
     login_help = runner.invoke(app, ["login", "--help"])
+    root_help_text = strip_ansi(root_help.stdout)
+    login_help_text = strip_ansi(login_help.stdout)
 
     assert root_help.exit_code == 0
-    assert "login" in root_help.stdout
-    assert "logout" in root_help.stdout
-    assert "whoami" in root_help.stdout
+    assert "login" in root_help_text
+    assert "logout" in root_help_text
+    assert "whoami" in root_help_text
     assert login_help.exit_code == 0
-    assert "--with-key" in login_help.stdout
-    assert "--password" not in login_help.stdout
-    assert "--api-key" not in login_help.stdout
+    assert "--with-key" in login_help_text
+    assert "--password" not in login_help_text
+    assert "--api-key" not in login_help_text
 
 
 @pytest.mark.parametrize(
