@@ -191,6 +191,7 @@ def test_jwt_refresh_uses_client_user_agent_and_timeout_then_retries_once(
     [
         ("3", datetime(2026, 7, 10, 12, 0, tzinfo=UTC), 3.0),
         ("99", datetime(2026, 7, 10, 12, 0, tzinfo=UTC), 10.0),
+        ("9" * 400, datetime(2026, 7, 10, 12, 0, tzinfo=UTC), 10.0),
         ("-4", datetime(2026, 7, 10, 12, 0, tzinfo=UTC), 0.0),
         (
             format_datetime(

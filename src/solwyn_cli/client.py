@@ -32,7 +32,7 @@ def _retry_after_seconds(value: str | None, now: datetime) -> float:
     if value is None:
         return 0.0
     try:
-        delay = float(int(value.strip()))
+        integer_delay = int(value.strip())
     except ValueError:
         try:
             retry_at = parsedate_to_datetime(value)
@@ -40,10 +40,11 @@ def _retry_after_seconds(value: str | None, now: datetime) -> float:
                 retry_at = retry_at.replace(tzinfo=UTC)
             if now.tzinfo is None:
                 now = now.replace(tzinfo=UTC)
-            delay = (retry_at - now).total_seconds()
         except (TypeError, ValueError, OverflowError):
             return 0.0
-    return min(MAX_RETRY_AFTER_SECONDS, max(0.0, delay))
+        delay = (retry_at - now).total_seconds()
+        return min(MAX_RETRY_AFTER_SECONDS, max(0.0, delay))
+    return float(min(int(MAX_RETRY_AFTER_SECONDS), max(0, integer_delay)))
 
 
 class SolwynClient:
