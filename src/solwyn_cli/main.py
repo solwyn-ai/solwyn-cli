@@ -9,6 +9,7 @@ from solwyn_cli import __version__
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import costs
 from solwyn_cli.commands.login import login, logout
+from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.status import status
 from solwyn_cli.commands.whoami import whoami
 from solwyn_cli.config import ConfigLoadError
@@ -19,6 +20,7 @@ app = typer.Typer(
     add_completion=False, invoke_without_command=True, no_args_is_help=True
 )
 app.add_typer(config_app, name="config")
+app.add_typer(projects_app, name="projects")
 app.command("costs")(costs)
 app.command("login")(login)
 app.command("logout")(logout)

@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,14 @@ RESPONSE_READS = {
         "display_name",
         "subscription_tier",
     ),
-    "ProjectResponse": ("id", "name"),
+    "ProjectResponse": (
+        "id",
+        "name",
+        "budget_limit",
+        "budget_period",
+        "budget_mode",
+        "created_at",
+    ),
     "BudgetStatusResponse": (
         "project_id",
         "budget_limit",
@@ -60,6 +68,10 @@ RESPONSE_READS = {
         "unpriced_call_count",
         "local_call_count",
     ),
+}
+PROJECT_RESPONSE_OPERATIONS = {
+    "/api/v1/projects": "array",
+    "/api/v1/projects/{project_id}": "object",
 }
 
 
@@ -140,12 +152,49 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
             )
 
 
+def assert_project_response_operations(snapshot: dict[str, Any]) -> None:
+    """Require both consumed project GETs to keep returning ProjectResponse."""
+    for path, shape in PROJECT_RESPONSE_OPERATIONS.items():
+        response_schema = snapshot["paths"][path]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        project_schema = (
+            response_schema.get("items") if shape == "array" else response_schema
+        )
+        assert isinstance(project_schema, dict), (
+            f"GET {path}: expected {shape} ProjectResponse payload"
+        )
+        assert project_schema.get("$ref") == ("#/components/schemas/ProjectResponse"), (
+            f"GET {path}: response no longer uses ProjectResponse"
+        )
+
+
 def _snapshot() -> dict[str, Any]:
     return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
 
 
 def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
+
+
+def test_both_project_operations_return_the_consumed_response_component() -> None:
+    assert_project_response_operations(_snapshot())
+
+
+@pytest.mark.parametrize("path", PROJECT_RESPONSE_OPERATIONS)
+def test_project_operation_response_drift_trips_guard(path: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schema = mutated["paths"][path]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    target = schema["items"] if path == "/api/v1/projects" else schema
+    target["$ref"] = "#/components/schemas/MeResponse"
+
+    with pytest.raises(
+        AssertionError,
+        match=rf"GET {re.escape(path)}.*ProjectResponse",
+    ):
+        assert_project_response_operations(mutated)
 
 
 def test_removed_consumed_union_field_trips_response_subset_guard() -> None:
@@ -200,6 +249,10 @@ def test_all_of_without_consumed_path_trips_response_subset_guard() -> None:
         ("TokenResponse", "token_type"),
         ("MeResponse", "display_name"),
         ("ProjectResponse", "name"),
+        ("ProjectResponse", "budget_limit"),
+        ("ProjectResponse", "budget_period"),
+        ("ProjectResponse", "budget_mode"),
+        ("ProjectResponse", "created_at"),
         ("BudgetStatusResponse", "project_id"),
         ("BudgetStatusResponse", "budget_limit"),
         ("BudgetStatusResponse", "current_usage"),

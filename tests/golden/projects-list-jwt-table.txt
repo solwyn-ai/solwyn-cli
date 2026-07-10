@@ -1,0 +1,3 @@
+ID          Name   Budget  Period   Mode                     Created
+proj_alpha  Alpha  100.00  monthly  hard_deny   2026-07-09T14:30:00Z
+proj_beta   Beta    25.50  weekly   alert_only  2026-07-10T08:15:30Z
