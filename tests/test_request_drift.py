@@ -273,11 +273,20 @@ def _assert_string_parameter_domain(
             f"CLI={sorted(values)}, snapshot={sorted(schema['enum'])}"
         )
     pattern = schema.get("pattern")
-    if isinstance(pattern, str) and (match := _FINITE_ALTERNATION.fullmatch(pattern)):
-        assert set(match.group(1).split("|")) == values, (
-            f"{context}: allowed values differ; "
-            f"CLI={sorted(values)}, snapshot={sorted(match.group(1).split('|'))}"
-        )
+    if isinstance(pattern, str):
+        try:
+            compiled_pattern = re.compile(pattern)
+        except re.error:
+            raise AssertionError(f"{context}: invalid pattern") from None
+        for value in values:
+            assert compiled_pattern.search(value) is not None, (
+                f"{context}: pattern rejects frozen value {value!r}"
+            )
+        if match := _FINITE_ALTERNATION.fullmatch(pattern):
+            assert set(match.group(1).split("|")) == values, (
+                f"{context}: allowed values differ; "
+                f"CLI={sorted(values)}, snapshot={sorted(match.group(1).split('|'))}"
+            )
 
 
 def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
@@ -384,6 +393,36 @@ def test_costs_query_allowed_value_drift_trips_guard() -> None:
     parameter["schema"]["enum"] = ["7d", "30d", "90d"]
 
     with pytest.raises(AssertionError, match="range: allowed values differ"):
+        assert_costs_query_contract(mutated)
+
+
+def test_costs_query_noncanonical_restrictive_pattern_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="range",
+    )
+    parameter["schema"]["pattern"] = "^(?:7d|30d)$"
+
+    with pytest.raises(AssertionError, match="range: pattern rejects frozen value"):
+        assert_costs_query_contract(mutated)
+
+
+def test_costs_query_unparseable_pattern_fails_closed() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="range",
+    )
+    parameter["schema"]["pattern"] = "["
+
+    with pytest.raises(AssertionError, match="range: invalid pattern"):
         assert_costs_query_contract(mutated)
 
 
