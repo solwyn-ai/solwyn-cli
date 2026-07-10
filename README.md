@@ -2,6 +2,15 @@
 
 The command-line client for Solwyn. This repository is private while the first release is prepared.
 
+## Installation
+
+Before the first release, install Solwyn CLI from a local checkout:
+
+```console
+uv tool install .
+solwyn --version
+```
+
 ## Development
 
 Solwyn CLI requires Python 3.11 or newer and uses [uv](https://docs.astral.sh/uv/) for dependency and environment management.
