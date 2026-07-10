@@ -132,6 +132,123 @@ def test_absolute_request_url_is_rejected_without_sending_credentials() -> None:
     assert VALID_KEY not in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../secrets",
+        "api/v1/./costs",
+        "api/v1/../secrets",
+        "%2e%2e/secrets",
+        "api%2f..%2fsecrets",
+        "api%5c..%5csecrets",
+        "%252e%252e%252fsecrets",
+    ],
+)
+def test_traversal_paths_are_rejected_before_credentials_or_transport(
+    path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolver_calls = 0
+    transport_calls = 0
+
+    def resolve() -> auth.ProjectKeyCredential:
+        nonlocal resolver_calls
+        resolver_calls += 1
+        return _project_key()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal transport_calls
+        transport_calls += 1
+        return httpx.Response(204)
+
+    monkeypatch.setattr(client_module, "resolve_credential", resolve)
+
+    with SolwynClient(
+        api_url=API_URL,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request("GET", path)
+
+    assert exc_info.value.code == "invalid_request"
+    assert path not in str(exc_info.value)
+    assert resolver_calls == 0
+    assert transport_calls == 0
+
+
+def test_valid_dot_like_path_and_query_values_preserve_the_base_prefix() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(204)
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=_project_key(),
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        response = client.request(
+            "GET",
+            "api/.well-known?next=../valid&encoded=%2e%2e%2fvalid",
+        )
+
+    assert response.status_code == 204
+    assert len(requests) == 1
+    assert requests[0].url.path == "/prefix/api/.well-known"
+    assert requests[0].url.params["next"] == "../valid"
+    assert requests[0].url.params["encoded"] == "../valid"
+
+
+@pytest.mark.parametrize(
+    "request_options",
+    [
+        {"timeout": None},
+        {"timeout": 0.1},
+        {"timeout": httpx.Timeout(1.0)},
+        {
+            "extensions": {
+                "timeout": {
+                    "connect": None,
+                    "read": None,
+                    "write": None,
+                    "pool": None,
+                }
+            }
+        },
+    ],
+)
+def test_timeout_overrides_are_rejected_before_credentials_or_transport(
+    request_options: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolver_calls = 0
+    transport_calls = 0
+
+    def resolve() -> auth.ProjectKeyCredential:
+        nonlocal resolver_calls
+        resolver_calls += 1
+        return _project_key()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal transport_calls
+        transport_calls += 1
+        return httpx.Response(204)
+
+    monkeypatch.setattr(client_module, "resolve_credential", resolve)
+
+    with SolwynClient(
+        api_url=API_URL,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request("GET", "api/v1/costs", **request_options)
+
+    assert exc_info.value.code == "invalid_request"
+    assert resolver_calls == 0
+    assert transport_calls == 0
+
+
 def test_jwt_refresh_uses_client_user_agent_and_timeout_then_retries_once(
     requests: list[httpx.Request],
     monkeypatch: pytest.MonkeyPatch,

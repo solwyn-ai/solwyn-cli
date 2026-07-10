@@ -1,11 +1,11 @@
 """Synchronous authenticated HTTP client with bounded retries."""
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -26,6 +26,18 @@ POOL_TIMEOUT_SECONDS = 5.0
 MAX_RETRY_AFTER_SECONDS = 10.0
 
 _UNSET = object()
+
+
+def _contains_dot_segment(path: str) -> bool:
+    decoded_path = path
+    while True:
+        normalized_path = decoded_path.replace("\\", "/")
+        if any(segment in {".", ".."} for segment in normalized_path.split("/")):
+            return True
+        next_path = unquote(decoded_path)
+        if next_path == decoded_path:
+            return False
+        decoded_path = next_path
 
 
 def _retry_after_seconds(value: str | None, now: datetime) -> float:
@@ -114,6 +126,25 @@ class SolwynClient:
                 status_code=None,
                 code="invalid_request",
                 message="API request paths must be relative.",
+                hint=None,
+                detail=None,
+            )
+        if _contains_dot_segment(parsed_path.path):
+            raise ApiError(
+                status_code=None,
+                code="invalid_request",
+                message="API request path is invalid.",
+                hint=None,
+                detail=None,
+            )
+        request_extensions = kwargs.get("extensions")
+        if "timeout" in kwargs or (
+            isinstance(request_extensions, Mapping) and "timeout" in request_extensions
+        ):
+            raise ApiError(
+                status_code=None,
+                code="invalid_request",
+                message="Request timeouts are fixed by the CLI.",
                 hint=None,
                 detail=None,
             )
