@@ -350,6 +350,28 @@ def test_costs_query_requiredness_drift_trips_guard() -> None:
         assert_costs_query_contract(mutated)
 
 
+@pytest.mark.parametrize(
+    ("name", "replacement"),
+    [("range", "30d"), ("group_by", "day")],
+)
+def test_costs_query_default_drift_trips_guard(
+    name: str,
+    replacement: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name=name,
+    )
+    parameter["schema"]["default"] = replacement
+
+    with pytest.raises(AssertionError, match=rf"{name}: default differs"):
+        assert_costs_query_contract(mutated)
+
+
 def test_costs_query_allowed_value_drift_trips_guard() -> None:
     mutated = copy.deepcopy(_snapshot())
     parameter = _operation_parameter(
