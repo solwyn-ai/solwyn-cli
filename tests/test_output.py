@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from golden.harness import assert_matches_golden
 from solwyn_cli.errors import ApiError
 from solwyn_cli.output import (
     OutputEngine,
@@ -28,12 +29,25 @@ class ResponseModel(BaseModel):
     observed_at: datetime
 
 
-def _golden(name: str) -> str:
-    return (GOLDEN_DIR / name).read_text(encoding="utf-8")
-
-
 def _readable_ansi(value: str) -> str:
     return value.replace("\x1b", "<ESC>")
+
+
+def test_golden_harness_shows_unified_diff_without_rewriting(
+    tmp_path: Path,
+) -> None:
+    golden = tmp_path / "expected.txt"
+    golden.write_text("expected line\n", encoding="utf-8")
+
+    with pytest.raises(AssertionError) as exc_info:
+        assert_matches_golden("actual line\n", golden)
+
+    message = str(exc_info.value)
+    assert f"--- {golden}" in message
+    assert "+++ actual output" in message
+    assert "-expected line" in message
+    assert "+actual line" in message
+    assert golden.read_text(encoding="utf-8") == "expected line\n"
 
 
 def _engine(
@@ -179,7 +193,7 @@ def test_success_json_matches_golden_and_accepts_pydantic_payload() -> None:
 
     engine.write_success(schema="solwyn.costs.summary.v1", data=response)
 
-    assert stdout.getvalue() == _golden("success.json")
+    assert_matches_golden(stdout.getvalue(), GOLDEN_DIR / "success.json")
     assert stderr.getvalue() == ""
     assert "\x1b" not in stdout.getvalue()
 
@@ -212,7 +226,7 @@ def test_error_json_matches_golden_with_exact_keys_and_nested_detail() -> None:
     engine.write_error(error)
 
     assert stdout.getvalue() == ""
-    assert stderr.getvalue() == _golden("error.json")
+    assert_matches_golden(stderr.getvalue(), GOLDEN_DIR / "error.json")
     assert set(json.loads(stderr.getvalue())) == {
         "schema",
         "code",
@@ -274,7 +288,7 @@ def test_human_table_matches_tty_and_color_goldens(
         table=_table(),
     )
 
-    assert _readable_ansi(stdout.getvalue()) == _golden(golden_name)
+    assert_matches_golden(_readable_ansi(stdout.getvalue()), GOLDEN_DIR / golden_name)
     assert stderr.getvalue() == ""
 
 
@@ -293,7 +307,7 @@ def test_human_error_and_hint_match_golden_without_dumping_detail() -> None:
     engine.write_error(error)
 
     assert stdout.getvalue() == ""
-    assert stderr.getvalue() == _golden("human-error.txt")
+    assert_matches_golden(stderr.getvalue(), GOLDEN_DIR / "human-error.txt")
     assert "never-render-this" not in stderr.getvalue()
 
 

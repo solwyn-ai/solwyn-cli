@@ -1,0 +1,1 @@
+"""Golden-output test support."""
