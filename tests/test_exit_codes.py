@@ -58,6 +58,8 @@ def test_typed_errors_map_to_the_frozen_exit_contract(
     assert exit_code_for_error(error, semantic=semantic) is expected
 
 
-@pytest.mark.parametrize("code", ["upgrade_required", "quota_exceeded"])
+@pytest.mark.parametrize(
+    "code", ["upgrade_required", "quota_exceeded", "project_limit_reached"]
+)
 def test_entitlement_402_never_infers_budget_denial(code: str) -> None:
     assert exit_code_for_error(_api_error(402, code)) is ExitCode.GENERIC_ERROR

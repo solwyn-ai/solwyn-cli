@@ -39,15 +39,38 @@ def _assert_field_path(
         _assert_field_path(target, document, segments, registered_path, component)
         return
 
-    union = schema.get("oneOf") or schema.get("anyOf")
+    if not segments:
+        return
+
+    all_of = schema.get("allOf")
+    if all_of is not None:
+        candidates = list(all_of)
+        if schema.get("properties"):
+            candidates.insert(0, {"properties": schema["properties"]})
+        for branch in candidates:
+            try:
+                _assert_field_path(branch, document, segments, registered_path, context)
+            except AssertionError:
+                continue
+            return
+        raise AssertionError(
+            f"{registered_path}: no allOf branch provides the consumed field "
+            f"in {context}"
+        )
+
+    union = schema.get("oneOf")
+    if union is None:
+        union = schema.get("anyOf")
     if union is not None:
         branches = [branch for branch in union if branch.get("type") != "null"]
+        if not branches:
+            raise AssertionError(
+                f"{registered_path}: no traversable non-null branch in {context}"
+            )
         for branch in branches:
             _assert_field_path(branch, document, segments, registered_path, context)
         return
 
-    if not segments:
-        return
     field, *remaining = segments
     properties = schema.get("properties", {})
     if field not in properties:
@@ -95,5 +118,38 @@ def test_removed_consumed_union_field_trips_response_subset_guard() -> None:
     with pytest.raises(
         AssertionError,
         match=r"Error402Response\.detail\.message.*QuotaExceededDetail",
+    ):
+        assert_response_reads_exist(mutated)
+
+
+def test_union_without_traversable_branch_trips_response_subset_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    detail = mutated["components"]["schemas"]["Error402Response"]["properties"]
+    detail["detail"] = {"oneOf": [{"type": "null"}]}
+
+    with pytest.raises(
+        AssertionError,
+        match=r"Error402Response\.detail\.code.*no traversable non-null branch",
+    ):
+        assert_response_reads_exist(mutated)
+
+
+def test_all_of_wrapper_is_traversed_for_registered_reads() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schemas = mutated["components"]["schemas"]
+    original = schemas["Error402Response"]
+    schemas["Error402Response"] = {"allOf": [original]}
+
+    assert_response_reads_exist(mutated)
+
+
+def test_all_of_without_consumed_path_trips_response_subset_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schemas = mutated["components"]["schemas"]
+    schemas["Error402Response"] = {"allOf": [{"type": "object", "properties": {}}]}
+
+    with pytest.raises(
+        AssertionError,
+        match=r"Error402Response\.detail\.code.*no allOf branch",
     ):
         assert_response_reads_exist(mutated)

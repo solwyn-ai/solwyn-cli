@@ -7,9 +7,19 @@ import pytest
 
 
 COMMANDS_DIR = Path("src/solwyn_cli/commands")
-_LOCAL_DATA_EMISSIONS = {
-    ("config.py", "get_config_value"),
-    ("config.py", "list_config_values"),
+_LOCAL_DATA_CALLS = {
+    (
+        "config.py",
+        "get_config_value",
+        44,
+        "typer.echo('' if value is None else value)",
+    ),
+    (
+        "config.py",
+        "list_config_values",
+        77,
+        "typer.echo(f\"{key}={('' if value is None else value)}\")",
+    ),
 }
 
 
@@ -18,6 +28,25 @@ class _OutputVisitor(ast.NodeVisitor):
         self.path = path
         self.functions: list[str] = []
         self.violations: list[str] = []
+        self.sys_aliases = {"sys"}
+        self.stdout_aliases = {"stdout"}
+        self.echo_aliases = {"echo", "secho"}
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name.split(".", maxsplit=1)[0]
+            if alias.name == "sys":
+                self.sys_aliases.add(bound_name)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name
+            if node.module == "sys" and alias.name == "stdout":
+                self.stdout_aliases.add(bound_name)
+            if node.module in {"click", "typer"} and alias.name in {"echo", "secho"}:
+                self.echo_aliases.add(bound_name)
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.functions.append(node.name)
@@ -29,6 +58,19 @@ class _OutputVisitor(ast.NodeVisitor):
     def _record(self, node: ast.AST, message: str) -> None:
         self.violations.append(f"{self.path.name}:{node.lineno}: {message}")
 
+    def _is_stdout(self, node: ast.expr) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.stdout_aliases
+        if not isinstance(node, ast.Attribute):
+            return False
+        if node.attr == "stdout":
+            return (
+                isinstance(node.value, ast.Name) and node.value.id in self.sys_aliases
+            )
+        if node.attr == "buffer":
+            return self._is_stdout(node.value)
+        return False
+
     def visit_Call(self, node: ast.Call) -> None:
         function = node.func
         if isinstance(function, ast.Name) and function.id == "print":
@@ -37,9 +79,15 @@ class _OutputVisitor(ast.NodeVisitor):
             self._record(node, "console.print is forbidden in commands")
         elif (
             isinstance(function, ast.Attribute) and function.attr in {"echo", "secho"}
-        ) or (isinstance(function, ast.Name) and function.id in {"echo", "secho"}):
+        ) or (isinstance(function, ast.Name) and function.id in self.echo_aliases):
             current = self.functions[-1] if self.functions else "<module>"
-            is_local_data = (self.path.name, current) in _LOCAL_DATA_EMISSIONS
+            call_fingerprint = (
+                self.path.name,
+                current,
+                node.lineno,
+                ast.unparse(node),
+            )
+            is_local_data = call_fingerprint in _LOCAL_DATA_CALLS
             is_stderr = any(
                 keyword.arg == "err"
                 and isinstance(keyword.value, ast.Constant)
@@ -54,8 +102,7 @@ class _OutputVisitor(ast.NodeVisitor):
         elif (
             isinstance(function, ast.Attribute)
             and function.attr == "write"
-            and isinstance(function.value, ast.Attribute)
-            and function.value.attr == "stdout"
+            and self._is_stdout(function.value)
         ):
             self._record(node, "direct stdout.write is forbidden in commands")
         self.generic_visit(node)
@@ -117,12 +164,33 @@ def test_statically_proven_stderr_and_identified_local_data_are_allowed(
     stderr_command.write_text(
         'def save():\n    typer.echo("Saved", err=True)\n', encoding="utf-8"
     )
-    local_command = tmp_path / "config.py"
-    local_command.write_text(
-        'def get_config_value():\n    typer.echo("value")\n'
-        'def list_config_values():\n    typer.echo("key=value")\n',
-        encoding="utf-8",
+    assert find_output_violations(stderr_command) == []
+    assert find_output_violations(COMMANDS_DIR / "config.py") == []
+
+
+def test_new_status_inside_local_data_function_trips_guard(tmp_path: Path) -> None:
+    command = tmp_path / "config.py"
+    source = (COMMANDS_DIR / "config.py").read_text(encoding="utf-8")
+    command.write_text(
+        source + '    typer.echo("Loaded configuration")\n', encoding="utf-8"
     )
 
-    assert find_output_violations(stderr_command) == []
-    assert find_output_violations(local_command) == []
+    assert find_output_violations(command)[-1].endswith(
+        "typer.echo must be statically directed to stderr"
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'from sys import stdout as output\ndef save():\n    output.write("Saved")\n',
+        'import sys as system\ndef save():\n    system.stdout.buffer.write(b"Saved")\n',
+        'from typer import echo as emit\ndef save():\n    emit("Saved")\n',
+        'from click import secho as emit\ndef save():\n    emit("Saved")\n',
+    ],
+)
+def test_common_output_aliases_trip_guard(tmp_path: Path, source: str) -> None:
+    command = tmp_path / "mutated.py"
+    command.write_text(source, encoding="utf-8")
+
+    assert find_output_violations(command) != []
