@@ -165,7 +165,9 @@ def _enum_domains(
     for union_key in ("oneOf", "anyOf", "allOf"):
         branches = schema.get(union_key, [])
         preserve_identity = union_key != "allOf" and any(
-            "$ref" in branch for branch in branches
+            "$ref" in branch
+            and _effective_object_contract(branch, document, frozenset())[2]
+            for branch in branches
         )
         for index, branch in enumerate(branches):
             branch_path = (
@@ -351,9 +353,12 @@ def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
     assert "content" not in responses["204"], (
         f"POST {path}: 204 response must remain bodyless"
     )
-    assert not ({"200", "201", "202"} & responses.keys()), (
-        f"POST {path}: success must remain 204-only"
-    )
+    alternate_successes = {
+        status
+        for status in responses
+        if status != "204" and status.isdigit() and 200 <= int(status) <= 299
+    }
+    assert not alternate_successes, f"POST {path}: success must remain 204-only"
 
     local_confirm = BudgetConfirmRequest.model_json_schema()
     remote_confirm = _schema(snapshot, "BudgetConfirmRequest")
@@ -616,6 +621,7 @@ def test_budget_check_operation_request_drift_trips_guard(
         ("response", "204 response is missing"),
         ("response-content", "204 response must remain bodyless"),
         ("alternate-success", "success must remain 204-only"),
+        ("alternate-success-205", "success must remain 204-only"),
     ],
 )
 def test_budget_confirm_operation_drift_trips_guard(
@@ -639,6 +645,8 @@ def test_budget_confirm_operation_drift_trips_guard(
         operation["responses"]["204"]["content"] = {
             "application/json": {"schema": {"type": "object"}}
         }
+    elif mutation == "alternate-success-205":
+        operation["responses"]["205"] = {"description": "Changed success"}
     else:
         operation["responses"]["200"] = {"description": "Changed success"}
 

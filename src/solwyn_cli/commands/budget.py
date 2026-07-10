@@ -1,7 +1,6 @@
 """Project budget inspection and pre-flight guardrail commands."""
 
 import math
-from enum import StrEnum
 from typing import Annotated, Literal
 from urllib.parse import quote
 
@@ -21,6 +20,7 @@ from solwyn_cli._vendor.wire import (
     BudgetMode,
     BudgetPeriod,
     ProviderName,
+    ServiceTier,
     TokenDetails,
 )
 from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
@@ -38,18 +38,6 @@ _FAIL_OPEN_NOTICE = "fail-open, unreserved — skip confirm"
 _CONFIRM_NOT_FOUND_HINT = (
     "Expired or already consumed. Run a fresh check before spend; confirm once."
 )
-
-
-class ServiceTier(StrEnum):
-    """Provider service tiers accepted by budget confirmation."""
-
-    AUTO = "auto"
-    DEFAULT = "default"
-    FLEX = "flex"
-    SCALE = "scale"
-    PRIORITY = "priority"
-    STANDARD = "standard"
-    OPTIMIZED = "optimized"
 
 
 class _BudgetStatusData(BaseModel):

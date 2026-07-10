@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
+from solwyn_cli._vendor import wire as wire_module
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
@@ -123,6 +124,10 @@ def test_budget_group_registers_confirm_without_regressing_status_or_check() -> 
     assert "check" in result.stdout
     assert "confirm" in result.stdout
     assert "set" not in result.stdout
+
+
+def test_budget_confirm_uses_the_vendored_service_tier_domain() -> None:
+    assert budget_module.ServiceTier is wire_module.ServiceTier
 
 
 @pytest.mark.parametrize("source", ["environment", "keyring"])
