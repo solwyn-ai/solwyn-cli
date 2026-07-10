@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import stat
 import sys
 import tempfile
 from datetime import UTC, datetime
@@ -40,6 +41,9 @@ def sync_spec(checkout: Path, destination: Path = SNAPSHOT_PATH) -> None:
     serialized = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
     destination.parent.mkdir(parents=True, exist_ok=True)
+    destination_mode = (
+        stat.S_IMODE(destination.stat().st_mode) if destination.exists() else 0o644
+    )
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -51,6 +55,7 @@ def sync_spec(checkout: Path, destination: Path = SNAPSHOT_PATH) -> None:
             delete=False,
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
+            temporary_path.chmod(destination_mode)
             temporary_file.write(serialized)
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
