@@ -116,14 +116,14 @@ def _queue_success(status_code: int = 204) -> None:
     FakeClient.responses = [httpx.Response(status_code)]
 
 
-def test_budget_group_registers_confirm_without_regressing_status_or_check() -> None:
+def test_budget_group_registers_confirm_without_regressing_other_commands() -> None:
     result = runner.invoke(app, ["budget", "--help"])
 
     assert result.exit_code == 0
     assert "status" in result.stdout
     assert "check" in result.stdout
     assert "confirm" in result.stdout
-    assert "set" not in result.stdout
+    assert "set" in result.stdout
 
 
 def test_budget_confirm_uses_the_vendored_service_tier_domain() -> None:

@@ -332,6 +332,24 @@ def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> N
     )
 
 
+def assert_budget_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
+    """Bind budget mutation PUT to its exact required request component."""
+    path = "/api/v1/projects/{project_id}/budget"
+    operation = snapshot["paths"][path]["put"]
+    request_body = operation["requestBody"]
+    assert request_body.get("required") is True, (
+        f"PUT {path}: request body must remain required"
+    )
+    content = request_body.get("content", {})
+    assert "application/json" in content, (
+        f"PUT {path}: application/json request body is missing"
+    )
+    schema = content["application/json"].get("schema", {})
+    assert schema.get("$ref") == "#/components/schemas/BudgetUpdateRequest", (
+        f"PUT {path}: request must use BudgetUpdateRequest"
+    )
+
+
 def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
     """Freeze confirm request details and its exact no-content operation."""
     path = "/api/v1/budgets/confirm"
@@ -429,6 +447,10 @@ def test_costs_query_contract_matches_snapshot() -> None:
 
 def test_budget_check_operation_uses_required_request_component() -> None:
     assert_budget_check_operation_request_binding(_snapshot())
+
+
+def test_budget_update_operation_uses_required_request_component() -> None:
+    assert_budget_update_operation_request_binding(_snapshot())
 
 
 def test_budget_confirm_request_and_operation_match_snapshot() -> None:
@@ -585,6 +607,45 @@ def test_budget_check_request_provider_enum_drift_trips_guard() -> None:
         assert_request_mirrors_match(mutated)
 
 
+def test_budget_update_request_field_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetUpdateRequest")["properties"].pop("sub_limit_usd")
+
+    with pytest.raises(AssertionError, match="BudgetUpdateRequest: field set"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_update_request_requiredness_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetUpdateRequest")["required"].remove("mode")
+
+    with pytest.raises(AssertionError, match="BudgetUpdateRequest: required set"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_update_request_enum_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetMode")["enum"].remove("hard_deny")
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetUpdateRequest\.mode: enum/const/pattern values",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_update_request_union_branch_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    thresholds = _schema(mutated, "BudgetUpdateRequest")["properties"]["thresholds"]
+    thresholds["items"]["oneOf"].pop()
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetUpdateRequest\.thresholds\[\]<UnitCostAnomalyConfig>",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -610,6 +671,35 @@ def test_budget_check_operation_request_drift_trips_guard(
 
     with pytest.raises(AssertionError, match=message):
         assert_budget_check_operation_request_binding(mutated)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("required", "request body must remain required"),
+        ("content", "application/json request body is missing"),
+        ("component", "request must use BudgetUpdateRequest"),
+    ],
+)
+def test_budget_update_operation_request_drift_trips_guard(
+    mutation: str,
+    message: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    request_body = mutated["paths"]["/api/v1/projects/{project_id}/budget"]["put"][
+        "requestBody"
+    ]
+    if mutation == "required":
+        request_body["required"] = False
+    elif mutation == "content":
+        request_body["content"].pop("application/json")
+    else:
+        request_body["content"]["application/json"]["schema"]["$ref"] = (
+            "#/components/schemas/UnrelatedRequest"
+        )
+
+    with pytest.raises(AssertionError, match=message):
+        assert_budget_update_operation_request_binding(mutated)
 
 
 @pytest.mark.parametrize(

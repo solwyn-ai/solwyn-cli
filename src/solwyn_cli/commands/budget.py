@@ -1,6 +1,7 @@
 """Project budget inspection and pre-flight guardrail commands."""
 
 import math
+from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import quote
 
@@ -19,11 +20,17 @@ from solwyn_cli._vendor.wire import (
     BudgetConfirmRequest,
     BudgetMode,
     BudgetPeriod,
+    BudgetUpdateRequest,
     ProviderName,
     ServiceTier,
     TokenDetails,
 )
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import (
+    AuthError,
+    JwtCredential,
+    ProjectKeyCredential,
+    resolve_credential,
+)
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
@@ -40,16 +47,124 @@ _CONFIRM_NOT_FOUND_HINT = (
 )
 
 
+class _RoutingChannel(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    id: str
+    name: str
+
+
+class _RoutingMuted(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    reason: Literal["severity_floor", "event_filter", "email_off"]
+    severity_floor: str | None = None
+
+
+class _AlertRouting(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    will_send: bool
+    email: str | None = None
+    channels: list[_RoutingChannel] = Field(default_factory=list)
+    source: Literal["override", "project_default", "account_default"]
+    muted: _RoutingMuted | None = None
+
+
+class _ThresholdStateBase(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    rule_key: str
+    channel_ids: list[str]
+    routing: _AlertRouting
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
+class _BudgetThresholdState(_ThresholdStateBase):
+    type: Literal["budget_threshold"]
+    percent: Annotated[int, Field(ge=1, le=100)]
+
+
+class _ForecastOverrunState(_ThresholdStateBase):
+    type: Literal["forecast_overrun"]
+    spend_threshold_usd: Annotated[FiniteFloat, Field(gt=0)]
+    period: Literal["month"] = "month"
+
+
+class _DailyAnomalyState(_ThresholdStateBase):
+    type: Literal["daily_anomaly"]
+    multiplier: Annotated[FiniteFloat, Field(gt=1, le=100)]
+    lookback_days: Annotated[int, Field(ge=3, le=30)] = 7
+
+
+class _UnitCostAnomalyState(_ThresholdStateBase):
+    type: Literal["unit_cost_anomaly"]
+    multiplier: Annotated[FiniteFloat, Field(gt=1, le=100)]
+    lookback_days: Annotated[int, Field(ge=3, le=30)] = 7
+
+
+_ThresholdState = Annotated[
+    _BudgetThresholdState
+    | _ForecastOverrunState
+    | _DailyAnomalyState
+    | _UnitCostAnomalyState,
+    Field(discriminator="type"),
+]
+
+
+class _BudgetConstraints(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    allowed_modes: list[BudgetMode]
+    allowed_periods: list[BudgetPeriod]
+    sub_period_enabled: bool
+    max_thresholds: int
+
+
 class _BudgetStatusData(BaseModel):
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     project_id: str
     budget_limit: FiniteFloat
     current_usage: FiniteFloat
     remaining_budget: FiniteFloat
     utilization_pct: FiniteFloat
-    budget_mode: Literal["alert_only", "hard_deny"]
-    budget_period: Literal["daily", "weekly", "monthly"]
+    budget_mode: BudgetMode
+    budget_period: BudgetPeriod
+    period_date: str
+    thresholds: list[_ThresholdState]
+    sub_period: BudgetPeriod | None = None
+    sub_limit: FiniteFloat | None = None
+    constraints: _BudgetConstraints
+
+
+class _BudgetStatusOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    project_id: str
+    budget_limit: FiniteFloat
+    current_usage: FiniteFloat
+    remaining_budget: FiniteFloat
+    utilization_pct: FiniteFloat
+    budget_mode: BudgetMode
+    budget_period: BudgetPeriod
+
+
+class _BudgetSetData(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    project_id: str
+    budget_limit: FiniteFloat
+    current_usage: FiniteFloat
+    remaining_budget: FiniteFloat
+    budget_period: BudgetPeriod
+    budget_mode: BudgetMode
+    period_date: str
+    utilization_pct: FiniteFloat
+    sub_period: BudgetPeriod | None
+    sub_limit: FiniteFloat | None
+    thresholds: list[dict[str, object]]
 
 
 class _BudgetCheckData(BaseModel):
@@ -84,7 +199,7 @@ class _BudgetConfirmData(BaseModel):
     call_id: str
 
 
-def _table(data: _BudgetStatusData) -> TableData:
+def _table(data: _BudgetStatusOutput) -> TableData:
     return TableData(
         columns=("Field", "Value"),
         rows=(
@@ -137,6 +252,58 @@ def _confirm_table(data: _BudgetConfirmData) -> TableData:
         rows=(
             ("Reservation ID", data.reservation_id),
             ("Call ID", data.call_id),
+        ),
+        right_align=("Value",),
+    )
+
+
+def _threshold_configs(data: _BudgetStatusData) -> list[dict[str, object]]:
+    """Convert validated response state to request config without server-only data."""
+    return [
+        threshold.model_dump(
+            mode="json",
+            exclude={"rule_key", "routing"},
+        )
+        for threshold in data.thresholds
+    ]
+
+
+def _set_data(data: _BudgetStatusData) -> _BudgetSetData:
+    return _BudgetSetData(
+        project_id=data.project_id,
+        budget_limit=data.budget_limit,
+        current_usage=data.current_usage,
+        remaining_budget=data.remaining_budget,
+        budget_period=data.budget_period,
+        budget_mode=data.budget_mode,
+        period_date=data.period_date,
+        utilization_pct=data.utilization_pct,
+        sub_period=data.sub_period,
+        sub_limit=data.sub_limit,
+        thresholds=_threshold_configs(data),
+    )
+
+
+def _set_table(data: _BudgetSetData) -> TableData:
+    return TableData(
+        columns=("Field", "Value"),
+        rows=(
+            ("Project", data.project_id),
+            ("Budget limit", f"{data.budget_limit:.2f}"),
+            ("Current usage", f"{data.current_usage:.2f}"),
+            ("Remaining budget", f"{data.remaining_budget:.2f}"),
+            ("Budget period", data.budget_period.value),
+            ("Budget mode", data.budget_mode.value),
+            (
+                "Sub-period",
+                data.sub_period.value if data.sub_period is not None else "-",
+            ),
+            (
+                "Sub-limit",
+                f"{data.sub_limit:.2f}" if data.sub_limit is not None else "-",
+            ),
+            ("Threshold rules", len(data.thresholds)),
+            ("Utilization", f"{data.utilization_pct:.2f}%"),
         ),
         right_align=("Value",),
     )
@@ -501,6 +668,130 @@ def confirm(
     )
 
 
+@app.command("set")
+def set_budget(
+    context: typer.Context,
+    limit: Annotated[
+        float | None,
+        typer.Option("--limit", help="Set the project budget limit in USD."),
+    ] = None,
+    period: Annotated[
+        BudgetPeriod | None,
+        typer.Option("--period", help="Set the project budget period."),
+    ] = None,
+    mode: Annotated[
+        BudgetMode | None,
+        typer.Option("--mode", help="Set the project budget enforcement mode."),
+    ] = None,
+) -> None:
+    """Update selected budget settings while preserving all other configuration."""
+    if limit is None and period is None and mode is None:
+        exit_with_error(
+            context,
+            OutputError(
+                code="budget_changes_required",
+                message="No budget changes were supplied.",
+                hint="Provide at least one of --limit, --period, or --mode.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    if limit is not None and (not math.isfinite(limit) or limit <= 0):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_budget_update_request",
+                message="The budget limit must be a finite positive number.",
+                hint="Provide --limit with a value greater than zero.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+
+    runtime = command_context(context)
+    if runtime.project is None:
+        exit_with_error(
+            context,
+            OutputError(
+                code="project_required",
+                message="A project is required.",
+                hint=(
+                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
+                    "or config default_project."
+                ),
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+
+    credential = required_credential(context, resolve=resolve_credential)
+    if isinstance(credential, ProjectKeyCredential):
+        hint = (
+            "Unset SOLWYN_API_KEY, run solwyn login, then retry budget set."
+            if credential.source == "environment"
+            else "Run solwyn logout, then solwyn login, and retry budget set."
+        )
+        exit_with_error(
+            context,
+            OutputError(
+                code="authentication_required",
+                message="User login is required to update a budget.",
+                hint=hint,
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
+
+    project_id = runtime.project
+    project_path = quote(project_id, safe="")
+    endpoint = f"/api/v1/projects/{project_path}/budget"
+    try:
+        with SolwynClient(
+            api_url=runtime.api_url,
+            credential=credential,
+        ) as client:
+            current_response = client.request("GET", endpoint)
+            current = _BudgetStatusData.model_validate(current_response.json())
+            if current.project_id != project_id:
+                raise ValueError("Budget response project did not match the request.")
+
+            request = BudgetUpdateRequest(
+                limit_usd=limit if limit is not None else current.budget_limit,
+                period=period if period is not None else current.budget_period,
+                mode=mode if mode is not None else current.budget_mode,
+                sub_period=current.sub_period,
+                sub_limit_usd=current.sub_limit,
+                thresholds=_threshold_configs(current),
+            )
+            updated_response = client.request(
+                "PUT",
+                endpoint,
+                json=request.model_dump(mode="json"),
+            )
+            updated = _BudgetStatusData.model_validate(updated_response.json())
+            if updated.project_id != project_id:
+                raise ValueError("Budget response project did not match the request.")
+    except ApiError as error:
+        exit_with_error(context, error)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValidationError, ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_budget_response",
+                message="The budget response was invalid.",
+            ),
+        )
+
+    data = _set_data(updated)
+    output_engine(context).write_success(
+        schema="solwyn.budget-set.v1",
+        data=data,
+        table=_set_table(data),
+    )
+
+
 @app.command("status")
 def status(
     context: typer.Context,
@@ -567,10 +858,19 @@ def status(
             ),
         )
 
+    rendered = _BudgetStatusOutput(
+        project_id=data.project_id,
+        budget_limit=data.budget_limit,
+        current_usage=data.current_usage,
+        remaining_budget=data.remaining_budget,
+        utilization_pct=data.utilization_pct,
+        budget_mode=data.budget_mode,
+        budget_period=data.budget_period,
+    )
     output_engine(context).write_success(
         schema="solwyn.budget-status.v1",
-        data=data,
-        table=_table(data),
+        data=rendered,
+        table=_table(rendered),
     )
     if max_utilization is not None and data.utilization_pct >= max_utilization:
         raise typer.Exit(code=ExitCode.BUDGET_DENIED)
