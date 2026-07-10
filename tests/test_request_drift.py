@@ -312,12 +312,34 @@ def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
         _assert_string_parameter_domain(parameter, values=values, context=context)
 
 
+def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> None:
+    """Bind the guardrail POST to its exact required request component."""
+    path = "/api/v1/budgets/check"
+    operation = snapshot["paths"][path]["post"]
+    request_body = operation["requestBody"]
+    assert request_body.get("required") is True, (
+        f"POST {path}: request body must remain required"
+    )
+    content = request_body.get("content", {})
+    assert "application/json" in content, (
+        f"POST {path}: application/json request body is missing"
+    )
+    schema = content["application/json"].get("schema", {})
+    assert schema.get("$ref") == "#/components/schemas/BudgetCheckRequest", (
+        f"POST {path}: request must use BudgetCheckRequest"
+    )
+
+
 def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
 
 
 def test_costs_query_contract_matches_snapshot() -> None:
     assert_costs_query_contract(_snapshot())
+
+
+def test_budget_check_operation_uses_required_request_component() -> None:
+    assert_budget_check_operation_request_binding(_snapshot())
 
 
 def test_costs_cli_domains_are_frozen() -> None:
@@ -440,6 +462,61 @@ def test_changed_request_requiredness_trips_drift_guard() -> None:
 
     with pytest.raises(AssertionError, match="LoginRequest: required set"):
         assert_request_mirrors_match(mutated)
+
+
+def test_budget_check_request_field_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetCheckRequest")["properties"].pop("fallback_models")
+
+    with pytest.raises(AssertionError, match="BudgetCheckRequest: field set"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_check_request_requiredness_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetCheckRequest")["required"].remove("provider")
+
+    with pytest.raises(AssertionError, match="BudgetCheckRequest: required set"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_check_request_provider_enum_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "ProviderName")["enum"].remove("openai")
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetCheckRequest\.(?:provider|fallback_providers\[\]): "
+        r"enum/const/pattern values",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("required", "request body must remain required"),
+        ("content", "application/json request body is missing"),
+        ("component", "request must use BudgetCheckRequest"),
+    ],
+)
+def test_budget_check_operation_request_drift_trips_guard(
+    mutation: str,
+    message: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    request_body = mutated["paths"]["/api/v1/budgets/check"]["post"]["requestBody"]
+    if mutation == "required":
+        request_body["required"] = False
+    elif mutation == "content":
+        request_body["content"].pop("application/json")
+    else:
+        request_body["content"]["application/json"]["schema"]["$ref"] = (
+            "#/components/schemas/UnrelatedRequest"
+        )
+
+    with pytest.raises(AssertionError, match=message):
+        assert_budget_check_operation_request_binding(mutated)
 
 
 @pytest.mark.parametrize("mutation", ["removed", "added"])

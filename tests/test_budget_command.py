@@ -81,7 +81,7 @@ def _key() -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
-def test_budget_group_registers_only_status_as_a_pure_read() -> None:
+def test_budget_group_registers_status_and_check_only() -> None:
     root = runner.invoke(app, ["--help"])
     group = runner.invoke(app, ["budget", "--help"])
 
@@ -89,7 +89,8 @@ def test_budget_group_registers_only_status_as_a_pure_read() -> None:
     assert group.exit_code == 0
     assert "budget" in root.stdout
     assert "status" in group.stdout
-    for mutation in ("check", "confirm", "set"):
+    assert "check" in group.stdout
+    for mutation in ("confirm", "set"):
         assert mutation not in group.stdout
 
 
