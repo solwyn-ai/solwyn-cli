@@ -1,0 +1,2 @@
+Error [reservation_not_found]: Budget reservation was not found.
+Hint: Expired or already consumed. Run a fresh check before spend; confirm once.

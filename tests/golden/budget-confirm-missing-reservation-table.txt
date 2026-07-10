@@ -1,0 +1,2 @@
+Error [reservation_required]: No budget reservation was supplied.
+Hint: reservation_id=null means fail-open/unreserved; skip confirm.

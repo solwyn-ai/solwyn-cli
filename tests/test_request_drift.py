@@ -330,6 +330,90 @@ def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> N
     )
 
 
+def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
+    """Freeze confirm request details and its exact no-content operation."""
+    path = "/api/v1/budgets/confirm"
+    operation = snapshot["paths"][path]["post"]
+    request_body = operation["requestBody"]
+    assert request_body.get("required") is True, (
+        f"POST {path}: request body must remain required"
+    )
+    content = request_body.get("content", {})
+    assert "application/json" in content, (
+        f"POST {path}: application/json request body is missing"
+    )
+    schema = content["application/json"].get("schema", {})
+    assert schema.get("$ref") == "#/components/schemas/BudgetConfirmRequest", (
+        f"POST {path}: request must use BudgetConfirmRequest"
+    )
+    responses = operation.get("responses", {})
+    assert "204" in responses, f"POST {path}: 204 response is missing"
+    assert "content" not in responses["204"], (
+        f"POST {path}: 204 response must remain bodyless"
+    )
+    assert not ({"200", "201", "202"} & responses.keys()), (
+        f"POST {path}: success must remain 204-only"
+    )
+
+    local_confirm = BudgetConfirmRequest.model_json_schema()
+    remote_confirm = _schema(snapshot, "BudgetConfirmRequest")
+    local_token_details = _resolve_ref(
+        local_confirm,
+        local_confirm["properties"]["token_details"]["$ref"],
+    )
+    remote_token_details = _schema(snapshot, "TokenDetails")
+    expected_token_fields = {
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens",
+        "cache_creation_5m_tokens",
+        "cache_creation_1h_tokens",
+        "reasoning_tokens",
+        "audio_input_tokens",
+        "audio_output_tokens",
+        "accepted_prediction_tokens",
+        "rejected_prediction_tokens",
+        "tool_use_input_tokens",
+    }
+    for confirm, token_details in (
+        (local_confirm, local_token_details),
+        (remote_confirm, remote_token_details),
+    ):
+        assert confirm["properties"]["is_provider_fallback"].get("default") is False, (
+            "BudgetConfirmRequest.is_provider_fallback: default differs"
+        )
+        assert confirm["properties"]["model"].get("maxLength") == 2048, (
+            "BudgetConfirmRequest.model: maxLength differs"
+        )
+        assert confirm["properties"]["call_id"].get("maxLength") == 36, (
+            "BudgetConfirmRequest.call_id: maxLength differs"
+        )
+        region = confirm["properties"]["provider_region"]
+        region_string = next(
+            branch for branch in region["anyOf"] if branch.get("type") == "string"
+        )
+        assert region_string.get("maxLength") == 32, (
+            "BudgetConfirmRequest.provider_region: maxLength differs"
+        )
+        assert set(token_details["properties"]) == expected_token_fields | {
+            "is_estimated"
+        }, "BudgetConfirmRequest.token_details: field set differs"
+        for field in expected_token_fields:
+            field_schema = token_details["properties"][field]
+            assert field_schema.get("minimum") == 0, (
+                f"BudgetConfirmRequest.token_details.{field}: minimum differs"
+            )
+            assert field_schema.get("maximum") == 100_000_000, (
+                f"BudgetConfirmRequest.token_details.{field}: maximum differs"
+            )
+            assert field_schema.get("default") == 0, (
+                f"BudgetConfirmRequest.token_details.{field}: default differs"
+            )
+        assert token_details["properties"]["is_estimated"].get("default") is False, (
+            "BudgetConfirmRequest.token_details.is_estimated: default differs"
+        )
+
+
 def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
 
@@ -340,6 +424,10 @@ def test_costs_query_contract_matches_snapshot() -> None:
 
 def test_budget_check_operation_uses_required_request_component() -> None:
     assert_budget_check_operation_request_binding(_snapshot())
+
+
+def test_budget_confirm_request_and_operation_match_snapshot() -> None:
+    assert_budget_confirm_contract(_snapshot())
 
 
 def test_costs_cli_domains_are_frozen() -> None:
@@ -519,6 +607,45 @@ def test_budget_check_operation_request_drift_trips_guard(
         assert_budget_check_operation_request_binding(mutated)
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("required", "request body must remain required"),
+        ("content", "application/json request body is missing"),
+        ("component", "request must use BudgetConfirmRequest"),
+        ("response", "204 response is missing"),
+        ("response-content", "204 response must remain bodyless"),
+        ("alternate-success", "success must remain 204-only"),
+    ],
+)
+def test_budget_confirm_operation_drift_trips_guard(
+    mutation: str,
+    message: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    operation = mutated["paths"]["/api/v1/budgets/confirm"]["post"]
+    request_body = operation["requestBody"]
+    if mutation == "required":
+        request_body["required"] = False
+    elif mutation == "content":
+        request_body["content"].pop("application/json")
+    elif mutation == "component":
+        request_body["content"]["application/json"]["schema"]["$ref"] = (
+            "#/components/schemas/UnrelatedRequest"
+        )
+    elif mutation == "response":
+        operation["responses"].pop("204")
+    elif mutation == "response-content":
+        operation["responses"]["204"]["content"] = {
+            "application/json": {"schema": {"type": "object"}}
+        }
+    else:
+        operation["responses"]["200"] = {"description": "Changed success"}
+
+    with pytest.raises(AssertionError, match=message):
+        assert_budget_confirm_contract(mutated)
+
+
 @pytest.mark.parametrize("mutation", ["removed", "added"])
 def test_nested_token_detail_field_drift_trips_guard(mutation: str) -> None:
     mutated = copy.deepcopy(_snapshot())
@@ -533,6 +660,109 @@ def test_nested_token_detail_field_drift_trips_guard(mutation: str) -> None:
         match=r"BudgetConfirmRequest\.token_details: field set",
     ):
         assert_request_mirrors_match(mutated)
+
+
+def test_budget_confirm_request_field_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetConfirmRequest")["properties"].pop("call_id")
+
+    with pytest.raises(AssertionError, match="BudgetConfirmRequest: field set"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_confirm_request_requiredness_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetConfirmRequest")["required"].remove("token_details")
+
+    with pytest.raises(AssertionError, match="BudgetConfirmRequest: required set"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_confirm_nested_requiredness_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "TokenDetails")["required"] = ["input_tokens"]
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetConfirmRequest\.token_details: required set",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_confirm_service_tier_enum_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    service_tier = _schema(mutated, "BudgetConfirmRequest")["properties"][
+        "service_tier"
+    ]
+    service_tier["anyOf"][0]["enum"].remove("optimized")
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetConfirmRequest\.service_tier: enum/const/pattern values",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+def test_budget_confirm_fallback_default_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetConfirmRequest")["properties"]["is_provider_fallback"][
+        "default"
+    ] = True
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetConfirmRequest\.is_provider_fallback: default",
+    ):
+        assert_budget_confirm_contract(mutated)
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_message"),
+    [
+        ("model", "BudgetConfirmRequest.model: maxLength"),
+        ("call_id", "BudgetConfirmRequest.call_id: maxLength"),
+        ("provider_region", "BudgetConfirmRequest.provider_region: maxLength"),
+    ],
+)
+def test_budget_confirm_top_level_bound_drift_trips_guard(
+    field: str,
+    expected_message: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    field_schema = _schema(mutated, "BudgetConfirmRequest")["properties"][field]
+    if field == "provider_region":
+        field_schema = next(
+            branch for branch in field_schema["anyOf"] if branch.get("type") == "string"
+        )
+    field_schema["maxLength"] += 1
+
+    with pytest.raises(AssertionError, match=expected_message):
+        assert_budget_confirm_contract(mutated)
+
+
+@pytest.mark.parametrize("attribute", ["minimum", "maximum", "default"])
+def test_nested_token_detail_numeric_contract_drift_trips_guard(
+    attribute: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "TokenDetails")["properties"]["input_tokens"][attribute] = 1
+
+    with pytest.raises(
+        AssertionError,
+        match=rf"BudgetConfirmRequest\.token_details\.input_tokens: {attribute}",
+    ):
+        assert_budget_confirm_contract(mutated)
+
+
+def test_nested_token_detail_boolean_default_drift_trips_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "TokenDetails")["properties"]["is_estimated"]["default"] = True
+
+    with pytest.raises(
+        AssertionError,
+        match=r"BudgetConfirmRequest\.token_details\.is_estimated: default",
+    ):
+        assert_budget_confirm_contract(mutated)
 
 
 @pytest.mark.parametrize("mutation", ["removed", "added"])

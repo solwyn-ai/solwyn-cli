@@ -492,6 +492,33 @@ def test_second_429_becomes_structured_error_without_retry_loop() -> None:
     assert exc_info.value.detail == "Still limited."
 
 
+def test_authenticated_request_can_disable_rate_limit_retry() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(429, json={"detail": "Try later."})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=_project_key(),
+        transport=httpx.MockTransport(handle),
+        sleeper=lambda _seconds: pytest.fail("must not sleep or retry"),
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request(
+                "POST",
+                "/api/v1/budgets/confirm",
+                retry_rate_limit=False,
+            )
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.code == "rate_limited"
+    assert len(requests) == 1
+    assert exc_info.value.message == "Try later."
+    assert exc_info.value.detail == "Try later."
+
+
 def test_one_429_retry_is_shared_across_a_jwt_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

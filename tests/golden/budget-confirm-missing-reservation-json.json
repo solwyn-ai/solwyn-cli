@@ -1,0 +1,1 @@
+{"schema":"solwyn.error.v1","code":"reservation_required","message":"No budget reservation was supplied.","hint":"reservation_id=null means fail-open/unreserved; skip confirm.","detail":null}

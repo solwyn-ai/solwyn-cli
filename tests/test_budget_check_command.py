@@ -86,13 +86,13 @@ def _queue(**overrides: object) -> None:
     FakeClient.responses = [httpx.Response(200, json={**ALLOW_RESPONSE, **overrides})]
 
 
-def test_budget_group_registers_check_without_regressing_status() -> None:
+def test_budget_group_registers_check_and_confirm_without_regressing_status() -> None:
     result = runner.invoke(app, ["budget", "--help"])
 
     assert result.exit_code == 0
     assert "check" in result.stdout
     assert "status" in result.stdout
-    assert "confirm" not in result.stdout
+    assert "confirm" in result.stdout
     assert "set" not in result.stdout
 
 
