@@ -69,7 +69,9 @@ def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
         )
 
         with (tmp_path / "mcp-stderr.log").open("w+", encoding="utf-8") as stderr:
-            with anyio.fail_after(10):
+            # Six complete tool schemas make startup sensitive to loaded CI hosts;
+            # 30 seconds remains a bounded protocol-stall and shutdown detector.
+            with anyio.fail_after(30):
                 async with stdio_client(server, errlog=stderr) as streams:
                     async with ClientSession(*streams) as session:
                         initialized = await session.initialize()

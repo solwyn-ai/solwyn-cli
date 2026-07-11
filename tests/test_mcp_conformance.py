@@ -135,6 +135,20 @@ def _mutate_bound(contract: list[dict[str, Any]]) -> None:
     contract[2]["inputSchema"]["properties"]["input_tokens"]["maximum"] = 99
 
 
+def _mutate_fallback_provider_bound(contract: list[dict[str, Any]]) -> None:
+    provider_array = contract[1]["inputSchema"]["properties"]["fallback_providers"][
+        "anyOf"
+    ][0]
+    provider_array.pop("maxItems")
+
+
+def _mutate_fallback_model_item_bound(contract: list[dict[str, Any]]) -> None:
+    model_array = contract[1]["inputSchema"]["properties"]["fallback_models"]["anyOf"][
+        0
+    ]
+    model_array["items"].pop("maxLength")
+
+
 def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
     contract[0]["inputSchema"]["properties"]["project_id"]["anyOf"].pop()
 
@@ -157,6 +171,21 @@ def test_list_tools_contract_matches_complete_golden() -> None:
     _assert_tool_contract(anyio.run(_listed_tool_contract))
 
 
+def test_budget_check_schema_advertises_effective_fallback_bounds() -> None:
+    budget_check = anyio.run(_listed_tool_contract)[1]
+    properties = budget_check["inputSchema"]["properties"]
+    provider_array = properties["fallback_providers"]["anyOf"][0]
+    model_array = properties["fallback_models"]["anyOf"][0]
+
+    assert provider_array["type"] == "array"
+    assert provider_array["maxItems"] == 8
+    assert model_array["type"] == "array"
+    assert model_array["maxItems"] == 8
+    assert model_array["items"] == {"maxLength": 2048, "type": "string"}
+    assert properties["model"]["maxLength"] == 2048
+    assert "minLength" not in properties["model"]
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -165,6 +194,8 @@ def test_list_tools_contract_matches_complete_golden() -> None:
         _mutate_default,
         _mutate_enum,
         _mutate_bound,
+        _mutate_fallback_provider_bound,
+        _mutate_fallback_model_item_bound,
         _mutate_nullable,
         _mutate_additional_properties,
         _mutate_nested_output,

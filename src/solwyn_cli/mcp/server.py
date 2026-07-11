@@ -41,6 +41,9 @@ from solwyn_cli.errors import ApiError
 
 DataT = TypeVar("DataT", bound=BaseModel)
 ResultT = TypeVar("ResultT", bound="_ToolResult[BaseModel]")
+BudgetCheckModel = Annotated[str, Field(max_length=2048)]
+BudgetFallbackProviders = Annotated[list[ProviderName], Field(max_length=8)]
+BudgetFallbackModels = Annotated[list[BudgetCheckModel], Field(max_length=8)]
 TOOL_NAMES = (
     "budget_status",
     "budget_check",
@@ -508,10 +511,10 @@ def create_server() -> FastMCP:
     )
     async def budget_check(
         estimated_input_tokens: Annotated[int, Field(ge=0)],
-        model: Annotated[str, Field(min_length=1, max_length=2048)],
+        model: BudgetCheckModel,
         provider: ProviderName,
-        fallback_providers: list[ProviderName] | None = None,
-        fallback_models: Annotated[list[str], Field(max_length=8)] | None = None,
+        fallback_providers: BudgetFallbackProviders | None = None,
+        fallback_models: BudgetFallbackModels | None = None,
     ) -> _BudgetCheckResult:
         return await anyio.to_thread.run_sync(
             partial(

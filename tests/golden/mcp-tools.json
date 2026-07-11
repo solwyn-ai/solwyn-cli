@@ -669,6 +669,7 @@
           "anyOf": [
             {
               "items": {
+                "maxLength": 2048,
                 "type": "string"
               },
               "maxItems": 8,
@@ -687,6 +688,7 @@
               "items": {
                 "$ref": "#/$defs/ProviderName"
               },
+              "maxItems": 8,
               "type": "array"
             },
             {
@@ -698,7 +700,6 @@
         },
         "model": {
           "maxLength": 2048,
-          "minLength": 1,
           "title": "Model",
           "type": "string"
         },
