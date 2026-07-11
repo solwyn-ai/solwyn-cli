@@ -47,6 +47,21 @@ RESPONSE_READS = {
         "key",
         "key_prefix",
     ),
+    "ProjectKeyResponse": (
+        "id",
+        "key_prefix",
+        "name",
+        "last_used_at",
+        "expires_at",
+        "rotation_grace_until",
+        "created_at",
+    ),
+    "ProjectKeyRotateResponse": (
+        "id",
+        "key",
+        "key_prefix",
+        "rotation_grace_until",
+    ),
     "BudgetStatusResponse": (
         "project_id",
         "budget_limit",
@@ -189,6 +204,19 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "CostQueryResponse",
     ),
+    ("GET", "/api/v1/projects/{project_id}/key"): (
+        "200",
+        "object",
+        "ProjectKeyResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/key/rotate"): (
+        "200",
+        "object",
+        "ProjectKeyRotateResponse",
+    ),
+}
+NO_CONTENT_OPERATION_BINDINGS = {
+    ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
 }
 _BUDGET_THRESHOLD_COMPONENTS = {
     "budget_threshold": "ThresholdStateResponse",
@@ -443,6 +471,27 @@ def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
         )
 
 
+def assert_no_content_operation_bindings(snapshot: dict[str, Any]) -> None:
+    """Validate success operations whose contract is an empty response body."""
+    paths = snapshot["paths"]
+    for (method, path), status in NO_CONTENT_OPERATION_BINDINGS.items():
+        responses = paths[path][method.lower()]["responses"]
+        assert status in responses, f"{method} {path}: {status} response is missing"
+        assert "content" not in responses[status], (
+            f"{method} {path}: {status} response must remain bodyless"
+        )
+        alternate_successes = {
+            candidate
+            for candidate in responses
+            if candidate != status
+            and candidate.isdigit()
+            and 200 <= int(candidate) <= 299
+        }
+        assert not alternate_successes, (
+            f"{method} {path}: success must remain {status}-only"
+        )
+
+
 def _snapshot() -> dict[str, Any]:
     return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
 
@@ -471,6 +520,29 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
 
 def test_every_consumed_success_operation_returns_its_response_component() -> None:
     assert_operation_response_bindings(_snapshot())
+
+
+def test_every_consumed_no_content_operation_is_bodyless() -> None:
+    assert_no_content_operation_bindings(_snapshot())
+
+
+@pytest.mark.parametrize("mutation", ["status", "body", "alternate"])
+def test_project_key_revoke_response_drift_trips_guard(mutation: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    responses = mutated["paths"]["/api/v1/projects/{project_id}/key/{key_id}"][
+        "delete"
+    ]["responses"]
+    if mutation == "status":
+        responses["200"] = responses.pop("204")
+    elif mutation == "body":
+        responses["204"]["content"] = {
+            "application/json": {"schema": {"type": "object"}}
+        }
+    else:
+        responses["200"] = {"description": "Alternate success"}
+
+    with pytest.raises(AssertionError):
+        assert_no_content_operation_bindings(mutated)
 
 
 @pytest.mark.parametrize(
@@ -742,6 +814,17 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("ProjectCreateResponse", "created_at"),
         ("ProjectCreateResponse", "key"),
         ("ProjectCreateResponse", "key_prefix"),
+        ("ProjectKeyResponse", "id"),
+        ("ProjectKeyResponse", "key_prefix"),
+        ("ProjectKeyResponse", "name"),
+        ("ProjectKeyResponse", "last_used_at"),
+        ("ProjectKeyResponse", "expires_at"),
+        ("ProjectKeyResponse", "rotation_grace_until"),
+        ("ProjectKeyResponse", "created_at"),
+        ("ProjectKeyRotateResponse", "id"),
+        ("ProjectKeyRotateResponse", "key"),
+        ("ProjectKeyRotateResponse", "key_prefix"),
+        ("ProjectKeyRotateResponse", "rotation_grace_until"),
         ("BudgetStatusResponse", "project_id"),
         ("BudgetStatusResponse", "budget_limit"),
         ("BudgetStatusResponse", "current_usage"),

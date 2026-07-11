@@ -151,6 +151,10 @@ class ProjectCreateRequest(_WireModel):
     )
 
 
+class ProjectKeyRotateRequest(_WireModel):
+    grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
+
+
 class BudgetUpdateRequest(_WireModel):
     limit_usd: Annotated[float, Field(gt=0)]
     period: BudgetPeriod

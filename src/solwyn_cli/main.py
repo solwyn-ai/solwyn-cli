@@ -10,6 +10,7 @@ from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import costs
 from solwyn_cli.commands.login import login, logout
+from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.status import status
 from solwyn_cli.commands.whoami import whoami
@@ -22,6 +23,7 @@ app = typer.Typer(
 )
 app.add_typer(budget_app, name="budget")
 app.add_typer(config_app, name="config")
+app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
 app.command("costs")(costs)
 app.command("login")(login)

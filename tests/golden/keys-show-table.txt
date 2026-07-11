@@ -1,0 +1,8 @@
+Field                                    Value
+ID                                 key_current
+Key prefix            sk_proj_1234567890abcdef
+Name                               Current key
+Last used                 2026-07-09T14:30:00Z
+Expires                                      -
+Rotation grace until                         -
+Created                   2026-07-01T08:00:00Z

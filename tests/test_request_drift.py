@@ -14,6 +14,7 @@ from solwyn_cli._vendor.wire import (
     BudgetUpdateRequest,
     LoginRequest,
     ProjectCreateRequest,
+    ProjectKeyRotateRequest,
     RefreshRequest,
 )
 from solwyn_cli.commands.costs import CostGrouping, CostRange
@@ -24,6 +25,7 @@ REQUEST_MIRRORS = {
     LoginRequest: "LoginRequest",
     RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
+    ProjectKeyRotateRequest: "ProjectKeyRotateRequest",
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
@@ -34,6 +36,7 @@ DECLARED_DEFAULT_FIELDS = {
         "budget_period",
         "budget_mode",
     ),
+    "ProjectKeyRotateRequest": ("grace_seconds",),
 }
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 
@@ -366,6 +369,25 @@ def assert_project_create_operation_request_binding(
     )
 
 
+def assert_project_key_rotate_operation_request_binding(
+    snapshot: dict[str, Any],
+) -> None:
+    """Bind key rotation to its exact required request component and bounds."""
+    path = "/api/v1/projects/{project_id}/key/rotate"
+    request_body = snapshot["paths"][path]["post"]["requestBody"]
+    assert request_body.get("required") is True
+    schema = request_body["content"]["application/json"]["schema"]
+    assert schema.get("$ref") == "#/components/schemas/ProjectKeyRotateRequest"
+    remote = _schema(snapshot, "ProjectKeyRotateRequest")["properties"][
+        "grace_seconds"
+    ]["anyOf"][0]
+    local = ProjectKeyRotateRequest.model_json_schema()["properties"]["grace_seconds"][
+        "anyOf"
+    ][0]
+    assert local.get("minimum") == remote.get("minimum") == 0
+    assert local.get("maximum") == remote.get("maximum") == 604800
+
+
 def assert_budget_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
     """Bind budget mutation PUT to its exact required request component."""
     path = "/api/v1/projects/{project_id}/budget"
@@ -485,6 +507,34 @@ def test_budget_check_operation_uses_required_request_component() -> None:
 
 def test_project_create_operation_uses_required_request_component() -> None:
     assert_project_create_operation_request_binding(_snapshot())
+
+
+def test_project_key_rotate_request_and_operation_match_snapshot() -> None:
+    assert_project_key_rotate_operation_request_binding(_snapshot())
+
+
+@pytest.mark.parametrize("mutation", ["field", "default", "bounds", "binding"])
+def test_project_key_rotate_request_drift_trips_guard(mutation: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schema = mutated["components"]["schemas"]["ProjectKeyRotateRequest"]
+    if mutation == "field":
+        schema["properties"]["delay_seconds"] = schema["properties"].pop(
+            "grace_seconds"
+        )
+    elif mutation == "default":
+        schema["properties"]["grace_seconds"]["default"] = 30
+    elif mutation == "bounds":
+        schema["properties"]["grace_seconds"]["anyOf"][0]["maximum"] = 60
+    else:
+        mutated["paths"]["/api/v1/projects/{project_id}/key/rotate"]["post"][
+            "requestBody"
+        ]["content"]["application/json"]["schema"][
+            "$ref"
+        ] = "#/components/schemas/ProjectCreateRequest"
+
+    with pytest.raises(AssertionError):
+        assert_request_mirrors_match(mutated)
+        assert_project_key_rotate_operation_request_binding(mutated)
 
 
 def test_budget_update_operation_uses_required_request_component() -> None:
