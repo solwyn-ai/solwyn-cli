@@ -5,12 +5,13 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import typer
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from solwyn_cli._vendor.wire import ProjectCreateRequest
+from solwyn_cli.artifacts import write_agent_artifacts
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
@@ -569,7 +570,16 @@ def _table(data: _InitData) -> TableData:
     )
 
 
-def init(context: typer.Context) -> None:
+def init(
+    context: typer.Context,
+    agents: Annotated[
+        bool,
+        typer.Option(
+            "--agents",
+            help="Write Claude, Cursor, and AGENTS.md guidance.",
+        ),
+    ] = False,
+) -> None:
     """Configure Solwyn safely for the current repository."""
     credential = _resolve_auth(context)
     project_id, credential = _resolve_project(context, credential)
@@ -578,6 +588,18 @@ def init(context: typer.Context) -> None:
     providers, module_imports = _detect_providers(Path.cwd())
     snippets = _snippets(providers, module_imports)
     budget = _verify_budget(context, credential, project_id)
+    if agents:
+        try:
+            write_agent_artifacts(_provider_scan_root(Path.cwd()))
+        except (OSError, UnicodeError, ValueError):
+            exit_with_error(
+                context,
+                OutputError(
+                    code="agent_artifact_write_failed",
+                    message="Agent guidance could not be written.",
+                    hint="Check repository permissions and AGENTS.md markers.",
+                ),
+            )
     data = _InitData(
         project_id=project_id,
         config_path=str(config_path),

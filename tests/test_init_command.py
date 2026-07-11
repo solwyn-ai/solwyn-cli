@@ -120,7 +120,7 @@ def _invoke(*arguments: str) -> Any:
     return runner.invoke(app, ["--json", *arguments, "init"])
 
 
-def test_init_is_registered_without_secret_or_agent_options() -> None:
+def test_init_is_registered_with_agents_but_without_secret_options() -> None:
     root = runner.invoke(app, ["--help"])
     command = runner.invoke(app, ["init", "--help"])
 
@@ -129,7 +129,71 @@ def test_init_is_registered_without_secret_or_agent_options() -> None:
     assert command.exit_code == 0
     assert "--api-key" not in command.stdout
     assert "--password" not in command.stdout
-    assert "--agents" not in command.stdout
+    assert "--agents" in command.stdout
+
+
+def test_init_agents_writes_artifacts_after_successful_safe_onboarding(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "proj_alpha", "init", "--agents"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert (isolated_init / ".claude/skills/solwyn/SKILL.md").is_file()
+    assert (isolated_init / ".cursor/rules/solwyn.mdc").is_file()
+    assert (isolated_init / "AGENTS.md").is_file()
+
+
+def test_init_without_agents_preserves_existing_source_tree_behavior(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_init / "app.py").write_text("import openai\n", encoding="utf-8")
+    before = {
+        path.relative_to(isolated_init): path.read_bytes()
+        for path in isolated_init.rglob("*")
+        if path.is_file()
+    }
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    after = {
+        path.relative_to(isolated_init): path.read_bytes()
+        for path in isolated_init.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_agents_reports_artifact_write_failure_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    monkeypatch.setattr(
+        init_module,
+        "write_agent_artifacts",
+        lambda _root: (_ for _ in ()).throw(OSError("read-only fixture")),
+        raising=False,
+    )
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "proj_alpha", "init", "--agents"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "agent_artifact_write_failed"
+    assert "read-only fixture" not in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_non_tty_without_credentials_exits_auth_with_api_key_guidance(

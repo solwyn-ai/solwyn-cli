@@ -9,6 +9,12 @@ import pytest
 COMMANDS_DIR = Path("src/solwyn_cli/commands")
 _LOCAL_DATA_CALLS = {
     (
+        "agent_context.py",
+        "agent_context",
+        10,
+        "typer.echo(render_surface(ArtifactSurface.AGENT_CONTEXT), nl=False)",
+    ),
+    (
         "config.py",
         "get_config_value",
         44,

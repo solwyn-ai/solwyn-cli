@@ -6,6 +6,7 @@ import typer
 from pydantic import ValidationError
 
 from solwyn_cli import __version__
+from solwyn_cli.commands.agent_context import agent_context
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import costs
@@ -30,6 +31,7 @@ app.add_typer(budget_app, name="budget")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
+app.command("agent-context")(agent_context)
 app.command("costs")(costs)
 app.command("init")(init)
 app.command("login")(login)
@@ -72,7 +74,7 @@ def main(
     if version:
         typer.echo(f"solwyn {__version__}")
         raise typer.Exit()
-    if context.invoked_subcommand == "config":
+    if context.invoked_subcommand in {"agent-context", "config"}:
         return
     try:
         validate_output_intent(
