@@ -68,7 +68,7 @@ class _CreatedProject(BaseModel):
     budget_period: BudgetPeriod
     budget_mode: BudgetMode
     created_at: AwareDatetime
-    key_prefix: str = Field(min_length=9)
+    key_prefix: str = Field(pattern=r"^sk_proj_[a-f0-9]{16}$")
 
 
 class _ProjectCreateResponse(_CreatedProject):
@@ -83,11 +83,7 @@ class _ProjectCreateResponse(_CreatedProject):
     @model_validator(mode="after")
     def validate_key_prefix(self) -> "_ProjectCreateResponse":
         raw_key = self.key.get_secret_value()
-        if (
-            not self.key_prefix.startswith("sk_proj_")
-            or len(self.key_prefix) >= len(raw_key)
-            or not raw_key.startswith(self.key_prefix)
-        ):
+        if self.key_prefix != raw_key[:24]:
             raise ValueError("Invalid project key prefix")
         return self
 

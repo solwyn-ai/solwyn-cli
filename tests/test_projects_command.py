@@ -22,6 +22,7 @@ runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
 VALID_KEY = "sk_proj_" + "d4" * 32
 CREATED_KEY = "sk_proj_" + "ab" * 32
+CREATED_PREFIX = CREATED_KEY[:24]
 ACCESS_TOKEN = "projects-access-token"
 REFRESH_TOKEN = "projects-refresh-token"
 
@@ -53,7 +54,7 @@ PROJECT_CREATE_RESPONSE = {
     "budget_mode": "hard_deny",
     "created_at": "2026-07-10T12:30:00Z",
     "key": CREATED_KEY,
-    "key_prefix": "sk_proj_abab",
+    "key_prefix": CREATED_PREFIX,
 }
 
 
@@ -205,7 +206,7 @@ def test_projects_create_store_key_never_displays_it(
     assert stored == [CREATED_KEY]
     rendered = result.stdout + result.stderr + repr(result.exception)
     assert CREATED_KEY not in rendered
-    assert "sk_proj_abab" in result.stdout
+    assert CREATED_PREFIX in result.stdout
     assert result.stderr == ""
     if output_format == "json":
         payload = json.loads(result.stdout)
@@ -433,6 +434,50 @@ def test_projects_create_rejects_malformed_response_without_secret_leak(
     assert CREATED_KEY not in rendered
     assert ACCESS_TOKEN not in rendered
     assert REFRESH_TOKEN not in rendered
+    assert len(FakeClient.instances[0].requests) == 1
+
+
+@pytest.mark.parametrize(
+    "key_prefix",
+    [
+        CREATED_KEY[:-1],
+        "sk_proj_" + "cd" * 8,
+    ],
+)
+def test_projects_create_rejects_noncanonical_key_prefix_before_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    key_prefix: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    stored: list[str] = []
+    monkeypatch.setattr(projects_module, "store_project_key", stored.append)
+    FakeClient.responses = [
+        httpx.Response(
+            201,
+            json={**PROJECT_CREATE_RESPONSE, "key_prefix": key_prefix},
+        )
+    ]
+
+    with caplog.at_level(logging.DEBUG):
+        result = runner.invoke(
+            app,
+            [
+                "--json",
+                "projects",
+                "create",
+                "--name",
+                "Created project",
+                "--store-key",
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_projects_response"
+    rendered = result.stdout + result.stderr + repr(result.exception) + caplog.text
+    assert CREATED_KEY not in rendered
+    assert stored == []
     assert len(FakeClient.instances[0].requests) == 1
 
 
