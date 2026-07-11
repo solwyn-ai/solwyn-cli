@@ -52,6 +52,66 @@ TOOL_NAMES = (
     "get_costs",
     "list_projects",
 )
+_SAFE_REMOTE_ERROR_CODES = frozenset(
+    {
+        "authentication_failed",
+        "authentication_required",
+        "budget_denied",
+        "email_not_verified",
+        "email_provider_unavailable",
+        "forbidden",
+        "invalid_project",
+        "invalid_token",
+        "not_found",
+        "project_limit_reached",
+        "project_not_found",
+        "quota_exceeded",
+        "rate_limited",
+        "reservation_not_found",
+        "token_expired",
+        "unauthorized",
+        "unknown_model",
+        "unknown_notification_channel",
+        "upgrade_required",
+    }
+)
+_SAFE_REMOTE_HINTS = {
+    "authentication_failed": "Run solwyn login again, then retry.",
+    "authentication_required": "Run solwyn login, then retry.",
+    "forbidden": "Check account access for this operation, then retry.",
+    "invalid_token": "Run solwyn login again, then retry.",
+    "project_limit_reached": (
+        "Manage project limits in the dashboard: /settings/billing"
+    ),
+    "quota_exceeded": (
+        "Review usage and plan limits in the dashboard: /settings/billing"
+    ),
+    "reservation_not_found": (
+        "The reservation expired or was consumed; run a fresh check before spend."
+    ),
+    "token_expired": "Run solwyn login again, then retry.",
+    "unauthorized": "Run solwyn login again, then retry.",
+    "upgrade_required": "Review upgrade options in the dashboard: /settings/billing",
+}
+
+
+class _ToolOnlyFastMCP(FastMCP):
+    """FastMCP 1.28.1 server that registers only the supported tool handlers."""
+
+    def _setup_handlers(self) -> None:
+        # Capabilities derive from the low-level handler registry. Registering only
+        # these two handlers prevents unsupported prompt/resource advertisement.
+        self._mcp_server.list_tools()(self.list_tools)
+        self._mcp_server.call_tool(validate_input=False)(self.call_tool)
+
+
+class McpLaunchOptions(BaseModel):
+    """Immutable non-secret CLI overrides retained for fresh per-call resolution."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    api_url: str | None = None
+    project_id: str | None = None
 
 
 class _ToolError(BaseModel):
@@ -125,11 +185,14 @@ class _ProjectsResult(_ToolResult[ProjectsListData]):
 
 
 @contextmanager
-def tool_call_client() -> Iterator[tuple[runtime.CommandContext, SolwynClient]]:
+def tool_call_client(
+    launch_options: McpLaunchOptions | None = None,
+) -> Iterator[tuple[runtime.CommandContext, SolwynClient]]:
     """Resolve fresh runtime, credential, and client state for one MCP tool call."""
+    launch = launch_options or McpLaunchOptions()
     command_runtime = runtime.resolve_command_context(
-        api_url=None,
-        project=None,
+        api_url=launch.api_url,
+        project=launch.project_id,
         output_format=None,
         json_flag=False,
         no_color=True,
@@ -222,15 +285,16 @@ def _operation_error(
     invalid_response_code: str,
 ) -> ResultT:
     if isinstance(error, ApiError):
+        code = _normalized_remote_error_code(error)
         return _error(
             result_type,
-            code=error.code,
+            code=code,
             message=(
                 "The Solwyn API rejected the request."
                 if error.status_code is not None
                 else "Could not connect to the Solwyn API."
             ),
-            hint=error.hint,
+            hint=_SAFE_REMOTE_HINTS.get(code),
             status_code=error.status_code,
         )
     if isinstance(error, AuthError):
@@ -256,6 +320,19 @@ def _operation_error(
     )
 
 
+def _normalized_remote_error_code(error: ApiError) -> str:
+    """Return only fixed semantic codes; never reflect arbitrary server values."""
+    if error.status_code == 429:
+        return "rate_limited"
+    if error.code in _SAFE_REMOTE_ERROR_CODES:
+        return error.code
+    if error.status_code == 401:
+        return "authentication_failed"
+    if error.status_code == 403:
+        return "forbidden"
+    return "api_error"
+
+
 def _require_project_key(
     result_type: type[ResultT],
     credential: JwtCredential | ProjectKeyCredential,
@@ -275,9 +352,12 @@ def _require_project_key(
     )
 
 
-def _budget_status_operation(project_id: str | None) -> _BudgetStatusResult:
+def _budget_status_operation(
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+) -> _BudgetStatusResult:
     try:
-        with tool_call_client() as (command_runtime, client):
+        with tool_call_client(launch_options) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = request_budget_status(
                 client=client,
@@ -294,6 +374,7 @@ def _budget_status_operation(project_id: str | None) -> _BudgetStatusResult:
 
 def _budget_check_operation(
     *,
+    launch_options: McpLaunchOptions,
     estimated_input_tokens: int,
     model: str,
     provider: ProviderName,
@@ -321,7 +402,7 @@ def _budget_check_operation(
             message="The budget check request is invalid.",
         )
     try:
-        with tool_call_client() as (_, client):
+        with tool_call_client(launch_options) as (_, client):
             auth_error = _require_project_key(
                 _BudgetCheckResult, client.current_credential, "checks"
             )
@@ -339,6 +420,7 @@ def _budget_check_operation(
 
 def _budget_confirm_operation(
     *,
+    launch_options: McpLaunchOptions,
     reservation_id: str,
     call_id: str,
     model: str,
@@ -390,7 +472,7 @@ def _budget_confirm_operation(
             message="The budget confirmation request is invalid.",
         )
     try:
-        with tool_call_client() as (_, client):
+        with tool_call_client(launch_options) as (_, client):
             auth_error = _require_project_key(
                 _BudgetConfirmResult, client.current_credential, "confirmation"
             )
@@ -409,9 +491,12 @@ def _budget_confirm_operation(
         )
 
 
-def _project_status_operation(project_id: str | None) -> _ProjectStatusResult:
+def _project_status_operation(
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+) -> _ProjectStatusResult:
     try:
-        with tool_call_client() as (command_runtime, client):
+        with tool_call_client(launch_options) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = fetch_project_status(
                 client=client,
@@ -428,12 +513,13 @@ def _project_status_operation(project_id: str | None) -> _ProjectStatusResult:
 
 def _costs_operation(
     *,
+    launch_options: McpLaunchOptions,
     project_id: str | None,
     time_range: CostRange,
     group_by: CostGrouping,
 ) -> _CostsResult:
     try:
-        with tool_call_client() as (command_runtime, client):
+        with tool_call_client(launch_options) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = fetch_costs(
                 client=client,
@@ -450,9 +536,9 @@ def _costs_operation(
         )
 
 
-def _projects_operation() -> _ProjectsResult:
+def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
     try:
-        with tool_call_client() as (_, client):
+        with tool_call_client(launch_options) as (_, client):
             if isinstance(client.current_credential, ProjectKeyCredential):
                 return _error(
                     _ProjectsResult,
@@ -473,9 +559,10 @@ def _projects_operation() -> _ProjectsResult:
         )
 
 
-def create_server() -> FastMCP:
+def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     """Build the stateless local MCP server and register exactly six tools."""
-    server = FastMCP(
+    launch = launch_options or McpLaunchOptions()
+    server = _ToolOnlyFastMCP(
         name="solwyn",
         instructions=(
             "Use Solwyn tools for explicit project and budget operations. "
@@ -501,7 +588,7 @@ def create_server() -> FastMCP:
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetStatusResult:
         return await anyio.to_thread.run_sync(
-            partial(_budget_status_operation, project_id)
+            partial(_budget_status_operation, project_id, launch)
         )
 
     @server.tool(
@@ -519,6 +606,7 @@ def create_server() -> FastMCP:
         return await anyio.to_thread.run_sync(
             partial(
                 _budget_check_operation,
+                launch_options=launch,
                 estimated_input_tokens=estimated_input_tokens,
                 model=model,
                 provider=provider,
@@ -558,6 +646,7 @@ def create_server() -> FastMCP:
         return await anyio.to_thread.run_sync(
             partial(
                 _budget_confirm_operation,
+                launch_options=launch,
                 reservation_id=reservation_id,
                 call_id=call_id,
                 model=model,
@@ -589,7 +678,7 @@ def create_server() -> FastMCP:
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ProjectStatusResult:
         return await anyio.to_thread.run_sync(
-            partial(_project_status_operation, project_id)
+            partial(_project_status_operation, project_id, launch)
         )
 
     @server.tool(
@@ -605,6 +694,7 @@ def create_server() -> FastMCP:
         return await anyio.to_thread.run_sync(
             partial(
                 _costs_operation,
+                launch_options=launch,
                 project_id=project_id,
                 time_range=time_range,
                 group_by=group_by,
@@ -617,6 +707,6 @@ def create_server() -> FastMCP:
         structured_output=True,
     )
     async def list_projects() -> _ProjectsResult:
-        return await anyio.to_thread.run_sync(_projects_operation)
+        return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
 
     return server

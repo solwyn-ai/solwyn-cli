@@ -10,6 +10,7 @@ from typing import Any
 import anyio
 import httpx
 import pytest
+from mcp import McpError
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from solwyn_cli import auth, runtime
@@ -342,12 +343,18 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
     async def exercise_protocol() -> None:
         server = mcp_server.create_server()
         async with create_connected_server_and_client_session(server) as session:
+            capabilities = session.get_server_capabilities()
             tools = (await session.list_tools()).tools
-            prompts = (await session.list_prompts()).prompts
-            resources = (await session.list_resources()).resources
             assert [tool.name for tool in tools] == TOOL_NAMES
-            assert prompts == []
-            assert resources == []
+            assert capabilities.prompts is None
+            assert capabilities.resources is None
+            with pytest.raises(McpError):
+                await session.list_prompts()
+            with pytest.raises(McpError):
+                await session.list_resources()
+            assert [
+                tool.name for tool in (await session.list_tools()).tools
+            ] == TOOL_NAMES
             assert all(tool.description for tool in tools)
             assert all(tool.outputSchema is not None for tool in tools)
             assert [set(tool.inputSchema["properties"]) for tool in tools] == [
@@ -792,6 +799,98 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
     assert response_queue == []
     assert len(clients) == 1 and clients[0].is_closed
     assert VALID_KEY not in str(result)
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_code"),
+    [
+        (
+            {
+                "code": VALID_KEY,
+                "message": "safe",
+                "cta_path": "/settings/billing",
+            },
+            "api_error",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": JWT_ACCESS,
+                "cta_path": "/settings/billing",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": f"/settings/{VALID_KEY}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "hint": "password-super-secret",
+                "status": "provider-secret-value",
+                "nested": [JWT_REFRESH, {"deep": VALID_KEY}],
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": {"nested": VALID_KEY},
+                "message": [JWT_ACCESS],
+                "cta_path": {"nested": "password-super-secret"},
+            },
+            "api_error",
+        ),
+    ],
+)
+def test_remote_error_fields_never_reflect_untrusted_secret_material(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    detail: dict[str, Any],
+    expected_code: str,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(402, json={"detail": detail})],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "get_costs",
+        {"time_range": "7d", "group_by": "model"},
+    )
+
+    rendered = str(result)
+    captured = capsys.readouterr()
+    for secret in (
+        VALID_KEY,
+        JWT_ACCESS,
+        JWT_REFRESH,
+        "password-super-secret",
+        "provider-secret-value",
+    ):
+        assert secret not in rendered
+        assert secret not in captured.out
+        assert secret not in captured.err
+    assert result.structuredContent["error"]["code"] == expected_code
+    assert result.structuredContent["error"]["status_code"] == 402
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/costs",
+            {"range": "7d", "group_by": "model"},
+            None,
+        )
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
 
 
 def test_budget_check_honors_exactly_one_429_retry(

@@ -1,7 +1,9 @@
 """Run the local Solwyn MCP server over stdio."""
 
+import typer
+
 from solwyn_cli.help import help_contract
-from solwyn_cli.mcp.server import TOOL_NAMES, create_server
+from solwyn_cli.mcp.server import McpLaunchOptions, TOOL_NAMES, create_server
 
 
 MCP_HELP = help_contract(
@@ -18,6 +20,9 @@ MCP_HELP = help_contract(
 )
 
 
-def mcp() -> None:
+def mcp(context: typer.Context) -> None:
     """Serve Solwyn tools over local MCP stdio."""
-    create_server().run(transport="stdio")
+    launch_options = (
+        context.obj if isinstance(context.obj, McpLaunchOptions) else McpLaunchOptions()
+    )
+    create_server(launch_options=launch_options).run(transport="stdio")
