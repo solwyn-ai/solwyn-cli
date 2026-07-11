@@ -302,6 +302,140 @@ def test_second_commit_failure_rolls_back_every_original_and_removes_residue(
     assert _transaction_residue(tmp_path) == []
 
 
+@pytest.mark.parametrize(
+    "mutated_path",
+    [CURSOR_RULE_PATH, AGENTS_PATH],
+    ids=("second-target", "third-target"),
+)
+def test_target_edit_between_commit_iterations_survives_and_prior_commits_rollback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutated_path: Path,
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    user_bytes = f"concurrent edit of {mutated_path}\n".encode()
+    monkeypatch.setattr(
+        artifacts_module,
+        "agent_guidance",
+        lambda: "# Changed guidance\n\nPrior commits must really roll back.",
+    )
+
+    def mutate_before_replace(state: object) -> None:
+        if getattr(state, "relative_path") == mutated_path:
+            (tmp_path / mutated_path).write_bytes(user_bytes)
+
+    monkeypatch.setattr(
+        artifacts_module,
+        "_before_target_replace",
+        mutate_before_replace,
+    )
+
+    with pytest.raises(OSError, match="changed during agent artifact write"):
+        write_agent_artifacts(tmp_path)
+
+    for path, original in before.items():
+        expected = user_bytes if path == mutated_path else original
+        assert (tmp_path / path).read_bytes() == expected
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_new_target_created_between_commit_iterations_survives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_bytes = b"concurrent new cursor rule\n"
+
+    def create_before_replace(state: object) -> None:
+        if getattr(state, "relative_path") == CURSOR_RULE_PATH:
+            (tmp_path / CURSOR_RULE_PATH).write_bytes(user_bytes)
+
+    monkeypatch.setattr(
+        artifacts_module,
+        "_before_target_replace",
+        create_before_replace,
+    )
+
+    with pytest.raises(OSError, match="changed during agent artifact write"):
+        write_agent_artifacts(tmp_path)
+
+    assert not (tmp_path / CLAUDE_SKILL_PATH).exists()
+    assert (tmp_path / CURSOR_RULE_PATH).read_bytes() == user_bytes
+    assert not (tmp_path / AGENTS_PATH).exists()
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_post_commit_user_edit_survives_with_original_backup_retained(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    user_bytes = b"user edit after transaction replacement\n"
+    monkeypatch.setattr(
+        artifacts_module,
+        "agent_guidance",
+        lambda: "# Changed guidance\n\nTrigger a partial commit.",
+    )
+
+    def mutate_after_replace(state: object) -> None:
+        if getattr(state, "relative_path") == CLAUDE_SKILL_PATH:
+            (tmp_path / CLAUDE_SKILL_PATH).write_bytes(user_bytes)
+            raise OSError("injected failure after concurrent edit")
+
+    monkeypatch.setattr(
+        artifacts_module,
+        "_after_target_replace",
+        mutate_after_replace,
+    )
+
+    with pytest.raises(
+        artifacts_module.ArtifactRecoveryError,
+        match="manual recovery required",
+    ) as captured:
+        write_agent_artifacts(tmp_path)
+
+    assert (tmp_path / CLAUDE_SKILL_PATH).read_bytes() == user_bytes
+    assert (tmp_path / CURSOR_RULE_PATH).read_bytes() == before[CURSOR_RULE_PATH]
+    assert (tmp_path / AGENTS_PATH).read_bytes() == before[AGENTS_PATH]
+    residue = _transaction_residue(tmp_path)
+    assert len(residue) == 1
+    recovery_backup = residue[0]
+    assert recovery_backup.read_bytes() == before[CLAUDE_SKILL_PATH]
+    assert captured.value.recovery_paths == (
+        CLAUDE_SKILL_PATH.parent / recovery_backup.name,
+    )
+    assert captured.value.conflict_paths == (CLAUDE_SKILL_PATH,)
+
+
+def test_post_commit_edit_of_previously_absent_target_survives_without_fake_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_bytes = b"user edit of newly installed skill\n"
+
+    def mutate_after_replace(state: object) -> None:
+        if getattr(state, "relative_path") == CLAUDE_SKILL_PATH:
+            (tmp_path / CLAUDE_SKILL_PATH).write_bytes(user_bytes)
+            raise OSError("injected failure after concurrent edit")
+
+    monkeypatch.setattr(
+        artifacts_module,
+        "_after_target_replace",
+        mutate_after_replace,
+    )
+
+    with pytest.raises(
+        artifacts_module.ArtifactRecoveryError,
+        match="manual recovery required",
+    ) as captured:
+        write_agent_artifacts(tmp_path)
+
+    assert (tmp_path / CLAUDE_SKILL_PATH).read_bytes() == user_bytes
+    assert not (tmp_path / CURSOR_RULE_PATH).exists()
+    assert not (tmp_path / AGENTS_PATH).exists()
+    assert captured.value.recovery_paths == ()
+    assert captured.value.conflict_paths == (CLAUDE_SKILL_PATH,)
+    assert _transaction_residue(tmp_path) == []
+
+
 def test_failed_restore_retains_only_recoverable_original_backup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

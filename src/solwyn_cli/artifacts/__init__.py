@@ -47,18 +47,33 @@ class _ArtifactState(BaseModel):
     temporary_name: str | None = None
     backup_name: str | None = None
     committed: bool = False
+    installed_identity: _FILE_IDENTITY | None = None
     retain_backup_for_recovery: bool = False
 
 
 class ArtifactRecoveryError(OSError):
-    """Rollback failed but original artifact bytes remain in named backups."""
+    """Rollback preserved concurrent edits or retained original recovery bytes."""
 
-    def __init__(self, recovery_paths: tuple[Path, ...]) -> None:
+    def __init__(
+        self,
+        recovery_paths: tuple[Path, ...],
+        conflict_paths: tuple[Path, ...] = (),
+    ) -> None:
         self.recovery_paths = recovery_paths
-        rendered_paths = ", ".join(str(path) for path in recovery_paths)
+        self.conflict_paths = conflict_paths
+        details: list[str] = []
+        if recovery_paths:
+            details.append(
+                "retained backup(s): " + ", ".join(str(path) for path in recovery_paths)
+            )
+        if conflict_paths:
+            details.append(
+                "preserved concurrent target(s): "
+                + ", ".join(str(path) for path in conflict_paths)
+            )
         super().__init__(
-            "Agent artifact rollback failed; manual recovery required from retained "
-            f"backup(s): {rendered_paths}"
+            "Agent artifact rollback failed; manual recovery required; "
+            + "; ".join(details)
         )
 
 
@@ -440,6 +455,14 @@ def _before_artifact_commit() -> None:
     """Test seam immediately before stable-parent and target revalidation."""
 
 
+def _before_target_replace(state: _ArtifactState) -> None:
+    """Test seam immediately before one target's final identity check."""
+
+
+def _after_target_replace(state: _ArtifactState) -> None:
+    """Test seam after capturing one transaction-installed target identity."""
+
+
 def _cleanup_transaction(states: list[_ArtifactState]) -> None:
     for state in states:
         _unlink_at(state.parent_fd, state.temporary_name)
@@ -449,8 +472,18 @@ def _cleanup_transaction(states: list[_ArtifactState]) -> None:
 
 def _rollback_transaction(states: list[_ArtifactState]) -> None:
     rollback_error: OSError | None = None
+    conflict_paths: list[Path] = []
     for state in reversed(states):
         if not state.committed:
+            continue
+        if (
+            state.installed_identity is None
+            or _target_identity(state.parent_fd, state.target_name)
+            != state.installed_identity
+        ):
+            conflict_paths.append(state.relative_path)
+            if state.original_identity is not None and state.backup_name is not None:
+                state.retain_backup_for_recovery = True
             continue
         if state.original_identity is None:
             try:
@@ -478,8 +511,12 @@ def _rollback_transaction(states: list[_ArtifactState]) -> None:
         for state in states
         if state.retain_backup_for_recovery and state.backup_name is not None
     )
-    if recovery_paths:
-        raise ArtifactRecoveryError(recovery_paths) from rollback_error
+    ordered_conflicts = tuple(reversed(conflict_paths))
+    if recovery_paths or ordered_conflicts:
+        raise ArtifactRecoveryError(
+            recovery_paths,
+            ordered_conflicts,
+        ) from rollback_error
     if rollback_error is not None:
         raise OSError(
             "Could not roll back agent artifact transaction."
@@ -558,6 +595,16 @@ def write_agent_artifacts(root: Path) -> None:
             commit_started = True
             if state.temporary_name is None:
                 raise OSError("Agent artifact stage is missing.")
+            _before_target_replace(state)
+            _assert_parent_stable(state)
+            _assert_target_stable(state)
+            staged_identity = _target_identity(
+                state.parent_fd,
+                state.temporary_name,
+            )
+            if staged_identity is None:
+                raise OSError("Agent artifact stage is missing.")
+            state.installed_identity = staged_identity
             _replace_at(
                 state.temporary_name,
                 state.target_name,
@@ -565,8 +612,22 @@ def write_agent_artifacts(root: Path) -> None:
             )
             state.temporary_name = None
             state.committed = True
+            installed_identity = _target_identity(
+                state.parent_fd,
+                state.target_name,
+            )
+            if (
+                installed_identity is None
+                or installed_identity[:-1] != staged_identity[:-1]
+            ):
+                raise OSError(
+                    f"Agent artifact changed during agent artifact write: "
+                    f"{state.relative_path}"
+                )
+            state.installed_identity = installed_identity
             _fsync_directory(state.parent_fd)
             _assert_parent_stable(state)
+            _after_target_replace(state)
         _cleanup_transaction(states)
         for state in states:
             _fsync_directory(state.parent_fd)

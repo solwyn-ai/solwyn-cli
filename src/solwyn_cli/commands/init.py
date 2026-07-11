@@ -609,16 +609,23 @@ def init(
         try:
             write_agent_artifacts(_provider_scan_root(Path.cwd()))
         except ArtifactRecoveryError as error:
-            retained = ", ".join(str(path) for path in error.recovery_paths)
+            details: list[str] = []
+            if error.recovery_paths:
+                details.append(
+                    "retained backup(s): "
+                    + ", ".join(str(path) for path in error.recovery_paths)
+                )
+            if error.conflict_paths:
+                details.append(
+                    "preserved concurrent target(s): "
+                    + ", ".join(str(path) for path in error.conflict_paths)
+                )
             exit_with_error(
                 context,
                 OutputError(
                     code="agent_artifact_recovery_required",
                     message="Agent guidance could not be fully restored.",
-                    hint=(
-                        "Manual recovery is required from retained backup(s): "
-                        f"{retained}"
-                    ),
+                    hint=("Manual recovery is required; " + "; ".join(details)),
                 ),
             )
         except (OSError, UnicodeError, ValueError):
