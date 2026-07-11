@@ -3,6 +3,7 @@
 import os
 import tempfile
 import tomllib
+from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO, Iterator, Literal
@@ -186,14 +187,23 @@ def save_config(config: Config, *, omit_default_api_url: bool = False) -> None:
 
 def update_config_value(key: str, value: str) -> Config:
     """Atomically read, validate, and update one allowlisted setting."""
-    if key not in CONFIG_KEYS:
-        raise ValueError(f"Invalid configuration key: {key}")
+    return update_config_values({key: value})
+
+
+def update_config_values(
+    values: Mapping[str, object], *, omit_default_api_url: bool = False
+) -> Config:
+    """Atomically merge and persist multiple allowlisted settings under one lock."""
+    invalid_keys = set(values).difference(CONFIG_KEYS)
+    if invalid_keys:
+        invalid_key = sorted(invalid_keys)[0]
+        raise ValueError(f"Invalid configuration key: {invalid_key}")
 
     path = get_config_path()
     with _config_lock(path):
         current = load_config()
         updated = Config.model_validate(
-            {**current.model_dump(include=CONFIG_KEYS), key: value}
+            {**current.model_dump(include=CONFIG_KEYS), **values}
         )
-        save_config(updated)
+        save_config(updated, omit_default_api_url=omit_default_api_url)
     return updated

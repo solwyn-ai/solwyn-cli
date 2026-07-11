@@ -36,8 +36,7 @@ from solwyn_cli.config import (
     ConfigLoadError,
     ConfigWriteError,
     get_config_path,
-    load_config,
-    save_config,
+    update_config_values,
 )
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -46,6 +45,9 @@ from solwyn_cli.runtime import command_context, output_engine
 
 
 _DEFAULT_API_URL = Config().api_url
+_MAX_PROVIDER_SOURCE_FILES = 2_000
+_MAX_PROVIDER_SOURCE_BYTES = 1_000_000
+_MAX_PROVIDER_TOTAL_BYTES = 10_000_000
 _IGNORED_DIRECTORIES = frozenset(
     {
         ".git",
@@ -274,9 +276,9 @@ def _resolve_jwt_project(
                         ),
                         semantic=ErrorSemantic.USAGE,
                     )
-                return explicit_project, credential
+                return explicit_project, client.current_credential
             if len(projects) == 1:
-                return projects[0].id, credential
+                return projects[0].id, client.current_credential
             if not _stdin_is_tty():
                 exit_with_error(
                     context,
@@ -289,7 +291,7 @@ def _resolve_jwt_project(
                 )
             if not projects:
                 project_id, stored = _create_project(context, client)
-                return project_id, stored or credential
+                return project_id, stored or client.current_credential
 
             project_ids = ", ".join(project.id for project in projects)
             selection = typer.prompt(
@@ -298,7 +300,7 @@ def _resolve_jwt_project(
             ).strip()
             if selection == "create":
                 project_id, stored = _create_project(context, client)
-                return project_id, stored or credential
+                return project_id, stored or client.current_credential
             if selection not in by_id:
                 exit_with_error(
                     context,
@@ -309,7 +311,7 @@ def _resolve_jwt_project(
                     ),
                     semantic=ErrorSemantic.USAGE,
                 )
-            return selection, credential
+            return selection, client.current_credential
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -349,15 +351,11 @@ def _resolve_project(
 
 
 def _write_config(api_url: str, project_id: str) -> Path:
-    current = load_config()
-    updated = current.model_copy(
-        update={
+    update_config_values(
+        {
             "default_project": project_id,
             "api_url": api_url if api_url != _DEFAULT_API_URL else _DEFAULT_API_URL,
-        }
-    )
-    save_config(
-        Config.model_validate(updated.model_dump()),
+        },
         omit_default_api_url=True,
     )
     return get_config_path()
@@ -420,22 +418,47 @@ def _imports_in(tree: ast.AST) -> tuple[set[Provider], set[Provider]]:
 
 
 def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
+    scan_root, inside_repository = _provider_scan_root(root)
     detected: set[Provider] = set()
     module_imports: set[Provider] = set()
-    for directory, directory_names, file_names in os.walk(root):
+    inspected_files = 0
+    inspected_bytes = 0
+    for directory, directory_names, file_names in os.walk(scan_root):
         if (Path(directory) / "pyvenv.cfg").is_file():
             directory_names.clear()
             continue
         directory_names[:] = sorted(
-            name for name in directory_names if name not in _IGNORED_DIRECTORIES
+            name
+            for name in directory_names
+            if name not in _IGNORED_DIRECTORIES
+            and (inside_repository or not ((Path(directory) / name / ".git").exists()))
         )
         for file_name in sorted(file_names):
             if not file_name.endswith(".py"):
                 continue
+            if inspected_files >= _MAX_PROVIDER_SOURCE_FILES:
+                return (
+                    [provider for provider in _PROVIDER_ORDER if provider in detected],
+                    module_imports,
+                )
+            inspected_files += 1
             path = Path(directory) / file_name
             try:
                 if path.is_symlink():
                     continue
+                file_size = path.stat(follow_symlinks=False).st_size
+                if file_size > _MAX_PROVIDER_SOURCE_BYTES:
+                    continue
+                if inspected_bytes + file_size > _MAX_PROVIDER_TOTAL_BYTES:
+                    return (
+                        [
+                            provider
+                            for provider in _PROVIDER_ORDER
+                            if provider in detected
+                        ],
+                        module_imports,
+                    )
+                inspected_bytes += file_size
                 source = path.read_bytes()
                 if b"\0" in source:
                     continue
@@ -449,6 +472,15 @@ def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
         [provider for provider in _PROVIDER_ORDER if provider in detected],
         module_imports,
     )
+
+
+def _provider_scan_root(start: Path) -> tuple[Path, bool]:
+    """Resolve the nearest containing Git root or a bounded cwd fallback."""
+    resolved = start.resolve()
+    for candidate in (resolved, *resolved.parents):
+        if (candidate / ".git").exists():
+            return candidate, True
+    return resolved, False
 
 
 def _snippets(

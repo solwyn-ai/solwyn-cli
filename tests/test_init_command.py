@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli import config as config_module
+from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.commands import init as init_module
 from solwyn_cli.commands import login as login_module
@@ -66,6 +67,10 @@ class FakeClient:
 
     def __enter__(self) -> "FakeClient":
         return self
+
+    @property
+    def current_credential(self) -> object:
+        return self.credential
 
     def __exit__(self, *args: object) -> None:
         return None
@@ -480,6 +485,87 @@ def test_provider_detection_prunes_arbitrarily_named_virtualenv_roots(
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
 
 
+def test_provider_detection_uses_git_root_from_nested_invocation(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_init / ".git").mkdir()
+    (isolated_init / "app.py").write_text("import openai\n", encoding="utf-8")
+    nested = isolated_init / "src" / "package"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
+def test_provider_detection_from_fallback_root_prunes_nested_repositories(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_init / "main.py").write_text("import openai\n", encoding="utf-8")
+    unrelated = isolated_init / "unrelated-repo"
+    (unrelated / ".git").mkdir(parents=True)
+    (unrelated / "provider.py").write_text("import anthropic\n", encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
+def test_provider_detection_skips_oversized_python_sources(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(init_module, "_MAX_PROVIDER_SOURCE_BYTES", 32, raising=False)
+    (isolated_init / "main.py").write_text("import openai\n", encoding="utf-8")
+    (isolated_init / "huge.py").write_text(
+        "import anthropic\n" + "#" * 64,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
+def test_provider_detection_stops_at_deterministic_python_file_limit(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(init_module, "_MAX_PROVIDER_SOURCE_FILES", 1, raising=False)
+    (isolated_init / "a.py").write_text("import openai\n", encoding="utf-8")
+    (isolated_init / "b.py").write_text("import anthropic\n", encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
+def test_provider_detection_stops_at_deterministic_total_byte_limit(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(init_module, "_MAX_PROVIDER_TOTAL_BYTES", 20, raising=False)
+    (isolated_init / "a.py").write_text("import openai\n", encoding="utf-8")
+    (isolated_init / "b.py").write_text("import anthropic\n", encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
 def test_provider_environment_values_are_never_read_or_rendered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -555,14 +641,9 @@ def test_init_config_failures_are_structured_and_safe(
     expected_code: str,
 ) -> None:
     monkeypatch.setattr(init_module, "resolve_credential", _key)
-    target = (
-        "load_config"
-        if isinstance(failure, config_module.ConfigLoadError)
-        else "save_config"
-    )
     monkeypatch.setattr(
         init_module,
-        target,
+        "update_config_values",
         lambda *args, **kwargs: (_ for _ in ()).throw(failure),
     )
 
@@ -641,6 +722,73 @@ def test_jwt_single_project_is_selected_and_validated_before_final_get(
     ] == [
         ("GET", "/api/v1/projects", {}),
         ("GET", "/api/v1/projects/proj_alpha/budget", {}),
+    ]
+
+
+def test_jwt_refresh_from_project_list_is_reused_for_final_budget_get(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_credential = _jwt()
+    rotated = auth.JwtCredential(
+        access_token="rotated-access-token",
+        refresh_token="rotated-refresh-token",
+    )
+    events: list[tuple[str, str | None]] = []
+    refresh_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal refresh_count
+        authorization = request.headers.get("Authorization")
+        events.append((f"{request.method} {request.url.path}", authorization))
+        if request.url.path == "/api/v1/projects":
+            if authorization == f"Bearer {ACCESS_TOKEN}":
+                return httpx.Response(401, json={"detail": "expired"})
+            assert authorization == "Bearer rotated-access-token"
+            return httpx.Response(200, json=[PROJECT])
+        if request.url.path == "/api/v1/auth/refresh":
+            refresh_count += 1
+            if refresh_count > 1:
+                return httpx.Response(401, json={"detail": "stale refresh"})
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "rotated-access-token",
+                    "refresh_token": "rotated-refresh-token",
+                    "token_type": "bearer",
+                },
+            )
+        if request.url.path == "/api/v1/projects/proj_alpha/budget":
+            if authorization != "Bearer rotated-access-token":
+                return httpx.Response(401, json={"detail": "expired"})
+            return httpx.Response(200, json=BUDGET)
+        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
+
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*, api_url: str, credential: object = None) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(init_module, "resolve_credential", lambda: old_credential)
+    monkeypatch.setattr(init_module, "SolwynClient", client_factory)
+    monkeypatch.setattr(budget_module, "SolwynClient", client_factory)
+    monkeypatch.setattr(auth, "store_jwt_pair", lambda *_args: rotated)
+
+    result = _invoke()
+
+    assert result.exit_code == 0, result.stderr
+    assert refresh_count == 1
+    assert events == [
+        ("GET /api/v1/projects", f"Bearer {ACCESS_TOKEN}"),
+        ("POST /api/v1/auth/refresh", None),
+        ("GET /api/v1/projects", "Bearer rotated-access-token"),
+        (
+            "GET /api/v1/projects/proj_alpha/budget",
+            "Bearer rotated-access-token",
+        ),
     ]
 
 

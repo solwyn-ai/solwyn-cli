@@ -3,7 +3,9 @@
 import multiprocessing
 import os
 import stat
+import threading
 import tomllib
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -260,3 +262,92 @@ def test_concurrent_different_key_updates_are_serialized(config_path: Path) -> N
             second.join(timeout=1)
 
     assert load_config() == Config(default_project="proj_locked", format="json")
+
+
+def test_multi_field_update_preserves_unrelated_config(config_path: Path) -> None:
+    save_config(Config(format="json"))
+
+    updated = config_module.update_config_values(
+        {
+            "default_project": "proj_init",
+            "api_url": "https://staging.example.test",
+        }
+    )
+
+    assert updated == Config(
+        default_project="proj_init",
+        api_url="https://staging.example.test",
+        format="json",
+    )
+    assert load_config() == updated
+
+
+def test_concurrent_init_update_preserves_other_update_field(
+    config_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = {"config": Config()}
+    mutex = threading.Lock()
+    release_first = threading.Event()
+    first_loaded = threading.Event()
+    init_attempted_lock = threading.Event()
+    errors: list[BaseException] = []
+
+    @contextmanager
+    def coordinated_lock(_path: Path) -> Any:
+        if threading.current_thread().name == "init-update":
+            init_attempted_lock.set()
+        with mutex:
+            yield
+
+    def coordinated_load() -> Config:
+        current = state["config"]
+        if threading.current_thread().name == "format-update":
+            first_loaded.set()
+            if not release_first.wait(timeout=5):
+                raise TimeoutError("test did not release first update")
+        return current
+
+    def coordinated_save(config: Config, *, omit_default_api_url: bool = False) -> None:
+        state["config"] = config
+
+    def update(values: dict[str, object]) -> None:
+        try:
+            config_module.update_config_values(values)
+        except BaseException as error:
+            errors.append(error)
+
+    monkeypatch.setattr(config_module, "_config_lock", coordinated_lock)
+    monkeypatch.setattr(config_module, "load_config", coordinated_load)
+    monkeypatch.setattr(config_module, "save_config", coordinated_save)
+    format_thread = threading.Thread(
+        target=update,
+        name="format-update",
+        args=({"format": "json"},),
+    )
+    init_thread = threading.Thread(
+        target=update,
+        name="init-update",
+        args=(
+            {
+                "default_project": "proj_init",
+                "api_url": "https://staging.example.test",
+            },
+        ),
+    )
+
+    format_thread.start()
+    assert first_loaded.wait(timeout=5)
+    init_thread.start()
+    assert init_attempted_lock.wait(timeout=5)
+    release_first.set()
+    format_thread.join(timeout=5)
+    init_thread.join(timeout=5)
+
+    assert not format_thread.is_alive()
+    assert not init_thread.is_alive()
+    assert errors == []
+    assert state["config"] == Config(
+        default_project="proj_init",
+        api_url="https://staging.example.test",
+        format="json",
+    )
