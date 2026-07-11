@@ -463,6 +463,23 @@ def test_provider_detection_does_not_follow_source_symlinks_outside_repository(
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
 
 
+def test_provider_detection_prunes_arbitrarily_named_virtualenv_roots(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_init / "main.py").write_text("import openai\n", encoding="utf-8")
+    environment = isolated_init / "env"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+    (environment / "provider.py").write_text("import anthropic\n", encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
 def test_provider_environment_values_are_never_read_or_rendered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -576,6 +593,32 @@ def test_init_invalid_existing_config_is_structured_before_context_resolution(
     assert error["schema"] == "solwyn.error.v1"
     assert error["code"] == "config_load_failed"
     assert "sensitive" not in result.stderr + repr(result.exception)
+    assert FakeClient.instances == []
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--format", "bogus"],
+        ["--json", "--format", "table"],
+    ],
+)
+def test_invalid_output_intent_wins_over_malformed_config_as_usage_error(
+    monkeypatch: pytest.MonkeyPatch,
+    options: list[str],
+) -> None:
+    path = init_module.get_config_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+
+    result = runner.invoke(app, [*options, "init"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Invalid or conflicting output options" in result.stderr
+    assert "sensitive" not in result.stderr + repr(result.exception)
+    assert "Traceback" not in result.stderr
     assert FakeClient.instances == []
 
 

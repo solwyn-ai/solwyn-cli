@@ -423,6 +423,9 @@ def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
     detected: set[Provider] = set()
     module_imports: set[Provider] = set()
     for directory, directory_names, file_names in os.walk(root):
+        if (Path(directory) / "pyvenv.cfg").is_file():
+            directory_names.clear()
+            continue
         directory_names[:] = sorted(
             name for name in directory_names if name not in _IGNORED_DIRECTORIES
         )

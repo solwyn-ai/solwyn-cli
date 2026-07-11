@@ -17,7 +17,11 @@ from solwyn_cli.commands.status import status
 from solwyn_cli.commands.whoami import whoami
 from solwyn_cli.config import ConfigLoadError
 from solwyn_cli.output import OutputError, OutputUsageError
-from solwyn_cli.runtime import bootstrap_output_engine, resolve_command_context
+from solwyn_cli.runtime import (
+    bootstrap_output_engine,
+    resolve_command_context,
+    validate_output_intent,
+)
 
 app = typer.Typer(
     add_completion=False, invoke_without_command=True, no_args_is_help=True
@@ -70,6 +74,15 @@ def main(
         raise typer.Exit()
     if context.invoked_subcommand == "config":
         return
+    try:
+        validate_output_intent(
+            output_format=output_format,
+            json_flag=json_output,
+        )
+    except OutputUsageError:
+        raise typer.BadParameter(
+            "Invalid or conflicting output options.", param_hint="format"
+        ) from None
     try:
         context.obj = resolve_command_context(
             api_url=api_url,

@@ -53,6 +53,22 @@ def resolve_command_context(
     )
 
 
+def validate_output_intent(
+    *,
+    output_format: str | None,
+    json_flag: bool,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate explicit and environment output intent without loading config."""
+    environment = os.environ if environ is None else environ
+    resolve_output_format(
+        explicit_format=output_format,
+        json_flag=json_flag,
+        environ=environment,
+        config_format=None,
+    )
+
+
 def command_context(context: typer.Context) -> CommandContext:
     """Return the callback-populated context for a registered command."""
     if not isinstance(context.obj, CommandContext):
