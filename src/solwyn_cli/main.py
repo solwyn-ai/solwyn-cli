@@ -12,6 +12,7 @@ from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import COSTS_HELP, costs
 from solwyn_cli.commands.init import INIT_HELP, init
 from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
+from solwyn_cli.commands.mcp import MCP_HELP, mcp
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.status import STATUS_HELP, status
@@ -48,6 +49,7 @@ app.command("costs", epilog=COSTS_HELP)(costs)
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)
+app.command("mcp", epilog=MCP_HELP)(mcp)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 
@@ -86,7 +88,7 @@ def main(
     if version:
         typer.echo(f"solwyn {__version__}")
         raise typer.Exit()
-    if context.invoked_subcommand in {"agent-context", "config"}:
+    if context.invoked_subcommand in {"agent-context", "config", "mcp"}:
         return
     try:
         validate_output_intent(

@@ -128,6 +128,12 @@ HELP_CONTRACTS = {
         "exits": "0 success; 2 usage; 3 credential storage",
         "schema": "solwyn.logout.v1",
     },
+    ("mcp",): {
+        "endpoint": "local stdio MCP server",
+        "auth": "resolved per tool call",
+        "exits": "0 clean shutdown; 1 startup or protocol failure; 2 usage",
+        "schema": "MCP protocol (stdio JSON-RPC)",
+    },
     ("projects",): {
         "endpoint": "composite router for project subcommands",
         "auth": "varies by subcommand",
