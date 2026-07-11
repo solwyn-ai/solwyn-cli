@@ -36,7 +36,12 @@ def create_server() -> FastMCP:
         name="solwyn",
         instructions=(
             "Use Solwyn tools for explicit project and budget operations. "
-            "Budget status is the polling surface; budget check creates a reservation."
+            "Budget status is a pure read and the only polling surface. "
+            "Budget check creates a reservation only immediately before caller-made "
+            "un-instrumented provider spend. "
+            "Budget confirm settles a non-null reservation after that spend. "
+            "Never wrap Solwyn SDK-instrumented calls with budget check or confirm. "
+            "When check returns a null reservation, skip confirm."
         ),
         log_level="ERROR",
     )

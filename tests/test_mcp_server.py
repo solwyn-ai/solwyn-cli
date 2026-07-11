@@ -1,7 +1,13 @@
 """Protocol and command tests for the local MCP stdio server."""
 
+import os
+import sys
+from pathlib import Path
+
 import anyio
 import pytest
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.memory import create_connected_server_and_client_session
 from typer.testing import CliRunner
 
@@ -14,6 +20,16 @@ from solwyn_cli.output import OutputFormat
 
 
 runner = CliRunner()
+_GUARDRAIL_INSTRUCTIONS = (
+    "Budget status is a pure read and the only polling surface.",
+    (
+        "Budget check creates a reservation only immediately before "
+        "caller-made un-instrumented provider spend."
+    ),
+    "Budget confirm settles a non-null reservation after that spend.",
+    "Never wrap Solwyn SDK-instrumented calls with budget check or confirm.",
+    "When check returns a null reservation, skip confirm.",
+)
 
 
 def test_fastmcp_server_initializes_and_lists_tools_in_process() -> None:
@@ -28,6 +44,41 @@ def test_fastmcp_server_initializes_and_lists_tools_in_process() -> None:
         assert tools.tools == []
 
     anyio.run(exercise_protocol)
+
+
+def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
+    tmp_path: Path,
+) -> None:
+    async def exercise_stdio_entrypoint() -> None:
+        executable = Path(sys.executable).with_name(
+            "solwyn.exe" if os.name == "nt" else "solwyn"
+        )
+        server = StdioServerParameters(
+            command=str(executable),
+            args=["mcp"],
+            cwd=Path(__file__).resolve().parents[1],
+            env={"SOLWYN_API_KEY": "must-not-be-resolved-or-echoed"},
+        )
+
+        with (tmp_path / "mcp-stderr.log").open("w+", encoding="utf-8") as stderr:
+            with anyio.fail_after(10):
+                async with stdio_client(server, errlog=stderr) as streams:
+                    async with ClientSession(*streams) as session:
+                        initialized = await session.initialize()
+                        capabilities = session.get_server_capabilities()
+                        tools = await session.list_tools()
+            stderr.seek(0)
+            stderr_output = stderr.read()
+
+        assert initialized.serverInfo.name == "solwyn"
+        assert capabilities.tools is not None
+        assert tools.tools == []
+        assert initialized.instructions is not None
+        for instruction in _GUARDRAIL_INSTRUCTIONS:
+            assert instruction in initialized.instructions
+        assert stderr_output == ""
+
+    anyio.run(exercise_stdio_entrypoint)
 
 
 def test_server_factory_does_not_eagerly_resolve_runtime_or_auth(
@@ -96,7 +147,7 @@ def test_tool_call_client_resolves_fresh_runtime_and_credential_each_time(
     assert len(closed) == 2
 
 
-def test_mcp_command_runs_stdio_without_eager_auth_or_stdout(
+def test_mcp_command_dispatches_stdio_without_eager_auth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     transports: list[str] = []
