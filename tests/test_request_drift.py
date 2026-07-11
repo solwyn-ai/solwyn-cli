@@ -28,6 +28,13 @@ REQUEST_MIRRORS = {
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
 }
+DECLARED_DEFAULT_FIELDS = {
+    "ProjectCreateRequest": (
+        "budget_limit",
+        "budget_period",
+        "budget_mode",
+    ),
+}
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 
 
@@ -229,6 +236,14 @@ def assert_request_mirrors_match(snapshot: dict[str, Any]) -> None:
                 f"{path}: enum/const/pattern values differ; "
                 f"CLI={sorted(local_domains.get(path, set()), key=repr)}, "
                 f"snapshot={sorted(remote_domains.get(path, set()), key=repr)}"
+            )
+
+        for field in DECLARED_DEFAULT_FIELDS.get(component, ()):
+            local_default = local["properties"][field].get("default")
+            remote_default = remote["properties"][field].get("default")
+            assert local_default == remote_default, (
+                f"{component}.{field}: default differs; "
+                f"CLI={local_default!r}, snapshot={remote_default!r}"
             )
 
 
@@ -963,6 +978,29 @@ def test_changed_finite_pattern_domain_trips_drift_guard() -> None:
     with pytest.raises(
         AssertionError,
         match=r"ProjectCreateRequest\.budget_mode: enum/const/pattern values",
+    ):
+        assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize(
+    ("field", "changed_default"),
+    [
+        ("budget_limit", 250.0),
+        ("budget_period", "daily"),
+        ("budget_mode", "hard_deny"),
+    ],
+)
+def test_changed_project_create_default_trips_drift_guard(
+    field: str,
+    changed_default: object,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    project_create = _schema(mutated, "ProjectCreateRequest")
+    project_create["properties"][field]["default"] = changed_default
+
+    with pytest.raises(
+        AssertionError,
+        match=rf"ProjectCreateRequest\.{field}: default differs",
     ):
         assert_request_mirrors_match(mutated)
 
