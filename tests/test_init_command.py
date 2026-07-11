@@ -225,7 +225,19 @@ def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
     monkeypatch.setattr(init_module, "resolve_credential", lambda: None)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(init_module.typer, "prompt", prompt)
-    monkeypatch.setattr(init_module, "store_project_key", lambda _value: _key())
+    stored: list[str] = []
+    monkeypatch.setattr(
+        init_module,
+        "authenticate_with_project_key",
+        lambda value: stored.append(value) or _key(),
+    )
+    monkeypatch.setattr(
+        login_module,
+        "store_project_key",
+        lambda _value: (_ for _ in ()).throw(
+            AssertionError("test must not call the real keyring storage path")
+        ),
+    )
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
     result = _invoke("--project", "proj_alpha")
@@ -235,6 +247,7 @@ def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
         ("Authentication method (key/login)", False),
         ("Project key", True),
     ]
+    assert stored == [VALID_KEY]
     assert VALID_KEY not in result.stdout + result.stderr + repr(result.exception)
 
 
