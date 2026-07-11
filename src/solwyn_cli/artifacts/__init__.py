@@ -341,34 +341,90 @@ def _assert_target_stable(state: _ArtifactState) -> None:
         )
 
 
+def _during_backup_copy(state: _ArtifactState) -> None:
+    """Test seam after opening the stable source and before copying its bytes."""
+
+
+def _write_all(file_fd: int, content: bytes) -> None:
+    remaining = memoryview(content)
+    while remaining:
+        written = os.write(file_fd, remaining)
+        if written == 0:
+            raise OSError("Could not copy agent artifact backup.")
+        remaining = remaining[written:]
+
+
 def _backup_artifact(state: _ArtifactState) -> str | None:
     if state.original_identity is None:
         return None
     backup_name = _unique_transaction_name("backup", state.target_name)
+    source_fd = -1
+    backup_fd = -1
     try:
-        os.link(
-            state.target_name,
-            backup_name,
-            src_dir_fd=state.parent_fd,
-            dst_dir_fd=state.parent_fd,
-            follow_symlinks=False,
+        source_flags = (
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
         )
-        source_identity = _target_identity(state.parent_fd, state.target_name)
-        backup_identity = _target_identity(state.parent_fd, backup_name)
+        source_fd = os.open(
+            state.target_name,
+            source_flags,
+            dir_fd=state.parent_fd,
+        )
         if (
-            source_identity is None
-            or source_identity[:-1] != state.original_identity[:-1]
-            or backup_identity != source_identity
+            _file_identity(os.fstat(source_fd)) != state.original_identity
+            or _target_identity(state.parent_fd, state.target_name)
+            != state.original_identity
         ):
             raise OSError(
                 f"Agent artifact changed during agent artifact write: "
                 f"{state.relative_path}"
             )
-        state.original_identity = source_identity
+
+        backup_flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        mode = stat.S_IMODE(state.original_identity[2]) & 0o777
+        backup_fd = os.open(
+            backup_name,
+            backup_flags,
+            mode,
+            dir_fd=state.parent_fd,
+        )
+        os.fchmod(backup_fd, mode)
+        _during_backup_copy(state)
+        while chunk := os.read(source_fd, 128 * 1024):
+            _write_all(backup_fd, chunk)
+        _fsync_staged_file(backup_fd)
+
+        source_identity = _file_identity(os.fstat(source_fd))
+        backup_identity = _target_identity(state.parent_fd, backup_name)
+        backup_descriptor_identity = _file_identity(os.fstat(backup_fd))
+        if (
+            source_identity != state.original_identity
+            or _target_identity(state.parent_fd, state.target_name)
+            != state.original_identity
+            or backup_identity is None
+            or backup_identity != backup_descriptor_identity
+            or not stat.S_ISREG(backup_identity[2])
+            or backup_identity[:2] == source_identity[:2]
+            or backup_identity[3] != state.original_identity[3]
+        ):
+            raise OSError(
+                f"Agent artifact changed during agent artifact write: "
+                f"{state.relative_path}"
+            )
         return backup_name
     except BaseException:
         _unlink_at(state.parent_fd, backup_name)
         raise
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+        if backup_fd >= 0:
+            os.close(backup_fd)
 
 
 def _replace_at(source: str, target: str, parent_fd: int) -> None:

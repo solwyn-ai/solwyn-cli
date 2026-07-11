@@ -1,5 +1,6 @@
 """Contract tests for the single-source agent artifacts."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -306,6 +307,12 @@ def test_failed_restore_retains_only_recoverable_original_backup(
 ) -> None:
     write_agent_artifacts(tmp_path)
     before = _artifact_snapshot(tmp_path)
+    original_path = tmp_path / CLAUDE_SKILL_PATH
+    original_fd = os.open(
+        original_path,
+        os.O_RDWR | getattr(os, "O_CLOEXEC", 0),
+    )
+    original_inode = os.fstat(original_fd).st_ino
     monkeypatch.setattr(
         artifacts_module,
         "agent_guidance",
@@ -329,21 +336,59 @@ def test_failed_restore_retains_only_recoverable_original_backup(
         fail_commit_then_restore,
     )
 
-    with pytest.raises(OSError, match="manual recovery required") as captured:
+    try:
+        with pytest.raises(OSError, match="manual recovery required") as captured:
+            write_agent_artifacts(tmp_path)
+
+        assert type(captured.value).__name__ == "ArtifactRecoveryError"
+        assert (tmp_path / CLAUDE_SKILL_PATH).read_bytes() != before[CLAUDE_SKILL_PATH]
+        assert (tmp_path / CURSOR_RULE_PATH).read_bytes() == before[CURSOR_RULE_PATH]
+        assert (tmp_path / AGENTS_PATH).read_bytes() == before[AGENTS_PATH]
+        residue = _transaction_residue(tmp_path)
+        assert len(residue) == 1
+        recovery_backup = residue[0]
+        assert recovery_backup.name.startswith(".solwyn-agent-backup-SKILL.md-")
+        assert recovery_backup.read_bytes() == before[CLAUDE_SKILL_PATH]
+        assert recovery_backup.stat().st_ino != original_inode
+        assert getattr(captured.value, "recovery_paths") == (
+            CLAUDE_SKILL_PATH.parent / recovery_backup.name,
+        )
+
+        mutation = b"mutated through held original descriptor"
+        os.lseek(original_fd, 0, os.SEEK_SET)
+        os.write(original_fd, mutation)
+        os.ftruncate(original_fd, len(mutation))
+
+        assert recovery_backup.read_bytes() == before[CLAUDE_SKILL_PATH]
+    finally:
+        os.close(original_fd)
+
+
+def test_source_change_during_backup_copy_fails_closed_without_residue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+
+    def mutate_source(state: object) -> None:
+        relative_path = getattr(state, "relative_path")
+        if relative_path == CLAUDE_SKILL_PATH:
+            (tmp_path / relative_path).write_text(
+                "concurrent source mutation\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(artifacts_module, "_during_backup_copy", mutate_source)
+
+    with pytest.raises(OSError, match="changed during agent artifact write"):
         write_agent_artifacts(tmp_path)
 
-    assert type(captured.value).__name__ == "ArtifactRecoveryError"
-    assert (tmp_path / CLAUDE_SKILL_PATH).read_bytes() != before[CLAUDE_SKILL_PATH]
+    assert (tmp_path / CLAUDE_SKILL_PATH).read_text(encoding="utf-8") == (
+        "concurrent source mutation\n"
+    )
     assert (tmp_path / CURSOR_RULE_PATH).read_bytes() == before[CURSOR_RULE_PATH]
     assert (tmp_path / AGENTS_PATH).read_bytes() == before[AGENTS_PATH]
-    residue = _transaction_residue(tmp_path)
-    assert len(residue) == 1
-    recovery_backup = residue[0]
-    assert recovery_backup.name.startswith(".solwyn-agent-backup-SKILL.md-")
-    assert recovery_backup.read_bytes() == before[CLAUDE_SKILL_PATH]
-    assert getattr(captured.value, "recovery_paths") == (
-        CLAUDE_SKILL_PATH.parent / recovery_backup.name,
-    )
+    assert _transaction_residue(tmp_path) == []
 
 
 def test_target_symlink_swap_before_commit_never_writes_outside_repository(
