@@ -17,6 +17,8 @@ from solwyn_cli._vendor.wire import (
     ProjectKeyRotateRequest,
     RefreshRequest,
 )
+from solwyn_cli.commands import init as init_command
+from solwyn_cli.commands import login, projects
 from solwyn_cli.commands.costs import CostGrouping, CostRange
 
 
@@ -495,6 +497,17 @@ def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
 
 def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
+
+
+def test_init_reuses_guarded_login_and_project_create_requests() -> None:
+    """Init composes existing request mirrors instead of inventing wire models."""
+    snapshot = _snapshot()
+
+    assert REQUEST_MIRRORS[LoginRequest] == "LoginRequest"
+    assert REQUEST_MIRRORS[ProjectCreateRequest] == "ProjectCreateRequest"
+    assert init_command.authenticate_with_password is login.authenticate_with_password
+    assert init_command.request_project_creation is projects.request_project_creation
+    assert_project_create_operation_request_binding(snapshot)
 
 
 def test_costs_query_contract_matches_snapshot() -> None:

@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from solwyn_cli.commands import budget, init, projects
+
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
@@ -516,6 +518,20 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
         "object",
         "ProjectCreateResponse",
     )
+
+
+def test_init_reuses_guarded_project_login_and_budget_response_operations() -> None:
+    """Init's composed reads remain covered by the shared response immune system."""
+    expected = {
+        ("POST", "/api/v1/auth/login"),
+        ("GET", "/api/v1/projects"),
+        ("POST", "/api/v1/projects"),
+        ("GET", "/api/v1/projects/{project_id}/budget"),
+    }
+
+    assert expected <= OPERATION_RESPONSE_BINDINGS.keys()
+    assert init.fetch_projects is projects.fetch_projects
+    assert init.fetch_budget_status is budget.fetch_budget_status
 
 
 def test_every_consumed_success_operation_returns_its_response_component() -> None:

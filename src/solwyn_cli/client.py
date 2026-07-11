@@ -94,6 +94,11 @@ class SolwynClient:
         """Report whether the underlying connection pool is closed."""
         return self._client.is_closed
 
+    @property
+    def current_credential(self) -> ResolvedCredential:
+        """Return the credential currently retained after any JWT rotation."""
+        return self._resolve_credential()
+
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
         self._client.close()

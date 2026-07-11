@@ -12,6 +12,7 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -31,6 +32,14 @@ class CostGrouping(StrEnum):
     DAY = "day"
     MODEL = "model"
     PROVIDER = "provider"
+
+
+COSTS_HELP = help_contract(
+    endpoint="GET /api/v1/projects/{project}/costs",
+    auth="any",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+    schema="solwyn.costs.v1",
+)
 
 
 class _CostGroup(BaseModel):

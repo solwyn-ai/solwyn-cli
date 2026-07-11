@@ -35,11 +35,24 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
 
-app = typer.Typer(help="Inspect budgets and run pre-flight guardrail checks.")
+app = typer.Typer(
+    help="Inspect budgets and run pre-flight guardrail checks.",
+    epilog=help_contract(
+        endpoint="composite router for budget subcommands",
+        auth="varies by subcommand",
+        exits="0 success; 2 usage",
+        schema="varies by subcommand",
+        guidance=(
+            "Use status to poll, check immediately before un-instrumented spend, "
+            "and confirm only a non-null reservation.",
+        ),
+    ),
+)
 
 _FAIL_OPEN_NOTICE = "fail-open, unreserved — skip confirm"
 _CONFIRM_NOT_FOUND_HINT = (
@@ -137,6 +150,22 @@ class _BudgetStatusData(BaseModel):
     sub_period: BudgetPeriod | None = None
     sub_limit: FiniteFloat | None = None
     constraints: _BudgetConstraints
+
+
+BudgetStatusData = _BudgetStatusData
+
+
+def fetch_budget_status(
+    *, api_url: str, credential: JwtCredential | ProjectKeyCredential, project_id: str
+) -> BudgetStatusData:
+    """Fetch and validate one project's pure-read budget status."""
+    project_path = quote(project_id, safe="")
+    with SolwynClient(api_url=api_url, credential=credential) as client:
+        response = client.request("GET", f"/api/v1/projects/{project_path}/budget")
+    data = _BudgetStatusData.model_validate(response.json())
+    if data.project_id != project_id:
+        raise ValueError("Budget response project did not match the request.")
+    return data
 
 
 class _BudgetStatusOutput(BaseModel):
@@ -309,7 +338,21 @@ def _set_table(data: _BudgetSetData) -> TableData:
     )
 
 
-@app.command("check")
+@app.command(
+    "check",
+    epilog=help_contract(
+        endpoint="POST /api/v1/budgets/check",
+        auth="key",
+        exits=(
+            "0 allowed or fail-open; 1 generic/API; 2 usage; 3 auth; 4 budget denial"
+        ),
+        schema="solwyn.budget-check.v1",
+        guidance=(
+            "Run immediately before caller-made un-instrumented provider spend.",
+            "Do not use with Solwyn SDK-instrumented calls. Do not poll with check.",
+        ),
+    ),
+)
 def check(
     context: typer.Context,
     estimated_input_tokens: Annotated[
@@ -433,7 +476,19 @@ def check(
         typer.echo(_FAIL_OPEN_NOTICE, err=True)
 
 
-@app.command("confirm")
+@app.command(
+    "confirm",
+    epilog=help_contract(
+        endpoint="POST /api/v1/budgets/confirm",
+        auth="key",
+        exits=("0 success; 1 generic/API; 2 usage; 3 auth; 5 reservation not found"),
+        schema="solwyn.budget-confirm.v1",
+        guidance=(
+            "Settle only when check returned a non-null reservation after the call.",
+            "Skip confirm when the reservation is null.",
+        ),
+    ),
+)
 def confirm(
     context: typer.Context,
     call_id: Annotated[
@@ -668,7 +723,15 @@ def confirm(
     )
 
 
-@app.command("set")
+@app.command(
+    "set",
+    epilog=help_contract(
+        endpoint="GET then PUT /api/v1/projects/{project}/budget",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.budget-set.v1",
+    ),
+)
 def set_budget(
     context: typer.Context,
     limit: Annotated[
@@ -792,7 +855,21 @@ def set_budget(
     )
 
 
-@app.command("status")
+@app.command(
+    "status",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects/{project}/budget",
+        auth="any",
+        exits=(
+            "0 success; 1 generic/API; 2 usage; 3 auth; 4 utilization gate; 5 not found"
+        ),
+        schema="solwyn.budget-status.v1",
+        guidance=(
+            "Pure read/poll; never reserves or authorizes spend. "
+            "Poll with status, never check.",
+        ),
+    ),
+)
 def status(
     context: typer.Context,
     max_utilization: Annotated[
@@ -831,16 +908,12 @@ def status(
         )
 
     credential = required_credential(context, resolve=resolve_credential)
-    project = quote(runtime.project, safe="")
     try:
-        with SolwynClient(
+        data = fetch_budget_status(
             api_url=runtime.api_url,
             credential=credential,
-        ) as client:
-            response = client.request("GET", f"/api/v1/projects/{project}/budget")
-        data = _BudgetStatusData.model_validate(response.json())
-        if data.project_id != runtime.project:
-            raise ValueError("Budget response project did not match the request.")
+            project_id=runtime.project,
+        )
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:

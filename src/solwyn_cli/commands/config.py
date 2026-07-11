@@ -13,9 +13,18 @@ from solwyn_cli.config import (
     load_config,
     update_config_value,
 )
+from solwyn_cli.help import help_contract
 
 
-app = typer.Typer(help="Inspect and update local configuration.")
+app = typer.Typer(
+    help="Inspect and update local configuration.",
+    epilog=help_contract(
+        endpoint="local configuration router",
+        auth="local (none)",
+        exits="0 success; 2 usage",
+        schema="none (subcommands emit plain text)",
+    ),
+)
 
 
 def _validate_key(key: str) -> str:
@@ -33,7 +42,15 @@ def _load_config_for_command() -> Config:
         ) from None
 
 
-@app.command("get")
+@app.command(
+    "get",
+    epilog=help_contract(
+        endpoint="local configuration read",
+        auth="local (none)",
+        exits="0 success; 2 usage",
+        schema="none (plain text value)",
+    ),
+)
 def get_config_value(
     key: Annotated[str, typer.Argument(help="Configuration key to read.")],
 ) -> None:
@@ -44,7 +61,15 @@ def get_config_value(
     typer.echo("" if value is None else value)
 
 
-@app.command("set")
+@app.command(
+    "set",
+    epilog=help_contract(
+        endpoint="local configuration write",
+        auth="local (none)",
+        exits="0 success; 2 usage",
+        schema="none (human confirmation on stderr)",
+    ),
+)
 def set_config_value(
     key: Annotated[str, typer.Argument(help="Configuration key to update.")],
     value: Annotated[str, typer.Argument(help="New configuration value.")],
@@ -68,7 +93,15 @@ def set_config_value(
     typer.echo(f"Set {validated_key}.", err=True)
 
 
-@app.command("list")
+@app.command(
+    "list",
+    epilog=help_contract(
+        endpoint="local configuration read",
+        auth="local (none)",
+        exits="0 success; 2 usage",
+        schema="none (plain text key/value list)",
+    ),
+)
 def list_config_values() -> None:
     """Print every allowlisted configuration value in deterministic order."""
     config = _load_config_for_command()

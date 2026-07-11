@@ -32,11 +32,20 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
 
-app = typer.Typer(help="Inspect Solwyn projects.")
+app = typer.Typer(
+    help="Inspect Solwyn projects.",
+    epilog=help_contract(
+        endpoint="composite router for project subcommands",
+        auth="varies by subcommand",
+        exits="0 success; 2 usage",
+        schema="varies by subcommand",
+    ),
+)
 
 
 class _Project(BaseModel):
@@ -57,6 +66,7 @@ class _ProjectsListData(BaseModel):
 
 
 _PROJECTS = TypeAdapter(list[_Project])
+Project = _Project
 
 
 class _CreatedProject(BaseModel):
@@ -86,6 +96,33 @@ class _ProjectCreateResponse(_CreatedProject):
         if self.key_prefix != raw_key[:24]:
             raise ValueError("Invalid project key prefix")
         return self
+
+
+ProjectCreateResponse = _ProjectCreateResponse
+
+
+def fetch_projects(*, client: SolwynClient) -> list[Project]:
+    """Fetch and validate the projects visible to a JWT credential."""
+    response = client.request("GET", "/api/v1/projects")
+    return _PROJECTS.validate_python(response.json())
+
+
+def request_project_creation(
+    *,
+    client: SolwynClient,
+    request: ProjectCreateRequest,
+) -> ProjectCreateResponse:
+    """Create and validate a project through the no-replay wire boundary."""
+    response = client.request(
+        "POST",
+        "/api/v1/projects",
+        json=request.model_dump(mode="json"),
+        retry_rate_limit=False,
+        retry_auth=False,
+    )
+    if response.status_code != 201:
+        raise ValueError("Project creation did not return 201")
+    return _ProjectCreateResponse.model_validate(response.json())
 
 
 class _ProjectCreateDisplayData(_CreatedProject):
@@ -176,7 +213,18 @@ def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
     return credential
 
 
-@app.command("create")
+@app.command(
+    "create",
+    epilog=help_contract(
+        endpoint="POST /api/v1/projects",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.projects-create.v1",
+        guidance=(
+            "The new project key is shown exactly once or stored directly in the OS keychain.",
+        ),
+    ),
+)
 def create_project(
     context: typer.Context,
     name: Annotated[str, typer.Option("--name", help="Name for the new project.")],
@@ -230,16 +278,7 @@ def create_project(
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            response = client.request(
-                "POST",
-                "/api/v1/projects",
-                json=request.model_dump(mode="json"),
-                retry_rate_limit=False,
-                retry_auth=False,
-            )
-        if response.status_code != 201:
-            raise ValueError("Project creation did not return 201")
-        created = _ProjectCreateResponse.model_validate(response.json())
+            created = request_project_creation(client=client, request=request)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -291,7 +330,15 @@ def create_project(
     )
 
 
-@app.command("list")
+@app.command(
+    "list",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.projects-list.v1",
+    ),
+)
 def list_projects(context: typer.Context) -> None:
     """List projects available to the logged-in user."""
     credential = required_credential(context, resolve=resolve_credential)
@@ -313,12 +360,8 @@ def list_projects(context: typer.Context) -> None:
 
     runtime = command_context(context)
     try:
-        with SolwynClient(
-            api_url=runtime.api_url,
-            credential=credential,
-        ) as client:
-            response = client.request("GET", "/api/v1/projects")
-        data = _ProjectsListData(projects=_PROJECTS.validate_python(response.json()))
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            data = _ProjectsListData(projects=fetch_projects(client=client))
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -343,7 +386,15 @@ def list_projects(context: typer.Context) -> None:
     )
 
 
-@app.command("show")
+@app.command(
+    "show",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects/{project}",
+        auth="any",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.projects-show.v1",
+    ),
+)
 def show_project(context: typer.Context) -> None:
     """Show the project selected by the global project context."""
     runtime = command_context(context)

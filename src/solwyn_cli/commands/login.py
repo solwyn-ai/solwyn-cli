@@ -10,6 +10,8 @@ from solwyn_cli._vendor.wire import LoginRequest
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
+    JwtCredential,
+    ProjectKeyCredential,
     clear_credentials,
     store_jwt_pair,
     store_project_key,
@@ -18,8 +20,28 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
+
+
+LOGIN_HELP = help_contract(
+    endpoint="POST /api/v1/auth/login or local keychain write with --with-key",
+    auth="none",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth or credential storage",
+    schema="solwyn.login.v1",
+    guidance=(
+        "Keys and passwords are never accepted as command-line arguments or echoed.",
+        "Read project keys only from a hidden prompt or stdin; passwords use a hidden prompt.",
+    ),
+)
+
+LOGOUT_HELP = help_contract(
+    endpoint="local keychain clear",
+    auth="local (none)",
+    exits="0 success; 2 usage; 3 credential storage",
+    schema="solwyn.logout.v1",
+)
 
 
 class _LoginTokenResponse(BaseModel):
@@ -30,6 +52,29 @@ class _LoginTokenResponse(BaseModel):
     access_token: SecretStr = Field(min_length=1)
     refresh_token: SecretStr = Field(min_length=1)
     token_type: Literal["bearer"] = "bearer"
+
+
+def authenticate_with_project_key(project_key: str) -> ProjectKeyCredential:
+    """Validate and store one project key through the shared auth boundary."""
+    return store_project_key(project_key)
+
+
+def authenticate_with_password(
+    *, api_url: str, email: str, password: str
+) -> JwtCredential:
+    """Authenticate, validate the token response, and store the JWT pair."""
+    request = LoginRequest(email=email, password=password)
+    with SolwynClient(api_url=api_url, credential=None) as client:
+        response = client.request_unauthenticated(
+            "POST",
+            "/api/v1/auth/login",
+            json=request.model_dump(),
+        )
+    tokens = _LoginTokenResponse.model_validate(response.json())
+    return store_jwt_pair(
+        tokens.access_token.get_secret_value(),
+        tokens.refresh_token.get_secret_value(),
+    )
 
 
 def _stdin_is_tty() -> bool:
@@ -55,7 +100,7 @@ def _login_with_key(context: typer.Context) -> None:
         else sys.stdin.read().strip()
     )
     try:
-        store_project_key(project_key)
+        authenticate_with_project_key(project_key)
     except CredentialStorageError as error:
         exit_with_error(
             context,
@@ -88,18 +133,11 @@ def _login_with_password(context: typer.Context) -> None:
     email = typer.prompt("Email", err=True)
     password = typer.prompt("Password", hide_input=True, err=True)
     try:
-        request = LoginRequest(email=email, password=password)
         runtime = command_context(context)
-        with SolwynClient(api_url=runtime.api_url, credential=None) as client:
-            response = client.request_unauthenticated(
-                "POST",
-                "/api/v1/auth/login",
-                json=request.model_dump(),
-            )
-        tokens = _LoginTokenResponse.model_validate(response.json())
-        store_jwt_pair(
-            tokens.access_token.get_secret_value(),
-            tokens.refresh_token.get_secret_value(),
+        authenticate_with_password(
+            api_url=runtime.api_url,
+            email=email,
+            password=password,
         )
     except ApiError as error:
         if error.status_code == 403 and error.code == "email_not_verified":

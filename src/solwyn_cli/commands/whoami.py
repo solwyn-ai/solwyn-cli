@@ -15,8 +15,17 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
+
+
+WHOAMI_HELP = help_contract(
+    endpoint=("local key identity or GET /api/v1/account/me and GET /api/v1/projects"),
+    auth="any",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth",
+    schema="solwyn.whoami.v1",
+)
 
 
 class _Identity(BaseModel):

@@ -53,6 +53,22 @@ def resolve_command_context(
     )
 
 
+def validate_output_intent(
+    *,
+    output_format: str | None,
+    json_flag: bool,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate explicit and environment output intent without loading config."""
+    environment = os.environ if environ is None else environ
+    resolve_output_format(
+        explicit_format=output_format,
+        json_flag=json_flag,
+        environ=environment,
+        config_format=None,
+    )
+
+
 def command_context(context: typer.Context) -> CommandContext:
     """Return the callback-populated context for a registered command."""
     if not isinstance(context.obj, CommandContext):
@@ -71,4 +87,29 @@ def output_engine(context: typer.Context) -> OutputEngine:
         stderr_is_tty=sys.stderr.isatty(),
         no_color=resolved.no_color,
         environ={"NO_COLOR": ""} if resolved.environment_no_color else {},
+    )
+
+
+def bootstrap_output_engine(
+    *,
+    output_format: str | None,
+    json_flag: bool,
+    no_color: bool,
+    environ: Mapping[str, str] | None = None,
+) -> OutputEngine:
+    """Build output before configuration can be safely loaded."""
+    environment = os.environ if environ is None else environ
+    return OutputEngine(
+        output_format=resolve_output_format(
+            explicit_format=output_format,
+            json_flag=json_flag,
+            environ=environment,
+            config_format=None,
+        ),
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        stdout_is_tty=sys.stdout.isatty(),
+        stderr_is_tty=sys.stderr.isatty(),
+        no_color=no_color,
+        environ={"NO_COLOR": ""} if "NO_COLOR" in environment else {},
     )
