@@ -67,6 +67,7 @@ class _ProjectsListData(BaseModel):
 
 _PROJECTS = TypeAdapter(list[_Project])
 Project = _Project
+ProjectsListData = _ProjectsListData
 
 
 class _CreatedProject(BaseModel):

@@ -1,0 +1,1095 @@
+"""In-process MCP conformance tests for the frozen six-tool surface."""
+
+from collections.abc import Callable, Iterator
+from copy import deepcopy
+import json
+from pathlib import Path
+from threading import get_ident
+from typing import Any
+
+import anyio
+import httpx
+import pytest
+from mcp import McpError
+from mcp.shared.memory import create_connected_server_and_client_session
+
+from solwyn_cli import auth, runtime
+from solwyn_cli.client import SolwynClient as RealSolwynClient
+from solwyn_cli.mcp import server as mcp_server
+from solwyn_cli.output import OutputFormat
+
+
+VALID_KEY = "sk_proj_" + "a1" * 32
+JWT_ACCESS = "mcp-access-token"
+JWT_REFRESH = "mcp-refresh-token"
+TOOL_NAMES = [
+    "budget_status",
+    "budget_check",
+    "budget_confirm",
+    "get_project_status",
+    "get_costs",
+    "list_projects",
+]
+
+BUDGET_RESPONSE = {
+    "project_id": "proj_alpha",
+    "budget_limit": 100.0,
+    "current_usage": 12.5,
+    "remaining_budget": 87.5,
+    "utilization_pct": 12.5,
+    "budget_mode": "hard_deny",
+    "budget_period": "monthly",
+    "period_date": "2026-07",
+    "thresholds": [],
+    "sub_period": None,
+    "sub_limit": None,
+    "constraints": {
+        "allowed_modes": ["alert_only", "hard_deny"],
+        "allowed_periods": ["daily", "weekly", "monthly"],
+        "sub_period_enabled": True,
+        "max_thresholds": 50,
+    },
+}
+CHECK_RESPONSE = {
+    "allowed": True,
+    "remaining_budget": 86.5,
+    "reservation_id": "res_01JZEXAMPLE",
+    "mode": "hard_deny",
+    "budget_limit": 100.0,
+    "current_usage": 13.5,
+    "denied_by_period": None,
+    "project_id": "proj_alpha",
+    "price_hints": {"openai": 0.01},
+}
+PROVIDERS_RESPONSE = [
+    {
+        "provider": "openai",
+        "total_calls": 10,
+        "success_count": 9,
+        "error_count": 1,
+        "failover_count": 0,
+        "success_rate": 90.0,
+        "avg_latency_ms": 125.0,
+        "circuit_state": "closed",
+    }
+]
+COSTS_RESPONSE = {
+    "project_id": "proj_alpha",
+    "range": "30d",
+    "group_by": "provider",
+    "groups": [
+        {
+            "group_key": "openai",
+            "provider": "openai",
+            "total_cost": 1.25,
+            "total_input_tokens": 100,
+            "total_output_tokens": 20,
+            "call_count": 2,
+            "unpriced_call_count": 0,
+            "local_call_count": 0,
+        }
+    ],
+}
+PROJECTS_RESPONSE = [
+    {
+        "id": "proj_alpha",
+        "name": "Alpha",
+        "budget_limit": 100.0,
+        "budget_period": "monthly",
+        "budget_mode": "hard_deny",
+        "created_at": "2026-07-10T12:00:00Z",
+    }
+]
+MCP_TOOLS_GOLDEN = Path(__file__).parent / "golden" / "mcp-tools.json"
+
+
+async def _listed_tool_contract() -> list[dict[str, Any]]:
+    async with create_connected_server_and_client_session(
+        mcp_server.create_server()
+    ) as session:
+        tools = (await session.list_tools()).tools
+    return [tool.model_dump(mode="json", by_alias=True) for tool in tools]
+
+
+def _assert_tool_contract(contract: list[dict[str, Any]]) -> None:
+    expected = json.loads(MCP_TOOLS_GOLDEN.read_text(encoding="utf-8"))
+    assert contract == expected
+
+
+def _mutate_description(contract: list[dict[str, Any]]) -> None:
+    contract[3]["description"] += " changed"
+
+
+def _mutate_required(contract: list[dict[str, Any]]) -> None:
+    contract[1]["inputSchema"]["required"].remove("estimated_input_tokens")
+
+
+def _mutate_default(contract: list[dict[str, Any]]) -> None:
+    contract[4]["inputSchema"]["properties"]["time_range"]["default"] = "30d"
+
+
+def _mutate_enum(contract: list[dict[str, Any]]) -> None:
+    contract[4]["inputSchema"]["$defs"]["CostRange"]["enum"].append("all")
+
+
+def _mutate_bound(contract: list[dict[str, Any]]) -> None:
+    contract[2]["inputSchema"]["properties"]["input_tokens"]["maximum"] = 99
+
+
+def _mutate_fallback_provider_bound(contract: list[dict[str, Any]]) -> None:
+    provider_array = contract[1]["inputSchema"]["properties"]["fallback_providers"][
+        "anyOf"
+    ][0]
+    provider_array.pop("maxItems")
+
+
+def _mutate_fallback_model_item_bound(contract: list[dict[str, Any]]) -> None:
+    model_array = contract[1]["inputSchema"]["properties"]["fallback_models"]["anyOf"][
+        0
+    ]
+    model_array["items"].pop("maxLength")
+
+
+def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
+    contract[0]["inputSchema"]["properties"]["project_id"]["anyOf"].pop()
+
+
+def _mutate_additional_properties(contract: list[dict[str, Any]]) -> None:
+    contract[5]["inputSchema"]["additionalProperties"] = False
+
+
+def _mutate_nested_output(contract: list[dict[str, Any]]) -> None:
+    contract[3]["outputSchema"]["$defs"]["_ProviderHealth"]["required"].remove(
+        "circuit_state"
+    )
+
+
+def _mutate_output_required(contract: list[dict[str, Any]]) -> None:
+    contract[0]["outputSchema"]["required"].remove("ok")
+
+
+def test_list_tools_contract_matches_complete_golden() -> None:
+    _assert_tool_contract(anyio.run(_listed_tool_contract))
+
+
+def test_budget_check_schema_advertises_effective_fallback_bounds() -> None:
+    budget_check = anyio.run(_listed_tool_contract)[1]
+    properties = budget_check["inputSchema"]["properties"]
+    provider_array = properties["fallback_providers"]["anyOf"][0]
+    model_array = properties["fallback_models"]["anyOf"][0]
+
+    assert provider_array["type"] == "array"
+    assert provider_array["maxItems"] == 8
+    assert model_array["type"] == "array"
+    assert model_array["maxItems"] == 8
+    assert model_array["items"] == {"maxLength": 2048, "type": "string"}
+    assert properties["model"]["maxLength"] == 2048
+    assert "minLength" not in properties["model"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        _mutate_description,
+        _mutate_required,
+        _mutate_default,
+        _mutate_enum,
+        _mutate_bound,
+        _mutate_fallback_provider_bound,
+        _mutate_fallback_model_item_bound,
+        _mutate_nullable,
+        _mutate_additional_properties,
+        _mutate_nested_output,
+        _mutate_output_required,
+    ],
+)
+def test_complete_tool_contract_guard_rejects_schema_drift(
+    mutation: Callable[[list[dict[str, Any]]], None],
+) -> None:
+    contract = deepcopy(anyio.run(_listed_tool_contract))
+    mutation(contract)
+
+    with pytest.raises(AssertionError):
+        _assert_tool_contract(contract)
+
+
+def _install_http(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    responses: list[httpx.Response],
+    credentials: list[auth.ResolvedCredential | None],
+    project: str | None = "proj_alpha",
+) -> tuple[
+    list[tuple[str, str, dict[str, Any]]],
+    list[RealSolwynClient],
+    list[httpx.Response],
+]:
+    requests: list[tuple[str, str, dict[str, Any]]] = []
+    clients: list[RealSolwynClient] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        requests.append(
+            (
+                request.method,
+                request.url.path,
+                {
+                    "query": dict(request.url.params),
+                    "json": None if not body else json.loads(body),
+                    "authorization": request.headers.get("Authorization"),
+                    "thread_id": get_ident(),
+                },
+            )
+        )
+        response = responses.pop(0)
+        response.request = request
+        return response
+
+    transport = httpx.MockTransport(handler)
+    resolved_credentials = iter(credentials)
+    command_runtime = runtime.CommandContext(
+        api_url="https://api.example.test",
+        project=project,
+        output_format=OutputFormat.JSON,
+        no_color=True,
+        environment_no_color=False,
+    )
+    monkeypatch.setattr(
+        runtime, "resolve_command_context", lambda **kwargs: command_runtime
+    )
+    monkeypatch.setattr(
+        auth,
+        "resolve_credential",
+        lambda: next(resolved_credentials),
+    )
+
+    def client_factory(
+        *, api_url: str, credential: auth.ResolvedCredential
+    ) -> RealSolwynClient:
+        client = RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+            sleeper=lambda _: None,
+        )
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(mcp_server, "SolwynClient", client_factory)
+    return requests, clients, responses
+
+
+async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
+    async with create_connected_server_and_client_session(
+        mcp_server.create_server()
+    ) as session:
+        return await session.call_tool(name, arguments)
+
+
+def _wire_requests(
+    requests: list[tuple[str, str, dict[str, Any]]],
+) -> list[tuple[str, str, dict[str, str], Any]]:
+    return [
+        (method, path, metadata["query"], metadata["json"])
+        for method, path, metadata in requests
+    ]
+
+
+@pytest.fixture
+def mcp_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[list[tuple[str, str, dict[str, Any]]]]:
+    responses: list[httpx.Response] = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=CHECK_RESPONSE),
+        httpx.Response(204),
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=COSTS_RESPONSE),
+        httpx.Response(200, json=PROJECTS_RESPONSE),
+    ]
+
+    project_key = auth.ProjectKeyCredential(
+        api_key=VALID_KEY,
+        source="environment",
+    )
+    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    requests, clients, response_queue = _install_http(
+        monkeypatch,
+        responses=responses,
+        credentials=[
+            project_key,
+            project_key,
+            project_key,
+            project_key,
+            project_key,
+            jwt,
+        ],
+    )
+
+    yield requests
+
+    assert response_queue == []
+    assert len(clients) == 6
+    assert all(client.is_closed for client in clients)
+
+
+def test_exact_six_tool_contract_and_mocked_http_conformance(
+    mcp_http: list[tuple[str, str, dict[str, Any]]],
+) -> None:
+    caller_thread = get_ident()
+    assert list(mcp_server.TOOL_NAMES) == TOOL_NAMES
+
+    async def exercise_protocol() -> None:
+        server = mcp_server.create_server()
+        async with create_connected_server_and_client_session(server) as session:
+            capabilities = session.get_server_capabilities()
+            tools = (await session.list_tools()).tools
+            assert [tool.name for tool in tools] == TOOL_NAMES
+            assert capabilities.prompts is None
+            assert capabilities.resources is None
+            with pytest.raises(McpError):
+                await session.list_prompts()
+            with pytest.raises(McpError):
+                await session.list_resources()
+            assert [
+                tool.name for tool in (await session.list_tools()).tools
+            ] == TOOL_NAMES
+            assert all(tool.description for tool in tools)
+            assert all(tool.outputSchema is not None for tool in tools)
+            assert [set(tool.inputSchema["properties"]) for tool in tools] == [
+                {"project_id"},
+                {
+                    "estimated_input_tokens",
+                    "model",
+                    "provider",
+                    "fallback_providers",
+                    "fallback_models",
+                },
+                {
+                    "reservation_id",
+                    "call_id",
+                    "model",
+                    "provider",
+                    "is_provider_fallback",
+                    "provider_region",
+                    "service_tier",
+                    "input_tokens",
+                    "output_tokens",
+                    "cached_input_tokens",
+                    "cache_creation_5m_tokens",
+                    "cache_creation_1h_tokens",
+                    "reasoning_tokens",
+                    "audio_input_tokens",
+                    "audio_output_tokens",
+                    "accepted_prediction_tokens",
+                    "rejected_prediction_tokens",
+                    "tool_use_input_tokens",
+                    "is_estimated",
+                },
+                {"project_id"},
+                {"project_id", "time_range", "group_by"},
+                set(),
+            ]
+
+            calls = [
+                await session.call_tool("budget_status", {}),
+                await session.call_tool(
+                    "budget_check",
+                    {
+                        "estimated_input_tokens": 1200,
+                        "model": "gpt-5",
+                        "provider": "openai",
+                        "fallback_providers": ["anthropic"],
+                        "fallback_models": ["claude-sonnet-4"],
+                    },
+                ),
+                await session.call_tool(
+                    "budget_confirm",
+                    {
+                        "reservation_id": "res_01JZEXAMPLE",
+                        "call_id": "12345678-1234-1234-1234-123456789abc",
+                        "model": "gpt-5",
+                        "provider": "openai",
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "cached_input_tokens": 3,
+                        "cache_creation_5m_tokens": 4,
+                        "cache_creation_1h_tokens": 5,
+                        "reasoning_tokens": 6,
+                        "audio_input_tokens": 7,
+                        "audio_output_tokens": 8,
+                        "accepted_prediction_tokens": 9,
+                        "rejected_prediction_tokens": 10,
+                        "tool_use_input_tokens": 11,
+                        "is_estimated": True,
+                    },
+                ),
+                await session.call_tool("get_project_status", {}),
+                await session.call_tool(
+                    "get_costs", {"time_range": "30d", "group_by": "provider"}
+                ),
+                await session.call_tool("list_projects", {}),
+            ]
+
+        assert all(call.isError is False for call in calls)
+        assert all(call.structuredContent is not None for call in calls)
+        assert [call.structuredContent["ok"] for call in calls] == [True] * 6
+        assert calls[0].structuredContent["data"]["project_id"] == "proj_alpha"
+        assert calls[1].structuredContent["data"]["reservation_id"] == "res_01JZEXAMPLE"
+        assert calls[2].structuredContent["data"] == {
+            "reservation_id": "res_01JZEXAMPLE",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
+        }
+        assert calls[3].structuredContent["data"]["providers"] == PROVIDERS_RESPONSE
+        assert calls[4].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
+        assert calls[5].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
+
+    anyio.run(exercise_protocol)
+
+    assert _wire_requests(mcp_http) == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        (
+            "POST",
+            "/api/v1/budgets/check",
+            {},
+            {
+                "estimated_input_tokens": 1200,
+                "model": "gpt-5",
+                "provider": "openai",
+                "fallback_providers": ["anthropic"],
+                "fallback_models": ["claude-sonnet-4"],
+            },
+        ),
+        (
+            "POST",
+            "/api/v1/budgets/confirm",
+            {},
+            {
+                "reservation_id": "res_01JZEXAMPLE",
+                "model": "gpt-5",
+                "provider": "openai",
+                "is_provider_fallback": False,
+                "call_id": "12345678-1234-1234-1234-123456789abc",
+                "token_details": {
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "cached_input_tokens": 3,
+                    "cache_creation_5m_tokens": 4,
+                    "cache_creation_1h_tokens": 5,
+                    "reasoning_tokens": 6,
+                    "audio_input_tokens": 7,
+                    "audio_output_tokens": 8,
+                    "accepted_prediction_tokens": 9,
+                    "rejected_prediction_tokens": 10,
+                    "tool_use_input_tokens": 11,
+                    "is_estimated": True,
+                },
+                "provider_region": None,
+                "service_tier": None,
+            },
+        ),
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_alpha/providers", {}, None),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/costs",
+            {"range": "30d", "group_by": "provider"},
+            None,
+        ),
+        ("GET", "/api/v1/projects", {}, None),
+    ]
+    assert {request[2]["authorization"] for request in mcp_http} == {
+        f"Bearer {VALID_KEY}",
+        f"Bearer {JWT_ACCESS}",
+    }
+    assert all(request[2]["thread_id"] != caller_thread for request in mcp_http)
+
+
+def test_budget_descriptions_are_live_views_of_canonical_guidance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = mcp_server.agent_guidance()
+    canonical_lines = {
+        line.removeprefix("- ")
+        for line in canonical.splitlines()
+        if line.startswith("- ")
+    }
+
+    async def list_descriptions() -> dict[str, str]:
+        async with create_connected_server_and_client_session(
+            mcp_server.create_server()
+        ) as session:
+            return {
+                tool.name: tool.description or ""
+                for tool in (await session.list_tools()).tools
+            }
+
+    descriptions = anyio.run(list_descriptions)
+    polling = next(line for line in canonical_lines if "for polling" in line)
+    assert descriptions["budget_status"] == polling
+    assert descriptions["budget_check"].startswith("Reserve budget only immediately")
+    assert descriptions["budget_confirm"].startswith(
+        "Settle only a non-null reservation"
+    )
+    for fragment in (
+        "specific un-instrumented",
+        "Never wrap SDK-instrumented",
+        "reservation_id=null",
+        "repeated unconfirmed checks",
+    ):
+        line = next(line for line in canonical_lines if fragment in line)
+        assert line in descriptions["budget_check"]
+        assert line in descriptions["budget_confirm"]
+
+    monkeypatch.setattr(
+        mcp_server,
+        "agent_guidance",
+        lambda: canonical.replace("It is a pure read", "It is a SENTINEL pure read"),
+    )
+    mutated = anyio.run(list_descriptions)
+    assert "SENTINEL" in mutated["budget_status"]
+
+
+def test_auth_and_client_are_fresh_per_call_without_server_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_key = auth.ProjectKeyCredential(
+        api_key="sk_proj_" + "b2" * 32,
+        source="environment",
+    )
+    second_key = auth.ProjectKeyCredential(
+        api_key="sk_proj_" + "c3" * 32,
+        source="environment",
+    )
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(200, json=BUDGET_RESPONSE),
+            httpx.Response(200, json=BUDGET_RESPONSE),
+        ],
+        credentials=[first_key, second_key],
+    )
+
+    async def two_calls_one_server() -> list[Any]:
+        async with create_connected_server_and_client_session(
+            mcp_server.create_server()
+        ) as session:
+            return [
+                await session.call_tool("budget_status", {}),
+                await session.call_tool("budget_status", {}),
+            ]
+
+    results = anyio.run(two_calls_one_server)
+
+    assert all(result.structuredContent["ok"] for result in results)
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+    ]
+    assert [request[2]["authorization"] for request in requests] == [
+        f"Bearer {first_key.bearer_value()}",
+        f"Bearer {second_key.bearer_value()}",
+    ]
+    assert responses == []
+    assert len(clients) == 2
+    assert all(client.is_closed for client in clients)
+
+
+@pytest.mark.parametrize(
+    ("credential", "project", "expected_code", "expected_clients"),
+    [
+        (None, "proj_alpha", "authentication_required", 0),
+        (
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+            None,
+            "project_required",
+            1,
+        ),
+    ],
+)
+def test_local_preconditions_return_structured_errors_without_http(
+    monkeypatch: pytest.MonkeyPatch,
+    credential: auth.ResolvedCredential | None,
+    project: str | None,
+    expected_code: str,
+    expected_clients: int,
+) -> None:
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[credential],
+        project=project,
+    )
+
+    result = anyio.run(_call_tool, "budget_status", {})
+
+    assert result.isError is False
+    assert result.structuredContent["ok"] is False
+    assert result.structuredContent["error"]["code"] == expected_code
+    assert requests == []
+    assert responses == []
+    assert len(clients) == expected_clients
+    assert all(client.is_closed for client in clients)
+    assert VALID_KEY not in str(result)
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "expected_code"),
+    [
+        (
+            "budget_check",
+            {"estimated_input_tokens": 1, "model": "m", "provider": "openai"},
+            "project_key_required",
+        ),
+        (
+            "budget_confirm",
+            {
+                "reservation_id": "reservation",
+                "call_id": "call",
+                "model": "m",
+                "provider": "openai",
+            },
+            "project_key_required",
+        ),
+    ],
+)
+def test_key_only_tools_reject_jwt_without_http(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+    arguments: dict[str, Any],
+    expected_code: str,
+) -> None:
+    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[jwt],
+    )
+
+    result = anyio.run(_call_tool, tool_name, arguments)
+
+    assert result.isError is False
+    assert result.structuredContent == {
+        "schema": f"solwyn.mcp.{tool_name.replace('_', '-')}.v1",
+        "ok": False,
+        "data": None,
+        "error": {
+            "code": expected_code,
+            "message": (
+                "Budget checks require a project API key."
+                if tool_name == "budget_check"
+                else "Budget confirmation requires a project API key."
+            ),
+            "hint": "Set SOLWYN_API_KEY or store a project key with solwyn login --with-key.",
+            "status_code": None,
+        },
+    }
+    assert requests == []
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+    assert JWT_ACCESS not in str(result)
+    assert JWT_REFRESH not in str(result)
+
+
+def test_list_projects_returns_structured_jwt_remediation_under_project_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[key],
+    )
+
+    result = anyio.run(_call_tool, "list_projects", {})
+
+    assert result.isError is False
+    assert result.structuredContent["ok"] is False
+    assert result.structuredContent["error"]["code"] == "authentication_required"
+    assert "solwyn login" in result.structuredContent["error"]["hint"]
+    assert "JWT" in result.structuredContent["error"]["hint"]
+    assert requests == []
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+    assert VALID_KEY not in str(result)
+
+
+def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    fail_open = {**CHECK_RESPONSE, "reservation_id": None}
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=fail_open)],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {"estimated_input_tokens": 1, "model": "m", "provider": "openai"},
+    )
+
+    assert result.structuredContent["ok"] is True
+    assert result.structuredContent["data"]["allowed"] is True
+    assert result.structuredContent["data"]["reservation_id"] is None
+    assert _wire_requests(requests) == [
+        (
+            "POST",
+            "/api/v1/budgets/check",
+            {},
+            {
+                "estimated_input_tokens": 1,
+                "model": "m",
+                "provider": "openai",
+                "fallback_providers": [],
+                "fallback_models": [],
+            },
+        )
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    responses = [
+        httpx.Response(
+            402,
+            json={
+                "detail": {
+                    "code": "upgrade_required",
+                    "message": f"secret must not escape: {VALID_KEY}",
+                    "cta_path": "/billing",
+                }
+            },
+        )
+    ]
+    requests, clients, response_queue = _install_http(
+        monkeypatch,
+        responses=responses,
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "get_costs",
+        {"time_range": "7d", "group_by": "model"},
+    )
+
+    error = result.structuredContent["error"]
+    assert error == {
+        "code": "upgrade_required",
+        "message": "The Solwyn API rejected the request.",
+        "hint": "Review upgrade options in the dashboard: /billing",
+        "status_code": 402,
+    }
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/costs",
+            {"range": "7d", "group_by": "model"},
+            None,
+        )
+    ]
+    assert response_queue == []
+    assert len(clients) == 1 and clients[0].is_closed
+    assert VALID_KEY not in str(result)
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_code"),
+    [
+        (
+            {
+                "code": VALID_KEY,
+                "message": "safe",
+                "cta_path": "/settings/billing",
+            },
+            "api_error",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": JWT_ACCESS,
+                "cta_path": "/billing",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": f"/settings/{VALID_KEY}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": "https://attacker.example/billing",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": f"/billing/../{VALID_KEY}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": f"/billing?token={JWT_ACCESS}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": "/billing/provider-secret-value",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "hint": "password-super-secret",
+                "status": "provider-secret-value",
+                "nested": [JWT_REFRESH, {"deep": VALID_KEY}],
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": {"nested": VALID_KEY},
+                "message": [JWT_ACCESS],
+                "cta_path": {"nested": "password-super-secret"},
+            },
+            "api_error",
+        ),
+    ],
+)
+def test_remote_error_fields_never_reflect_untrusted_secret_material(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    detail: dict[str, Any],
+    expected_code: str,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(402, json={"detail": detail})],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "get_costs",
+        {"time_range": "7d", "group_by": "model"},
+    )
+
+    rendered = str(result)
+    captured = capsys.readouterr()
+    for secret in (
+        VALID_KEY,
+        JWT_ACCESS,
+        JWT_REFRESH,
+        "password-super-secret",
+        "provider-secret-value",
+    ):
+        assert secret not in rendered
+        assert secret not in captured.out
+        assert secret not in captured.err
+    assert result.structuredContent["error"]["code"] == expected_code
+    assert result.structuredContent["error"]["status_code"] == 402
+    if expected_code == "upgrade_required":
+        assert result.structuredContent["error"]["hint"] == (
+            "Review upgrade options in the dashboard: /billing"
+        )
+    else:
+        assert result.structuredContent["error"]["hint"] is None
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/costs",
+            {"range": "7d", "group_by": "model"},
+            None,
+        )
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_budget_check_honors_exactly_one_429_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(429, headers={"Retry-After": "0"}),
+            httpx.Response(200, json=CHECK_RESPONSE),
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {"estimated_input_tokens": 1, "model": "m", "provider": "openai"},
+    )
+
+    assert result.structuredContent["ok"] is True
+    expected_request = (
+        "POST",
+        "/api/v1/budgets/check",
+        {},
+        {
+            "estimated_input_tokens": 1,
+            "model": "m",
+            "provider": "openai",
+            "fallback_providers": [],
+            "fallback_models": [],
+        },
+    )
+    assert _wire_requests(requests) == [expected_request, expected_request]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_budget_confirm_429_is_structured_safe_and_never_replayed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                429,
+                headers={"Retry-After": "0"},
+                json={"detail": f"rate limited {VALID_KEY}"},
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "reservation",
+            "call_id": "call",
+            "model": "m",
+            "provider": "openai",
+        },
+    )
+
+    assert result.isError is False
+    assert result.structuredContent == {
+        "schema": "solwyn.mcp.budget-confirm.v1",
+        "ok": False,
+        "data": None,
+        "error": {
+            "code": "rate_limited",
+            "message": "The Solwyn API rejected the request.",
+            "hint": None,
+            "status_code": 429,
+        },
+    }
+    assert _wire_requests(requests) == [
+        (
+            "POST",
+            "/api/v1/budgets/confirm",
+            {},
+            {
+                "reservation_id": "reservation",
+                "model": "m",
+                "provider": "openai",
+                "is_provider_fallback": False,
+                "call_id": "call",
+                "token_details": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "cache_creation_5m_tokens": 0,
+                    "cache_creation_1h_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "audio_input_tokens": 0,
+                    "audio_output_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "tool_use_input_tokens": 0,
+                    "is_estimated": False,
+                },
+                "provider_region": None,
+                "service_tier": None,
+            },
+        )
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+    assert VALID_KEY not in str(result)
+
+
+def test_shared_client_honors_one_jwt_refresh_and_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    new_access = "rotated-access-token"
+    new_refresh = "rotated-refresh-token"
+    monkeypatch.setattr(
+        auth,
+        "store_jwt_pair",
+        lambda access_token, refresh_token: auth.JwtCredential(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        ),
+    )
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(401, json={"detail": "expired"}),
+            httpx.Response(
+                200,
+                json={
+                    "access_token": new_access,
+                    "refresh_token": new_refresh,
+                    "token_type": "bearer",
+                },
+            ),
+            httpx.Response(200, json=PROJECTS_RESPONSE),
+        ],
+        credentials=[old],
+    )
+
+    result = anyio.run(_call_tool, "list_projects", {})
+
+    assert result.structuredContent["ok"] is True
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/projects", {}, None),
+        (
+            "POST",
+            "/api/v1/auth/refresh",
+            {},
+            {"refresh_token": JWT_REFRESH},
+        ),
+        ("GET", "/api/v1/projects", {}, None),
+    ]
+    assert requests[0][2]["authorization"] == f"Bearer {JWT_ACCESS}"
+    assert requests[2][2]["authorization"] == f"Bearer {new_access}"
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+    rendered = str(result)
+    for secret in (JWT_ACCESS, JWT_REFRESH, new_access, new_refresh):
+        assert secret not in rendered

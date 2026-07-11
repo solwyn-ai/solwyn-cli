@@ -128,6 +128,12 @@ HELP_CONTRACTS = {
         "exits": "0 success; 2 usage; 3 credential storage",
         "schema": "solwyn.logout.v1",
     },
+    ("mcp",): {
+        "endpoint": "local stdio MCP server",
+        "auth": "resolved per tool call",
+        "exits": "0 clean shutdown; 1 startup or protocol failure; 2 usage",
+        "schema": "MCP protocol (stdio JSON-RPC)",
+    },
     ("projects",): {
         "endpoint": "composite router for project subcommands",
         "auth": "varies by subcommand",
@@ -251,6 +257,15 @@ def test_budget_help_preserves_guardrail_semantics() -> None:
     assert "Skip confirm when the reservation is null" in confirm_help
     assert "Pure read/poll; never reserves or authorizes spend" in status_help
     assert "Poll with status, never check" in status_help
+
+
+def test_mcp_help_names_the_exact_six_tool_surface() -> None:
+    rendered = _normalized_help(("mcp",))
+
+    assert (
+        "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
+        "get_costs, list_projects."
+    ) in rendered
 
 
 def test_auth_and_key_help_is_secret_safe() -> None:
