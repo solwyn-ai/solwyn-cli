@@ -518,6 +518,25 @@ def test_provider_detection_from_fallback_root_prunes_nested_repositories(
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
 
 
+def test_provider_detection_prunes_nested_repository_inside_outer_git_root(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_init / ".git").mkdir()
+    (isolated_init / "main.py").write_text("import openai\n", encoding="utf-8")
+    nested_repository = isolated_init / "nested-repo"
+    (nested_repository / ".git").mkdir(parents=True)
+    (nested_repository / "provider.py").write_text(
+        "import anthropic\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
 def test_provider_detection_skips_oversized_python_sources(
     isolated_init: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -418,7 +418,7 @@ def _imports_in(tree: ast.AST) -> tuple[set[Provider], set[Provider]]:
 
 
 def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
-    scan_root, inside_repository = _provider_scan_root(root)
+    scan_root = _provider_scan_root(root)
     detected: set[Provider] = set()
     module_imports: set[Provider] = set()
     inspected_files = 0
@@ -431,7 +431,7 @@ def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
             name
             for name in directory_names
             if name not in _IGNORED_DIRECTORIES
-            and (inside_repository or not ((Path(directory) / name / ".git").exists()))
+            and not (Path(directory) / name / ".git").exists()
         )
         for file_name in sorted(file_names):
             if not file_name.endswith(".py"):
@@ -474,13 +474,13 @@ def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
     )
 
 
-def _provider_scan_root(start: Path) -> tuple[Path, bool]:
+def _provider_scan_root(start: Path) -> Path:
     """Resolve the nearest containing Git root or a bounded cwd fallback."""
     resolved = start.resolve()
     for candidate in (resolved, *resolved.parents):
         if (candidate / ".git").exists():
-            return candidate, True
-    return resolved, False
+            return candidate
+    return resolved
 
 
 def _snippets(
