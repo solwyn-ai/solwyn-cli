@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
+from solwyn_cli import artifacts as agent_artifacts
 from solwyn_cli import config as config_module
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.commands import budget as budget_module
@@ -193,6 +194,35 @@ def test_init_agents_reports_artifact_write_failure_without_traceback(
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "agent_artifact_write_failed"
     assert "read-only fixture" not in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_init_agents_reports_retained_backup_for_manual_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recovery_path = Path(".claude/skills/solwyn/.solwyn-agent-backup-SKILL.md-recovery")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    monkeypatch.setattr(
+        init_module,
+        "write_agent_artifacts",
+        lambda _root: (_ for _ in ()).throw(
+            agent_artifacts.ArtifactRecoveryError((recovery_path,))
+        ),
+        raising=False,
+    )
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "proj_alpha", "init", "--agents"],
+    )
+
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "agent_artifact_recovery_required"
+    assert "manual recovery" in error["hint"].lower()
+    assert str(recovery_path) in error["hint"]
     assert "Traceback" not in result.stderr
 
 

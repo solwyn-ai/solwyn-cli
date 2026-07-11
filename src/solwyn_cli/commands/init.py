@@ -11,7 +11,7 @@ import typer
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from solwyn_cli._vendor.wire import ProjectCreateRequest
-from solwyn_cli.artifacts import write_agent_artifacts
+from solwyn_cli.artifacts import ArtifactRecoveryError, write_agent_artifacts
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
@@ -591,6 +591,19 @@ def init(
     if agents:
         try:
             write_agent_artifacts(_provider_scan_root(Path.cwd()))
+        except ArtifactRecoveryError as error:
+            retained = ", ".join(str(path) for path in error.recovery_paths)
+            exit_with_error(
+                context,
+                OutputError(
+                    code="agent_artifact_recovery_required",
+                    message="Agent guidance could not be fully restored.",
+                    hint=(
+                        "Manual recovery is required from retained backup(s): "
+                        f"{retained}"
+                    ),
+                ),
+            )
         except (OSError, UnicodeError, ValueError):
             exit_with_error(
                 context,

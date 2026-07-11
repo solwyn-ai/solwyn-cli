@@ -47,6 +47,19 @@ class _ArtifactState(BaseModel):
     temporary_name: str | None = None
     backup_name: str | None = None
     committed: bool = False
+    retain_backup_for_recovery: bool = False
+
+
+class ArtifactRecoveryError(OSError):
+    """Rollback failed but original artifact bytes remain in named backups."""
+
+    def __init__(self, recovery_paths: tuple[Path, ...]) -> None:
+        self.recovery_paths = recovery_paths
+        rendered_paths = ", ".join(str(path) for path in recovery_paths)
+        super().__init__(
+            "Agent artifact rollback failed; manual recovery required from retained "
+            f"backup(s): {rendered_paths}"
+        )
 
 
 class ArtifactSurface(StrEnum):
@@ -374,7 +387,8 @@ def _before_artifact_commit() -> None:
 def _cleanup_transaction(states: list[_ArtifactState]) -> None:
     for state in states:
         _unlink_at(state.parent_fd, state.temporary_name)
-        _unlink_at(state.parent_fd, state.backup_name)
+        if not state.retain_backup_for_recovery:
+            _unlink_at(state.parent_fd, state.backup_name)
 
 
 def _rollback_transaction(states: list[_ArtifactState]) -> None:
@@ -382,16 +396,34 @@ def _rollback_transaction(states: list[_ArtifactState]) -> None:
     for state in reversed(states):
         if not state.committed:
             continue
-        try:
-            if state.original_identity is None:
+        if state.original_identity is None:
+            try:
                 _unlink_at(state.parent_fd, state.target_name)
-            elif state.backup_name is not None:
+                _fsync_directory(state.parent_fd)
+            except OSError as error:
+                rollback_error = rollback_error or error
+            continue
+        if state.backup_name is not None:
+            try:
                 _replace_at(state.backup_name, state.target_name, state.parent_fd)
                 state.backup_name = None
+                _fsync_directory(state.parent_fd)
+            except OSError as error:
+                state.retain_backup_for_recovery = True
+                rollback_error = rollback_error or error
+    _cleanup_transaction(states)
+    for state in states:
+        try:
             _fsync_directory(state.parent_fd)
         except OSError as error:
             rollback_error = rollback_error or error
-    _cleanup_transaction(states)
+    recovery_paths = tuple(
+        state.relative_path.parent / state.backup_name
+        for state in states
+        if state.retain_backup_for_recovery and state.backup_name is not None
+    )
+    if recovery_paths:
+        raise ArtifactRecoveryError(recovery_paths) from rollback_error
     if rollback_error is not None:
         raise OSError(
             "Could not roll back agent artifact transaction."

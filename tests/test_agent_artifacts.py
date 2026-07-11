@@ -277,6 +277,11 @@ def test_second_commit_failure_rolls_back_every_original_and_removes_residue(
 ) -> None:
     write_agent_artifacts(tmp_path)
     before = _artifact_snapshot(tmp_path)
+    monkeypatch.setattr(
+        artifacts_module,
+        "agent_guidance",
+        lambda: "# Changed guidance\n\nRollback must restore different bytes.",
+    )
     original_replace = artifacts_module._replace_at
     calls = 0
 
@@ -294,6 +299,51 @@ def test_second_commit_failure_rolls_back_every_original_and_removes_residue(
 
     assert _artifact_snapshot(tmp_path) == before
     assert _transaction_residue(tmp_path) == []
+
+
+def test_failed_restore_retains_only_recoverable_original_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    monkeypatch.setattr(
+        artifacts_module,
+        "agent_guidance",
+        lambda: "# Changed guidance\n\nA failed restore must retain the original.",
+    )
+    original_replace = artifacts_module._replace_at
+    calls = 0
+
+    def fail_commit_then_restore(*args: object, **kwargs: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected commit failure")
+        if calls == 3:
+            raise OSError("injected restore failure")
+        original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(
+        artifacts_module,
+        "_replace_at",
+        fail_commit_then_restore,
+    )
+
+    with pytest.raises(OSError, match="manual recovery required") as captured:
+        write_agent_artifacts(tmp_path)
+
+    assert type(captured.value).__name__ == "ArtifactRecoveryError"
+    assert (tmp_path / CLAUDE_SKILL_PATH).read_bytes() != before[CLAUDE_SKILL_PATH]
+    assert (tmp_path / CURSOR_RULE_PATH).read_bytes() == before[CURSOR_RULE_PATH]
+    assert (tmp_path / AGENTS_PATH).read_bytes() == before[AGENTS_PATH]
+    residue = _transaction_residue(tmp_path)
+    assert len(residue) == 1
+    recovery_backup = residue[0]
+    assert recovery_backup.name.startswith(".solwyn-agent-backup-SKILL.md-")
+    assert recovery_backup.read_bytes() == before[CLAUDE_SKILL_PATH]
+    assert getattr(captured.value, "recovery_paths") == (
+        CLAUDE_SKILL_PATH.parent / recovery_backup.name,
+    )
 
 
 def test_target_symlink_swap_before_commit_never_writes_outside_repository(
