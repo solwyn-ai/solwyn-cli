@@ -941,7 +941,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25" },
-    { name = "mcp", specifier = ">=1,<2" },
+    { name = "mcp", specifier = "==1.28.1" },
     { name = "platformdirs", specifier = ">=4" },
     { name = "pydantic", specifier = ">=2" },
     { name = "rich", specifier = ">=13" },

@@ -4,12 +4,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
 from threading import Thread
 
 import anyio
 import pytest
-from mcp import ClientSession, McpError
+from mcp import ClientSession, McpError, types
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.memory import create_connected_server_and_client_session
 from typer.testing import CliRunner
@@ -41,6 +42,39 @@ _TOOL_NAMES = [
     "get_costs",
     "list_projects",
 ]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_private_fastmcp_seam_is_exactly_version_pinned_and_tool_only() -> None:
+    project = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    lock = tomllib.loads((PROJECT_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    dependencies = project["project"]["dependencies"]
+    root_package = next(
+        package for package in lock["package"] if package["name"] == "solwyn-cli"
+    )
+    mcp_package = next(
+        package for package in lock["package"] if package["name"] == "mcp"
+    )
+
+    assert "mcp==1.28.1" in dependencies
+    assert (
+        next(
+            requirement
+            for requirement in root_package["metadata"]["requires-dist"]
+            if requirement["name"] == "mcp"
+        )["specifier"]
+        == "==1.28.1"
+    )
+    assert mcp_package["version"] == "1.28.1"
+
+    server = mcp_server.create_server()
+    assert set(server._mcp_server.request_handlers) == {
+        types.PingRequest,
+        types.ListToolsRequest,
+        types.CallToolRequest,
+    }
 
 
 def test_fastmcp_server_initializes_and_lists_tools_in_process() -> None:

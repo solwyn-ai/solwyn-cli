@@ -764,7 +764,7 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
                 "detail": {
                     "code": "upgrade_required",
                     "message": f"secret must not escape: {VALID_KEY}",
-                    "cta_path": "/settings/billing",
+                    "cta_path": "/billing",
                 }
             },
         )
@@ -785,7 +785,7 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
     assert error == {
         "code": "upgrade_required",
         "message": "The Solwyn API rejected the request.",
-        "hint": "Review upgrade options in the dashboard: /settings/billing",
+        "hint": "Review upgrade options in the dashboard: /billing",
         "status_code": 402,
     }
     assert _wire_requests(requests) == [
@@ -816,7 +816,7 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
             {
                 "code": "upgrade_required",
                 "message": JWT_ACCESS,
-                "cta_path": "/settings/billing",
+                "cta_path": "/billing",
             },
             "upgrade_required",
         ),
@@ -825,6 +825,38 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
                 "code": "upgrade_required",
                 "message": "safe",
                 "cta_path": f"/settings/{VALID_KEY}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": "https://attacker.example/billing",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": f"/billing/../{VALID_KEY}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": f"/billing?token={JWT_ACCESS}",
+            },
+            "upgrade_required",
+        ),
+        (
+            {
+                "code": "upgrade_required",
+                "message": "safe",
+                "cta_path": "/billing/provider-secret-value",
             },
             "upgrade_required",
         ),
@@ -881,6 +913,12 @@ def test_remote_error_fields_never_reflect_untrusted_secret_material(
         assert secret not in captured.err
     assert result.structuredContent["error"]["code"] == expected_code
     assert result.structuredContent["error"]["status_code"] == 402
+    if expected_code == "upgrade_required":
+        assert result.structuredContent["error"]["hint"] == (
+            "Review upgrade options in the dashboard: /billing"
+        )
+    else:
+        assert result.structuredContent["error"]["hint"] is None
     assert _wire_requests(requests) == [
         (
             "GET",

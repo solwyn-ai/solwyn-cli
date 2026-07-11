@@ -80,19 +80,19 @@ _SAFE_REMOTE_HINTS = {
     "authentication_required": "Run solwyn login, then retry.",
     "forbidden": "Check account access for this operation, then retry.",
     "invalid_token": "Run solwyn login again, then retry.",
-    "project_limit_reached": (
-        "Manage project limits in the dashboard: /settings/billing"
-    ),
-    "quota_exceeded": (
-        "Review usage and plan limits in the dashboard: /settings/billing"
-    ),
     "reservation_not_found": (
         "The reservation expired or was consumed; run a fresh check before spend."
     ),
     "token_expired": "Run solwyn login again, then retry.",
     "unauthorized": "Run solwyn login again, then retry.",
-    "upgrade_required": "Review upgrade options in the dashboard: /settings/billing",
 }
+_ENTITLEMENT_HINT_PREFIXES = {
+    "project_limit_reached": "Manage project limits in the dashboard",
+    "quota_exceeded": "Review usage and plan limits in the dashboard",
+    "upgrade_required": "Review upgrade options in the dashboard",
+}
+_SAFE_CTA_PATHS = frozenset({"/billing"})
+_DEFAULT_CTA_PATH = "/billing"
 
 
 class _ToolOnlyFastMCP(FastMCP):
@@ -294,7 +294,7 @@ def _operation_error(
                 if error.status_code is not None
                 else "Could not connect to the Solwyn API."
             ),
-            hint=_SAFE_REMOTE_HINTS.get(code),
+            hint=_safe_remote_error_hint(error, code),
             status_code=error.status_code,
         )
     if isinstance(error, AuthError):
@@ -331,6 +331,22 @@ def _normalized_remote_error_code(error: ApiError) -> str:
     if error.status_code == 403:
         return "forbidden"
     return "api_error"
+
+
+def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
+    """Keep only local allowlisted CTA paths from shared sanitized hints."""
+    prefix = _ENTITLEMENT_HINT_PREFIXES.get(code)
+    if prefix is None:
+        return _SAFE_REMOTE_HINTS.get(code)
+    cta_path = next(
+        (
+            path
+            for path in _SAFE_CTA_PATHS
+            if error.hint is not None and error.hint.endswith(f": {path}")
+        ),
+        _DEFAULT_CTA_PATH,
+    )
+    return f"{prefix}: {cta_path}"
 
 
 def _require_project_key(
