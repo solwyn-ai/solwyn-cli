@@ -519,6 +519,35 @@ def test_authenticated_request_can_disable_rate_limit_retry() -> None:
     assert exc_info.value.detail == "Try later."
 
 
+def test_authenticated_mutation_can_disable_jwt_refresh_replay() -> None:
+    jwt = auth.JwtCredential(
+        access_token="mutation-access-secret",
+        refresh_token="mutation-refresh-secret",
+    )
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(401, json={"detail": "Expired."})
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=jwt,
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request(
+                "POST",
+                "/api/v1/projects",
+                retry_rate_limit=False,
+                retry_auth=False,
+            )
+
+    assert exc_info.value.status_code == 401
+    assert len(requests) == 1
+    assert requests[0].url.path.endswith("/api/v1/projects")
+
+
 def test_one_429_retry_is_shared_across_a_jwt_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

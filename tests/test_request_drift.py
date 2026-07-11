@@ -332,6 +332,25 @@ def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> N
     )
 
 
+def assert_project_create_operation_request_binding(
+    snapshot: dict[str, Any],
+) -> None:
+    """Bind project creation to its exact required request component."""
+    path = "/api/v1/projects"
+    request_body = snapshot["paths"][path]["post"]["requestBody"]
+    assert request_body.get("required") is True, (
+        f"POST {path}: request body must remain required"
+    )
+    content = request_body.get("content", {})
+    assert "application/json" in content, (
+        f"POST {path}: application/json request body is missing"
+    )
+    schema = content["application/json"].get("schema", {})
+    assert schema.get("$ref") == "#/components/schemas/ProjectCreateRequest", (
+        f"POST {path}: request must use ProjectCreateRequest"
+    )
+
+
 def assert_budget_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
     """Bind budget mutation PUT to its exact required request component."""
     path = "/api/v1/projects/{project_id}/budget"
@@ -447,6 +466,10 @@ def test_costs_query_contract_matches_snapshot() -> None:
 
 def test_budget_check_operation_uses_required_request_component() -> None:
     assert_budget_check_operation_request_binding(_snapshot())
+
+
+def test_project_create_operation_uses_required_request_component() -> None:
+    assert_project_create_operation_request_binding(_snapshot())
 
 
 def test_budget_update_operation_uses_required_request_component() -> None:
@@ -671,6 +694,33 @@ def test_budget_check_operation_request_drift_trips_guard(
 
     with pytest.raises(AssertionError, match=message):
         assert_budget_check_operation_request_binding(mutated)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("required", "request body must remain required"),
+        ("content", "application/json request body is missing"),
+        ("component", "request must use ProjectCreateRequest"),
+    ],
+)
+def test_project_create_operation_request_drift_trips_guard(
+    mutation: str,
+    message: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    request_body = mutated["paths"]["/api/v1/projects"]["post"]["requestBody"]
+    if mutation == "required":
+        request_body["required"] = False
+    elif mutation == "content":
+        request_body["content"].pop("application/json")
+    else:
+        request_body["content"]["application/json"]["schema"]["$ref"] = (
+            "#/components/schemas/UnrelatedRequest"
+        )
+
+    with pytest.raises(AssertionError, match=message):
+        assert_project_create_operation_request_binding(mutated)
 
 
 @pytest.mark.parametrize(

@@ -37,6 +37,16 @@ RESPONSE_READS = {
         "budget_mode",
         "created_at",
     ),
+    "ProjectCreateResponse": (
+        "id",
+        "name",
+        "budget_limit",
+        "budget_period",
+        "budget_mode",
+        "created_at",
+        "key",
+        "key_prefix",
+    ),
     "BudgetStatusResponse": (
         "project_id",
         "budget_limit",
@@ -138,27 +148,44 @@ RESPONSE_READS = {
         "local_call_count",
     ),
 }
-# method/path -> (JSON shape, consumed response component)
+# method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
-    ("POST", "/api/v1/auth/login"): ("object", "TokenResponse"),
-    ("POST", "/api/v1/auth/refresh"): ("object", "TokenResponse"),
-    ("GET", "/api/v1/account/me"): ("object", "MeResponse"),
-    ("GET", "/api/v1/projects"): ("array", "ProjectResponse"),
-    ("GET", "/api/v1/projects/{project_id}"): ("object", "ProjectResponse"),
+    ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
+    ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
+    ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),
+    ("GET", "/api/v1/projects"): ("200", "array", "ProjectResponse"),
+    ("POST", "/api/v1/projects"): (
+        "201",
+        "object",
+        "ProjectCreateResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}"): (
+        "200",
+        "object",
+        "ProjectResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/budget"): (
+        "200",
         "object",
         "BudgetStatusResponse",
     ),
     ("PUT", "/api/v1/projects/{project_id}/budget"): (
+        "200",
         "object",
         "BudgetStatusResponse",
     ),
-    ("POST", "/api/v1/budgets/check"): ("object", "BudgetCheckResponse"),
+    ("POST", "/api/v1/budgets/check"): (
+        "200",
+        "object",
+        "BudgetCheckResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/providers"): (
+        "200",
         "array",
         "ProviderHealthResponse",
     ),
     ("GET", "/api/v1/projects/{project_id}/costs"): (
+        "200",
         "object",
         "CostQueryResponse",
     ),
@@ -371,19 +398,24 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
 def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
     """Validate every consumed success operation against its response component."""
     paths = snapshot["paths"]
-    for (method, path), (shape, component) in OPERATION_RESPONSE_BINDINGS.items():
+    for (method, path), (
+        status,
+        shape,
+        component,
+    ) in OPERATION_RESPONSE_BINDINGS.items():
         assert path in paths, f"{method} {path}: path is missing for {component}"
         method_key = method.lower()
         assert method_key in paths[path], (
             f"{method} {path}: operation is missing for {component}"
         )
         responses = paths[path][method_key].get("responses", {})
-        assert "200" in responses, (
-            f"{method} {path}: 200 response is missing for {component}"
+        assert status in responses, (
+            f"{method} {path}: {status} response is missing for {component}"
         )
-        content = responses["200"].get("content", {})
+        content = responses[status].get("content", {})
         assert "application/json" in content, (
-            f"{method} {path}: 200 application/json response is missing for {component}"
+            f"{method} {path}: {status} application/json response is missing "
+            f"for {component}"
         )
         response_schema = content["application/json"].get("schema")
         assert isinstance(response_schema, dict), (
@@ -419,25 +451,46 @@ def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
 
 
+def test_project_create_response_fields_and_201_operation_are_registered() -> None:
+    assert RESPONSE_READS["ProjectCreateResponse"] == (
+        "id",
+        "name",
+        "budget_limit",
+        "budget_period",
+        "budget_mode",
+        "created_at",
+        "key",
+        "key_prefix",
+    )
+    assert OPERATION_RESPONSE_BINDINGS[("POST", "/api/v1/projects")] == (
+        "201",
+        "object",
+        "ProjectCreateResponse",
+    )
+
+
 def test_every_consumed_success_operation_returns_its_response_component() -> None:
     assert_operation_response_bindings(_snapshot())
 
 
 @pytest.mark.parametrize(
-    ("method", "path", "shape", "component"),
+    ("method", "path", "status", "shape", "component"),
     [
-        (method, path, shape, component)
-        for (method, path), (shape, component) in OPERATION_RESPONSE_BINDINGS.items()
+        (method, path, status, shape, component)
+        for (method, path), (status, shape, component) in (
+            OPERATION_RESPONSE_BINDINGS.items()
+        )
     ],
 )
 def test_operation_response_drift_trips_binding_guard(
     method: str,
     path: str,
+    status: str,
     shape: str,
     component: str,
 ) -> None:
     mutated = copy.deepcopy(_snapshot())
-    response_schema = mutated["paths"][path][method.lower()]["responses"]["200"][
+    response_schema = mutated["paths"][path][method.lower()]["responses"][status][
         "content"
     ]["application/json"]["schema"]
     component_schema = response_schema["items"] if shape == "array" else response_schema
@@ -475,20 +528,23 @@ def test_missing_consumed_operation_method_trips_binding_guard() -> None:
 
 
 @pytest.mark.parametrize(
-    ("method", "path", "shape", "component"),
+    ("method", "path", "status", "shape", "component"),
     [
-        (method, path, shape, component)
-        for (method, path), (shape, component) in OPERATION_RESPONSE_BINDINGS.items()
+        (method, path, status, shape, component)
+        for (method, path), (status, shape, component) in (
+            OPERATION_RESPONSE_BINDINGS.items()
+        )
     ],
 )
 def test_operation_response_shape_drift_trips_binding_guard(
     method: str,
     path: str,
+    status: str,
     shape: str,
     component: str,
 ) -> None:
     mutated = copy.deepcopy(_snapshot())
-    response = mutated["paths"][path][method.lower()]["responses"]["200"]["content"][
+    response = mutated["paths"][path][method.lower()]["responses"][status]["content"][
         "application/json"
     ]
     if shape == "array":
@@ -678,6 +734,14 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("ProjectResponse", "budget_period"),
         ("ProjectResponse", "budget_mode"),
         ("ProjectResponse", "created_at"),
+        ("ProjectCreateResponse", "id"),
+        ("ProjectCreateResponse", "name"),
+        ("ProjectCreateResponse", "budget_limit"),
+        ("ProjectCreateResponse", "budget_period"),
+        ("ProjectCreateResponse", "budget_mode"),
+        ("ProjectCreateResponse", "created_at"),
+        ("ProjectCreateResponse", "key"),
+        ("ProjectCreateResponse", "key_prefix"),
         ("BudgetStatusResponse", "project_id"),
         ("BudgetStatusResponse", "budget_limit"),
         ("BudgetStatusResponse", "current_usage"),

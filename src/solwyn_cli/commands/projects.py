@@ -1,20 +1,38 @@
-"""Project metadata list and show commands."""
+"""Project creation and metadata inspection commands."""
 
+import math
+from typing import Annotated
 from urllib.parse import quote
 
 import typer
-from pydantic import AwareDatetime, BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
+from solwyn_cli._vendor.validation import validate_project_key_format
+from solwyn_cli._vendor.wire import BudgetMode, BudgetPeriod, ProjectCreateRequest
 from solwyn_cli.auth import (
     AuthError,
+    CredentialStorageError,
+    JwtCredential,
     ProjectKeyCredential,
     resolve_credential,
+    store_project_key,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -39,6 +57,51 @@ class _ProjectsListData(BaseModel):
 
 
 _PROJECTS = TypeAdapter(list[_Project])
+
+
+class _CreatedProject(BaseModel):
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    budget_limit: float = Field(gt=0, allow_inf_nan=False)
+    budget_period: BudgetPeriod
+    budget_mode: BudgetMode
+    created_at: AwareDatetime
+    key_prefix: str = Field(min_length=9)
+
+
+class _ProjectCreateResponse(_CreatedProject):
+    key: SecretStr
+
+    @field_validator("key")
+    @classmethod
+    def validate_key(cls, value: SecretStr) -> SecretStr:
+        validate_project_key_format(value.get_secret_value())
+        return value
+
+    @model_validator(mode="after")
+    def validate_key_prefix(self) -> "_ProjectCreateResponse":
+        raw_key = self.key.get_secret_value()
+        if (
+            not self.key_prefix.startswith("sk_proj_")
+            or len(self.key_prefix) >= len(raw_key)
+            or not raw_key.startswith(self.key_prefix)
+        ):
+            raise ValueError("Invalid project key prefix")
+        return self
+
+
+class _ProjectCreateDisplayData(_CreatedProject):
+    key: SecretStr
+
+    @field_serializer("key")
+    def serialize_key(self, value: SecretStr) -> str:
+        return value.get_secret_value()
+
+
+class _ProjectCreateStoredData(_CreatedProject):
+    stored: bool = True
 
 
 def _date_time(value: AwareDatetime) -> str:
@@ -75,6 +138,160 @@ def _show_table(project: _Project) -> TableData:
             ("Created", _date_time(project.created_at)),
         ),
         right_align=("Value",),
+    )
+
+
+def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableData:
+    rows = (
+        ("ID", project.id),
+        ("Name", project.name),
+        ("Budget limit", f"{project.budget_limit:.2f}"),
+        ("Budget period", project.budget_period),
+        ("Budget mode", project.budget_mode),
+        ("Created", _date_time(project.created_at)),
+        ("Key prefix", project.key_prefix),
+    )
+    if stored:
+        rows = (*rows, ("Stored", "true"))
+    return TableData(
+        columns=("Field", "Value"),
+        rows=rows,
+        right_align=("Value",),
+    )
+
+
+def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
+    credential = required_credential(context, resolve=resolve_credential)
+    if isinstance(credential, ProjectKeyCredential):
+        hint = (
+            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects create."
+            if credential.source == "environment"
+            else "Run solwyn logout, then solwyn login, and retry projects create."
+        )
+        exit_with_error(
+            context,
+            OutputError(
+                code="authentication_required",
+                message="User login is required to create projects.",
+                hint=hint,
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
+    return credential
+
+
+@app.command("create")
+def create_project(
+    context: typer.Context,
+    name: Annotated[str, typer.Option("--name", help="Name for the new project.")],
+    budget: Annotated[
+        float,
+        typer.Option("--budget", help="Initial project budget in USD."),
+    ] = 100.0,
+    period: Annotated[
+        BudgetPeriod,
+        typer.Option("--period", help="Initial budget period."),
+    ] = BudgetPeriod.MONTHLY,
+    mode: Annotated[
+        BudgetMode,
+        typer.Option("--mode", help="Initial budget enforcement mode."),
+    ] = BudgetMode.ALERT_ONLY,
+    store_key: Annotated[
+        bool,
+        typer.Option("--store-key", help="Store the new key in the OS keychain."),
+    ] = False,
+) -> None:
+    """Create a project and capture its first API key exactly once."""
+    if not name.strip() or not math.isfinite(budget) or budget <= 0:
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_project_create_request",
+                message="Project name and budget are invalid.",
+                hint="Provide a nonblank name and a finite positive budget.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    try:
+        request = ProjectCreateRequest(
+            name=name.strip(),
+            budget_limit=budget,
+            budget_period=period.value,
+            budget_mode=mode.value,
+        )
+    except ValidationError:
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_project_create_request",
+                message="The project creation request is invalid.",
+                hint="Check the project name and initial budget settings.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+
+    credential = _jwt_credential_for_create(context)
+    runtime = command_context(context)
+    try:
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            response = client.request(
+                "POST",
+                "/api/v1/projects",
+                json=request.model_dump(mode="json"),
+                retry_rate_limit=False,
+                retry_auth=False,
+            )
+        if response.status_code != 201:
+            raise ValueError("Project creation did not return 201")
+        created = _ProjectCreateResponse.model_validate(response.json())
+    except ApiError as error:
+        exit_with_error(context, error)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValidationError, ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_projects_response",
+                message="The project creation response was invalid.",
+            ),
+        )
+
+    raw_key = created.key.get_secret_value()
+    if store_key:
+        try:
+            store_project_key(raw_key)
+        except CredentialStorageError as error:
+            exit_with_error(
+                context,
+                OutputError(
+                    code="credential_storage_failed",
+                    message=str(error),
+                    hint="Retry after configuring an operating-system keychain.",
+                ),
+                semantic=ErrorSemantic.AUTH,
+            )
+        stored_data = _ProjectCreateStoredData.model_validate(created.model_dump())
+        output_engine(context).write_success(
+            schema="solwyn.projects-create.v1",
+            data=stored_data,
+            table=_create_table(stored_data, stored=True),
+        )
+        return
+
+    display_data = _ProjectCreateDisplayData.model_validate(created.model_dump())
+    output_engine(context).write_success(
+        schema="solwyn.projects-create.v1",
+        data=display_data,
+        table=_create_table(display_data),
+        one_time_secret=OneTimeSecretPanel(
+            title="One-time project key",
+            value=created.key,
+        ),
     )
 
 

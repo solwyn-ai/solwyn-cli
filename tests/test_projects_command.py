@@ -1,6 +1,7 @@
 """Project list/show command contract tests."""
 
 import json
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from solwyn_cli.main import app
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
 VALID_KEY = "sk_proj_" + "d4" * 32
+CREATED_KEY = "sk_proj_" + "ab" * 32
 ACCESS_TOKEN = "projects-access-token"
 REFRESH_TOKEN = "projects-refresh-token"
 
@@ -42,6 +44,17 @@ PROJECTS_RESPONSE = [
         "created_at": "2026-07-10T08:15:30Z",
     },
 ]
+
+PROJECT_CREATE_RESPONSE = {
+    "id": "proj_created",
+    "name": "Created project",
+    "budget_limit": 125.5,
+    "budget_period": "weekly",
+    "budget_mode": "hard_deny",
+    "created_at": "2026-07-10T12:30:00Z",
+    "key": CREATED_KEY,
+    "key_prefix": "sk_proj_abab",
+}
 
 
 class FakeClient:
@@ -93,16 +106,408 @@ def _queue_projects(payload: object = PROJECTS_RESPONSE) -> None:
     FakeClient.responses = [httpx.Response(200, json=payload)]
 
 
-def test_projects_group_registers_only_list_and_show() -> None:
+def test_projects_group_registers_create_list_and_show_only() -> None:
     root = runner.invoke(app, ["--help"])
     group = runner.invoke(app, ["projects", "--help"])
 
     assert root.exit_code == 0
     assert "projects" in root.stdout
     assert group.exit_code == 0
+    assert "create" in group.stdout
     assert "list" in group.stdout
     assert "show" in group.stdout
-    assert "create" not in group.stdout
+    assert "keys" not in group.stdout
+    assert "delete" not in group.stdout
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_projects_create_posts_once_as_jwt_and_displays_key_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    credential = _jwt()
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
+    options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(
+        app,
+        [
+            *options,
+            "projects",
+            "create",
+            "--name",
+            "Created project",
+            "--budget",
+            "125.5",
+            "--period",
+            "weekly",
+            "--mode",
+            "hard_deny",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].credential is credential
+    assert FakeClient.instances[0].requests == [
+        (
+            "POST",
+            "/api/v1/projects",
+            {
+                "json": {
+                    "name": "Created project",
+                    "budget_limit": 125.5,
+                    "budget_period": "weekly",
+                    "budget_mode": "hard_deny",
+                },
+                "retry_rate_limit": False,
+                "retry_auth": False,
+            },
+        )
+    ]
+    rendered = result.stdout + result.stderr + repr(result.exception)
+    assert rendered.count(CREATED_KEY) == 1
+    assert result.stderr == ""
+    if output_format == "json":
+        payload = json.loads(result.stdout)
+        assert payload["schema"] == "solwyn.projects-create.v1"
+        assert payload["key"] == CREATED_KEY
+        assert "stored" not in payload
+    else:
+        assert "One-time project key" in result.stdout
+        assert "Created project" in result.stdout
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_projects_create_store_key_never_displays_it(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    stored: list[str] = []
+    monkeypatch.setattr(projects_module, "store_project_key", stored.append)
+    FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
+    options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(
+        app,
+        [
+            *options,
+            "projects",
+            "create",
+            "--name",
+            "Created project",
+            "--store-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert stored == [CREATED_KEY]
+    rendered = result.stdout + result.stderr + repr(result.exception)
+    assert CREATED_KEY not in rendered
+    assert "sk_proj_abab" in result.stdout
+    assert result.stderr == ""
+    if output_format == "json":
+        payload = json.loads(result.stdout)
+        assert payload["stored"] is True
+        assert "key" not in payload
+    else:
+        assert "Stored" in result.stdout
+        assert "true" in result.stdout
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+@pytest.mark.parametrize(
+    ("store_key", "golden_stem"),
+    [(False, "display"), (True, "stored")],
+)
+def test_projects_create_matches_goldens(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+    store_key: bool,
+    golden_stem: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "store_project_key", lambda _key: None)
+    FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
+    options = ["--json"] if output_format == "json" else ["--no-color"]
+    storage = ["--store-key"] if store_key else []
+
+    result = runner.invoke(
+        app,
+        [*options, "projects", "create", "--name", "Created project", *storage],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"projects-create-{golden_stem}-{output_format}.{suffix}",
+    )
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_hint"),
+    [
+        (
+            "environment",
+            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects create.",
+        ),
+        (
+            "keyring",
+            "Run solwyn logout, then solwyn login, and retry projects create.",
+        ),
+    ],
+)
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_projects_create_is_jwt_only_with_source_aware_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    expected_hint: str,
+    output_format: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda: _key(source))
+    options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(
+        app,
+        [*options, "projects", "create", "--name", "Created project"],
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert expected_hint in result.stderr
+    assert FakeClient.instances == []
+
+
+def test_projects_create_requires_auth_without_a_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda: None)
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "create", "--name", "Created project"],
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "authentication_required"
+    assert FakeClient.instances == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--name", ""],
+        ["--name", "   "],
+        ["--name", "Created project", "--budget", "0"],
+        ["--name", "Created project", "--budget", "-1"],
+        ["--name", "Created project", "--budget", "nan"],
+        ["--name", "Created project", "--budget", "inf"],
+        ["--name", "x" * 101],
+    ],
+)
+def test_projects_create_validates_request_before_auth_or_network(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+) -> None:
+    monkeypatch.setattr(
+        projects_module,
+        "resolve_credential",
+        lambda: pytest.fail("must validate before auth"),
+    )
+
+    result = runner.invoke(app, ["--json", "projects", "create", *args])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_project_create_request"
+    assert FakeClient.instances == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--name", "Created project", "--period", "yearly"],
+        ["--name", "Created project", "--mode", "block"],
+    ],
+)
+def test_projects_create_rejects_unknown_enum_options_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+) -> None:
+    monkeypatch.setattr(
+        projects_module,
+        "resolve_credential",
+        lambda: pytest.fail("must parse before auth"),
+    )
+
+    result = runner.invoke(app, ["projects", "create", *args])
+
+    assert result.exit_code == 2
+    assert FakeClient.instances == []
+
+
+def test_projects_create_uses_frozen_defaults_and_does_not_select_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(
+            201,
+            json={
+                **PROJECT_CREATE_RESPONSE,
+                "budget_limit": 100.0,
+                "budget_period": "monthly",
+                "budget_mode": "alert_only",
+            },
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "create", "--name", "  Created project  "],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests[0][2]["json"] == {
+        "name": "Created project",
+        "budget_limit": 100.0,
+        "budget_period": "monthly",
+        "budget_mode": "alert_only",
+    }
+    assert runtime.load_config().default_project is None
+
+
+@pytest.mark.parametrize("status_code", [200, 202, 204])
+def test_projects_create_accepts_only_201_without_replay(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [httpx.Response(status_code, json=PROJECT_CREATE_RESPONSE)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "create", "--name", "Created project"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_projects_response"
+    assert len(FakeClient.instances[0].requests) == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {key: value for key, value in PROJECT_CREATE_RESPONSE.items() if key != "key"},
+        {**PROJECT_CREATE_RESPONSE, "key": "sk_proj_not-a-valid-key"},
+        {**PROJECT_CREATE_RESPONSE, "key_prefix": "sk_proj_dead"},
+        {**PROJECT_CREATE_RESPONSE, "created_at": "2026-07-10T12:30:00"},
+        {**PROJECT_CREATE_RESPONSE, "budget_limit": "Infinity"},
+        {**PROJECT_CREATE_RESPONSE, "budget_period": "yearly"},
+        {**PROJECT_CREATE_RESPONSE, "budget_mode": "block"},
+    ],
+)
+def test_projects_create_rejects_malformed_response_without_secret_leak(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: object,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [httpx.Response(201, json=payload)]
+
+    with caplog.at_level(logging.DEBUG):
+        result = runner.invoke(
+            app,
+            ["--json", "projects", "create", "--name", "Created project"],
+        )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_projects_response"
+    rendered = result.stderr + repr(result.exception) + caplog.text
+    assert CREATED_KEY not in rendered
+    assert ACCESS_TOKEN not in rendered
+    assert REFRESH_TOKEN not in rendered
+    assert len(FakeClient.instances[0].requests) == 1
+
+
+def test_projects_create_storage_failure_never_falls_back_to_display(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
+
+    def fail_store(_key: str) -> None:
+        raise auth.CredentialStorageError("Keychain unavailable.")
+
+    monkeypatch.setattr(projects_module, "store_project_key", fail_store)
+
+    with caplog.at_level(logging.DEBUG):
+        result = runner.invoke(
+            app,
+            [
+                "--json",
+                "projects",
+                "create",
+                "--name",
+                "Created project",
+                "--store-key",
+            ],
+        )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "credential_storage_failed"
+    rendered = result.stderr + repr(result.exception) + caplog.text
+    assert CREATED_KEY not in rendered
+    assert len(FakeClient.instances[0].requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("status_code", "code"),
+    [(402, "project_limit_reached"), (422, "validation_error")],
+)
+def test_projects_create_relays_api_errors_without_secret_or_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    code: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        ApiError(
+            status_code=status_code,
+            code=code,
+            message="Project could not be created.",
+            hint=(
+                "Manage project limits in the dashboard: /settings/billing"
+                if status_code == 402
+                else None
+            ),
+            detail={"code": code, "message": "Project could not be created."},
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "create", "--name", "Created project"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == code
+    if status_code == 402:
+        assert error["hint"] == (
+            "Manage project limits in the dashboard: /settings/billing"
+        )
+    assert CREATED_KEY not in result.stderr + repr(result.exception)
+    assert len(FakeClient.instances[0].requests) == 1
 
 
 @pytest.mark.parametrize("output_format", ["table", "json"])
@@ -368,9 +773,17 @@ def test_projects_rejects_invalid_responses_without_leaking_credentials(
     assert REFRESH_TOKEN not in rendered
 
 
-def test_project_outputs_and_goldens_exclude_every_synthetic_credential() -> None:
-    for golden in GOLDEN_DIR.glob("projects-*"):
+def test_goldens_limit_created_key_to_authorized_one_time_outputs() -> None:
+    authorized = {
+        "projects-create-display-table.txt",
+        "projects-create-display-json.json",
+    }
+    for golden in GOLDEN_DIR.glob("*"):
+        if not golden.is_file():
+            continue
         rendered = golden.read_text(encoding="utf-8")
+        expected_occurrences = 1 if golden.name in authorized else 0
+        assert rendered.count(CREATED_KEY) == expected_occurrences, golden.name
         assert VALID_KEY not in rendered
         assert ACCESS_TOKEN not in rendered
         assert REFRESH_TOKEN not in rendered

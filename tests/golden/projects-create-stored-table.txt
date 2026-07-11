@@ -1,0 +1,9 @@
+Field                         Value
+ID                     proj_created
+Name                Created project
+Budget limit                 125.50
+Budget period                weekly
+Budget mode               hard_deny
+Created        2026-07-10T12:30:00Z
+Key prefix             sk_proj_abab
+Stored                         true
