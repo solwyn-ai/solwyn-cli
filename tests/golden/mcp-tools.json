@@ -1,0 +1,1878 @@
+[
+  {
+    "_meta": null,
+    "annotations": null,
+    "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "budget_statusArguments",
+      "type": "object"
+    },
+    "name": "budget_status",
+    "outputSchema": {
+      "$defs": {
+        "BudgetMode": {
+          "description": "Budget enforcement mode.",
+          "enum": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "title": "BudgetMode",
+          "type": "string"
+        },
+        "BudgetPeriod": {
+          "description": "Rolling window for budget accounting.",
+          "enum": [
+            "daily",
+            "weekly",
+            "monthly"
+          ],
+          "title": "BudgetPeriod",
+          "type": "string"
+        },
+        "_AlertRouting": {
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/_RoutingChannel"
+              },
+              "title": "Channels",
+              "type": "array"
+            },
+            "email": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Email"
+            },
+            "muted": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RoutingMuted"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source": {
+              "enum": [
+                "override",
+                "project_default",
+                "account_default"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "will_send": {
+              "title": "Will Send",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "will_send",
+            "source"
+          ],
+          "title": "_AlertRouting",
+          "type": "object"
+        },
+        "_BudgetConstraints": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed_modes": {
+              "items": {
+                "$ref": "#/$defs/BudgetMode"
+              },
+              "title": "Allowed Modes",
+              "type": "array"
+            },
+            "allowed_periods": {
+              "items": {
+                "$ref": "#/$defs/BudgetPeriod"
+              },
+              "title": "Allowed Periods",
+              "type": "array"
+            },
+            "max_thresholds": {
+              "title": "Max Thresholds",
+              "type": "integer"
+            },
+            "sub_period_enabled": {
+              "title": "Sub Period Enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "allowed_modes",
+            "allowed_periods",
+            "sub_period_enabled",
+            "max_thresholds"
+          ],
+          "title": "_BudgetConstraints",
+          "type": "object"
+        },
+        "_BudgetStatusData": {
+          "additionalProperties": false,
+          "properties": {
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "budget_mode": {
+              "$ref": "#/$defs/BudgetMode"
+            },
+            "budget_period": {
+              "$ref": "#/$defs/BudgetPeriod"
+            },
+            "constraints": {
+              "$ref": "#/$defs/_BudgetConstraints"
+            },
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "period_date": {
+              "title": "Period Date",
+              "type": "string"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "sub_limit": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sub Limit"
+            },
+            "sub_period": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BudgetPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "thresholds": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "budget_threshold": "#/$defs/_BudgetThresholdState",
+                    "daily_anomaly": "#/$defs/_DailyAnomalyState",
+                    "forecast_overrun": "#/$defs/_ForecastOverrunState",
+                    "unit_cost_anomaly": "#/$defs/_UnitCostAnomalyState"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/_BudgetThresholdState"
+                  },
+                  {
+                    "$ref": "#/$defs/_ForecastOverrunState"
+                  },
+                  {
+                    "$ref": "#/$defs/_DailyAnomalyState"
+                  },
+                  {
+                    "$ref": "#/$defs/_UnitCostAnomalyState"
+                  }
+                ]
+              },
+              "title": "Thresholds",
+              "type": "array"
+            },
+            "utilization_pct": {
+              "title": "Utilization Pct",
+              "type": "number"
+            }
+          },
+          "required": [
+            "project_id",
+            "budget_limit",
+            "current_usage",
+            "remaining_budget",
+            "utilization_pct",
+            "budget_mode",
+            "budget_period",
+            "period_date",
+            "thresholds",
+            "constraints"
+          ],
+          "title": "_BudgetStatusData",
+          "type": "object"
+        },
+        "_BudgetThresholdState": {
+          "additionalProperties": false,
+          "properties": {
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Percent",
+              "type": "integer"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "type": {
+              "const": "budget_threshold",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "percent"
+          ],
+          "title": "_BudgetThresholdState",
+          "type": "object"
+        },
+        "_DailyAnomalyState": {
+          "additionalProperties": false,
+          "properties": {
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "type": {
+              "const": "daily_anomaly",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "multiplier"
+          ],
+          "title": "_DailyAnomalyState",
+          "type": "object"
+        },
+        "_ForecastOverrunState": {
+          "additionalProperties": false,
+          "properties": {
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "period": {
+              "const": "month",
+              "default": "month",
+              "title": "Period",
+              "type": "string"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "spend_threshold_usd": {
+              "exclusiveMinimum": 0,
+              "title": "Spend Threshold Usd",
+              "type": "number"
+            },
+            "type": {
+              "const": "forecast_overrun",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "spend_threshold_usd"
+          ],
+          "title": "_ForecastOverrunState",
+          "type": "object"
+        },
+        "_RoutingChannel": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "title": "_RoutingChannel",
+          "type": "object"
+        },
+        "_RoutingMuted": {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "severity_floor",
+                "event_filter",
+                "email_off"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "severity_floor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Severity Floor"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "title": "_RoutingMuted",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        },
+        "_UnitCostAnomalyState": {
+          "additionalProperties": false,
+          "properties": {
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "type": {
+              "const": "unit_cost_anomaly",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "multiplier"
+          ],
+          "title": "_UnitCostAnomalyState",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_BudgetStatusData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "solwyn.mcp.budget-status.v1",
+          "default": "solwyn.mcp.budget-status.v1",
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_BudgetStatusResult",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "_meta": null,
+    "annotations": null,
+    "description": "Reserve budget only immediately before the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "$defs": {
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "estimated_input_tokens": {
+          "minimum": 0,
+          "title": "Estimated Input Tokens",
+          "type": "integer"
+        },
+        "fallback_models": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Models"
+        },
+        "fallback_providers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProviderName"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Providers"
+        },
+        "model": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        }
+      },
+      "required": [
+        "estimated_input_tokens",
+        "model",
+        "provider"
+      ],
+      "title": "budget_checkArguments",
+      "type": "object"
+    },
+    "name": "budget_check",
+    "outputSchema": {
+      "$defs": {
+        "BudgetMode": {
+          "description": "Budget enforcement mode.",
+          "enum": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "title": "BudgetMode",
+          "type": "string"
+        },
+        "BudgetPeriod": {
+          "description": "Rolling window for budget accounting.",
+          "enum": [
+            "daily",
+            "weekly",
+            "monthly"
+          ],
+          "title": "BudgetPeriod",
+          "type": "string"
+        },
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        },
+        "_BudgetCheckData": {
+          "properties": {
+            "allowed": {
+              "title": "Allowed",
+              "type": "boolean"
+            },
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "denied_by_period": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BudgetPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
+            },
+            "price_hints": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "type": "number"
+                  },
+                  "propertyNames": {
+                    "$ref": "#/$defs/ProviderName"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Price Hints"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            }
+          },
+          "required": [
+            "allowed",
+            "remaining_budget",
+            "mode",
+            "budget_limit",
+            "current_usage",
+            "project_id"
+          ],
+          "title": "_BudgetCheckData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_BudgetCheckData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "solwyn.mcp.budget-check.v1",
+          "default": "solwyn.mcp.budget-check.v1",
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_BudgetCheckResult",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "_meta": null,
+    "annotations": null,
+    "description": "Settle only a non-null reservation after the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "$defs": {
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        },
+        "ServiceTier": {
+          "description": "Provider service tiers accepted by budget confirmation.",
+          "enum": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "title": "ServiceTier",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "accepted_prediction_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Accepted Prediction Tokens",
+          "type": "integer"
+        },
+        "audio_input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Audio Input Tokens",
+          "type": "integer"
+        },
+        "audio_output_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Audio Output Tokens",
+          "type": "integer"
+        },
+        "cache_creation_1h_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cache Creation 1H Tokens",
+          "type": "integer"
+        },
+        "cache_creation_5m_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cache Creation 5M Tokens",
+          "type": "integer"
+        },
+        "cached_input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cached Input Tokens",
+          "type": "integer"
+        },
+        "call_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "title": "Call Id",
+          "type": "string"
+        },
+        "input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "is_estimated": {
+          "default": false,
+          "title": "Is Estimated",
+          "type": "boolean"
+        },
+        "is_provider_fallback": {
+          "default": false,
+          "title": "Is Provider Fallback",
+          "type": "boolean"
+        },
+        "model": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "output_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Reasoning Tokens",
+          "type": "integer"
+        },
+        "rejected_prediction_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Rejected Prediction Tokens",
+          "type": "integer"
+        },
+        "reservation_id": {
+          "minLength": 1,
+          "title": "Reservation Id",
+          "type": "string"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool_use_input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Tool Use Input Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "reservation_id",
+        "call_id",
+        "model",
+        "provider"
+      ],
+      "title": "budget_confirmArguments",
+      "type": "object"
+    },
+    "name": "budget_confirm",
+    "outputSchema": {
+      "$defs": {
+        "_BudgetConfirmData": {
+          "additionalProperties": false,
+          "properties": {
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            },
+            "reservation_id": {
+              "title": "Reservation Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reservation_id",
+            "call_id"
+          ],
+          "title": "_BudgetConfirmData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_BudgetConfirmData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "solwyn.mcp.budget-confirm.v1",
+          "default": "solwyn.mcp.budget-confirm.v1",
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_BudgetConfirmResult",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "_meta": null,
+    "annotations": null,
+    "description": "Read the configured project's budget and provider health without authorizing spend.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "get_project_statusArguments",
+      "type": "object"
+    },
+    "name": "get_project_status",
+    "outputSchema": {
+      "$defs": {
+        "_BudgetSummary": {
+          "properties": {
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "budget_mode": {
+              "enum": [
+                "alert_only",
+                "hard_deny"
+              ],
+              "title": "Budget Mode",
+              "type": "string"
+            },
+            "budget_period": {
+              "enum": [
+                "daily",
+                "weekly",
+                "monthly"
+              ],
+              "title": "Budget Period",
+              "type": "string"
+            },
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "period_date": {
+              "title": "Period Date",
+              "type": "string"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "utilization_pct": {
+              "title": "Utilization Pct",
+              "type": "number"
+            }
+          },
+          "required": [
+            "budget_limit",
+            "current_usage",
+            "remaining_budget",
+            "budget_period",
+            "budget_mode",
+            "period_date",
+            "utilization_pct"
+          ],
+          "title": "_BudgetSummary",
+          "type": "object"
+        },
+        "_ProviderHealth": {
+          "properties": {
+            "avg_latency_ms": {
+              "title": "Avg Latency Ms",
+              "type": "number"
+            },
+            "circuit_state": {
+              "title": "Circuit State",
+              "type": "string"
+            },
+            "error_count": {
+              "title": "Error Count",
+              "type": "integer"
+            },
+            "failover_count": {
+              "title": "Failover Count",
+              "type": "integer"
+            },
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "success_count": {
+              "title": "Success Count",
+              "type": "integer"
+            },
+            "success_rate": {
+              "title": "Success Rate",
+              "type": "number"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "provider",
+            "total_calls",
+            "success_count",
+            "error_count",
+            "failover_count",
+            "success_rate",
+            "avg_latency_ms",
+            "circuit_state"
+          ],
+          "title": "_ProviderHealth",
+          "type": "object"
+        },
+        "_StatusData": {
+          "additionalProperties": false,
+          "properties": {
+            "budget": {
+              "$ref": "#/$defs/_BudgetSummary"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "providers": {
+              "items": {
+                "$ref": "#/$defs/_ProviderHealth"
+              },
+              "title": "Providers",
+              "type": "array"
+            }
+          },
+          "required": [
+            "project_id",
+            "budget",
+            "providers"
+          ],
+          "title": "_StatusData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_StatusData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "solwyn.mcp.project-status.v1",
+          "default": "solwyn.mcp.project-status.v1",
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_ProjectStatusResult",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "_meta": null,
+    "annotations": null,
+    "description": "Read aggregated project costs for one frozen time range and grouping.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "$defs": {
+        "CostGrouping": {
+          "description": "Supported aggregate dimensions frozen for the v1 command.",
+          "enum": [
+            "day",
+            "model",
+            "provider"
+          ],
+          "title": "CostGrouping",
+          "type": "string"
+        },
+        "CostRange": {
+          "description": "Supported aggregate windows frozen for the v1 command.",
+          "enum": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "title": "CostRange",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "group_by": {
+          "$ref": "#/$defs/CostGrouping",
+          "default": "model"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "time_range": {
+          "$ref": "#/$defs/CostRange",
+          "default": "7d"
+        }
+      },
+      "title": "get_costsArguments",
+      "type": "object"
+    },
+    "name": "get_costs",
+    "outputSchema": {
+      "$defs": {
+        "_CostGroup": {
+          "properties": {
+            "call_count": {
+              "title": "Call Count",
+              "type": "integer"
+            },
+            "group_key": {
+              "title": "Group Key",
+              "type": "string"
+            },
+            "local_call_count": {
+              "default": 0,
+              "title": "Local Call Count",
+              "type": "integer"
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Provider"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "unpriced_call_count": {
+              "default": 0,
+              "title": "Unpriced Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "group_key",
+            "total_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "call_count"
+          ],
+          "title": "_CostGroup",
+          "type": "object"
+        },
+        "_CostsData": {
+          "properties": {
+            "group_by": {
+              "enum": [
+                "day",
+                "model",
+                "provider"
+              ],
+              "title": "Group By",
+              "type": "string"
+            },
+            "groups": {
+              "items": {
+                "$ref": "#/$defs/_CostGroup"
+              },
+              "title": "Groups",
+              "type": "array"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "range": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "365d"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "range",
+            "group_by",
+            "groups"
+          ],
+          "title": "_CostsData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_CostsData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "solwyn.mcp.costs.v1",
+          "default": "solwyn.mcp.costs.v1",
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_CostsResult",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "_meta": null,
+    "annotations": null,
+    "description": "List projects visible to the logged-in user. Requires login/JWT authentication.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {},
+      "title": "list_projectsArguments",
+      "type": "object"
+    },
+    "name": "list_projects",
+    "outputSchema": {
+      "$defs": {
+        "_Project": {
+          "properties": {
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "budget_mode": {
+              "title": "Budget Mode",
+              "type": "string"
+            },
+            "budget_period": {
+              "title": "Budget Period",
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "budget_limit",
+            "budget_period",
+            "budget_mode",
+            "created_at"
+          ],
+          "title": "_Project",
+          "type": "object"
+        },
+        "_ProjectsListData": {
+          "additionalProperties": false,
+          "properties": {
+            "projects": {
+              "items": {
+                "$ref": "#/$defs/_Project"
+              },
+              "title": "Projects",
+              "type": "array"
+            }
+          },
+          "required": [
+            "projects"
+          ],
+          "title": "_ProjectsListData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ProjectsListData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "solwyn.mcp.projects.v1",
+          "default": "solwyn.mcp.projects.v1",
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_ProjectsResult",
+      "type": "object"
+    },
+    "title": null
+  }
+]

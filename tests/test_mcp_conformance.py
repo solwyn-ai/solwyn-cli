@@ -1,7 +1,9 @@
 """In-process MCP conformance tests for the frozen six-tool surface."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from copy import deepcopy
 import json
+from pathlib import Path
 from threading import get_ident
 from typing import Any
 
@@ -97,6 +99,86 @@ PROJECTS_RESPONSE = [
         "created_at": "2026-07-10T12:00:00Z",
     }
 ]
+MCP_TOOLS_GOLDEN = Path(__file__).parent / "golden" / "mcp-tools.json"
+
+
+async def _listed_tool_contract() -> list[dict[str, Any]]:
+    async with create_connected_server_and_client_session(
+        mcp_server.create_server()
+    ) as session:
+        tools = (await session.list_tools()).tools
+    return [tool.model_dump(mode="json", by_alias=True) for tool in tools]
+
+
+def _assert_tool_contract(contract: list[dict[str, Any]]) -> None:
+    expected = json.loads(MCP_TOOLS_GOLDEN.read_text(encoding="utf-8"))
+    assert contract == expected
+
+
+def _mutate_description(contract: list[dict[str, Any]]) -> None:
+    contract[3]["description"] += " changed"
+
+
+def _mutate_required(contract: list[dict[str, Any]]) -> None:
+    contract[1]["inputSchema"]["required"].remove("estimated_input_tokens")
+
+
+def _mutate_default(contract: list[dict[str, Any]]) -> None:
+    contract[4]["inputSchema"]["properties"]["time_range"]["default"] = "30d"
+
+
+def _mutate_enum(contract: list[dict[str, Any]]) -> None:
+    contract[4]["inputSchema"]["$defs"]["CostRange"]["enum"].append("all")
+
+
+def _mutate_bound(contract: list[dict[str, Any]]) -> None:
+    contract[2]["inputSchema"]["properties"]["input_tokens"]["maximum"] = 99
+
+
+def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
+    contract[0]["inputSchema"]["properties"]["project_id"]["anyOf"].pop()
+
+
+def _mutate_additional_properties(contract: list[dict[str, Any]]) -> None:
+    contract[5]["inputSchema"]["additionalProperties"] = False
+
+
+def _mutate_nested_output(contract: list[dict[str, Any]]) -> None:
+    contract[3]["outputSchema"]["$defs"]["_ProviderHealth"]["required"].remove(
+        "circuit_state"
+    )
+
+
+def _mutate_output_required(contract: list[dict[str, Any]]) -> None:
+    contract[0]["outputSchema"]["required"].remove("ok")
+
+
+def test_list_tools_contract_matches_complete_golden() -> None:
+    _assert_tool_contract(anyio.run(_listed_tool_contract))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        _mutate_description,
+        _mutate_required,
+        _mutate_default,
+        _mutate_enum,
+        _mutate_bound,
+        _mutate_nullable,
+        _mutate_additional_properties,
+        _mutate_nested_output,
+        _mutate_output_required,
+    ],
+)
+def test_complete_tool_contract_guard_rejects_schema_drift(
+    mutation: Callable[[list[dict[str, Any]]], None],
+) -> None:
+    contract = deepcopy(anyio.run(_listed_tool_contract))
+    mutation(contract)
+
+    with pytest.raises(AssertionError):
+        _assert_tool_contract(contract)
 
 
 def _install_http(
@@ -170,6 +252,15 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         mcp_server.create_server()
     ) as session:
         return await session.call_tool(name, arguments)
+
+
+def _wire_requests(
+    requests: list[tuple[str, str, dict[str, Any]]],
+) -> list[tuple[str, str, dict[str, str], Any]]:
+    return [
+        (method, path, metadata["query"], metadata["json"])
+        for method, path, metadata in requests
+    ]
 
 
 @pytest.fixture
@@ -318,47 +409,58 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
 
     anyio.run(exercise_protocol)
 
-    assert [(method, path) for method, path, _ in mcp_http] == [
-        ("GET", "/api/v1/projects/proj_alpha/budget"),
-        ("POST", "/api/v1/budgets/check"),
-        ("POST", "/api/v1/budgets/confirm"),
-        ("GET", "/api/v1/projects/proj_alpha/budget"),
-        ("GET", "/api/v1/projects/proj_alpha/providers"),
-        ("GET", "/api/v1/projects/proj_alpha/costs"),
-        ("GET", "/api/v1/projects"),
+    assert _wire_requests(mcp_http) == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        (
+            "POST",
+            "/api/v1/budgets/check",
+            {},
+            {
+                "estimated_input_tokens": 1200,
+                "model": "gpt-5",
+                "provider": "openai",
+                "fallback_providers": ["anthropic"],
+                "fallback_models": ["claude-sonnet-4"],
+            },
+        ),
+        (
+            "POST",
+            "/api/v1/budgets/confirm",
+            {},
+            {
+                "reservation_id": "res_01JZEXAMPLE",
+                "model": "gpt-5",
+                "provider": "openai",
+                "is_provider_fallback": False,
+                "call_id": "12345678-1234-1234-1234-123456789abc",
+                "token_details": {
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "cached_input_tokens": 3,
+                    "cache_creation_5m_tokens": 4,
+                    "cache_creation_1h_tokens": 5,
+                    "reasoning_tokens": 6,
+                    "audio_input_tokens": 7,
+                    "audio_output_tokens": 8,
+                    "accepted_prediction_tokens": 9,
+                    "rejected_prediction_tokens": 10,
+                    "tool_use_input_tokens": 11,
+                    "is_estimated": True,
+                },
+                "provider_region": None,
+                "service_tier": None,
+            },
+        ),
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_alpha/providers", {}, None),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/costs",
+            {"range": "30d", "group_by": "provider"},
+            None,
+        ),
+        ("GET", "/api/v1/projects", {}, None),
     ]
-    assert mcp_http[1][2]["json"] == {
-        "estimated_input_tokens": 1200,
-        "model": "gpt-5",
-        "provider": "openai",
-        "fallback_providers": ["anthropic"],
-        "fallback_models": ["claude-sonnet-4"],
-    }
-    assert mcp_http[2][2]["json"] == {
-        "reservation_id": "res_01JZEXAMPLE",
-        "model": "gpt-5",
-        "provider": "openai",
-        "is_provider_fallback": False,
-        "call_id": "12345678-1234-1234-1234-123456789abc",
-        "token_details": {
-            "input_tokens": 100,
-            "output_tokens": 20,
-            "cached_input_tokens": 3,
-            "cache_creation_5m_tokens": 4,
-            "cache_creation_1h_tokens": 5,
-            "reasoning_tokens": 6,
-            "audio_input_tokens": 7,
-            "audio_output_tokens": 8,
-            "accepted_prediction_tokens": 9,
-            "rejected_prediction_tokens": 10,
-            "tool_use_input_tokens": 11,
-            "is_estimated": True,
-        },
-        "provider_region": None,
-        "service_tier": None,
-    }
-    assert mcp_http[4][2]["query"] == {}
-    assert mcp_http[5][2]["query"] == {"range": "30d", "group_by": "provider"}
     assert {request[2]["authorization"] for request in mcp_http} == {
         f"Bearer {VALID_KEY}",
         f"Bearer {JWT_ACCESS}",
@@ -443,6 +545,10 @@ def test_auth_and_client_are_fresh_per_call_without_server_restart(
     results = anyio.run(two_calls_one_server)
 
     assert all(result.structuredContent["ok"] for result in results)
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+    ]
     assert [request[2]["authorization"] for request in requests] == [
         f"Bearer {first_key.bearer_value()}",
         f"Bearer {second_key.bearer_value()}",
@@ -591,8 +697,19 @@ def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
     assert result.structuredContent["ok"] is True
     assert result.structuredContent["data"]["allowed"] is True
     assert result.structuredContent["data"]["reservation_id"] is None
-    assert [(method, path) for method, path, _ in requests] == [
-        ("POST", "/api/v1/budgets/check")
+    assert _wire_requests(requests) == [
+        (
+            "POST",
+            "/api/v1/budgets/check",
+            {},
+            {
+                "estimated_input_tokens": 1,
+                "model": "m",
+                "provider": "openai",
+                "fallback_providers": [],
+                "fallback_models": [],
+            },
+        )
     ]
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
@@ -633,13 +750,20 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
         "hint": "Review upgrade options in the dashboard: /settings/billing",
         "status_code": 402,
     }
-    assert len(requests) == 1
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/costs",
+            {"range": "7d", "group_by": "model"},
+            None,
+        )
+    ]
     assert response_queue == []
     assert len(clients) == 1 and clients[0].is_closed
     assert VALID_KEY not in str(result)
 
 
-def test_shared_client_honors_one_429_retry(
+def test_budget_check_honors_exactly_one_429_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
@@ -647,17 +771,107 @@ def test_shared_client_honors_one_429_retry(
         monkeypatch,
         responses=[
             httpx.Response(429, headers={"Retry-After": "0"}),
-            httpx.Response(200, json=BUDGET_RESPONSE),
+            httpx.Response(200, json=CHECK_RESPONSE),
         ],
         credentials=[key],
     )
 
-    result = anyio.run(_call_tool, "budget_status", {})
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {"estimated_input_tokens": 1, "model": "m", "provider": "openai"},
+    )
 
     assert result.structuredContent["ok"] is True
-    assert len(requests) == 2
+    expected_request = (
+        "POST",
+        "/api/v1/budgets/check",
+        {},
+        {
+            "estimated_input_tokens": 1,
+            "model": "m",
+            "provider": "openai",
+            "fallback_providers": [],
+            "fallback_models": [],
+        },
+    )
+    assert _wire_requests(requests) == [expected_request, expected_request]
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_budget_confirm_429_is_structured_safe_and_never_replayed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                429,
+                headers={"Retry-After": "0"},
+                json={"detail": f"rate limited {VALID_KEY}"},
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "reservation",
+            "call_id": "call",
+            "model": "m",
+            "provider": "openai",
+        },
+    )
+
+    assert result.isError is False
+    assert result.structuredContent == {
+        "schema": "solwyn.mcp.budget-confirm.v1",
+        "ok": False,
+        "data": None,
+        "error": {
+            "code": "rate_limited",
+            "message": "The Solwyn API rejected the request.",
+            "hint": None,
+            "status_code": 429,
+        },
+    }
+    assert _wire_requests(requests) == [
+        (
+            "POST",
+            "/api/v1/budgets/confirm",
+            {},
+            {
+                "reservation_id": "reservation",
+                "model": "m",
+                "provider": "openai",
+                "is_provider_fallback": False,
+                "call_id": "call",
+                "token_details": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "cache_creation_5m_tokens": 0,
+                    "cache_creation_1h_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "audio_input_tokens": 0,
+                    "audio_output_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "tool_use_input_tokens": 0,
+                    "is_estimated": False,
+                },
+                "provider_region": None,
+                "service_tier": None,
+            },
+        )
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+    assert VALID_KEY not in str(result)
 
 
 def test_shared_client_honors_one_jwt_refresh_and_retry(
@@ -694,10 +908,15 @@ def test_shared_client_honors_one_jwt_refresh_and_retry(
     result = anyio.run(_call_tool, "list_projects", {})
 
     assert result.structuredContent["ok"] is True
-    assert [(method, path) for method, path, _ in requests] == [
-        ("GET", "/api/v1/projects"),
-        ("POST", "/api/v1/auth/refresh"),
-        ("GET", "/api/v1/projects"),
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/projects", {}, None),
+        (
+            "POST",
+            "/api/v1/auth/refresh",
+            {},
+            {"refresh_token": JWT_REFRESH},
+        ),
+        ("GET", "/api/v1/projects", {}, None),
     ]
     assert requests[0][2]["authorization"] == f"Bearer {JWT_ACCESS}"
     assert requests[2][2]["authorization"] == f"Bearer {new_access}"
