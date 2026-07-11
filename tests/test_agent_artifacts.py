@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
+from solwyn_cli import artifacts as artifacts_module
 from solwyn_cli.artifacts import (
     AGENTS_PATH,
     CLAUDE_SKILL_PATH,
@@ -20,6 +21,19 @@ from solwyn_cli.main import app
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
+ARTIFACT_PATHS = (CLAUDE_SKILL_PATH, CURSOR_RULE_PATH, AGENTS_PATH)
+
+
+def _artifact_snapshot(root: Path) -> dict[Path, bytes]:
+    return {
+        path: (root / path).read_bytes()
+        for path in ARTIFACT_PATHS
+        if (root / path).exists()
+    }
+
+
+def _transaction_residue(root: Path) -> list[Path]:
+    return [path for path in root.rglob("*") if path.name.startswith(".solwyn-agent-")]
 
 
 def test_all_four_surfaces_derive_from_one_canonical_source(
@@ -123,6 +137,21 @@ def test_write_agent_artifacts_appends_without_clobbering_existing_agents(
     assert "Keep this exact instruction." in rendered
 
 
+@pytest.mark.parametrize(
+    "existing",
+    [b"# Project agents\r\n\r\nKeep CRLF bytes.\r\n", b"no trailing newline"],
+    ids=("crlf", "no-trailing-newline"),
+)
+def test_write_agent_artifacts_preserves_existing_agents_prefix_bytes(
+    tmp_path: Path, existing: bytes
+) -> None:
+    (tmp_path / AGENTS_PATH).write_bytes(existing)
+
+    write_agent_artifacts(tmp_path)
+
+    assert (tmp_path / AGENTS_PATH).read_bytes().startswith(existing)
+
+
 def test_write_agent_artifacts_replaces_only_an_older_owned_section(
     tmp_path: Path,
 ) -> None:
@@ -144,13 +173,188 @@ def test_write_agent_artifacts_replaces_only_an_older_owned_section(
     assert rendered.count("<!-- BEGIN SOLWYN AGENT CONTEXT -->") == 1
 
 
+def test_inline_and_fenced_marker_examples_are_preserved_and_do_not_claim_ownership(
+    tmp_path: Path,
+) -> None:
+    existing = (
+        "Inline <!-- BEGIN SOLWYN AGENT CONTEXT --> example.\n\n"
+        "```markdown\n"
+        "<!-- BEGIN SOLWYN AGENT CONTEXT -->\n"
+        "example body\n"
+        "<!-- END SOLWYN AGENT CONTEXT -->\n"
+        "```\n"
+    )
+    (tmp_path / AGENTS_PATH).write_text(existing, encoding="utf-8")
+
+    write_agent_artifacts(tmp_path)
+
+    rendered = (tmp_path / AGENTS_PATH).read_text(encoding="utf-8")
+    assert rendered.startswith(existing)
+    assert "example body" in rendered
+    assert rendered.endswith(render_surface(ArtifactSurface.AGENTS_SECTION))
+
+
+@pytest.mark.parametrize(
+    "existing",
+    [
+        (
+            "<!-- END SOLWYN AGENT CONTEXT -->\n"
+            "body\n"
+            "<!-- BEGIN SOLWYN AGENT CONTEXT -->\n"
+        ),
+        (
+            "<!-- BEGIN SOLWYN AGENT CONTEXT -->\n"
+            "one\n"
+            "<!-- BEGIN SOLWYN AGENT CONTEXT -->\n"
+            "two\n"
+            "<!-- END SOLWYN AGENT CONTEXT -->\n"
+        ),
+        "<!-- BEGIN SOLWYN AGENT CONTEXT -->\nincomplete\n",
+        "<!-- END SOLWYN AGENT CONTEXT -->\nincomplete\n",
+    ],
+    ids=("reversed", "duplicate", "missing-end", "missing-begin"),
+)
+def test_malformed_standalone_owned_markers_fail_without_writes(
+    tmp_path: Path, existing: str
+) -> None:
+    agents = tmp_path / AGENTS_PATH
+    agents.write_text(existing, encoding="utf-8")
+    before = agents.read_bytes()
+
+    with pytest.raises(ValueError, match="malformed Solwyn section markers"):
+        write_agent_artifacts(tmp_path)
+
+    assert agents.read_bytes() == before
+    assert not (tmp_path / CLAUDE_SKILL_PATH).exists()
+    assert not (tmp_path / CURSOR_RULE_PATH).exists()
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_mid_stage_fsync_failure_preserves_all_originals_and_removes_residue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    monkeypatch.setattr(
+        artifacts_module,
+        "_fsync_staged_file",
+        lambda _fd: (_ for _ in ()).throw(OSError("injected stage failure")),
+    )
+
+    with pytest.raises(OSError, match="injected stage failure"):
+        write_agent_artifacts(tmp_path)
+
+    assert _artifact_snapshot(tmp_path) == before
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_second_target_stage_failure_preserves_all_originals_and_removes_residue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    original_stage = artifacts_module._stage_artifact
+    calls = 0
+
+    def fail_second(*args: object, **kwargs: object) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected second stage failure")
+        return original_stage(*args, **kwargs)
+
+    monkeypatch.setattr(artifacts_module, "_stage_artifact", fail_second)
+
+    with pytest.raises(OSError, match="injected second stage failure"):
+        write_agent_artifacts(tmp_path)
+
+    assert _artifact_snapshot(tmp_path) == before
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_second_commit_failure_rolls_back_every_original_and_removes_residue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    original_replace = artifacts_module._replace_at
+    calls = 0
+
+    def fail_second(*args: object, **kwargs: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected commit failure")
+        original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(artifacts_module, "_replace_at", fail_second)
+
+    with pytest.raises(OSError, match="injected commit failure"):
+        write_agent_artifacts(tmp_path)
+
+    assert _artifact_snapshot(tmp_path) == before
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_target_symlink_swap_before_commit_never_writes_outside_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    target = tmp_path / AGENTS_PATH
+    saved = tmp_path / "AGENTS.saved"
+    outside = tmp_path.parent / "outside-agents.md"
+    outside.write_text("outside must stay exact\n", encoding="utf-8")
+
+    def swap_target() -> None:
+        target.rename(saved)
+        target.symlink_to(outside)
+
+    monkeypatch.setattr(artifacts_module, "_before_artifact_commit", swap_target)
+
+    with pytest.raises(OSError, match="changed during agent artifact write"):
+        write_agent_artifacts(tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == "outside must stay exact\n"
+    assert saved.read_bytes() == before[AGENTS_PATH]
+    assert _transaction_residue(tmp_path) == []
+
+
+def test_parent_symlink_swap_before_commit_never_writes_outside_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_agent_artifacts(tmp_path)
+    before = _artifact_snapshot(tmp_path)
+    parent = tmp_path / CURSOR_RULE_PATH.parent
+    saved_parent = parent.with_name("rules.saved")
+    outside = tmp_path.parent / "outside-rules"
+    outside.mkdir()
+    outside_rule = outside / CURSOR_RULE_PATH.name
+    outside_rule.write_text("outside must stay exact\n", encoding="utf-8")
+
+    def swap_parent() -> None:
+        parent.rename(saved_parent)
+        parent.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(artifacts_module, "_before_artifact_commit", swap_parent)
+
+    with pytest.raises(OSError, match="parent changed during agent artifact write"):
+        write_agent_artifacts(tmp_path)
+
+    assert outside_rule.read_text(encoding="utf-8") == "outside must stay exact\n"
+    assert (saved_parent / CURSOR_RULE_PATH.name).read_bytes() == before[
+        CURSOR_RULE_PATH
+    ]
+    assert _transaction_residue(tmp_path) == []
+
+
 def test_write_agent_artifacts_propagates_write_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def fail_write(path: Path, content: str) -> None:
+    def fail_write(state: object) -> str:
         raise OSError("read-only fixture")
 
-    monkeypatch.setattr("solwyn_cli.artifacts._write_text", fail_write)
+    monkeypatch.setattr("solwyn_cli.artifacts._stage_artifact", fail_write)
 
     with pytest.raises(OSError, match="read-only fixture"):
         write_agent_artifacts(tmp_path)

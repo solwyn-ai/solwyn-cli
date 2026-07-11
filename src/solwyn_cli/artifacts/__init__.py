@@ -1,7 +1,12 @@
 """Single-source rendering and safe repository writes for agent guidance."""
 
+import os
+import secrets
+import stat
 from enum import StrEnum
 from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
 
 
 CLAUDE_SKILL_PATH = Path(".claude/skills/solwyn/SKILL.md")
@@ -19,6 +24,29 @@ _CURSOR_FRONTMATTER = (
 )
 _AGENTS_BEGIN = "<!-- BEGIN SOLWYN AGENT CONTEXT -->"
 _AGENTS_END = "<!-- END SOLWYN AGENT CONTEXT -->"
+_TRANSACTION_PREFIX = ".solwyn-agent-"
+_DIRECTORY_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_FILE_IDENTITY = tuple[int, int, int, int, int, int]
+
+
+class _ArtifactState(BaseModel):
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    relative_path: Path
+    parent_path: Path
+    parent_fd: int
+    parent_identity: tuple[int, int]
+    target_name: str
+    original_identity: _FILE_IDENTITY | None
+    content: str
+    temporary_name: str | None = None
+    backup_name: str | None = None
+    committed: bool = False
 
 
 class ArtifactSurface(StrEnum):
@@ -93,55 +121,372 @@ def extract_guidance(surface: ArtifactSurface, content: str) -> str:
     return content.rstrip("\n")
 
 
+def _fence(line: str) -> tuple[str, int] | None:
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > 3 or not stripped:
+        return None
+    character = stripped[0]
+    if character not in {"`", "~"}:
+        return None
+    length = len(stripped) - len(stripped.lstrip(character))
+    return (character, length) if length >= 3 else None
+
+
+def _owned_marker_offsets(existing: str) -> tuple[list[int], list[tuple[int, int]]]:
+    begins: list[int] = []
+    ends: list[tuple[int, int]] = []
+    open_fence: tuple[str, int] | None = None
+    offset = 0
+    for line in existing.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        fence = _fence(body)
+        if open_fence is not None:
+            if fence is not None and fence[0] == open_fence[0]:
+                stripped = body.lstrip(" ")
+                run_length = len(stripped) - len(stripped.lstrip(fence[0]))
+                if run_length >= open_fence[1] and not stripped[run_length:].strip():
+                    open_fence = None
+        elif fence is not None:
+            open_fence = fence
+        elif body == _AGENTS_BEGIN:
+            begins.append(offset)
+        elif body == _AGENTS_END:
+            ends.append((offset, offset + len(line)))
+        offset += len(line)
+    return begins, ends
+
+
 def _merge_agents(existing: str, section: str) -> str:
-    begin_count = existing.count(_AGENTS_BEGIN)
-    end_count = existing.count(_AGENTS_END)
-    if (begin_count, end_count) == (0, 0):
+    begins, ends = _owned_marker_offsets(existing)
+    if not begins and not ends:
         if not existing:
             return section
         separator = "\n" if existing.endswith("\n") else "\n\n"
         return f"{existing}{separator}{section}"
-    if (begin_count, end_count) != (1, 1):
+    if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0][0]:
         raise ValueError("AGENTS.md contains malformed Solwyn section markers.")
-    start = existing.index(_AGENTS_BEGIN)
-    end = existing.index(_AGENTS_END, start) + len(_AGENTS_END)
-    replacement = section.rstrip("\n")
-    return f"{existing[:start]}{replacement}{existing[end:]}"
+    return f"{existing[: begins[0]]}{section}{existing[ends[0][1] :]}"
 
 
-def _validate_target(root: Path, path: Path) -> None:
-    current = root
-    for part in path.relative_to(root).parts:
-        current = current / part
-        if current.is_symlink():
-            raise OSError(f"Refusing to write agent artifact through symlink: {path}")
+def _fsync_staged_file(file_fd: int) -> None:
+    os.fsync(file_fd)
 
 
-def _write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+def _fsync_directory(directory_fd: int) -> None:
+    os.fsync(directory_fd)
+
+
+def _open_artifact_parent(
+    repository: Path, relative_path: Path
+) -> tuple[int, Path, tuple[int, int]]:
+    current_path = repository
+    current_fd = os.open(repository, _DIRECTORY_FLAGS)
+    try:
+        for component in relative_path.parent.parts:
+            created = False
+            try:
+                os.mkdir(component, mode=0o755, dir_fd=current_fd)
+                created = True
+            except FileExistsError:
+                pass
+            next_fd = os.open(component, _DIRECTORY_FLAGS, dir_fd=current_fd)
+            if created:
+                _fsync_directory(current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+            current_path = current_path / component
+        metadata = os.fstat(current_fd)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise OSError(f"Agent artifact parent is not a directory: {current_path}")
+        return current_fd, current_path, (metadata.st_dev, metadata.st_ino)
+    except BaseException:
+        os.close(current_fd)
+        raise
+
+
+def _file_identity(metadata: os.stat_result) -> _FILE_IDENTITY:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _target_identity(parent_fd: int, target_name: str) -> _FILE_IDENTITY | None:
+    try:
+        metadata = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    return _file_identity(metadata)
+
+
+def _validate_initial_target(state: _ArtifactState) -> None:
+    identity = state.original_identity
+    if identity is not None and not stat.S_ISREG(identity[2]):
+        raise OSError(
+            f"Refusing non-regular agent artifact target: {state.relative_path}"
+        )
+
+
+def _read_agents(state: _ArtifactState) -> str:
+    if state.original_identity is None:
+        return ""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    file_fd = os.open(state.target_name, flags, dir_fd=state.parent_fd)
+    try:
+        if _file_identity(os.fstat(file_fd)) != state.original_identity:
+            raise OSError(
+                f"Agent artifact changed during agent artifact write: "
+                f"{state.relative_path}"
+            )
+        with os.fdopen(file_fd, encoding="utf-8", newline="") as artifact_file:
+            file_fd = -1
+            return artifact_file.read()
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+
+
+def _unique_transaction_name(kind: str, target_name: str) -> str:
+    return f"{_TRANSACTION_PREFIX}{kind}-{target_name}-{secrets.token_hex(8)}"
+
+
+def _unlink_at(parent_fd: int, name: str | None) -> None:
+    if name is None:
+        return
+    try:
+        os.unlink(name, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
+
+
+def _stage_artifact(state: _ArtifactState) -> str:
+    temporary_name = _unique_transaction_name("stage", state.target_name)
+    mode = 0o644
+    if state.original_identity is not None:
+        mode = stat.S_IMODE(state.original_identity[2]) & 0o777
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    file_fd = -1
+    try:
+        file_fd = os.open(
+            temporary_name,
+            flags,
+            mode,
+            dir_fd=state.parent_fd,
+        )
+        os.fchmod(file_fd, mode)
+        with os.fdopen(
+            file_fd, mode="w", encoding="utf-8", newline=""
+        ) as temporary_file:
+            file_fd = -1
+            temporary_file.write(state.content)
+            temporary_file.flush()
+            _fsync_staged_file(temporary_file.fileno())
+        return temporary_name
+    except BaseException:
+        if file_fd >= 0:
+            os.close(file_fd)
+        _unlink_at(state.parent_fd, temporary_name)
+        raise
+
+
+def _assert_parent_stable(state: _ArtifactState) -> None:
+    descriptor_metadata = os.fstat(state.parent_fd)
+    try:
+        path_metadata = os.stat(state.parent_path, follow_symlinks=False)
+    except FileNotFoundError:
+        path_metadata = None
+    descriptor_identity = (descriptor_metadata.st_dev, descriptor_metadata.st_ino)
+    path_identity = (
+        (path_metadata.st_dev, path_metadata.st_ino)
+        if path_metadata is not None and stat.S_ISDIR(path_metadata.st_mode)
+        else None
+    )
+    if (
+        descriptor_identity != state.parent_identity
+        or path_identity != state.parent_identity
+    ):
+        raise OSError(
+            f"Agent artifact parent changed during agent artifact write: "
+            f"{state.relative_path.parent}"
+        )
+
+
+def _assert_target_stable(state: _ArtifactState) -> None:
+    if _target_identity(state.parent_fd, state.target_name) != state.original_identity:
+        raise OSError(
+            f"Agent artifact changed during agent artifact write: {state.relative_path}"
+        )
+
+
+def _backup_artifact(state: _ArtifactState) -> str | None:
+    if state.original_identity is None:
+        return None
+    backup_name = _unique_transaction_name("backup", state.target_name)
+    try:
+        os.link(
+            state.target_name,
+            backup_name,
+            src_dir_fd=state.parent_fd,
+            dst_dir_fd=state.parent_fd,
+            follow_symlinks=False,
+        )
+        source_identity = _target_identity(state.parent_fd, state.target_name)
+        backup_identity = _target_identity(state.parent_fd, backup_name)
+        if (
+            source_identity is None
+            or source_identity[:-1] != state.original_identity[:-1]
+            or backup_identity != source_identity
+        ):
+            raise OSError(
+                f"Agent artifact changed during agent artifact write: "
+                f"{state.relative_path}"
+            )
+        state.original_identity = source_identity
+        return backup_name
+    except BaseException:
+        _unlink_at(state.parent_fd, backup_name)
+        raise
+
+
+def _replace_at(source: str, target: str, parent_fd: int) -> None:
+    os.replace(
+        source,
+        target,
+        src_dir_fd=parent_fd,
+        dst_dir_fd=parent_fd,
+    )
+
+
+def _before_artifact_commit() -> None:
+    """Test seam immediately before stable-parent and target revalidation."""
+
+
+def _cleanup_transaction(states: list[_ArtifactState]) -> None:
+    for state in states:
+        _unlink_at(state.parent_fd, state.temporary_name)
+        _unlink_at(state.parent_fd, state.backup_name)
+
+
+def _rollback_transaction(states: list[_ArtifactState]) -> None:
+    rollback_error: OSError | None = None
+    for state in reversed(states):
+        if not state.committed:
+            continue
+        try:
+            if state.original_identity is None:
+                _unlink_at(state.parent_fd, state.target_name)
+            elif state.backup_name is not None:
+                _replace_at(state.backup_name, state.target_name, state.parent_fd)
+                state.backup_name = None
+            _fsync_directory(state.parent_fd)
+        except OSError as error:
+            rollback_error = rollback_error or error
+    _cleanup_transaction(states)
+    if rollback_error is not None:
+        raise OSError(
+            "Could not roll back agent artifact transaction."
+        ) from rollback_error
+
+
+def _close_parents(states: list[_ArtifactState]) -> None:
+    for state in states:
+        os.close(state.parent_fd)
 
 
 def write_agent_artifacts(root: Path) -> None:
-    """Write all repository artifacts deterministically and append AGENTS safely."""
-    repository = root.resolve()
-    paths = {
-        relative_path: repository / relative_path
-        for relative_path in (CLAUDE_SKILL_PATH, CURSOR_RULE_PATH, AGENTS_PATH)
-    }
-    for path in paths.values():
-        _validate_target(repository, path)
-    targets = {
+    """Transactionally write artifacts using POSIX no-follow directory handles."""
+    if os.name != "posix":
+        raise OSError("Agent artifact writes require a POSIX filesystem.")
+    repository = root.resolve(strict=True)
+    rendered = {
         CLAUDE_SKILL_PATH: render_surface(ArtifactSurface.CLAUDE_SKILL),
         CURSOR_RULE_PATH: render_surface(ArtifactSurface.CURSOR_RULE),
     }
-    agents_path = paths[AGENTS_PATH]
-    existing_agents = (
-        agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
-    )
-    targets[AGENTS_PATH] = _merge_agents(
-        existing_agents,
-        render_surface(ArtifactSurface.AGENTS_SECTION),
-    )
-    for relative_path, content in targets.items():
-        _write_text(paths[relative_path], content)
+    states: list[_ArtifactState] = []
+    commit_started = False
+    try:
+        parent_fd, parent_path, parent_identity = _open_artifact_parent(
+            repository, AGENTS_PATH
+        )
+        agents_state = _ArtifactState(
+            relative_path=AGENTS_PATH,
+            parent_path=parent_path,
+            parent_fd=parent_fd,
+            parent_identity=parent_identity,
+            target_name=AGENTS_PATH.name,
+            original_identity=_target_identity(parent_fd, AGENTS_PATH.name),
+            content="",
+        )
+        states.append(agents_state)
+        _validate_initial_target(agents_state)
+        agents_state.content = _merge_agents(
+            _read_agents(agents_state),
+            render_surface(ArtifactSurface.AGENTS_SECTION),
+        )
+
+        for relative_path in (CLAUDE_SKILL_PATH, CURSOR_RULE_PATH):
+            parent_fd, parent_path, parent_identity = _open_artifact_parent(
+                repository, relative_path
+            )
+            state = _ArtifactState(
+                relative_path=relative_path,
+                parent_path=parent_path,
+                parent_fd=parent_fd,
+                parent_identity=parent_identity,
+                target_name=relative_path.name,
+                original_identity=_target_identity(parent_fd, relative_path.name),
+                content=rendered.get(relative_path, ""),
+            )
+            states.append(state)
+            _validate_initial_target(state)
+        states = [states[1], states[2], states[0]]
+
+        for state in states:
+            state.temporary_name = _stage_artifact(state)
+        for state in states:
+            _fsync_directory(state.parent_fd)
+
+        _before_artifact_commit()
+        for state in states:
+            _assert_parent_stable(state)
+            _assert_target_stable(state)
+            state.backup_name = _backup_artifact(state)
+        for state in states:
+            _fsync_directory(state.parent_fd)
+        for state in states:
+            _assert_parent_stable(state)
+            _assert_target_stable(state)
+        for state in states:
+            commit_started = True
+            if state.temporary_name is None:
+                raise OSError("Agent artifact stage is missing.")
+            _replace_at(
+                state.temporary_name,
+                state.target_name,
+                state.parent_fd,
+            )
+            state.temporary_name = None
+            state.committed = True
+            _fsync_directory(state.parent_fd)
+            _assert_parent_stable(state)
+        _cleanup_transaction(states)
+        for state in states:
+            _fsync_directory(state.parent_fd)
+    except BaseException:
+        if commit_started:
+            _rollback_transaction(states)
+        else:
+            _cleanup_transaction(states)
+        raise
+    finally:
+        _close_parents(states)
