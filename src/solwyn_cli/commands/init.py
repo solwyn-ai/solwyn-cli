@@ -70,13 +70,16 @@ Provider = Literal["openai", "anthropic", "google-genai", "boto3"]
 
 
 INIT_HELP = help_contract(
-    endpoint=(
-        "composite GET/POST /api/v1/projects and GET /api/v1/projects/{project}/budget"
-    ),
+    endpoint="composite onboarding workflow",
     auth="any or interactive bootstrap",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
     schema="solwyn.init.v1",
     guidance=(
+        "Remote operations: conditional POST /api/v1/auth/login; "
+        "GET /api/v1/projects; optional POST /api/v1/projects; "
+        "final GET /api/v1/projects/{project}/budget.",
+        "Local operations: write local configuration; scan Python imports; "
+        "render SDK snippets; optionally write agent artifacts with --agents.",
         "Provider credentials are never collected; --agents writes safe agent guidance.",
     ),
 )

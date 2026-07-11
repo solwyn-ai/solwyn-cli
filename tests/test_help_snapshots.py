@@ -86,7 +86,7 @@ HELP_CONTRACTS = {
         "schema": "solwyn.costs.v1",
     },
     ("init",): {
-        "endpoint": "composite GET/POST /api/v1/projects and GET /api/v1/projects/{project}/budget",
+        "endpoint": "composite onboarding workflow",
         "auth": "any or interactive bootstrap",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.init.v1",
@@ -225,3 +225,16 @@ def test_auth_and_key_help_is_secret_safe() -> None:
     assert "Read project keys only from a hidden prompt or stdin" in login_help
     assert "never reveals existing key material" in keys_help
     assert "replacement key is shown exactly once" in keys_help
+
+
+def test_init_help_names_each_remote_and_local_operation() -> None:
+    init_help = _normalized_help(("init",))
+
+    assert "conditional POST /api/v1/auth/login" in init_help
+    assert "GET /api/v1/projects" in init_help
+    assert "optional POST /api/v1/projects" in init_help
+    assert "final GET /api/v1/projects/{project}/budget" in init_help
+    assert "write local configuration" in init_help
+    assert "scan Python imports" in init_help
+    assert "render SDK snippets" in init_help
+    assert "optionally write agent artifacts with --agents" in init_help
