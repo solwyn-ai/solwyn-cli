@@ -1,7 +1,7 @@
 """Run the local Solwyn MCP server over stdio."""
 
 from solwyn_cli.help import help_contract
-from solwyn_cli.mcp.server import create_server
+from solwyn_cli.mcp.server import TOOL_NAMES, create_server
 
 
 MCP_HELP = help_contract(
@@ -12,6 +12,7 @@ MCP_HELP = help_contract(
     guidance=(
         "Protocol: stdio only; stdout is reserved for MCP JSON-RPC framing.",
         "Runtime configuration and credentials are resolved anew for every tool call.",
+        f"Tools: {', '.join(TOOL_NAMES)}.",
         "No telemetry, update checks, provider keys, prompts, or responses are collected.",
     ),
 )

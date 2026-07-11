@@ -65,6 +65,24 @@ class _StatusData(BaseModel):
 
 
 _PROVIDERS = TypeAdapter(list[_ProviderHealth])
+ProjectStatusData = _StatusData
+
+
+def fetch_project_status(*, client: SolwynClient, project_id: str) -> ProjectStatusData:
+    """Read and validate budget plus provider health through one shared client."""
+    project = quote(project_id, safe="")
+    budget_response = client.request("GET", f"/api/v1/projects/{project}/budget")
+    providers_response = client.request("GET", f"/api/v1/projects/{project}/providers")
+    budget = _BudgetResponse.model_validate(budget_response.json())
+    providers = _PROVIDERS.validate_python(providers_response.json())
+    data = _StatusData(
+        project_id=budget.project_id,
+        budget=_BudgetSummary.model_validate(budget.model_dump()),
+        providers=providers,
+    )
+    if data.project_id != project_id:
+        raise ValueError("Status response project did not match the request.")
+    return data
 
 
 def _table(data: _StatusData) -> TableData:
@@ -125,25 +143,12 @@ def status(context: typer.Context) -> None:
         )
 
     credential = required_credential(context, resolve=resolve_credential)
-    project = quote(runtime.project, safe="")
     try:
         with SolwynClient(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            budget_response = client.request(
-                "GET", f"/api/v1/projects/{project}/budget"
-            )
-            providers_response = client.request(
-                "GET", f"/api/v1/projects/{project}/providers"
-            )
-        budget = _BudgetResponse.model_validate(budget_response.json())
-        providers = _PROVIDERS.validate_python(providers_response.json())
-        data = _StatusData(
-            project_id=budget.project_id,
-            budget=_BudgetSummary.model_validate(budget.model_dump()),
-            providers=providers,
-        )
+            data = fetch_project_status(client=client, project_id=runtime.project)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:

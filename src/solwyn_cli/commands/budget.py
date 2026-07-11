@@ -159,9 +159,14 @@ def fetch_budget_status(
     *, api_url: str, credential: JwtCredential | ProjectKeyCredential, project_id: str
 ) -> BudgetStatusData:
     """Fetch and validate one project's pure-read budget status."""
-    project_path = quote(project_id, safe="")
     with SolwynClient(api_url=api_url, credential=credential) as client:
-        response = client.request("GET", f"/api/v1/projects/{project_path}/budget")
+        return request_budget_status(client=client, project_id=project_id)
+
+
+def request_budget_status(*, client: SolwynClient, project_id: str) -> BudgetStatusData:
+    """Read and validate budget status through an existing shared client."""
+    project_path = quote(project_id, safe="")
+    response = client.request("GET", f"/api/v1/projects/{project_path}/budget")
     data = _BudgetStatusData.model_validate(response.json())
     if data.project_id != project_id:
         raise ValueError("Budget response project did not match the request.")
@@ -226,6 +231,40 @@ class _BudgetConfirmData(BaseModel):
 
     reservation_id: str
     call_id: str
+
+
+BudgetCheckData = _BudgetCheckData
+BudgetConfirmData = _BudgetConfirmData
+
+
+def request_budget_check(
+    *, client: SolwynClient, request: BudgetCheckRequest
+) -> BudgetCheckData:
+    """Reserve and validate one caller-made un-instrumented spend."""
+    response = client.request(
+        "POST",
+        "/api/v1/budgets/check",
+        json=request.model_dump(mode="json"),
+    )
+    return _BudgetCheckData.model_validate(response.json())
+
+
+def request_budget_confirm(
+    *, client: SolwynClient, request: BudgetConfirmRequest
+) -> BudgetConfirmData:
+    """Settle one reservation with the exact no-replay 204 contract."""
+    response = client.request(
+        "POST",
+        "/api/v1/budgets/confirm",
+        json=request.model_dump(mode="json"),
+        retry_rate_limit=False,
+    )
+    if response.status_code != 204 or response.content:
+        raise ValueError("Budget confirmation did not return an empty 204 response")
+    return _BudgetConfirmData(
+        reservation_id=request.reservation_id,
+        call_id=request.call_id,
+    )
 
 
 def _table(data: _BudgetStatusOutput) -> TableData:
@@ -442,12 +481,7 @@ def check(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            response = client.request(
-                "POST",
-                "/api/v1/budgets/check",
-                json=request.model_dump(mode="json"),
-            )
-        data = _BudgetCheckData.model_validate(response.json())
+            data = request_budget_check(client=client, request=request)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -683,12 +717,7 @@ def confirm(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            response = client.request(
-                "POST",
-                "/api/v1/budgets/confirm",
-                json=request.model_dump(mode="json"),
-                retry_rate_limit=False,
-            )
+            data = request_budget_confirm(client=client, request=request)
     except ApiError as error:
         if error.status_code == 404:
             error = ApiError(
@@ -705,8 +734,7 @@ def confirm(
             OutputError(code="authentication_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,
         )
-
-    if response.status_code != 204 or response.content:
+    except (ValidationError, ValueError, TypeError):
         exit_with_error(
             context,
             OutputError(
@@ -715,7 +743,6 @@ def confirm(
             ),
         )
 
-    data = _BudgetConfirmData(reservation_id=reservation_id, call_id=call_id)
     output_engine(context).write_success(
         schema="solwyn.budget-confirm.v1",
         data=data,

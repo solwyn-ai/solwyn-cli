@@ -259,6 +259,15 @@ def test_budget_help_preserves_guardrail_semantics() -> None:
     assert "Poll with status, never check" in status_help
 
 
+def test_mcp_help_names_the_exact_six_tool_surface() -> None:
+    rendered = _normalized_help(("mcp",))
+
+    assert (
+        "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
+        "get_costs, list_projects."
+    ) in rendered
+
+
 def test_auth_and_key_help_is_secret_safe() -> None:
     login_help = _normalized_help(("login",))
     keys_help = " ".join(

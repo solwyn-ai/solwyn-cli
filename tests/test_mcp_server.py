@@ -30,6 +30,14 @@ _GUARDRAIL_INSTRUCTIONS = (
     "Never wrap Solwyn SDK-instrumented calls with budget check or confirm.",
     "When check returns a null reservation, skip confirm.",
 )
+_TOOL_NAMES = [
+    "budget_status",
+    "budget_check",
+    "budget_confirm",
+    "get_project_status",
+    "get_costs",
+    "list_projects",
+]
 
 
 def test_fastmcp_server_initializes_and_lists_tools_in_process() -> None:
@@ -41,7 +49,7 @@ def test_fastmcp_server_initializes_and_lists_tools_in_process() -> None:
             tools = await session.list_tools()
 
         assert capabilities.tools is not None
-        assert tools.tools == []
+        assert [tool.name for tool in tools.tools] == _TOOL_NAMES
 
     anyio.run(exercise_protocol)
 
@@ -72,7 +80,7 @@ def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
 
         assert initialized.serverInfo.name == "solwyn"
         assert capabilities.tools is not None
-        assert tools.tools == []
+        assert [tool.name for tool in tools.tools] == _TOOL_NAMES
         assert initialized.instructions is not None
         for instruction in _GUARDRAIL_INSTRUCTIONS:
             assert instruction in initialized.instructions

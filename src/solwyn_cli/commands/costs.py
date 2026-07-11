@@ -64,6 +64,29 @@ class _CostsData(BaseModel):
     groups: list[_CostGroup]
 
 
+CostsData = _CostsData
+
+
+def fetch_costs(
+    *,
+    client: SolwynClient,
+    project_id: str,
+    time_range: CostRange,
+    group_by: CostGrouping,
+) -> CostsData:
+    """Read and validate one aggregate cost query through a shared client."""
+    project = quote(project_id, safe="")
+    response = client.request(
+        "GET",
+        f"/api/v1/projects/{project}/costs",
+        params={"range": time_range.value, "group_by": group_by.value},
+    )
+    data = _CostsData.model_validate(response.json())
+    if data.project_id != project_id:
+        raise ValueError("Costs response project did not match the request.")
+    return data
+
+
 def _table(data: _CostsData) -> TableData:
     return TableData(
         columns=(
@@ -128,18 +151,17 @@ def costs(
         )
 
     credential = required_credential(context, resolve=resolve_credential)
-    project = quote(runtime.project, safe="")
     try:
         with SolwynClient(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            response = client.request(
-                "GET",
-                f"/api/v1/projects/{project}/costs",
-                params={"range": time_range.value, "group_by": group_by.value},
+            data = fetch_costs(
+                client=client,
+                project_id=runtime.project,
+                time_range=time_range,
+                group_by=group_by,
             )
-        data = _CostsData.model_validate(response.json())
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
