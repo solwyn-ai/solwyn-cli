@@ -497,6 +497,15 @@ def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
 
 
+def test_init_reuses_guarded_login_and_project_create_requests() -> None:
+    """Init composes existing request mirrors instead of inventing wire models."""
+    snapshot = _snapshot()
+
+    assert REQUEST_MIRRORS[LoginRequest] == "LoginRequest"
+    assert REQUEST_MIRRORS[ProjectCreateRequest] == "ProjectCreateRequest"
+    assert_project_create_operation_request_binding(snapshot)
+
+
 def test_costs_query_contract_matches_snapshot() -> None:
     assert_costs_query_contract(_snapshot())
 

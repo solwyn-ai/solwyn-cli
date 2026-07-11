@@ -152,10 +152,13 @@ def _fsync_parent_directory(path: Path) -> None:
         os.close(directory_fd)
 
 
-def save_config(config: Config) -> None:
+def save_config(config: Config, *, omit_default_api_url: bool = False) -> None:
     """Atomically persist only modeled, non-null settings."""
     path = get_config_path()
-    content = tomli_w.dumps(config.model_dump(include=CONFIG_KEYS, exclude_none=True))
+    values = config.model_dump(include=CONFIG_KEYS, exclude_none=True)
+    if omit_default_api_url and config.api_url == Config().api_url:
+        values.pop("api_url", None)
+    content = tomli_w.dumps(values)
     temporary_path: Path | None = None
 
     try:

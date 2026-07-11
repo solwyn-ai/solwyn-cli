@@ -518,6 +518,18 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
     )
 
 
+def test_init_reuses_guarded_project_login_and_budget_response_operations() -> None:
+    """Init's composed reads remain covered by the shared response immune system."""
+    expected = {
+        ("POST", "/api/v1/auth/login"),
+        ("GET", "/api/v1/projects"),
+        ("POST", "/api/v1/projects"),
+        ("GET", "/api/v1/projects/{project_id}/budget"),
+    }
+
+    assert expected <= OPERATION_RESPONSE_BINDINGS.keys()
+
+
 def test_every_consumed_success_operation_returns_its_response_component() -> None:
     assert_operation_response_bindings(_snapshot())
 
