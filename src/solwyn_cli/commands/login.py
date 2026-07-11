@@ -38,7 +38,7 @@ LOGIN_HELP = help_contract(
 
 LOGOUT_HELP = help_contract(
     endpoint="local keychain clear",
-    auth="local stored credentials",
+    auth="local (none)",
     exits="0 success; 2 usage; 3 credential storage",
     schema="solwyn.logout.v1",
 )
