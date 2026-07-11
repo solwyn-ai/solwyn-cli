@@ -36,7 +36,7 @@ app = typer.Typer(help="Recover from leaked or expired project keys.")
 
 
 class _ProjectKeyMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
     id: str = Field(min_length=1)
     key_prefix: str = Field(pattern=r"^sk_proj_[a-f0-9]{16}$")
@@ -48,7 +48,7 @@ class _ProjectKeyMetadata(BaseModel):
 
 
 class _ProjectKeyRotateResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
     id: str = Field(min_length=1)
     key: SecretStr
@@ -200,6 +200,13 @@ def _invalid_response(context: typer.Context) -> None:
     )
 
 
+def _validate_metadata_response(payload: object) -> _ProjectKeyMetadata:
+    """Reject raw key material before metadata validation can inspect it."""
+    if not isinstance(payload, dict) or "key" in payload:
+        raise ValueError("Invalid project key metadata")
+    return _ProjectKeyMetadata.model_validate(payload)
+
+
 @app.command("show")
 def show_key(context: typer.Context) -> None:
     """Show active project-key metadata without revealing key material."""
@@ -212,7 +219,7 @@ def show_key(context: typer.Context) -> None:
             response = client.request("GET", f"/api/v1/projects/{path}/key")
         if response.status_code != 200:
             raise ValueError("Key metadata did not return 200")
-        data = _ProjectKeyMetadata.model_validate(response.json())
+        data = _validate_metadata_response(response.json())
     except ApiError as error:
         exit_with_error(context, _actionable_api_error(error))
     except AuthError as error:

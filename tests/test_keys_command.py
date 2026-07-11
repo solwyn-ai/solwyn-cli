@@ -130,6 +130,50 @@ def test_keys_show_uses_quoted_project_and_matches_golden(
     assert result.stderr == ""
 
 
+@pytest.mark.parametrize(
+    ("command", "payload"),
+    [
+        (["show"], {**KEY_METADATA, "server_note": "additive metadata"}),
+        (["rotate"], {**ROTATE_RESPONSE, "server_note": "additive metadata"}),
+    ],
+)
+def test_keys_responses_ignore_benign_additive_fields_without_rendering_them(
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    payload: dict[str, object],
+) -> None:
+    monkeypatch.setattr(keys_module, "resolve_credential", _jwt)
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+
+    result = runner.invoke(app, ["--json", "--project", "proj", "keys", *command])
+
+    assert result.exit_code == 0, result.stderr
+    assert "server_note" not in result.stdout + result.stderr
+
+
+def test_keys_show_rejects_raw_key_before_metadata_model_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(keys_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json={**KEY_METADATA, "key": ROTATED_KEY})
+    ]
+    monkeypatch.setattr(
+        keys_module._ProjectKeyMetadata,
+        "model_validate",
+        lambda _payload: pytest.fail("raw key reached metadata validation"),
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        result = runner.invoke(app, ["--json", "--project", "proj", "keys", "show"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_keys_response"
+    assert ROTATED_KEY not in result.stderr + repr(result.exception) + caplog.text
+
+
 @pytest.mark.parametrize("output_format", ["table", "json"])
 def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
     monkeypatch: pytest.MonkeyPatch,
