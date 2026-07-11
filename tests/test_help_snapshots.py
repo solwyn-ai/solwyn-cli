@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 
 import click
+import pytest
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -165,6 +166,20 @@ HELP_CONTRACTS = {
     },
 }
 
+_INIT_REMOTE_OPERATIONS = (
+    "conditional POST /api/v1/auth/login",
+    "GET /api/v1/projects",
+    "optional POST /api/v1/projects",
+    "final GET /api/v1/projects/{project}/budget",
+)
+_INIT_LOCAL_OPERATIONS = (
+    "write local configuration",
+    "scan Python imports",
+    "render SDK snippets",
+    "optionally write agent artifacts with --agents",
+)
+_INIT_TRUST_STATEMENT = "Provider credentials are never collected"
+
 
 def _commands(
     command: object, path: tuple[str, ...] = ()
@@ -179,6 +194,33 @@ def _normalized_help(path: tuple[str, ...]) -> str:
     result = runner.invoke(app, [*path, "--help"], color=False)
     assert result.exit_code == 0, result.output
     return " ".join(click.unstyle(result.output).split())
+
+
+def _stages_between(rendered: str, start: str, end: str) -> tuple[str, ...]:
+    _, start_found, remainder = rendered.partition(start)
+    stages, end_found, _ = remainder.partition(end)
+    assert start_found and end_found
+    return tuple(stages.split("; "))
+
+
+def _assert_init_help_contract(rendered: str) -> None:
+    assert (
+        _stages_between(
+            rendered,
+            "Remote operations: ",
+            ". Local operations: ",
+        )
+        == _INIT_REMOTE_OPERATIONS
+    )
+    assert (
+        _stages_between(
+            rendered,
+            "Local operations: ",
+            f". {_INIT_TRUST_STATEMENT}",
+        )
+        == _INIT_LOCAL_OPERATIONS
+    )
+    assert f"{_INIT_TRUST_STATEMENT};" in rendered
 
 
 def test_semantic_help_snapshots_cover_the_full_registered_tree() -> None:
@@ -230,11 +272,17 @@ def test_auth_and_key_help_is_secret_safe() -> None:
 def test_init_help_names_each_remote_and_local_operation() -> None:
     init_help = _normalized_help(("init",))
 
-    assert "conditional POST /api/v1/auth/login" in init_help
-    assert "GET /api/v1/projects" in init_help
-    assert "optional POST /api/v1/projects" in init_help
-    assert "final GET /api/v1/projects/{project}/budget" in init_help
-    assert "write local configuration" in init_help
-    assert "scan Python imports" in init_help
-    assert "render SDK snippets" in init_help
-    assert "optionally write agent artifacts with --agents" in init_help
+    _assert_init_help_contract(init_help)
+
+
+@pytest.mark.parametrize(
+    "stage",
+    (*_INIT_REMOTE_OPERATIONS, *_INIT_LOCAL_OPERATIONS, _INIT_TRUST_STATEMENT),
+)
+def test_init_help_contract_rejects_a_missing_or_changed_stage(stage: str) -> None:
+    init_help = _normalized_help(("init",))
+    mutated_help = init_help.replace(stage, "changed stage", 1)
+
+    assert mutated_help != init_help
+    with pytest.raises(AssertionError):
+        _assert_init_help_contract(mutated_help)
