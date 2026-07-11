@@ -72,3 +72,28 @@ def output_engine(context: typer.Context) -> OutputEngine:
         no_color=resolved.no_color,
         environ={"NO_COLOR": ""} if resolved.environment_no_color else {},
     )
+
+
+def bootstrap_output_engine(
+    *,
+    output_format: str | None,
+    json_flag: bool,
+    no_color: bool,
+    environ: Mapping[str, str] | None = None,
+) -> OutputEngine:
+    """Build output before configuration can be safely loaded."""
+    environment = os.environ if environ is None else environ
+    return OutputEngine(
+        output_format=resolve_output_format(
+            explicit_format=output_format,
+            json_flag=json_flag,
+            environ=environment,
+            config_format=None,
+        ),
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        stdout_is_tty=sys.stdout.isatty(),
+        stderr_is_tty=sys.stderr.isatty(),
+        no_color=no_color,
+        environ={"NO_COLOR": ""} if "NO_COLOR" in environment else {},
+    )

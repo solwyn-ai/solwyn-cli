@@ -139,6 +139,22 @@ class _BudgetStatusData(BaseModel):
     constraints: _BudgetConstraints
 
 
+BudgetStatusData = _BudgetStatusData
+
+
+def fetch_budget_status(
+    *, api_url: str, credential: JwtCredential | ProjectKeyCredential, project_id: str
+) -> BudgetStatusData:
+    """Fetch and validate one project's pure-read budget status."""
+    project_path = quote(project_id, safe="")
+    with SolwynClient(api_url=api_url, credential=credential) as client:
+        response = client.request("GET", f"/api/v1/projects/{project_path}/budget")
+    data = _BudgetStatusData.model_validate(response.json())
+    if data.project_id != project_id:
+        raise ValueError("Budget response project did not match the request.")
+    return data
+
+
 class _BudgetStatusOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
@@ -831,16 +847,12 @@ def status(
         )
 
     credential = required_credential(context, resolve=resolve_credential)
-    project = quote(runtime.project, safe="")
     try:
-        with SolwynClient(
+        data = fetch_budget_status(
             api_url=runtime.api_url,
             credential=credential,
-        ) as client:
-            response = client.request("GET", f"/api/v1/projects/{project}/budget")
-        data = _BudgetStatusData.model_validate(response.json())
-        if data.project_id != runtime.project:
-            raise ValueError("Budget response project did not match the request.")
+            project_id=runtime.project,
+        )
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:

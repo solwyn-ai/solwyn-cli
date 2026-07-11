@@ -12,7 +12,10 @@ from typer.testing import CliRunner
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli import config as config_module
+from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.commands import init as init_module
+from solwyn_cli.commands import login as login_module
+from solwyn_cli.commands import projects as projects_module
 from solwyn_cli.main import app
 
 
@@ -88,6 +91,9 @@ def isolated_init(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     monkeypatch.chdir(repository)
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     monkeypatch.setattr(init_module, "get_config_path", lambda: config_path)
+    monkeypatch.setattr(login_module, "SolwynClient", FakeClient)
+    monkeypatch.setattr(projects_module, "SolwynClient", FakeClient)
+    monkeypatch.setattr(budget_module, "SolwynClient", FakeClient)
     monkeypatch.setattr(init_module, "SolwynClient", FakeClient)
     FakeClient.instances = []
     FakeClient.responses = []
@@ -178,7 +184,7 @@ def test_tty_can_login_with_hidden_password_and_stored_jwt(
     monkeypatch.setattr(init_module.typer, "prompt", prompt)
     stored: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        init_module,
+        login_module,
         "store_jwt_pair",
         lambda access, refresh: stored.append((access, refresh)) or _jwt(),
     )
@@ -211,6 +217,56 @@ def test_tty_can_login_with_hidden_password_and_stored_jwt(
     rendered = result.stdout + result.stderr + repr(result.exception)
     for secret in ("password-value", ACCESS_TOKEN, REFRESH_TOKEN):
         assert secret not in rendered
+
+
+def test_init_composes_shared_login_project_and_budget_services(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+    prompt_values = iter(["login", "person@example.com", "password-value"])
+    credential = _jwt()
+
+    monkeypatch.setattr(init_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(
+        init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
+    )
+    monkeypatch.setattr(
+        init_module,
+        "authenticate_with_password",
+        lambda **kwargs: calls.append(("login", kwargs)) or credential,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "fetch_projects",
+        lambda **kwargs: (
+            calls.append(("projects", kwargs))
+            or projects_module._PROJECTS.validate_python([PROJECT])
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "fetch_budget_status",
+        lambda **kwargs: (
+            calls.append(("budget", kwargs))
+            or budget_module._BudgetStatusData.model_validate(BUDGET)
+        ),
+        raising=False,
+    )
+
+    result = _invoke()
+
+    assert result.exit_code == 0, result.stderr
+    assert [name for name, _payload in calls] == ["login", "projects", "budget"]
+    assert calls[0][1] == {
+        "api_url": "https://api.solwyn.ai",
+        "email": "person@example.com",
+        "password": "password-value",
+    }
+    assert len(FakeClient.instances) == 1
+    assert FakeClient.instances[0].requests == []
 
 
 def test_project_key_requires_resolved_project_without_network(
@@ -267,6 +323,39 @@ def test_provider_detection_drives_placeholder_only_snippets(
         request for client in FakeClient.instances for request in client.requests
     ] == [("GET", "/api/v1/projects/proj_alpha/budget", {})]
     assert "/budgets/check" not in repr(FakeClient.instances[0].requests)
+
+
+def test_init_leaves_entire_source_tree_byte_for_byte_unchanged(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = {
+        "app.py": b"import openai\n",
+        "package/client.py": b"from anthropic import Anthropic\n",
+        "package/broken.py": b"import (\n",
+        "package/blob.py": b"\x00\xffprovider bytes",
+        "README.md": b"provider documentation\n",
+    }
+    for relative_path, content in files.items():
+        path = isolated_init / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    before = {
+        path.relative_to(isolated_init): path.read_bytes()
+        for path in isolated_init.rglob("*")
+        if path.is_file()
+    }
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    after = {
+        path.relative_to(isolated_init): path.read_bytes()
+        for path in isolated_init.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
 
 
 @pytest.mark.parametrize(
@@ -358,6 +447,22 @@ def test_detection_ignores_generated_invalid_binary_and_non_python_files(
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
 
 
+def test_provider_detection_does_not_follow_source_symlinks_outside_repository(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (isolated_init / "main.py").write_text("import openai\n", encoding="utf-8")
+    outside = isolated_init.parent / "outside.py"
+    outside.write_text("import anthropic\n", encoding="utf-8")
+    (isolated_init / "escaped.py").symlink_to(outside)
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["detected_providers"] == ["openai"]
+
+
 def test_provider_environment_values_are_never_read_or_rendered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -415,6 +520,63 @@ def test_default_api_url_is_not_written_to_new_config(
     assert 'default_project = "proj_alpha"' in content
     assert "api_url" not in content
     assert "api_key" not in content
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (config_module.ConfigLoadError("sensitive load detail"), "config_load_failed"),
+        (
+            config_module.ConfigWriteError("sensitive write detail"),
+            "config_write_failed",
+        ),
+    ],
+)
+def test_init_config_failures_are_structured_and_safe(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    target = (
+        "load_config"
+        if isinstance(failure, config_module.ConfigLoadError)
+        else "save_config"
+    )
+    monkeypatch.setattr(
+        init_module,
+        target,
+        lambda *args, **kwargs: (_ for _ in ()).throw(failure),
+    )
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == expected_code
+    assert "sensitive" not in result.stderr + repr(result.exception)
+    assert FakeClient.instances == []
+
+
+def test_init_invalid_existing_config_is_structured_before_context_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = init_module.get_config_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "config_load_failed"
+    assert "sensitive" not in result.stderr + repr(result.exception)
+    assert FakeClient.instances == []
 
 
 def test_jwt_single_project_is_selected_and_validated_before_final_get(
@@ -518,9 +680,11 @@ def test_tty_no_projects_creates_and_stores_key_without_displaying_secret(
     assert result.exit_code == 0, result.stderr
     assert stored == [CREATED_KEY]
     assert CREATED_KEY not in result.stdout + result.stderr + repr(result.exception)
-    assert FakeClient.instances[0].requests[1][0:2] == ("POST", "/api/v1/projects")
-    assert FakeClient.instances[0].requests[1][2]["retry_auth"] is False
-    assert FakeClient.instances[0].requests[1][2]["retry_rate_limit"] is False
+    project_requests = FakeClient.instances[0].requests
+    assert project_requests[0] == ("GET", "/api/v1/projects", {})
+    assert project_requests[1][0:2] == ("POST", "/api/v1/projects")
+    assert project_requests[1][2]["retry_auth"] is False
+    assert project_requests[1][2]["retry_rate_limit"] is False
 
 
 def test_created_key_storage_failure_never_leaks_secret(

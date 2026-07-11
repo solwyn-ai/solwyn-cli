@@ -57,6 +57,7 @@ class _ProjectsListData(BaseModel):
 
 
 _PROJECTS = TypeAdapter(list[_Project])
+Project = _Project
 
 
 class _CreatedProject(BaseModel):
@@ -86,6 +87,33 @@ class _ProjectCreateResponse(_CreatedProject):
         if self.key_prefix != raw_key[:24]:
             raise ValueError("Invalid project key prefix")
         return self
+
+
+ProjectCreateResponse = _ProjectCreateResponse
+
+
+def fetch_projects(*, client: SolwynClient) -> list[Project]:
+    """Fetch and validate the projects visible to a JWT credential."""
+    response = client.request("GET", "/api/v1/projects")
+    return _PROJECTS.validate_python(response.json())
+
+
+def request_project_creation(
+    *,
+    client: SolwynClient,
+    request: ProjectCreateRequest,
+) -> ProjectCreateResponse:
+    """Create and validate a project through the no-replay wire boundary."""
+    response = client.request(
+        "POST",
+        "/api/v1/projects",
+        json=request.model_dump(mode="json"),
+        retry_rate_limit=False,
+        retry_auth=False,
+    )
+    if response.status_code != 201:
+        raise ValueError("Project creation did not return 201")
+    return _ProjectCreateResponse.model_validate(response.json())
 
 
 class _ProjectCreateDisplayData(_CreatedProject):
@@ -230,16 +258,7 @@ def create_project(
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            response = client.request(
-                "POST",
-                "/api/v1/projects",
-                json=request.model_dump(mode="json"),
-                retry_rate_limit=False,
-                retry_auth=False,
-            )
-        if response.status_code != 201:
-            raise ValueError("Project creation did not return 201")
-        created = _ProjectCreateResponse.model_validate(response.json())
+            created = request_project_creation(client=client, request=request)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -313,12 +332,8 @@ def list_projects(context: typer.Context) -> None:
 
     runtime = command_context(context)
     try:
-        with SolwynClient(
-            api_url=runtime.api_url,
-            credential=credential,
-        ) as client:
-            response = client.request("GET", "/api/v1/projects")
-        data = _ProjectsListData(projects=_PROJECTS.validate_python(response.json()))
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            data = _ProjectsListData(projects=fetch_projects(client=client))
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:

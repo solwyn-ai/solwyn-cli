@@ -6,12 +6,11 @@ import os
 import sys
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote
 
 import typer
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from solwyn_cli._vendor.wire import LoginRequest, ProjectCreateRequest
+from solwyn_cli._vendor.wire import ProjectCreateRequest
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
@@ -19,15 +18,27 @@ from solwyn_cli.auth import (
     ProjectKeyCredential,
     ResolvedCredential,
     resolve_credential,
-    store_jwt_pair,
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error
-from solwyn_cli.commands.budget import _BudgetStatusData
-from solwyn_cli.commands.login import _LoginTokenResponse
-from solwyn_cli.commands.projects import _PROJECTS, _ProjectCreateResponse
-from solwyn_cli.config import Config, get_config_path, load_config, save_config
+from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
+from solwyn_cli.commands.login import (
+    authenticate_with_password,
+    authenticate_with_project_key,
+)
+from solwyn_cli.commands.projects import (
+    fetch_projects,
+    request_project_creation,
+)
+from solwyn_cli.config import (
+    Config,
+    ConfigLoadError,
+    ConfigWriteError,
+    get_config_path,
+    load_config,
+    save_config,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.output import OutputError, TableData
@@ -132,7 +143,7 @@ def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
     if method == "key":
         project_key = typer.prompt("Project key", hide_input=True, err=True)
         try:
-            return store_project_key(project_key)
+            return authenticate_with_project_key(project_key)
         except CredentialStorageError as error:
             exit_with_error(
                 context,
@@ -153,17 +164,10 @@ def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
     password = typer.prompt("Password", hide_input=True, err=True)
     runtime = command_context(context)
     try:
-        request = LoginRequest(email=email, password=password)
-        with SolwynClient(api_url=runtime.api_url, credential=None) as client:
-            response = client.request_unauthenticated(
-                "POST",
-                "/api/v1/auth/login",
-                json=request.model_dump(),
-            )
-        tokens = _LoginTokenResponse.model_validate(response.json())
-        return store_jwt_pair(
-            tokens.access_token.get_secret_value(),
-            tokens.refresh_token.get_secret_value(),
+        return authenticate_with_password(
+            api_url=runtime.api_url,
+            email=email,
+            password=password,
         )
     except ApiError as error:
         exit_with_error(context, error, semantic=ErrorSemantic.AUTH)
@@ -221,16 +225,10 @@ def _create_project(
             budget_period="monthly",
             budget_mode="alert_only",
         )
-        response = client.request(
-            "POST",
-            "/api/v1/projects",
-            json=request.model_dump(mode="json"),
-            retry_rate_limit=False,
-            retry_auth=False,
+        created = request_project_creation(
+            client=client,
+            request=request,
         )
-        if response.status_code != 201:
-            raise ValueError("Project creation did not return 201")
-        created = _ProjectCreateResponse.model_validate(response.json())
         stored_credential = store_project_key(created.key.get_secret_value())
     except ApiError as error:
         exit_with_error(context, error)
@@ -263,8 +261,7 @@ def _resolve_jwt_project(
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            response = client.request("GET", "/api/v1/projects")
-            projects = _PROJECTS.validate_python(response.json())
+            projects = fetch_projects(client=client)
             by_id = {project.id: project for project in projects}
             if explicit_project is not None:
                 if explicit_project not in by_id:
@@ -366,6 +363,29 @@ def _write_config(api_url: str, project_id: str) -> Path:
     return get_config_path()
 
 
+def _persist_config(context: typer.Context, api_url: str, project_id: str) -> Path:
+    try:
+        return _write_config(api_url, project_id)
+    except ConfigLoadError:
+        exit_with_error(
+            context,
+            OutputError(
+                code="config_load_failed",
+                message="The existing configuration could not be loaded.",
+                hint="Repair or remove the configuration file, then retry init.",
+            ),
+        )
+    except ConfigWriteError:
+        exit_with_error(
+            context,
+            OutputError(
+                code="config_write_failed",
+                message="The configuration could not be written.",
+                hint="Check configuration directory permissions, then retry init.",
+            ),
+        )
+
+
 def _imports_in(tree: ast.AST) -> tuple[set[Provider], set[Provider]]:
     detected: set[Provider] = set()
     module_imports: set[Provider] = set()
@@ -411,6 +431,8 @@ def _detect_providers(root: Path) -> tuple[list[Provider], set[Provider]]:
                 continue
             path = Path(directory) / file_name
             try:
+                if path.is_symlink():
+                    continue
                 source = path.read_bytes()
                 if b"\0" in source:
                     continue
@@ -469,16 +491,14 @@ def _verify_budget(
     context: typer.Context,
     credential: ResolvedCredential,
     project_id: str,
-) -> _BudgetStatusData:
+) -> BudgetStatusData:
     runtime = command_context(context)
-    project_path = quote(project_id, safe="")
     try:
-        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            response = client.request("GET", f"/api/v1/projects/{project_path}/budget")
-        budget = _BudgetStatusData.model_validate(response.json())
-        if budget.project_id != project_id:
-            raise ValueError("Budget response did not match selected project")
-        return budget
+        return fetch_budget_status(
+            api_url=runtime.api_url,
+            credential=credential,
+            project_id=project_id,
+        )
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -519,7 +539,7 @@ def init(context: typer.Context) -> None:
     credential = _resolve_auth(context)
     project_id, credential = _resolve_project(context, credential)
     runtime = command_context(context)
-    config_path = _write_config(runtime.api_url, project_id)
+    config_path = _persist_config(context, runtime.api_url, project_id)
     providers, module_imports = _detect_providers(Path.cwd())
     snippets = _snippets(providers, module_imports)
     budget = _verify_budget(context, credential, project_id)

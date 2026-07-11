@@ -10,6 +10,8 @@ from solwyn_cli._vendor.wire import LoginRequest
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
+    JwtCredential,
+    ProjectKeyCredential,
     clear_credentials,
     store_jwt_pair,
     store_project_key,
@@ -30,6 +32,29 @@ class _LoginTokenResponse(BaseModel):
     access_token: SecretStr = Field(min_length=1)
     refresh_token: SecretStr = Field(min_length=1)
     token_type: Literal["bearer"] = "bearer"
+
+
+def authenticate_with_project_key(project_key: str) -> ProjectKeyCredential:
+    """Validate and store one project key through the shared auth boundary."""
+    return store_project_key(project_key)
+
+
+def authenticate_with_password(
+    *, api_url: str, email: str, password: str
+) -> JwtCredential:
+    """Authenticate, validate the token response, and store the JWT pair."""
+    request = LoginRequest(email=email, password=password)
+    with SolwynClient(api_url=api_url, credential=None) as client:
+        response = client.request_unauthenticated(
+            "POST",
+            "/api/v1/auth/login",
+            json=request.model_dump(),
+        )
+    tokens = _LoginTokenResponse.model_validate(response.json())
+    return store_jwt_pair(
+        tokens.access_token.get_secret_value(),
+        tokens.refresh_token.get_secret_value(),
+    )
 
 
 def _stdin_is_tty() -> bool:
@@ -55,7 +80,7 @@ def _login_with_key(context: typer.Context) -> None:
         else sys.stdin.read().strip()
     )
     try:
-        store_project_key(project_key)
+        authenticate_with_project_key(project_key)
     except CredentialStorageError as error:
         exit_with_error(
             context,
@@ -88,18 +113,11 @@ def _login_with_password(context: typer.Context) -> None:
     email = typer.prompt("Email", err=True)
     password = typer.prompt("Password", hide_input=True, err=True)
     try:
-        request = LoginRequest(email=email, password=password)
         runtime = command_context(context)
-        with SolwynClient(api_url=runtime.api_url, credential=None) as client:
-            response = client.request_unauthenticated(
-                "POST",
-                "/api/v1/auth/login",
-                json=request.model_dump(),
-            )
-        tokens = _LoginTokenResponse.model_validate(response.json())
-        store_jwt_pair(
-            tokens.access_token.get_secret_value(),
-            tokens.refresh_token.get_secret_value(),
+        authenticate_with_password(
+            api_url=runtime.api_url,
+            email=email,
+            password=password,
         )
     except ApiError as error:
         if error.status_code == 403 and error.code == "email_not_verified":
