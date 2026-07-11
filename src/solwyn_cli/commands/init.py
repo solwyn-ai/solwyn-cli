@@ -41,6 +41,7 @@ from solwyn_cli.config import (
 )
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -66,6 +67,19 @@ _IGNORED_DIRECTORIES = frozenset(
     }
 )
 Provider = Literal["openai", "anthropic", "google-genai", "boto3"]
+
+
+INIT_HELP = help_contract(
+    endpoint=(
+        "composite GET/POST /api/v1/projects and GET /api/v1/projects/{project}/budget"
+    ),
+    auth="any or interactive bootstrap",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+    schema="solwyn.init.v1",
+    guidance=(
+        "Provider credentials are never collected; --agents writes safe agent guidance.",
+    ),
+)
 _PROVIDER_ORDER: tuple[Provider, ...] = (
     "openai",
     "anthropic",

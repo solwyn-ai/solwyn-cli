@@ -28,11 +28,21 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
 
-app = typer.Typer(help="Recover from leaked or expired project keys.")
+app = typer.Typer(
+    help="Recover from leaked or expired project keys.",
+    epilog=help_contract(
+        endpoint="composite router for project-key subcommands",
+        auth="JWT",
+        exits="0 success; 2 usage",
+        schema="varies by subcommand",
+        guidance=("Metadata help never reveals existing key material.",),
+    ),
+)
 
 
 class _ProjectKeyMetadata(BaseModel):
@@ -207,7 +217,16 @@ def _validate_metadata_response(payload: object) -> _ProjectKeyMetadata:
     return _ProjectKeyMetadata.model_validate(payload)
 
 
-@app.command("show")
+@app.command(
+    "show",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects/{project}/key",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.keys-show.v1",
+        guidance=("Shows metadata only and never reveals existing key material.",),
+    ),
+)
 def show_key(context: typer.Context) -> None:
     """Show active project-key metadata without revealing key material."""
     runtime = command_context(context)
@@ -238,7 +257,18 @@ def show_key(context: typer.Context) -> None:
     )
 
 
-@app.command("rotate")
+@app.command(
+    "rotate",
+    epilog=help_contract(
+        endpoint="POST /api/v1/projects/{project}/key/rotate",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.keys-rotate.v1",
+        guidance=(
+            "The replacement key is shown exactly once; store it in the OS keychain.",
+        ),
+    ),
+)
 def rotate_key(
     context: typer.Context,
     grace_seconds: Annotated[
@@ -300,7 +330,16 @@ def rotate_key(
     )
 
 
-@app.command("revoke")
+@app.command(
+    "revoke",
+    epilog=help_contract(
+        endpoint="DELETE /api/v1/projects/{project}/key/{key_id}",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.keys-revoke.v1 (CLI output after bodyless 204)",
+        guidance=("Accepts only a key identifier; never pass key material.",),
+    ),
+)
 def revoke_key(
     context: typer.Context,
     key_id: Annotated[

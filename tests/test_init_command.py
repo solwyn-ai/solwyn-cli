@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
@@ -130,7 +131,7 @@ def test_init_is_registered_with_agents_but_without_secret_options() -> None:
     assert command.exit_code == 0
     assert "--api-key" not in command.stdout
     assert "--password" not in command.stdout
-    assert "--agents" in command.stdout
+    assert "--agents" in unstyle(command.stdout)
 
 
 def test_init_agents_writes_artifacts_after_successful_safe_onboarding(

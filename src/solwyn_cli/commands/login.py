@@ -20,8 +20,28 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
+
+
+LOGIN_HELP = help_contract(
+    endpoint="POST /api/v1/auth/login or local keychain write with --with-key",
+    auth="none",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth or credential storage",
+    schema="solwyn.login.v1",
+    guidance=(
+        "Keys and passwords are never accepted as command-line arguments or echoed.",
+        "Read project keys only from a hidden prompt or stdin; passwords use a hidden prompt.",
+    ),
+)
+
+LOGOUT_HELP = help_contract(
+    endpoint="local keychain clear",
+    auth="local stored credentials",
+    exits="0 success; 2 usage; 3 credential storage",
+    schema="solwyn.logout.v1",
+)
 
 
 class _LoginTokenResponse(BaseModel):

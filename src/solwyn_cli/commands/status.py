@@ -11,6 +11,7 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -25,6 +26,17 @@ class _BudgetSummary(BaseModel):
     budget_mode: Literal["alert_only", "hard_deny"]
     period_date: str
     utilization_pct: float
+
+
+STATUS_HELP = help_contract(
+    endpoint=(
+        "GET /api/v1/projects/{project}/budget and "
+        "GET /api/v1/projects/{project}/providers"
+    ),
+    auth="any",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+    schema="solwyn.status.v1",
+)
 
 
 class _BudgetResponse(_BudgetSummary):

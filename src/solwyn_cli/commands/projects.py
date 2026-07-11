@@ -32,11 +32,20 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
 
-app = typer.Typer(help="Inspect Solwyn projects.")
+app = typer.Typer(
+    help="Inspect Solwyn projects.",
+    epilog=help_contract(
+        endpoint="composite router for project subcommands",
+        auth="varies by subcommand",
+        exits="0 success; 2 usage",
+        schema="varies by subcommand",
+    ),
+)
 
 
 class _Project(BaseModel):
@@ -204,7 +213,18 @@ def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
     return credential
 
 
-@app.command("create")
+@app.command(
+    "create",
+    epilog=help_contract(
+        endpoint="POST /api/v1/projects",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.projects-create.v1",
+        guidance=(
+            "The new project key is shown exactly once or stored directly in the OS keychain.",
+        ),
+    ),
+)
 def create_project(
     context: typer.Context,
     name: Annotated[str, typer.Option("--name", help="Name for the new project.")],
@@ -310,7 +330,15 @@ def create_project(
     )
 
 
-@app.command("list")
+@app.command(
+    "list",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.projects-list.v1",
+    ),
+)
 def list_projects(context: typer.Context) -> None:
     """List projects available to the logged-in user."""
     credential = required_credential(context, resolve=resolve_credential)
@@ -358,7 +386,15 @@ def list_projects(context: typer.Context) -> None:
     )
 
 
-@app.command("show")
+@app.command(
+    "show",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects/{project}",
+        auth="any",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.projects-show.v1",
+    ),
+)
 def show_project(context: typer.Context) -> None:
     """Show the project selected by the global project context."""
     runtime = command_context(context)

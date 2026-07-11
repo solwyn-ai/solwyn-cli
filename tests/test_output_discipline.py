@@ -11,19 +11,16 @@ _LOCAL_DATA_CALLS = {
     (
         "agent_context.py",
         "agent_context",
-        10,
         "typer.echo(render_surface(ArtifactSurface.AGENT_CONTEXT), nl=False)",
     ),
     (
         "config.py",
         "get_config_value",
-        44,
         "typer.echo('' if value is None else value)",
     ),
     (
         "config.py",
         "list_config_values",
-        77,
         "typer.echo(f\"{key}={('' if value is None else value)}\")",
     ),
 }
@@ -90,7 +87,6 @@ class _OutputVisitor(ast.NodeVisitor):
             call_fingerprint = (
                 self.path.name,
                 current,
-                node.lineno,
                 ast.unparse(node),
             )
             is_local_data = call_fingerprint in _LOCAL_DATA_CALLS

@@ -6,17 +6,18 @@ import typer
 from pydantic import ValidationError
 
 from solwyn_cli import __version__
-from solwyn_cli.commands.agent_context import agent_context
+from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
-from solwyn_cli.commands.costs import costs
-from solwyn_cli.commands.init import init
-from solwyn_cli.commands.login import login, logout
+from solwyn_cli.commands.costs import COSTS_HELP, costs
+from solwyn_cli.commands.init import INIT_HELP, init
+from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
-from solwyn_cli.commands.status import status
-from solwyn_cli.commands.whoami import whoami
+from solwyn_cli.commands.status import STATUS_HELP, status
+from solwyn_cli.commands.whoami import WHOAMI_HELP, whoami
 from solwyn_cli.config import ConfigLoadError
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, OutputUsageError
 from solwyn_cli.runtime import (
     bootstrap_output_engine,
@@ -25,19 +26,30 @@ from solwyn_cli.runtime import (
 )
 
 app = typer.Typer(
-    add_completion=False, invoke_without_command=True, no_args_is_help=True
+    add_completion=False,
+    invoke_without_command=True,
+    no_args_is_help=True,
+    epilog=help_contract(
+        endpoint="composite command router",
+        auth="varies by command",
+        exits="0 success; 2 usage",
+        schema="varies by command",
+        guidance=(
+            "Agents: run solwyn agent-context for the compact capability contract.",
+        ),
+    ),
 )
 app.add_typer(budget_app, name="budget")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
-app.command("agent-context")(agent_context)
-app.command("costs")(costs)
-app.command("init")(init)
-app.command("login")(login)
-app.command("logout")(logout)
-app.command("status")(status)
-app.command("whoami")(whoami)
+app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
+app.command("costs", epilog=COSTS_HELP)(costs)
+app.command("init", epilog=INIT_HELP)(init)
+app.command("login", epilog=LOGIN_HELP)(login)
+app.command("logout", epilog=LOGOUT_HELP)(logout)
+app.command("status", epilog=STATUS_HELP)(status)
+app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 
 
 @app.callback()
