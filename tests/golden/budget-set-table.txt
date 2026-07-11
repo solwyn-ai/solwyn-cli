@@ -1,0 +1,11 @@
+Field                  Value
+Project           proj_alpha
+Budget limit          125.00
+Current usage          25.00
+Remaining budget      100.00
+Budget period        monthly
+Budget mode        hard_deny
+Sub-period             daily
+Sub-limit              20.00
+Threshold rules            4
+Utilization           20.00%

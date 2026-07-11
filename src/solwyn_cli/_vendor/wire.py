@@ -35,6 +35,18 @@ class ProviderName(StrEnum):
     OPENAI_COMPATIBLE = "openai_compatible"
 
 
+class ServiceTier(StrEnum):
+    """Provider service tiers accepted by budget confirmation."""
+
+    AUTO = "auto"
+    DEFAULT = "default"
+    FLEX = "flex"
+    SCALE = "scale"
+    PRIORITY = "priority"
+    STANDARD = "standard"
+    OPTIMIZED = "optimized"
+
+
 class BudgetPeriod(StrEnum):
     """Rolling window for budget accounting."""
 
@@ -139,6 +151,10 @@ class ProjectCreateRequest(_WireModel):
     )
 
 
+class ProjectKeyRotateRequest(_WireModel):
+    grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
+
+
 class BudgetUpdateRequest(_WireModel):
     limit_usd: Annotated[float, Field(gt=0)]
     period: BudgetPeriod
@@ -166,15 +182,4 @@ class BudgetConfirmRequest(_WireModel):
     call_id: Annotated[str, Field(max_length=36)]
     token_details: TokenDetails
     provider_region: Annotated[str, Field(max_length=32)] | None = None
-    service_tier: (
-        Literal[
-            "auto",
-            "default",
-            "flex",
-            "scale",
-            "priority",
-            "standard",
-            "optimized",
-        ]
-        | None
-    ) = None
+    service_tier: ServiceTier | None = None

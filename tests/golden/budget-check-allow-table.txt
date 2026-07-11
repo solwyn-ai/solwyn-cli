@@ -1,0 +1,10 @@
+Field                                Value
+Allowed                                yes
+Reservation ID             res_01JZEXAMPLE
+Project                      proj_from_key
+Budget mode                      hard_deny
+Budget limit                        100.00
+Current usage                        18.75
+Remaining budget                     81.25
+Denied by period                         -
+Price hints       anthropic=1.15, openai=1

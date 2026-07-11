@@ -33,8 +33,10 @@ BUDGET_RESPONSE = {
     "utilization_pct": 75.0,
     "thresholds": [],
     "constraints": {
-        "effective_limit": 100.0,
-        "effective_period": "monthly",
+        "allowed_modes": ["alert_only", "hard_deny"],
+        "allowed_periods": ["daily", "weekly", "monthly"],
+        "sub_period_enabled": True,
+        "max_thresholds": 50,
     },
 }
 
@@ -81,7 +83,7 @@ def _key() -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
-def test_budget_group_registers_only_status_as_a_pure_read() -> None:
+def test_budget_group_registers_status_check_confirm_and_set() -> None:
     root = runner.invoke(app, ["--help"])
     group = runner.invoke(app, ["budget", "--help"])
 
@@ -89,8 +91,9 @@ def test_budget_group_registers_only_status_as_a_pure_read() -> None:
     assert group.exit_code == 0
     assert "budget" in root.stdout
     assert "status" in group.stdout
-    for mutation in ("check", "confirm", "set"):
-        assert mutation not in group.stdout
+    assert "check" in group.stdout
+    assert "confirm" in group.stdout
+    assert "set" in group.stdout
 
 
 @pytest.mark.parametrize(

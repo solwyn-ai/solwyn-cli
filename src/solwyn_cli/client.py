@@ -160,6 +160,7 @@ class SolwynClient:
         headers: httpx.Headers,
         kwargs: dict[str, Any],
         retry_state: list[bool],
+        retry_rate_limit: bool = True,
     ) -> httpx.Response:
         """Send with the one shared bounded 429 retry budget."""
         response = self._client.request(
@@ -168,7 +169,7 @@ class SolwynClient:
             headers=headers,
             **kwargs,
         )
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        if retry_rate_limit and response.status_code == httpx.codes.TOO_MANY_REQUESTS:
             if retry_state[0]:
                 return response
             retry_state[0] = True
@@ -222,6 +223,9 @@ class SolwynClient:
         self,
         method: str,
         path: str,
+        *,
+        retry_rate_limit: bool = True,
+        retry_auth: bool = True,
         **kwargs: Any,
     ) -> httpx.Response:
         """Make one logical request with bounded rate-limit and auth retries."""
@@ -242,15 +246,20 @@ class SolwynClient:
                 headers=headers,
                 kwargs=kwargs,
                 retry_state=retry_state,
+                retry_rate_limit=retry_rate_limit,
             )
 
         try:
-            response = request_with_refresh_retry(
-                client=self._client,
-                api_url=self._api_url,
-                credential=credential,
-                request=send,
-                on_credential_rotated=retain_rotated_credential,
+            response = (
+                request_with_refresh_retry(
+                    client=self._client,
+                    api_url=self._api_url,
+                    credential=credential,
+                    request=send,
+                    on_credential_rotated=retain_rotated_credential,
+                )
+                if retry_auth
+                else send(credential)
             )
         except httpx.HTTPError:
             raise ApiError(

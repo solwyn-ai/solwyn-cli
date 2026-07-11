@@ -1,0 +1,1 @@
+{"schema":"solwyn.error.v1","code":"reservation_not_found","message":"Budget reservation was not found.","hint":"Expired or already consumed. Run a fresh check before spend; confirm once.","detail":{"code":"reservation_not_found","message":"Budget reservation was not found.","reservation_state":"expired_or_consumed"}}

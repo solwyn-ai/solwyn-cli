@@ -10,10 +10,12 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     JsonValue,
+    SecretStr,
     TypeAdapter,
     model_validator,
 )
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
@@ -67,6 +69,15 @@ class TableData(BaseModel):
         if not set(self.right_align).issubset(self.columns):
             raise ValueError("Right-aligned columns must exist in the table")
         return self
+
+
+class OneTimeSecretPanel(BaseModel):
+    """A redacted in-memory secret rendered once in table output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    title: str
+    value: SecretStr
 
 
 def _parse_format(value: str | OutputFormat, *, source: str) -> OutputFormat:
@@ -193,6 +204,7 @@ class OutputEngine:
         schema: str,
         data: Mapping[str, object] | BaseModel,
         table: TableData | None = None,
+        one_time_secret: OneTimeSecretPanel | None = None,
     ) -> None:
         """Write one schema-bearing JSON object or its explicit human table."""
         if _COMMAND_SCHEMA.fullmatch(schema) is None:
@@ -216,7 +228,16 @@ class OutputEngine:
             )
         for row in table.rows:
             rich_table.add_row(*(Text(_terminal_safe(cell)) for cell in row))
-        self._console(error=False).print(rich_table)
+        console = self._console(error=False)
+        console.print(rich_table)
+        if one_time_secret is not None:
+            console.print(
+                Panel(
+                    Text(_terminal_safe(one_time_secret.value.get_secret_value())),
+                    title=Text(_terminal_safe(one_time_secret.title)),
+                    expand=False,
+                )
+            )
 
     def write_error(self, error: ApiError | OutputError) -> None:
         """Write a stable machine envelope or a detail-free human error."""
