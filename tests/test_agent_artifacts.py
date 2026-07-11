@@ -283,7 +283,7 @@ def test_second_commit_failure_rolls_back_every_original_and_removes_residue(
         "agent_guidance",
         lambda: "# Changed guidance\n\nRollback must restore different bytes.",
     )
-    original_replace = artifacts_module._replace_at
+    original_replace = artifacts_module._atomic_exchange
     calls = 0
 
     def fail_second(*args: object, **kwargs: object) -> None:
@@ -293,7 +293,7 @@ def test_second_commit_failure_rolls_back_every_original_and_removes_residue(
             raise OSError("injected commit failure")
         original_replace(*args, **kwargs)
 
-    monkeypatch.setattr(artifacts_module, "_replace_at", fail_second)
+    monkeypatch.setattr(artifacts_module, "_atomic_exchange", fail_second)
 
     with pytest.raises(OSError, match="injected commit failure"):
         write_agent_artifacts(tmp_path)
@@ -320,47 +320,69 @@ def test_target_edit_between_commit_iterations_survives_and_prior_commits_rollba
         "agent_guidance",
         lambda: "# Changed guidance\n\nPrior commits must really roll back.",
     )
+    original_exchange = artifacts_module._atomic_exchange
+    mutated = False
 
-    def mutate_before_replace(state: object) -> None:
-        if getattr(state, "relative_path") == mutated_path:
+    def mutate_at_exchange(source: str, target: str, parent_fd: int) -> None:
+        nonlocal mutated
+        if target == mutated_path.name and not mutated:
             (tmp_path / mutated_path).write_bytes(user_bytes)
+            mutated = True
+        original_exchange(source, target, parent_fd)
 
     monkeypatch.setattr(
         artifacts_module,
-        "_before_target_replace",
-        mutate_before_replace,
+        "_atomic_exchange",
+        mutate_at_exchange,
     )
 
-    with pytest.raises(OSError, match="changed during agent artifact write"):
+    with pytest.raises(
+        artifacts_module.ArtifactRecoveryError,
+        match="manual recovery required",
+    ) as captured:
         write_agent_artifacts(tmp_path)
 
     for path, original in before.items():
         expected = user_bytes if path == mutated_path else original
         assert (tmp_path / path).read_bytes() == expected
-    assert _transaction_residue(tmp_path) == []
+    residue = _transaction_residue(tmp_path)
+    assert len(residue) == 1
+    assert residue[0].read_bytes() == before[mutated_path]
+    assert captured.value.recovery_paths == (mutated_path.parent / residue[0].name,)
+    assert captured.value.conflict_paths == (mutated_path,)
 
 
 def test_new_target_created_between_commit_iterations_survives(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user_bytes = b"concurrent new cursor rule\n"
+    original_noreplace = artifacts_module._atomic_noreplace
+    created = False
 
-    def create_before_replace(state: object) -> None:
-        if getattr(state, "relative_path") == CURSOR_RULE_PATH:
+    def create_at_noreplace(source: str, target: str, parent_fd: int) -> None:
+        nonlocal created
+        if target == CURSOR_RULE_PATH.name and not created:
             (tmp_path / CURSOR_RULE_PATH).write_bytes(user_bytes)
+            created = True
+        original_noreplace(source, target, parent_fd)
 
     monkeypatch.setattr(
         artifacts_module,
-        "_before_target_replace",
-        create_before_replace,
+        "_atomic_noreplace",
+        create_at_noreplace,
     )
 
-    with pytest.raises(OSError, match="changed during agent artifact write"):
+    with pytest.raises(
+        artifacts_module.ArtifactRecoveryError,
+        match="manual recovery required",
+    ) as captured:
         write_agent_artifacts(tmp_path)
 
     assert not (tmp_path / CLAUDE_SKILL_PATH).exists()
     assert (tmp_path / CURSOR_RULE_PATH).read_bytes() == user_bytes
     assert not (tmp_path / AGENTS_PATH).exists()
+    assert captured.value.recovery_paths == ()
+    assert captured.value.conflict_paths == (CURSOR_RULE_PATH,)
     assert _transaction_residue(tmp_path) == []
 
 
@@ -375,16 +397,22 @@ def test_post_commit_user_edit_survives_with_original_backup_retained(
         "agent_guidance",
         lambda: "# Changed guidance\n\nTrigger a partial commit.",
     )
+    original_exchange = artifacts_module._atomic_exchange
+    calls = 0
 
-    def mutate_after_replace(state: object) -> None:
-        if getattr(state, "relative_path") == CLAUDE_SKILL_PATH:
+    def mutate_during_rollback(source: str, target: str, parent_fd: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected second commit failure")
+        if calls == 3:
             (tmp_path / CLAUDE_SKILL_PATH).write_bytes(user_bytes)
-            raise OSError("injected failure after concurrent edit")
+        original_exchange(source, target, parent_fd)
 
     monkeypatch.setattr(
         artifacts_module,
-        "_after_target_replace",
-        mutate_after_replace,
+        "_atomic_exchange",
+        mutate_during_rollback,
     )
 
     with pytest.raises(
@@ -410,16 +438,22 @@ def test_post_commit_edit_of_previously_absent_target_survives_without_fake_back
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user_bytes = b"user edit of newly installed skill\n"
+    original_noreplace = artifacts_module._atomic_noreplace
+    calls = 0
 
-    def mutate_after_replace(state: object) -> None:
-        if getattr(state, "relative_path") == CLAUDE_SKILL_PATH:
+    def mutate_during_rollback(source: str, target: str, parent_fd: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected second commit failure")
+        if calls == 3:
             (tmp_path / CLAUDE_SKILL_PATH).write_bytes(user_bytes)
-            raise OSError("injected failure after concurrent edit")
+        original_noreplace(source, target, parent_fd)
 
     monkeypatch.setattr(
         artifacts_module,
-        "_after_target_replace",
-        mutate_after_replace,
+        "_atomic_noreplace",
+        mutate_during_rollback,
     )
 
     with pytest.raises(
@@ -452,7 +486,7 @@ def test_failed_restore_retains_only_recoverable_original_backup(
         "agent_guidance",
         lambda: "# Changed guidance\n\nA failed restore must retain the original.",
     )
-    original_replace = artifacts_module._replace_at
+    original_replace = artifacts_module._atomic_exchange
     calls = 0
 
     def fail_commit_then_restore(*args: object, **kwargs: object) -> None:
@@ -466,7 +500,7 @@ def test_failed_restore_retains_only_recoverable_original_backup(
 
     monkeypatch.setattr(
         artifacts_module,
-        "_replace_at",
+        "_atomic_exchange",
         fail_commit_then_restore,
     )
 

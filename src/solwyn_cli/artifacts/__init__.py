@@ -8,6 +8,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from solwyn_cli.artifacts._atomic import (
+    atomic_exchange as _atomic_exchange,
+    atomic_noreplace as _atomic_noreplace,
+)
+
 
 CLAUDE_SKILL_PATH = Path(".claude/skills/solwyn/SKILL.md")
 CURSOR_RULE_PATH = Path(".cursor/rules/solwyn.mdc")
@@ -49,6 +54,9 @@ class _ArtifactState(BaseModel):
     committed: bool = False
     installed_identity: _FILE_IDENTITY | None = None
     retain_backup_for_recovery: bool = False
+    retain_temporary_for_recovery: bool = False
+    rollback_recovery_name: str | None = None
+    conflict_detected: bool = False
 
 
 class ArtifactRecoveryError(OSError):
@@ -356,6 +364,15 @@ def _assert_target_stable(state: _ArtifactState) -> None:
         )
 
 
+def _same_file_version(
+    actual: _FILE_IDENTITY | None,
+    expected: _FILE_IDENTITY | None,
+) -> bool:
+    if actual is None or expected is None:
+        return actual is expected
+    return actual[:-1] == expected[:-1]
+
+
 def _during_backup_copy(state: _ArtifactState) -> None:
     """Test seam after opening the stable source and before copying its bytes."""
 
@@ -442,64 +459,98 @@ def _backup_artifact(state: _ArtifactState) -> str | None:
             os.close(backup_fd)
 
 
-def _replace_at(source: str, target: str, parent_fd: int) -> None:
-    os.replace(
-        source,
-        target,
-        src_dir_fd=parent_fd,
-        dst_dir_fd=parent_fd,
-    )
-
-
 def _before_artifact_commit() -> None:
     """Test seam immediately before stable-parent and target revalidation."""
 
 
-def _before_target_replace(state: _ArtifactState) -> None:
-    """Test seam immediately before one target's final identity check."""
-
-
-def _after_target_replace(state: _ArtifactState) -> None:
-    """Test seam after capturing one transaction-installed target identity."""
-
-
 def _cleanup_transaction(states: list[_ArtifactState]) -> None:
     for state in states:
-        _unlink_at(state.parent_fd, state.temporary_name)
+        if not state.retain_temporary_for_recovery:
+            _unlink_at(state.parent_fd, state.temporary_name)
         if not state.retain_backup_for_recovery:
             _unlink_at(state.parent_fd, state.backup_name)
 
 
+def _state_recovery_paths(state: _ArtifactState) -> list[Path]:
+    names = []
+    if state.retain_backup_for_recovery and state.backup_name is not None:
+        names.append(state.backup_name)
+    if state.retain_temporary_for_recovery and state.temporary_name is not None:
+        names.append(state.temporary_name)
+    if state.rollback_recovery_name is not None:
+        names.append(state.rollback_recovery_name)
+    return [state.relative_path.parent / name for name in names]
+
+
 def _rollback_transaction(states: list[_ArtifactState]) -> None:
     rollback_error: OSError | None = None
-    conflict_paths: list[Path] = []
+    conflict_paths: list[Path] = [
+        state.relative_path for state in states if state.conflict_detected
+    ]
     for state in reversed(states):
         if not state.committed:
             continue
-        if (
-            state.installed_identity is None
-            or _target_identity(state.parent_fd, state.target_name)
-            != state.installed_identity
-        ):
-            conflict_paths.append(state.relative_path)
-            if state.original_identity is not None and state.backup_name is not None:
-                state.retain_backup_for_recovery = True
-            continue
-        if state.original_identity is None:
+        if state.original_identity is not None and state.backup_name is not None:
             try:
-                _unlink_at(state.parent_fd, state.target_name)
-                _fsync_directory(state.parent_fd)
+                _atomic_exchange(
+                    state.backup_name,
+                    state.target_name,
+                    state.parent_fd,
+                )
             except OSError as error:
+                state.retain_backup_for_recovery = True
                 rollback_error = rollback_error or error
-            continue
-        if state.backup_name is not None:
-            try:
-                _replace_at(state.backup_name, state.target_name, state.parent_fd)
+                continue
+            displaced_identity = _target_identity(
+                state.parent_fd,
+                state.backup_name,
+            )
+            if _same_file_version(displaced_identity, state.installed_identity):
+                _unlink_at(state.parent_fd, state.backup_name)
                 state.backup_name = None
                 _fsync_directory(state.parent_fd)
+                continue
+            try:
+                _atomic_exchange(
+                    state.backup_name,
+                    state.target_name,
+                    state.parent_fd,
+                )
             except OSError as error:
-                state.retain_backup_for_recovery = True
+                state.rollback_recovery_name = state.backup_name
+                state.backup_name = None
                 rollback_error = rollback_error or error
+            else:
+                state.retain_backup_for_recovery = True
+            state.conflict_detected = True
+            if state.relative_path not in conflict_paths:
+                conflict_paths.append(state.relative_path)
+            continue
+
+        tombstone = _unique_transaction_name("rollback", state.target_name)
+        try:
+            _atomic_noreplace(state.target_name, tombstone, state.parent_fd)
+        except FileNotFoundError:
+            state.conflict_detected = True
+            if state.relative_path not in conflict_paths:
+                conflict_paths.append(state.relative_path)
+            continue
+        except OSError as error:
+            rollback_error = rollback_error or error
+            continue
+        displaced_identity = _target_identity(state.parent_fd, tombstone)
+        if _same_file_version(displaced_identity, state.installed_identity):
+            _unlink_at(state.parent_fd, tombstone)
+            _fsync_directory(state.parent_fd)
+            continue
+        try:
+            _atomic_noreplace(tombstone, state.target_name, state.parent_fd)
+        except OSError as error:
+            state.rollback_recovery_name = tombstone
+            rollback_error = rollback_error or error
+        state.conflict_detected = True
+        if state.relative_path not in conflict_paths:
+            conflict_paths.append(state.relative_path)
     _cleanup_transaction(states)
     for state in states:
         try:
@@ -507,11 +558,9 @@ def _rollback_transaction(states: list[_ArtifactState]) -> None:
         except OSError as error:
             rollback_error = rollback_error or error
     recovery_paths = tuple(
-        state.relative_path.parent / state.backup_name
-        for state in states
-        if state.retain_backup_for_recovery and state.backup_name is not None
+        path for state in states for path in _state_recovery_paths(state)
     )
-    ordered_conflicts = tuple(reversed(conflict_paths))
+    ordered_conflicts = tuple(dict.fromkeys(conflict_paths))
     if recovery_paths or ordered_conflicts:
         raise ArtifactRecoveryError(
             recovery_paths,
@@ -595,9 +644,6 @@ def write_agent_artifacts(root: Path) -> None:
             commit_started = True
             if state.temporary_name is None:
                 raise OSError("Agent artifact stage is missing.")
-            _before_target_replace(state)
-            _assert_parent_stable(state)
-            _assert_target_stable(state)
             staged_identity = _target_identity(
                 state.parent_fd,
                 state.temporary_name,
@@ -605,29 +651,69 @@ def write_agent_artifacts(root: Path) -> None:
             if staged_identity is None:
                 raise OSError("Agent artifact stage is missing.")
             state.installed_identity = staged_identity
-            _replace_at(
-                state.temporary_name,
-                state.target_name,
-                state.parent_fd,
-            )
-            state.temporary_name = None
-            state.committed = True
+            if state.original_identity is None:
+                try:
+                    _atomic_noreplace(
+                        state.temporary_name,
+                        state.target_name,
+                        state.parent_fd,
+                    )
+                except FileExistsError:
+                    state.conflict_detected = True
+                    raise OSError(
+                        f"Agent artifact changed during agent artifact write: "
+                        f"{state.relative_path}"
+                    ) from None
+                state.temporary_name = None
+                state.committed = True
+            else:
+                _atomic_exchange(
+                    state.temporary_name,
+                    state.target_name,
+                    state.parent_fd,
+                )
+                state.committed = True
+                displaced_identity = _target_identity(
+                    state.parent_fd,
+                    state.temporary_name,
+                )
+                if not _same_file_version(
+                    displaced_identity,
+                    state.original_identity,
+                ):
+                    state.conflict_detected = True
+                    state.retain_backup_for_recovery = True
+                    try:
+                        _atomic_exchange(
+                            state.temporary_name,
+                            state.target_name,
+                            state.parent_fd,
+                        )
+                    except OSError:
+                        state.retain_temporary_for_recovery = True
+                    else:
+                        state.committed = False
+                    raise OSError(
+                        f"Agent artifact changed during agent artifact write: "
+                        f"{state.relative_path}"
+                    )
             installed_identity = _target_identity(
                 state.parent_fd,
                 state.target_name,
             )
-            if (
-                installed_identity is None
-                or installed_identity[:-1] != staged_identity[:-1]
+            if installed_identity is None or not _same_file_version(
+                installed_identity, staged_identity
             ):
                 raise OSError(
                     f"Agent artifact changed during agent artifact write: "
                     f"{state.relative_path}"
                 )
             state.installed_identity = installed_identity
+            if state.temporary_name is not None:
+                _unlink_at(state.parent_fd, state.temporary_name)
+                state.temporary_name = None
             _fsync_directory(state.parent_fd)
             _assert_parent_stable(state)
-            _after_target_replace(state)
         _cleanup_transaction(states)
         for state in states:
             _fsync_directory(state.parent_fd)
