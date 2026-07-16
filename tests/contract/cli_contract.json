@@ -254,6 +254,128 @@
           "name": "agent_run_id",
           "required": false,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--image-count"
+          ],
+          "default": null,
+          "help": "Images the pending call generates or edits.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "image_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--generation-count"
+          ],
+          "default": null,
+          "help": "Per-video, per-generation, or per-song units the call bills.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "generation_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--video-seconds"
+          ],
+          "default": null,
+          "help": "Video duration the pending call bills, in seconds.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0.0,
+          "multiple": false,
+          "name": "video_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--audio-seconds"
+          ],
+          "default": null,
+          "help": "Audio duration the pending call bills, in seconds.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0.0,
+          "multiple": false,
+          "name": "audio_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--input-characters"
+          ],
+          "default": null,
+          "help": "Speech-synthesis input length the pending call bills.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "input_characters",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--resolution"
+          ],
+          "default": null,
+          "help": "Image resolution variant the call is priced at, e.g. 1024x1024.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "resolution",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--quality"
+          ],
+          "default": null,
+          "help": "Image quality variant the call is priced at, e.g. standard or hd.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "quality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--is-estimated"
+          ],
+          "default": false,
+          "help": "Mark the media quantities as estimates rather than measured.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "is_estimated",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -522,6 +644,38 @@
           "min": 0,
           "multiple": false,
           "name": "audio_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--image-input-tokens"
+          ],
+          "default": 0,
+          "help": "Image input tokens, already counted within --input-tokens.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "image_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--image-output-tokens"
+          ],
+          "default": 0,
+          "help": "Image output tokens, already counted within --output-tokens.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "image_output_tokens",
           "required": false,
           "type": "integer range"
         },

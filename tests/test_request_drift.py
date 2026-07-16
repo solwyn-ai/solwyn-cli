@@ -17,7 +17,6 @@ from solwyn_cli._vendor.wire import (
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
     RefreshRequest,
-    TokenDetails,
 )
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
@@ -52,7 +51,6 @@ DECLARED_DEFAULT_FIELDS = {
 # it. Mirrors stay an exact match against everything the CLI actually posts.
 UNADOPTED_OPTIONAL_FIELDS = {
     "BudgetCheckRequest": (
-        "estimated_media",
         # Declined: the directive it requests only tunes SDK-side retry and
         # circuit-breaker behavior, which the CLI does not perform; opting in
         # would also switch the check response to null-omitting encoding.
@@ -68,7 +66,6 @@ UNADOPTED_OPTIONAL_FIELDS = {
         # Declined: same as check — inert on this endpoint.
         "modality",
     ),
-    "TokenDetails": ("image_input_tokens", "image_output_tokens"),
 }
 # Threshold rule configs the CLI cannot construct.
 #
@@ -85,7 +82,6 @@ UNADOPTED_THRESHOLD_CONFIGS: tuple[str, ...] = ()
 UNADOPTED_FIELD_OWNERS = {
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
-    "TokenDetails": TokenDetails,
 }
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 
@@ -545,6 +541,8 @@ def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
         "reasoning_tokens",
         "audio_input_tokens",
         "audio_output_tokens",
+        "image_input_tokens",
+        "image_output_tokens",
         "accepted_prediction_tokens",
         "rejected_prediction_tokens",
         "tool_use_input_tokens",

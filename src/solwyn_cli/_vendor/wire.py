@@ -146,9 +146,32 @@ class TokenDetails(_WireModel):
     reasoning_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     audio_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     audio_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    # Subset buckets, not additional spend: image input is counted inside
+    # input_tokens and image output inside output_tokens, exactly as reasoning
+    # tokens are counted inside output_tokens. The API prices image-rate models
+    # from them, so omitting them under-settles image spend.
+    image_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    image_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     accepted_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     rejected_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     tool_use_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    is_estimated: bool = False
+
+
+class MediaUsage(_WireModel):
+    """Non-text billing quantities the API prices a media call from.
+
+    A quantity is null when it is unobservable for the call — never zero, which
+    would claim the call billed none of it.
+    """
+
+    image_count: Annotated[int, Field(ge=0)] | None = None
+    generation_count: Annotated[int, Field(ge=0)] | None = None
+    video_seconds: Annotated[float, Field(ge=0)] | None = None
+    audio_seconds: Annotated[float, Field(ge=0)] | None = None
+    input_characters: Annotated[int, Field(ge=0)] | None = None
+    resolution: Annotated[str, Field(max_length=32)] | None = None
+    quality: Annotated[str, Field(max_length=32)] | None = None
     is_estimated: bool = False
 
 
@@ -205,6 +228,8 @@ class BudgetCheckRequest(_WireModel):
     estimated_input_tokens: Annotated[int, Field(ge=0)]
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
+    # Null for text-only calls: the API then prices the reservation from tokens.
+    estimated_media: MediaUsage | None = None
     fallback_providers: list[ProviderName] = Field(default_factory=list)
     fallback_models: Annotated[
         list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)

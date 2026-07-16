@@ -21,6 +21,7 @@ from solwyn_cli._vendor.wire import (
     BudgetMode,
     BudgetPeriod,
     BudgetUpdateRequest,
+    MediaUsage,
     ProviderName,
     ServiceTier,
     TokenDetails,
@@ -433,6 +434,8 @@ def _set_table(data: _BudgetSetData) -> TableData:
         guidance=(
             "Run immediately before caller-made un-instrumented provider spend.",
             "Do not use with Solwyn SDK-instrumented calls. Do not poll with check.",
+            "Set the media quantities for an image, video, audio, or speech call; "
+            "the API prices the reservation from them instead of from tokens.",
         ),
     ),
 )
@@ -478,6 +481,67 @@ def check(
             ),
         ),
     ] = None,
+    image_count: Annotated[
+        int | None,
+        typer.Option(
+            "--image-count",
+            min=0,
+            help="Images the pending call generates or edits.",
+        ),
+    ] = None,
+    generation_count: Annotated[
+        int | None,
+        typer.Option(
+            "--generation-count",
+            min=0,
+            help="Per-video, per-generation, or per-song units the call bills.",
+        ),
+    ] = None,
+    video_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--video-seconds",
+            min=0.0,
+            help="Video duration the pending call bills, in seconds.",
+        ),
+    ] = None,
+    audio_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--audio-seconds",
+            min=0.0,
+            help="Audio duration the pending call bills, in seconds.",
+        ),
+    ] = None,
+    input_characters: Annotated[
+        int | None,
+        typer.Option(
+            "--input-characters",
+            min=0,
+            help="Speech-synthesis input length the pending call bills.",
+        ),
+    ] = None,
+    resolution: Annotated[
+        str | None,
+        typer.Option(
+            "--resolution",
+            help="Image resolution variant the call is priced at, e.g. 1024x1024.",
+        ),
+    ] = None,
+    quality: Annotated[
+        str | None,
+        typer.Option(
+            "--quality",
+            help="Image quality variant the call is priced at, e.g. standard or hd.",
+        ),
+    ] = None,
+    is_estimated: Annotated[
+        bool,
+        typer.Option(
+            "--is-estimated",
+            help="Mark the media quantities as estimates rather than measured.",
+        ),
+    ] = False,
 ) -> None:
     """Reserve budget immediately before one un-instrumented provider call."""
     providers = fallback_providers or []
@@ -495,11 +559,37 @@ def check(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    quantities = (
+        image_count,
+        generation_count,
+        video_seconds,
+        audio_seconds,
+        input_characters,
+        resolution,
+        quality,
+    )
     try:
+        # No media option at all means a text-only call: the request omits
+        # estimated_media entirely rather than posting an all-null object.
+        estimated_media = (
+            MediaUsage(
+                image_count=image_count,
+                generation_count=generation_count,
+                video_seconds=video_seconds,
+                audio_seconds=audio_seconds,
+                input_characters=input_characters,
+                resolution=resolution,
+                quality=quality,
+                is_estimated=is_estimated,
+            )
+            if is_estimated or any(value is not None for value in quantities)
+            else None
+        )
         request = BudgetCheckRequest(
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,
+            estimated_media=estimated_media,
             fallback_providers=providers,
             fallback_models=models,
             agent_run_id=agent_run_id,
@@ -511,8 +601,8 @@ def check(
                 code="invalid_budget_check_request",
                 message="The budget check request is invalid.",
                 hint=(
-                    "Check model and agent run id lengths and use no more than "
-                    "eight fallbacks."
+                    "Check model, agent run id, and media variant lengths and use "
+                    "no more than eight fallbacks."
                 ),
             ),
             semantic=ErrorSemantic.USAGE,
@@ -649,6 +739,24 @@ def confirm(
         int,
         typer.Option("--audio-output-tokens", min=0, max=100_000_000),
     ] = 0,
+    image_input_tokens: Annotated[
+        int,
+        typer.Option(
+            "--image-input-tokens",
+            min=0,
+            max=100_000_000,
+            help="Image input tokens, already counted within --input-tokens.",
+        ),
+    ] = 0,
+    image_output_tokens: Annotated[
+        int,
+        typer.Option(
+            "--image-output-tokens",
+            min=0,
+            max=100_000_000,
+            help="Image output tokens, already counted within --output-tokens.",
+        ),
+    ] = 0,
     accepted_prediction_tokens: Annotated[
         int,
         typer.Option("--accepted-prediction-tokens", min=0, max=100_000_000),
@@ -714,6 +822,8 @@ def confirm(
             reasoning_tokens=reasoning_tokens,
             audio_input_tokens=audio_input_tokens,
             audio_output_tokens=audio_output_tokens,
+            image_input_tokens=image_input_tokens,
+            image_output_tokens=image_output_tokens,
             accepted_prediction_tokens=accepted_prediction_tokens,
             rejected_prediction_tokens=rejected_prediction_tokens,
             tool_use_input_tokens=tool_use_input_tokens,

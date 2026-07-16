@@ -440,6 +440,14 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "fallback_providers",
                     "fallback_models",
                     "agent_run_id",
+                    "image_count",
+                    "generation_count",
+                    "video_seconds",
+                    "audio_seconds",
+                    "input_characters",
+                    "resolution",
+                    "quality",
+                    "is_estimated",
                 },
                 {
                     "reservation_id",
@@ -457,6 +465,8 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "reasoning_tokens",
                     "audio_input_tokens",
                     "audio_output_tokens",
+                    "image_input_tokens",
+                    "image_output_tokens",
                     "accepted_prediction_tokens",
                     "rejected_prediction_tokens",
                     "tool_use_input_tokens",
@@ -494,9 +504,11 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                         "reasoning_tokens": 6,
                         "audio_input_tokens": 7,
                         "audio_output_tokens": 8,
-                        "accepted_prediction_tokens": 9,
-                        "rejected_prediction_tokens": 10,
-                        "tool_use_input_tokens": 11,
+                        "image_input_tokens": 9,
+                        "image_output_tokens": 10,
+                        "accepted_prediction_tokens": 11,
+                        "rejected_prediction_tokens": 12,
+                        "tool_use_input_tokens": 13,
                         "is_estimated": True,
                     },
                 ),
@@ -555,9 +567,11 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "reasoning_tokens": 6,
                     "audio_input_tokens": 7,
                     "audio_output_tokens": 8,
-                    "accepted_prediction_tokens": 9,
-                    "rejected_prediction_tokens": 10,
-                    "tool_use_input_tokens": 11,
+                    "image_input_tokens": 9,
+                    "image_output_tokens": 10,
+                    "accepted_prediction_tokens": 11,
+                    "rejected_prediction_tokens": 12,
+                    "tool_use_input_tokens": 13,
                     "is_estimated": True,
                 },
             },
@@ -1172,6 +1186,90 @@ def test_budget_check_puts_agent_run_id_on_the_wire_only_when_supplied(
     assert response_queue == []
 
 
+@pytest.mark.parametrize(
+    ("arguments", "expected_media"),
+    [
+        ({}, None),
+        (
+            {"video_seconds": 8.5, "generation_count": 1},
+            {"video_seconds": 8.5, "generation_count": 1, "is_estimated": False},
+        ),
+        (
+            {
+                "image_count": 2,
+                "resolution": "1024x1024",
+                "quality": "hd",
+                "is_estimated": True,
+            },
+            {
+                "image_count": 2,
+                "resolution": "1024x1024",
+                "quality": "hd",
+                "is_estimated": True,
+            },
+        ),
+    ],
+)
+def test_budget_check_puts_estimated_media_on_the_wire_only_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: dict[str, Any],
+    expected_media: dict[str, Any] | None,
+) -> None:
+    """A text-only call keeps today's body; a media call carries its quantities."""
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, response_queue = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=CHECK_RESPONSE)],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {
+            "estimated_input_tokens": 1200,
+            "model": "gpt-5",
+            "provider": "openai",
+            **arguments,
+        },
+    )
+
+    assert result.structuredContent["ok"] is True
+    (_, _, _, body) = _wire_requests(requests)[0]
+    if expected_media is None:
+        assert "estimated_media" not in body
+    else:
+        assert body["estimated_media"] == expected_media
+    assert response_queue == []
+
+
+def test_budget_check_rejects_an_out_of_contract_media_quantity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Media bounds are advertised and enforced before any HTTP call."""
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, response_queue = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {
+            "estimated_input_tokens": 1200,
+            "model": "gpt-5",
+            "provider": "openai",
+            "image_count": -1,
+        },
+    )
+
+    assert result.isError is True
+    assert requests == []
+    assert response_queue == []
+
+
 def test_budget_check_honors_exactly_one_429_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1268,6 +1366,8 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
                     "reasoning_tokens": 0,
                     "audio_input_tokens": 0,
                     "audio_output_tokens": 0,
+                    "image_input_tokens": 0,
+                    "image_output_tokens": 0,
                     "accepted_prediction_tokens": 0,
                     "rejected_prediction_tokens": 0,
                     "tool_use_input_tokens": 0,
