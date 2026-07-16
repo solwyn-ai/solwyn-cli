@@ -1,25 +1,13 @@
 # Solwyn CLI
 
-The command-line client for Solwyn. This repository is private; the CLI is distributed through the published `solwyn-cli` package.
+The command-line client for Solwyn. This repository is private while the first release is prepared.
 
 ## Installation
 
-Install Solwyn CLI from PyPI with your preferred tool:
+Solwyn CLI is not published yet. Before the first release, install it from a local checkout:
 
 ```console
-uv tool install solwyn-cli
-solwyn --version
-```
-
-```console
-pipx install solwyn-cli
-solwyn --version
-```
-
-You can also install it with plain `pip`:
-
-```console
-pip install solwyn-cli
+uv tool install .
 solwyn --version
 ```
 
@@ -34,13 +22,6 @@ uv run solwyn-cli --version
 ```
 
 Both executable names run the same CLI. The `solwyn-cli` alias exists for compatibility with the package name.
-
-To install the CLI from a local checkout for development, use:
-
-```console
-uv tool install .
-solwyn --version
-```
 
 ## Trust posture
 
