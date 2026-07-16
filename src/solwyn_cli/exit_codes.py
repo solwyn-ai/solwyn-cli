@@ -49,7 +49,7 @@ def exit_code_for_error(
     if isinstance(error, AuthError):
         return ExitCode.AUTH_ERROR
     if isinstance(error, ApiError):
-        if error.status_code == 401:
+        if error.status_code in {401, 403}:
             return ExitCode.AUTH_ERROR
         if error.status_code == 404:
             return ExitCode.NOT_FOUND

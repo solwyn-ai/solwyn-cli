@@ -59,6 +59,83 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/providers/breaker-reports": {
+      "post": {
+        "tags": [
+          "health",
+          "providers"
+        ],
+        "summary": "Ingest Breaker Report",
+        "description": "Accept one advisory SDK breaker snapshot for a project/provider instance.",
+        "operationId": "ingest_breaker_report_api_v1_projects__project_id__providers_breaker_reports_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakerStateReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakerReportAccepted"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only API key cannot report breaker state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Ingest Breaker Report Api V1 Projects  Project Id  Providers Breaker Reports Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/providers": {
       "get": {
         "tags": [
@@ -95,6 +172,74 @@
                     "$ref": "#/components/schemas/ProviderHealthResponse"
                   },
                   "title": "Response Provider Health Api V1 Projects  Project Id  Providers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/providers/failovers": {
+      "get": {
+        "tags": [
+          "health",
+          "providers"
+        ],
+        "summary": "Provider Failovers",
+        "description": "Group provider/model failovers by their requested and served identity.",
+        "operationId": "provider_failovers_api_v1_projects__project_id__providers_failovers_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "type": "string",
+              "default": "7d",
+              "title": "Range"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderFailoverResponse"
+                  },
+                  "title": "Response Provider Failovers Api V1 Projects  Project Id  Providers Failovers Get"
                 }
               }
             }
@@ -823,6 +968,24 @@
               }
             }
           },
+          "403": {
+            "description": "Read-only API key cannot perform budget enforcement writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Budget Check Api V1 Budgets Check Post"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Unknown model or request validation error",
             "content": {
@@ -870,6 +1033,24 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "Read-only API key cannot confirm budget reservations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Budget Confirm Api V1 Budgets Confirm Post"
+                }
+              }
+            }
           },
           "422": {
             "description": "Unknown served model or request validation error",
@@ -1964,13 +2145,285 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/costs/priced-models": {
+      "get": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "List Priced Models",
+        "description": "List exact generated first-party targets that runtime pricing can bill.",
+        "operationId": "list_priced_models_api_v1_projects__project_id__costs_priced_models_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricedModelsResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/costs/simulate": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Simulate Costs",
+        "description": "Replay priced served usage against one exact target at current rates.",
+        "operationId": "simulate_costs_api_v1_projects__project_id__costs_simulate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostSimulationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostSimulationResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated or quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/costs/drift": {
+      "get": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Cost Estimate Drift",
+        "description": "Expose stored actual-minus-estimated drift for a bounded window.",
+        "operationId": "cost_estimate_drift_api_v1_projects__project_id__costs_drift_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostDriftResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated or quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/costs/events": {
       "get": {
         "tags": [
           "costs"
         ],
         "summary": "List Cost Events",
-        "description": "Paginated raw cost events for a project.",
+        "description": "Paginated raw cost events for a project.\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
         "operationId": "list_cost_events_api_v1_projects__project_id__costs_events_get",
         "security": [
           {
@@ -2040,6 +2493,181 @@
               ],
               "title": "Provider"
             }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Modality"
+            }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CallStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "service_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "default",
+                    "flex",
+                    "scale",
+                    "priority",
+                    "standard",
+                    "optimized"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Tier"
+            }
+          },
+          {
+            "name": "provider_region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Region"
+            }
+          },
+          {
+            "name": "is_model_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Model Fallback"
+            }
+          },
+          {
+            "name": "is_provider_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Provider Fallback"
+            }
+          },
+          {
+            "name": "failover_reason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FailoverReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Failover Reason"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
           }
         ],
         "responses": {
@@ -2082,7 +2710,7 @@
           "costs"
         ],
         "summary": "Query Costs",
-        "description": "Aggregated cost data for a project (D15).",
+        "description": "Aggregated cost data for a project (D15).\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
         "operationId": "query_costs_api_v1_projects__project_id__costs_get",
         "security": [
           {
@@ -2150,6 +2778,165 @@
               ],
               "title": "Provider"
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CallStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "service_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "default",
+                    "flex",
+                    "scale",
+                    "priority",
+                    "standard",
+                    "optimized"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Tier"
+            }
+          },
+          {
+            "name": "provider_region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Region"
+            }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "is_model_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Model Fallback"
+            }
+          },
+          {
+            "name": "is_provider_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Provider Fallback"
+            }
+          },
+          {
+            "name": "failover_reason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FailoverReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Failover Reason"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
           }
         ],
         "responses": {
@@ -2186,13 +2973,288 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/costs/total": {
+      "get": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Total Costs",
+        "description": "Return the server-authoritative real-spend total for an events window.\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
+        "operationId": "total_costs_api_v1_projects__project_id__costs_total_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "7d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Modality"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CallStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "service_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "default",
+                    "flex",
+                    "scale",
+                    "priority",
+                    "standard",
+                    "optimized"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Tier"
+            }
+          },
+          {
+            "name": "provider_region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Region"
+            }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "is_model_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Model Fallback"
+            }
+          },
+          {
+            "name": "is_provider_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Provider Fallback"
+            }
+          },
+          {
+            "name": "failover_reason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FailoverReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Failover Reason"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostTotalResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated or quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/costs/export": {
       "get": {
         "tags": [
           "costs"
         ],
         "summary": "Export Costs Csv",
-        "description": "Export cost data as CSV — raw streaming or aggregated depending on group_by.",
+        "description": "Export cost data as CSV or NDJSON, raw or aggregated by group_by.\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
         "operationId": "export_costs_csv_api_v1_projects__project_id__costs_export_get",
         "security": [
           {
@@ -2207,6 +3269,20 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
             }
           },
           {
@@ -2266,14 +3342,196 @@
               ],
               "title": "Provider"
             }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Modality"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CallStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "service_tier",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "default",
+                    "flex",
+                    "scale",
+                    "priority",
+                    "standard",
+                    "optimized"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Tier"
+            }
+          },
+          {
+            "name": "provider_region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Region"
+            }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "is_model_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Model Fallback"
+            }
+          },
+          {
+            "name": "is_provider_fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Provider Fallback"
+            }
+          },
+          {
+            "name": "failover_reason",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FailoverReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Failover Reason"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Cost export stream",
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -2313,7 +3571,7 @@
             "application/json": {
               "schema": {
                 "items": {
-                  "$ref": "#/components/schemas/MetadataEvent"
+                  "$ref": "#/components/schemas/IngestMetadataEvent"
                 },
                 "type": "array",
                 "title": "Events"
@@ -2373,6 +3631,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only API key cannot ingest metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Metadata Ingest Api V1 Metadata Ingest Post"
                 }
               }
             }
@@ -3077,7 +4353,7 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
           }
         ]
       }
@@ -3839,6 +5115,56 @@
               "default": "30d",
               "title": "Range"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
           }
         ],
         "responses": {
@@ -3848,6 +5174,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AlertEventListResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated custom window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
                 }
               }
             }
@@ -3893,6 +5229,56 @@
               "default": "30d",
               "title": "Range"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
           }
         ],
         "responses": {
@@ -3902,6 +5288,592 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AlertEventListResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated custom window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/alert-events/export": {
+      "get": {
+        "tags": [
+          "alert-events"
+        ],
+        "summary": "Export Project Alert Events",
+        "operationId": "export_project_alert_events_api_v1_projects__project_id__alert_events_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert-event export stream",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/alert-events/export": {
+      "get": {
+        "tags": [
+          "alert-events"
+        ],
+        "summary": "Export Account Alert Events",
+        "operationId": "export_account_alert_events_api_v1_account_alert_events_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert-event export stream",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/audit-events": {
+      "get": {
+        "tags": [
+          "audit-events"
+        ],
+        "summary": "List Account Audit Events",
+        "description": "List the authenticated member's account audit trail, newest first.",
+        "operationId": "list_account_audit_events_api_v1_account_audit_events_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "365d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/spend-control-attestation": {
+      "get": {
+        "tags": [
+          "attestations"
+        ],
+        "summary": "Get Project Spend Control Attestation",
+        "operationId": "get_project_spend_control_attestation_api_v1_projects__project_id__spend_control_attestation_get",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "type": "string",
+              "default": "json",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "365d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spend-control attestation export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendControlAttestation"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated export or range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/spend-control-attestation": {
+      "get": {
+        "tags": [
+          "attestations"
+        ],
+        "summary": "Get Account Spend Control Attestation",
+        "operationId": "get_account_spend_control_attestation_api_v1_account_spend_control_attestation_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "type": "string",
+              "default": "json",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "365d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spend-control attestation export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendControlAttestation"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated export or range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
                 }
               }
             }
@@ -3956,6 +5928,37 @@
               "default": "30d",
               "title": "Range"
             }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "last_seen_at",
+                "total_cost",
+                "total_calls"
+              ],
+              "type": "string",
+              "default": "last_seen_at",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -3965,6 +5968,63 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRunListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/agent-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "agent-runs"
+        ],
+        "summary": "Get Project Agent Run",
+        "description": "Return one storage-id-addressed run aggregate for an authorized project.",
+        "operationId": "get_project_agent_run_api_v1_projects__project_id__agent_runs__run_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunEntry"
                 }
               }
             }
@@ -5849,6 +7909,10 @@
             "type": "number",
             "title": "Total Cost"
           },
+          "total_denied_cost": {
+            "type": "number",
+            "title": "Total Denied Cost"
+          },
           "total_input_tokens": {
             "type": "integer",
             "title": "Total Input Tokens"
@@ -5868,6 +7932,7 @@
           "last_seen_at",
           "total_calls",
           "total_cost",
+          "total_denied_cost",
           "total_input_tokens",
           "total_output_tokens"
         ],
@@ -5882,12 +7947,29 @@
             },
             "type": "array",
             "title": "Runs"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "runs"
+          "runs",
+          "next_cursor",
+          "has_more"
         ],
         "title": "AgentRunListResponse"
       },
@@ -6018,6 +8100,11 @@
             },
             "type": "array",
             "title": "Linked Event Ids"
+          },
+          "metadata_json": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata Json"
           }
         },
         "type": "object",
@@ -6044,13 +8131,66 @@
             },
             "type": "array",
             "title": "Events"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "window": {
+            "$ref": "#/components/schemas/AlertEventWindow"
           }
         },
         "type": "object",
         "required": [
-          "events"
+          "events",
+          "next_cursor",
+          "window"
         ],
         "title": "AlertEventListResponse"
+      },
+      "AlertEventWindow": {
+        "properties": {
+          "requested_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested From"
+          },
+          "requested_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested To"
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective To"
+          },
+          "retention_clamped": {
+            "type": "boolean",
+            "title": "Retention Clamped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requested_from",
+          "requested_to",
+          "effective_from",
+          "effective_to",
+          "retention_clamped"
+        ],
+        "title": "AlertEventWindow"
       },
       "AlertPreviewItem": {
         "properties": {
@@ -6063,10 +8203,16 @@
                 "$ref": "#/components/schemas/ForecastOverrunConfig"
               },
               {
+                "$ref": "#/components/schemas/RunawayRunConfig"
+              },
+              {
                 "$ref": "#/components/schemas/DailyAnomalyConfig"
               },
               {
                 "$ref": "#/components/schemas/UnitCostAnomalyConfig"
+              },
+              {
+                "$ref": "#/components/schemas/ScopedBudgetConfig"
               }
             ],
             "title": "Rule"
@@ -6215,6 +8361,726 @@
           "expiry_configurable"
         ],
         "title": "ApiKeyCapabilities"
+      },
+      "AttestationAccountSpendAlert": {
+        "properties": {
+          "evidence_available": {
+            "type": "boolean",
+            "title": "Evidence Available"
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured"
+          },
+          "spend_threshold_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spend Threshold Usd"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channel Ids"
+          },
+          "coverage_note": {
+            "type": "string",
+            "title": "Coverage Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_available",
+          "configured",
+          "spend_threshold_usd",
+          "enabled",
+          "snoozed_until",
+          "channel_ids",
+          "coverage_note"
+        ],
+        "title": "AttestationAccountSpendAlert"
+      },
+      "AttestationAlertEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "rule_key": {
+            "type": "string",
+            "title": "Rule Key"
+          },
+          "emitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Emitted At"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "rule_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Type"
+          },
+          "value_at_event": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value At Event"
+          },
+          "threshold_at_event": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold At Event"
+          },
+          "period_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Key"
+          },
+          "linked_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Linked Event Ids"
+          },
+          "metadata_json": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata Json"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "account_id",
+          "scope",
+          "rule_key",
+          "emitted_at",
+          "event_type",
+          "rule_type",
+          "value_at_event",
+          "threshold_at_event",
+          "period_key",
+          "linked_event_ids",
+          "metadata_json"
+        ],
+        "title": "AttestationAlertEvent"
+      },
+      "AttestationAlerts": {
+        "properties": {
+          "delivery_evidence_available": {
+            "type": "boolean",
+            "title": "Delivery Evidence Available"
+          },
+          "delivered_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered Count"
+          },
+          "coverage_note": {
+            "type": "string",
+            "title": "Coverage Note"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AttestationAlertEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_evidence_available",
+          "delivered_count",
+          "coverage_note",
+          "events"
+        ],
+        "title": "AttestationAlerts"
+      },
+      "AttestationAudit": {
+        "properties": {
+          "begins_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Begins At"
+          },
+          "coverage_note": {
+            "type": "string",
+            "title": "Coverage Note"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AttestationAuditEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "begins_at",
+          "coverage_note",
+          "events"
+        ],
+        "title": "AttestationAudit"
+      },
+      "AttestationAuditEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target_type": {
+            "type": "string",
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Detail"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "actor_user_id",
+          "action",
+          "target_type",
+          "target_id",
+          "detail",
+          "created_at"
+        ],
+        "title": "AttestationAuditEvent"
+      },
+      "AttestationBudget": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "budget_limit_usd": {
+            "type": "number",
+            "title": "Budget Limit Usd"
+          },
+          "budget_period": {
+            "type": "string",
+            "title": "Budget Period"
+          },
+          "budget_mode": {
+            "type": "string",
+            "title": "Budget Mode"
+          },
+          "sub_period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Period"
+          },
+          "sub_limit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Limit Usd"
+          },
+          "rules": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_name",
+          "archived",
+          "archived_at",
+          "budget_limit_usd",
+          "budget_period",
+          "budget_mode",
+          "sub_period",
+          "sub_limit_usd",
+          "rules"
+        ],
+        "title": "AttestationBudget"
+      },
+      "AttestationScope": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "account",
+              "project"
+            ],
+            "title": "Type"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "account_id",
+          "project_id"
+        ],
+        "title": "AttestationScope"
+      },
+      "AttestationSpendSummary": {
+        "properties": {
+          "real_spend_usd": {
+            "type": "number",
+            "title": "Real Spend Usd"
+          },
+          "real_call_count": {
+            "type": "integer",
+            "title": "Real Call Count"
+          },
+          "denied_spend_usd": {
+            "type": "number",
+            "title": "Denied Spend Usd"
+          },
+          "denial_count": {
+            "type": "integer",
+            "title": "Denial Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "real_spend_usd",
+          "real_call_count",
+          "denied_spend_usd",
+          "denial_count"
+        ],
+        "title": "AttestationSpendSummary"
+      },
+      "AttestationSubscription": {
+        "properties": {
+          "current_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Tier"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttestationSubscriptionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/AttestationAuditEvent"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "coverage_note": {
+            "type": "string",
+            "title": "Coverage Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "current_tier",
+          "snapshot",
+          "changes",
+          "coverage_note"
+        ],
+        "title": "AttestationSubscription"
+      },
+      "AttestationSubscriptionSnapshot": {
+        "properties": {
+          "tier": {
+            "type": "string",
+            "title": "Tier"
+          },
+          "billing_interval": {
+            "type": "string",
+            "title": "Billing Interval"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "pending_update_exists": {
+            "type": "boolean",
+            "title": "Pending Update Exists"
+          },
+          "current_period_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Current Period Start"
+          },
+          "current_period_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Current Period End"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean",
+            "title": "Cancel At Period End"
+          },
+          "pause_collection_exists": {
+            "type": "boolean",
+            "title": "Pause Collection Exists"
+          },
+          "grace_period_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Period Until"
+          },
+          "raw_status_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Raw Status At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tier",
+          "billing_interval",
+          "status",
+          "pending_update_exists",
+          "current_period_start",
+          "current_period_end",
+          "cancel_at_period_end",
+          "pause_collection_exists",
+          "grace_period_until",
+          "raw_status_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AttestationSubscriptionSnapshot"
+      },
+      "AttestationWindow": {
+        "properties": {
+          "requested_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested From"
+          },
+          "requested_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested To"
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective To"
+          },
+          "retention_clamped": {
+            "type": "boolean",
+            "title": "Retention Clamped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requested_from",
+          "requested_to",
+          "effective_from",
+          "effective_to",
+          "retention_clamped"
+        ],
+        "title": "AttestationWindow"
+      },
+      "AuditEventEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "actor_user_id": {
+            "type": "string",
+            "title": "Actor User Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target_type": {
+            "type": "string",
+            "title": "Target Type"
+          },
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Detail"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "actor_user_id",
+          "action",
+          "target_type",
+          "target_id",
+          "created_at"
+        ],
+        "title": "AuditEventEntry"
+      },
+      "AuditEventListResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventEntry"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "events",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "AuditEventListResponse"
       },
       "BaselineResult": {
         "properties": {
@@ -6692,6 +9558,66 @@
         ],
         "title": "BillingValidationResponse"
       },
+      "BreakerReportAccepted": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BreakerReportAccepted"
+      },
+      "BreakerStateReport": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName",
+            "description": "Provider identifier"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CircuitState",
+            "description": "Current SDK circuit-breaker state"
+          },
+          "failure_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failure Count",
+            "description": "Current breaker failure count"
+          },
+          "success_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Success Count",
+            "description": "Current breaker success count"
+          },
+          "reported_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reported At",
+            "description": "Wall-clock time the SDK took the snapshot"
+          },
+          "sdk_instance_id": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Sdk Instance Id",
+            "description": "Bounded SDK instance identifier used to isolate Redis snapshots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "state",
+          "failure_count",
+          "success_count",
+          "reported_at",
+          "sdk_instance_id"
+        ],
+        "title": "BreakerStateReport",
+        "description": "One SDK instance's current provider circuit-breaker snapshot."
+      },
       "BudgetCapabilities": {
         "properties": {
           "allowed_modes": {
@@ -6754,6 +9680,30 @@
             "$ref": "#/components/schemas/ProviderName",
             "description": "Target provider"
           },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "embedding"
+            ],
+            "title": "Modality",
+            "description": "Call modality of the pending request. Defaults to 'text' so pre-modality SDKs omit it safely (API-first). The pricing card's unit selects the billing basis; core bills text tokens only until per-modality cards land.",
+            "default": "text"
+          },
+          "estimated_media": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaUsage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated non-text billing quantities for the pending call (image/video/audio/TTS). None for text-only calls; each quantity inside is None when unobservable pre-flight. The media analog of estimated_input_tokens — the server prices the reservation off it."
+          },
           "fallback_providers": {
             "items": {
               "$ref": "#/components/schemas/ProviderName"
@@ -6771,6 +9721,32 @@
             "maxItems": 8,
             "title": "Fallback Models",
             "description": "Failover models aligned element-for-element with fallback_providers"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id",
+            "description": "Optional caller-supplied agent run identifier for per-run budget enforcement. Omitted requests retain project-only behavior."
+          },
+          "failover_directive_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failover Directive Version",
+            "description": "Explicit opt-in to the version 1 server failover directive. Omitted requests retain the legacy response shape."
           }
         },
         "additionalProperties": false,
@@ -6855,6 +9831,17 @@
             ],
             "title": "Price Hints",
             "description": "Server-provided RELATIVE price signal per provider for cost routing; SDK never computes price. Schema-only — left None this release."
+          },
+          "failover_directive": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailoverDirective"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Versioned server policy for SDK-managed failover. Present only when the request opts in with failover_directive_version."
           }
         },
         "additionalProperties": false,
@@ -6887,6 +9874,19 @@
             "$ref": "#/components/schemas/ProviderName",
             "description": "Provider that actually served the call (required)"
           },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "embedding"
+            ],
+            "title": "Modality",
+            "description": "Call modality of the served call. Defaults to 'text' so pre-modality SDKs omit it safely (API-first). The pricing card's unit settles the budget counter on the right basis; core bills text tokens only until per-modality cards land.",
+            "default": "text"
+          },
           "is_provider_fallback": {
             "type": "boolean",
             "title": "Is Provider Fallback",
@@ -6902,6 +9902,17 @@
           "token_details": {
             "$ref": "#/components/schemas/TokenDetails",
             "description": "Actual token breakdown from the provider adapter"
+          },
+          "media_usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaUsage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Actual observable non-text billing quantities for the served call. None for text-only calls; each quantity inside is None when unobservable. The server settles the budget counter off the quantity its pricing-card unit selects."
           },
           "provider_region": {
             "anyOf": [
@@ -7067,10 +10078,16 @@
                   "$ref": "#/components/schemas/ForecastOverrunStateResponse"
                 },
                 {
+                  "$ref": "#/components/schemas/RunawayRunStateResponse"
+                },
+                {
                   "$ref": "#/components/schemas/DailyAnomalyStateResponse"
                 },
                 {
                   "$ref": "#/components/schemas/UnitCostAnomalyStateResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/ScopedBudgetStateResponse"
                 }
               ],
               "discriminator": {
@@ -7079,6 +10096,8 @@
                   "budget_threshold": "#/components/schemas/ThresholdStateResponse",
                   "daily_anomaly": "#/components/schemas/DailyAnomalyStateResponse",
                   "forecast_overrun": "#/components/schemas/ForecastOverrunStateResponse",
+                  "runaway_run": "#/components/schemas/RunawayRunStateResponse",
+                  "scoped_budget": "#/components/schemas/ScopedBudgetStateResponse",
                   "unit_cost_anomaly": "#/components/schemas/UnitCostAnomalyStateResponse"
                 }
               }
@@ -7204,10 +10223,16 @@
                   "$ref": "#/components/schemas/ForecastOverrunConfig"
                 },
                 {
+                  "$ref": "#/components/schemas/RunawayRunConfig"
+                },
+                {
                   "$ref": "#/components/schemas/DailyAnomalyConfig"
                 },
                 {
                   "$ref": "#/components/schemas/UnitCostAnomalyConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/ScopedBudgetConfig"
                 }
               ]
             },
@@ -7404,6 +10429,75 @@
         ],
         "title": "CheckoutResponse"
       },
+      "CircuitState": {
+        "type": "string",
+        "enum": [
+          "closed",
+          "open",
+          "half_open"
+        ],
+        "title": "CircuitState",
+        "description": "Circuit breaker states for provider health tracking."
+      },
+      "CostDriftResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "range": {
+            "type": "string",
+            "title": "Range"
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
+          },
+          "actual_total": {
+            "type": "number",
+            "title": "Actual Total"
+          },
+          "estimate_total": {
+            "type": "number",
+            "title": "Estimate Total"
+          },
+          "difference": {
+            "type": "number",
+            "title": "Difference"
+          },
+          "included_event_count": {
+            "type": "integer",
+            "title": "Included Event Count"
+          },
+          "missing_estimate_count": {
+            "type": "integer",
+            "title": "Missing Estimate Count"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DriftGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "caveats": {
+            "$ref": "#/components/schemas/DriftCaveats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "range",
+          "window",
+          "actual_total",
+          "estimate_total",
+          "difference",
+          "included_event_count",
+          "missing_estimate_count",
+          "groups",
+          "caveats"
+        ],
+        "title": "CostDriftResponse"
+      },
       "CostEventResponse": {
         "properties": {
           "id": {
@@ -7421,6 +10515,18 @@
           "model": {
             "type": "string",
             "title": "Model"
+          },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "embedding"
+            ],
+            "title": "Modality",
+            "default": "text"
           },
           "provider_region": {
             "anyOf": [
@@ -7483,9 +10589,64 @@
             ],
             "title": "Reasoning Tokens"
           },
+          "audio_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Input Tokens"
+          },
+          "audio_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Output Tokens"
+          },
+          "image_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Input Tokens"
+          },
+          "image_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Output Tokens"
+          },
           "cost": {
             "type": "number",
             "title": "Cost"
+          },
+          "estimated_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost"
           },
           "is_unpriced": {
             "type": "boolean",
@@ -7496,6 +10657,30 @@
             "type": "boolean",
             "title": "Is Estimated",
             "default": false
+          },
+          "media": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
           },
           "status": {
             "type": "string",
@@ -7528,6 +10713,7 @@
           "input_tokens",
           "output_tokens",
           "cost",
+          "estimated_cost",
           "status",
           "is_model_fallback",
           "latency_ms",
@@ -7559,20 +10745,31 @@
           "has_more": {
             "type": "boolean",
             "title": "Has More"
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
           }
         },
         "type": "object",
         "required": [
           "items",
           "next_cursor",
-          "has_more"
+          "has_more",
+          "window"
         ],
         "title": "CostEventsResponse"
       },
       "CostGroup": {
         "properties": {
           "group_key": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Group Key"
           },
           "provider": {
@@ -7585,6 +10782,17 @@
               }
             ],
             "title": "Provider"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
           },
           "total_cost": {
             "type": "number",
@@ -7653,6 +10861,9 @@
                 "type": "null"
               }
             ]
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
           }
         },
         "type": "object",
@@ -7660,9 +10871,294 @@
           "project_id",
           "range",
           "group_by",
-          "groups"
+          "groups",
+          "window"
         ],
         "title": "CostQueryResponse"
+      },
+      "CostSimulationRequest": {
+        "properties": {
+          "target_provider": {
+            "$ref": "#/components/schemas/ProviderName"
+          },
+          "target_model": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Target Model"
+          },
+          "target_region": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Region"
+          },
+          "target_service_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "default",
+                  "flex",
+                  "scale",
+                  "priority",
+                  "standard",
+                  "optimized"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service Tier"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_provider",
+          "target_model"
+        ],
+        "title": "CostSimulationRequest",
+        "description": "Exact current-rate target for replaying a bounded usage window."
+      },
+      "CostSimulationResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "range": {
+            "type": "string",
+            "title": "Range"
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CostSimulationTarget"
+          },
+          "baseline_actual_cost": {
+            "type": "number",
+            "title": "Baseline Actual Cost"
+          },
+          "simulated_cost": {
+            "type": "number",
+            "title": "Simulated Cost"
+          },
+          "delta_cost": {
+            "type": "number",
+            "title": "Delta Cost"
+          },
+          "scanned_event_count": {
+            "type": "integer",
+            "title": "Scanned Event Count"
+          },
+          "baseline_event_count": {
+            "type": "integer",
+            "title": "Baseline Event Count"
+          },
+          "included_event_count": {
+            "type": "integer",
+            "title": "Included Event Count"
+          },
+          "excluded_event_count": {
+            "type": "integer",
+            "title": "Excluded Event Count"
+          },
+          "excluded": {
+            "$ref": "#/components/schemas/SimulationExcludedCounts"
+          },
+          "caveats": {
+            "$ref": "#/components/schemas/SimulationCaveats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "range",
+          "window",
+          "target",
+          "baseline_actual_cost",
+          "simulated_cost",
+          "delta_cost",
+          "scanned_event_count",
+          "baseline_event_count",
+          "included_event_count",
+          "excluded_event_count",
+          "excluded",
+          "caveats"
+        ],
+        "title": "CostSimulationResponse"
+      },
+      "CostSimulationTarget": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "embedding"
+            ],
+            "title": "Modality"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "service_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "default",
+                  "flex",
+                  "scale",
+                  "priority",
+                  "standard",
+                  "optimized"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Tier"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "modality",
+          "region",
+          "service_tier"
+        ],
+        "title": "CostSimulationTarget"
+      },
+      "CostTotalResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "range": {
+            "type": "string",
+            "title": "Range"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "total_input_tokens": {
+            "type": "integer",
+            "title": "Total Input Tokens"
+          },
+          "total_output_tokens": {
+            "type": "integer",
+            "title": "Total Output Tokens"
+          },
+          "call_count": {
+            "type": "integer",
+            "title": "Call Count"
+          },
+          "unpriced_call_count": {
+            "type": "integer",
+            "title": "Unpriced Call Count"
+          },
+          "local_call_count": {
+            "type": "integer",
+            "title": "Local Call Count"
+          },
+          "savings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavingsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "range",
+          "total_cost",
+          "total_input_tokens",
+          "total_output_tokens",
+          "call_count",
+          "unpriced_call_count",
+          "local_call_count",
+          "window"
+        ],
+        "title": "CostTotalResponse"
+      },
+      "CostWindow": {
+        "properties": {
+          "requested_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested From"
+          },
+          "requested_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested To"
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective To"
+          },
+          "retention_clamped": {
+            "type": "boolean",
+            "title": "Retention Clamped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requested_from",
+          "requested_to",
+          "effective_from",
+          "effective_to",
+          "retention_clamped"
+        ],
+        "title": "CostWindow",
+        "description": "Requested and retention-effective lower-inclusive/upper-exclusive window."
       },
       "DailyAnomalyConfig": {
         "properties": {
@@ -7941,6 +11437,74 @@
         "title": "DiscordConfig",
         "description": "Discord incoming-webhook configuration."
       },
+      "DriftCaveats": {
+        "properties": {
+          "estimate_heuristic": {
+            "type": "string",
+            "title": "Estimate Heuristic",
+            "default": "server_side_input_equals_output"
+          },
+          "null_estimates_excluded": {
+            "type": "boolean",
+            "title": "Null Estimates Excluded",
+            "default": true
+          },
+          "unit_priced_and_unpriced_estimates_are_null": {
+            "type": "boolean",
+            "title": "Unit Priced And Unpriced Estimates Are Null",
+            "default": true
+          },
+          "denied_events_included": {
+            "type": "boolean",
+            "title": "Denied Events Included",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DriftCaveats",
+        "description": "How stored pre-flight estimates should be interpreted."
+      },
+      "DriftGroup": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "actual_cost": {
+            "type": "number",
+            "title": "Actual Cost"
+          },
+          "estimated_cost": {
+            "type": "number",
+            "title": "Estimated Cost"
+          },
+          "difference": {
+            "type": "number",
+            "title": "Difference"
+          },
+          "event_count": {
+            "type": "integer",
+            "title": "Event Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "actual_cost",
+          "estimated_cost",
+          "difference",
+          "event_count"
+        ],
+        "title": "DriftGroup",
+        "description": "Actual-minus-estimated totals for one collision-safe pricing pair."
+      },
       "EmailConfig": {
         "properties": {
           "enabled": {
@@ -8075,6 +11639,27 @@
         ],
         "title": "Error402Response",
         "description": "Union 402 response for endpoints that can return any 402 family.\n\nUse as ``responses={402: {\"model\": Error402Response, ...}}`` on gated\nendpoints that may raise more than one 402 family."
+      },
+      "FailoverDirective": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "1",
+            "title": "Version"
+          },
+          "failover_tuning_allowed": {
+            "type": "boolean",
+            "title": "Failover Tuning Allowed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "failover_tuning_allowed"
+        ],
+        "title": "FailoverDirective",
+        "description": "Versioned server policy for SDK-managed provider failover."
       },
       "FailoverReason": {
         "type": "string",
@@ -8330,6 +11915,255 @@
         ],
         "title": "IngestCapabilities"
       },
+      "IngestMetadataEvent": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Model",
+            "description": "LLM model identifier, VERBATIM as the provider reports it. For Bedrock this may be a plain id (amazon.nova-pro-v1:0), a geo-prefixed cross-region inference profile (us.anthropic....), or a full ARN — the 2048 bound is the AWS Converse modelId contract."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName",
+            "description": "LLM provider"
+          },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "embedding"
+            ],
+            "title": "Modality",
+            "description": "Call modality. Defaults to 'text' so pre-modality SDKs omit it safely (API-first). The pricing card's unit — not this label alone — selects the billing basis; core bills text tokens only until per-modality cards land.",
+            "default": "text"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Input Tokens",
+            "description": "Input token count"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Output Tokens",
+            "description": "Output token count"
+          },
+          "token_details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenDetails"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Full token breakdown from provider adapter"
+          },
+          "media_usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaUsage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observable non-text billing quantities (image/video/audio/TTS). None for text-only calls; each quantity inside is None when unobservable. The server's pricing-card unit selects which quantity prices the call."
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms",
+            "description": "End-to-end call latency in ms"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CallStatus",
+            "description": "Call outcome"
+          },
+          "is_model_fallback": {
+            "type": "boolean",
+            "title": "Is Model Fallback",
+            "description": "Whether this call used fallback_model after the primary failed"
+          },
+          "is_provider_fallback": {
+            "type": "boolean",
+            "title": "Is Provider Fallback",
+            "description": "served provider != requested provider",
+            "default": false
+          },
+          "requested_provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderName"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Requested primary provider when failover occurred"
+          },
+          "requested_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Model",
+            "description": "Requested primary model when failover occurred"
+          },
+          "failover_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailoverReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the router advanced past the requested target"
+          },
+          "failover_error_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failover Error Class",
+            "description": "type(exc).__name__ ONLY — never str(exc). Pattern-validated server-side (D7): the privacy allowlist admits this column only because it cannot carry an exception message body."
+          },
+          "attempt_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempt Index",
+            "description": "0=primary, 1=first fallback",
+            "default": 0
+          },
+          "call_id": {
+            "type": "string",
+            "maxLength": 36,
+            "title": "Call Id",
+            "description": "uuid per intercepted call; join key for cache-hit spend reconciliation. Always present on the wire — it is NOT content. max_length=36 (D7) bounds the DB column and the Redis dedup key."
+          },
+          "possibly_succeeded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possibly Succeeded",
+            "description": "post-send-ambiguous abort flag for reconciliation (wire-only; not persisted — D1)."
+          },
+          "service_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Tier",
+            "description": "Service tier echoed by the provider response, VERBATIM (bounded plain str, mirroring the SDK — any provider echo rides telemetry). None when providers omit it. Values outside the known ServiceTier set reject PER EVENT in the ingest service (unknown_service_tier), never the whole batch. Bedrock tiers reprice via multipliers; other providers store it for post-launch tier-based repricing."
+          },
+          "sdk_instance_id": {
+            "type": "string",
+            "title": "Sdk Instance Id",
+            "description": "Unique SDK instance identifier"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "When the LLM call completed (UTC)"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id",
+            "description": "Optional caller-supplied agent run identifier. When omitted the API falls back to an auto-id `_auto-{sdk_instance_id}-{date}` so calls from pre-P6 SDKs are still attributable to a run."
+          },
+          "agent_run_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Name",
+            "description": "Optional human-readable name for the run. When the run is being created (no prior row with this id), defaults to ``agent_run_id``."
+          },
+          "provider_region": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Region",
+            "description": "Cloud region of the endpoint that served the call (e.g. 'us-east-1' for Bedrock, whose pricing is keyed per model AND region). None for providers without regional pricing."
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "Explicit customer-supplied metadata. String mapping shape is envelope-validated; bounded tag policy failures are returned in the 202 rejected list."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "provider",
+          "input_tokens",
+          "output_tokens",
+          "latency_ms",
+          "status",
+          "is_model_fallback",
+          "call_id",
+          "sdk_instance_id",
+          "timestamp"
+        ],
+        "title": "IngestMetadataEvent",
+        "description": "Ingest request item whose tag bounds produce per-event dispositions.\n\nEvery non-tag field inherits the strict shared/SDK contract. Tags retain a\nstrict plaintext mapping at the envelope while their 10/64/256 policy is\napplied by the ingest service, allowing one bad tag event to reject without\nfailing well-formed siblings."
+      },
       "IngestRejection": {
         "properties": {
           "index": {
@@ -8368,7 +12202,10 @@
         "type": "string",
         "enum": [
           "unknown_model",
-          "unknown_service_tier"
+          "unknown_service_tier",
+          "invalid_tags",
+          "tag_cardinality_exceeded",
+          "unsupported_modality"
         ],
         "title": "IngestRejectionCode",
         "description": "Closed enum of per-event rejection codes.\n\nAlso the label set for ``solwyn_ingest_event_rejected_total{code}`` —\nkeeping it closed keeps that metric's cardinality bounded."
@@ -8663,6 +12500,10 @@
             "type": "string",
             "title": "Email"
           },
+          "email_verified": {
+            "type": "boolean",
+            "title": "Email Verified"
+          },
           "first_name": {
             "type": "string",
             "title": "First Name"
@@ -8705,6 +12546,7 @@
         "required": [
           "user_id",
           "email",
+          "email_verified",
           "first_name",
           "marketing_emails_subscribed",
           "account_id",
@@ -8713,6 +12555,200 @@
           "alert_email_override"
         ],
         "title": "MeResponse"
+      },
+      "MediaBreakdown": {
+        "properties": {
+          "image_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Count"
+          },
+          "generation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Count"
+          },
+          "video_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Seconds"
+          },
+          "audio_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Seconds"
+          },
+          "input_characters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Characters"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality"
+          },
+          "is_estimated": {
+            "type": "boolean",
+            "title": "Is Estimated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "MediaBreakdown",
+        "description": "Non-text billing quantities for one cost event.\n\nNullable mirror of ``cost_events.media_details_json``: observable counts,\nfractional durations, variant selectors, and the SDK-side ``is_estimated``\nmedia-count provenance marker. Present only for calls that carried\nMediaUsage; each field is itself None when that quantity was unobservable\nfor the call. Counts/selectors only — never media content."
+      },
+      "MediaUsage": {
+        "properties": {
+          "image_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Count",
+            "description": "Number of images generated/edited on the call"
+          },
+          "generation_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Count",
+            "description": "per_video / per_generation / per_song billing units"
+          },
+          "video_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Seconds",
+            "description": "Video duration billed per second"
+          },
+          "audio_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Seconds",
+            "description": "Audio duration: whole seconds from the provider's usage block (Whisper usage.seconds is an integer whole-second value); float to admit fractional sources"
+          },
+          "input_characters": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Characters",
+            "description": "TTS input length — measured length only, computed inside the firewall"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution",
+            "description": "Image resolution variant selector (e.g. 1024x1024)"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality",
+            "description": "Image quality variant selector (e.g. standard/hd)"
+          },
+          "is_estimated": {
+            "type": "boolean",
+            "title": "Is Estimated",
+            "description": "True when these quantities are SDK-side estimates rather than provider-reported measurements (count-provenance marker).",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MediaUsage",
+        "description": "Observable non-text billing quantities, measured inside the SDK firewall.\n\nBilling rule: the SDK sends EVERY observable billing basis it can measure\nfrom the request/response — WITHOUT ever reading prompt\nor media content — and the SERVER's pricing-card unit (matched against the\ndataset card's ``PriceVariant`` grid) selects WHICH single quantity prices\nthe call. A quantity is ``None`` when it is unobservable for that call —\nnever zero-as-default — so an unpriceable call routes to the server's\n``is_unpriced`` lane instead of being billed as zero.\n\nWhy this model exists: OpenAI-compatible/Together image endpoints return\n``usage: null``, so token counts are absent; for those calls these\nrequest-derived quantities are the ONLY billing signal (verified against live\nresponses, 2026-07-10)."
       },
       "MemberOut": {
         "properties": {
@@ -8760,216 +12796,6 @@
           "joined_at"
         ],
         "title": "MemberOut"
-      },
-      "MetadataEvent": {
-        "properties": {
-          "model": {
-            "type": "string",
-            "maxLength": 2048,
-            "title": "Model",
-            "description": "LLM model identifier, VERBATIM as the provider reports it. For Bedrock this may be a plain id (amazon.nova-pro-v1:0), a geo-prefixed cross-region inference profile (us.anthropic....), or a full ARN — the 2048 bound is the AWS Converse modelId contract."
-          },
-          "provider": {
-            "$ref": "#/components/schemas/ProviderName",
-            "description": "LLM provider"
-          },
-          "input_tokens": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Input Tokens",
-            "description": "Input token count"
-          },
-          "output_tokens": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Output Tokens",
-            "description": "Output token count"
-          },
-          "token_details": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TokenDetails"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Full token breakdown from provider adapter"
-          },
-          "latency_ms": {
-            "type": "number",
-            "title": "Latency Ms",
-            "description": "End-to-end call latency in ms"
-          },
-          "status": {
-            "$ref": "#/components/schemas/CallStatus",
-            "description": "Call outcome"
-          },
-          "is_model_fallback": {
-            "type": "boolean",
-            "title": "Is Model Fallback",
-            "description": "Whether this call used fallback_model after the primary failed"
-          },
-          "is_provider_fallback": {
-            "type": "boolean",
-            "title": "Is Provider Fallback",
-            "description": "served provider != requested provider",
-            "default": false
-          },
-          "requested_provider": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ProviderName"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Requested primary provider when failover occurred"
-          },
-          "requested_model": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2048
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requested Model",
-            "description": "Requested primary model when failover occurred"
-          },
-          "failover_reason": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/FailoverReason"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Why the router advanced past the requested target"
-          },
-          "failover_error_class": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64,
-                "pattern": "^[A-Za-z][A-Za-z0-9_.]*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failover Error Class",
-            "description": "type(exc).__name__ ONLY — never str(exc). Pattern-validated server-side (D7): the privacy allowlist admits this column only because it cannot carry an exception message body."
-          },
-          "attempt_index": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Attempt Index",
-            "description": "0=primary, 1=first fallback",
-            "default": 0
-          },
-          "call_id": {
-            "type": "string",
-            "maxLength": 36,
-            "title": "Call Id",
-            "description": "uuid per intercepted call; join key for cache-hit spend reconciliation. Always present on the wire — it is NOT content. max_length=36 (D7) bounds the DB column and the Redis dedup key."
-          },
-          "possibly_succeeded": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Possibly Succeeded",
-            "description": "post-send-ambiguous abort flag for reconciliation (wire-only; not persisted — D1)."
-          },
-          "service_tier": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Tier",
-            "description": "Service tier echoed by the provider response, VERBATIM (bounded plain str, mirroring the SDK — any provider echo rides telemetry). None when providers omit it. Values outside the known ServiceTier set reject PER EVENT in the ingest service (unknown_service_tier), never the whole batch. Bedrock tiers reprice via multipliers; other providers store it for post-launch tier-based repricing."
-          },
-          "sdk_instance_id": {
-            "type": "string",
-            "title": "Sdk Instance Id",
-            "description": "Unique SDK instance identifier"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Timestamp",
-            "description": "When the LLM call completed (UTC)"
-          },
-          "agent_run_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Run Id",
-            "description": "Optional caller-supplied agent run identifier. When omitted the API falls back to an auto-id `_auto-{sdk_instance_id}-{date}` so calls from pre-P6 SDKs are still attributable to a run."
-          },
-          "agent_run_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Run Name",
-            "description": "Optional human-readable name for the run. When the run is being created (no prior row with this id), defaults to ``agent_run_id``."
-          },
-          "provider_region": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider Region",
-            "description": "Cloud region of the endpoint that served the call (e.g. 'us-east-1' for Bedrock, whose pricing is keyed per model AND region). None for providers without regional pricing."
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "model",
-          "provider",
-          "input_tokens",
-          "output_tokens",
-          "latency_ms",
-          "status",
-          "is_model_fallback",
-          "call_id",
-          "sdk_instance_id",
-          "timestamp"
-        ],
-        "title": "MetadataEvent",
-        "description": "Telemetry event sent from SDK to API after each LLM call.\n\nContains token/latency metadata only — never prompts, responses, or\nSDK-computed costs.  The API computes costs server-side from token_details\nvia PricingService."
       },
       "NotificationCapabilities": {
         "properties": {
@@ -10030,6 +13856,69 @@
         ],
         "title": "PortalResponse"
       },
+      "PricedModelTarget": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "modality": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "embedding"
+            ],
+            "title": "Modality"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "modality"
+        ],
+        "title": "PricedModelTarget",
+        "description": "One generated, first-party rate-card target available to simulation."
+      },
+      "PricedModelsResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "pricing_version": {
+            "type": "string",
+            "title": "Pricing Version"
+          },
+          "provenance": {
+            "type": "string",
+            "const": "first_party_vendored_dataset",
+            "title": "Provenance",
+            "default": "first_party_vendored_dataset"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/PricedModelTarget"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "pricing_version",
+          "models"
+        ],
+        "title": "PricedModelsResponse"
+      },
       "ProfileUpdateRequest": {
         "properties": {
           "first_name": {
@@ -10101,6 +13990,15 @@
             "pattern": "^(alert_only|hard_deny)$",
             "title": "Budget Mode",
             "default": "alert_only"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope",
+            "default": "full"
           }
         },
         "additionalProperties": false,
@@ -10144,6 +14042,14 @@
           "key_prefix": {
             "type": "string",
             "title": "Key Prefix"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope"
           }
         },
         "type": "object",
@@ -10155,7 +14061,8 @@
           "budget_mode",
           "created_at",
           "key",
-          "key_prefix"
+          "key_prefix",
+          "scope"
         ],
         "title": "ProjectCreateResponse",
         "description": "Includes the raw API key — shown only once."
@@ -10248,6 +14155,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope"
           }
         },
         "type": "object",
@@ -10258,7 +14173,8 @@
           "last_used_at",
           "expires_at",
           "rotation_grace_until",
-          "created_at"
+          "created_at",
+          "scope"
         ],
         "title": "ProjectKeyResponse"
       },
@@ -10276,6 +14192,21 @@
               }
             ],
             "title": "Grace Seconds"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "read_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
           }
         },
         "additionalProperties": false,
@@ -10300,6 +14231,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Rotation Grace Until"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope"
           }
         },
         "type": "object",
@@ -10307,7 +14246,8 @@
           "id",
           "key",
           "key_prefix",
-          "rotation_grace_until"
+          "rotation_grace_until",
+          "scope"
         ],
         "title": "ProjectKeyRotateResponse"
       },
@@ -10404,6 +14344,78 @@
         "type": "object",
         "title": "ProjectUpdateRequest"
       },
+      "ProviderFailoverResponse": {
+        "properties": {
+          "requested_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Provider"
+          },
+          "requested_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Model"
+          },
+          "served_provider": {
+            "type": "string",
+            "title": "Served Provider"
+          },
+          "served_model": {
+            "type": "string",
+            "title": "Served Model"
+          },
+          "failover_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failover Reason"
+          },
+          "failover_error_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failover Error Class"
+          },
+          "event_count": {
+            "type": "integer",
+            "title": "Event Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requested_provider",
+          "requested_model",
+          "served_provider",
+          "served_model",
+          "failover_reason",
+          "failover_error_class",
+          "event_count"
+        ],
+        "title": "ProviderFailoverResponse"
+      },
       "ProviderHealthResponse": {
         "properties": {
           "provider": {
@@ -10426,6 +14438,14 @@
             "type": "integer",
             "title": "Failover Count"
           },
+          "model_failover_count": {
+            "type": "integer",
+            "title": "Model Failover Count"
+          },
+          "provider_failover_count": {
+            "type": "integer",
+            "title": "Provider Failover Count"
+          },
           "success_rate": {
             "type": "number",
             "title": "Success Rate"
@@ -10436,9 +14456,24 @@
           },
           "circuit_state": {
             "type": "string",
+            "enum": [
+              "closed",
+              "half_open",
+              "open",
+              "unknown"
+            ],
             "title": "Circuit State"
+          },
+          "circuit_source": {
+            "type": "string",
+            "enum": [
+              "reported",
+              "inferred"
+            ],
+            "title": "Circuit Source"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "provider",
@@ -10446,9 +14481,12 @@
           "success_count",
           "error_count",
           "failover_count",
+          "model_failover_count",
+          "provider_failover_count",
           "success_rate",
           "avg_latency_ms",
-          "circuit_state"
+          "circuit_state",
+          "circuit_source"
         ],
         "title": "ProviderHealthResponse"
       },
@@ -10544,6 +14582,37 @@
           "retry_after"
         ],
         "title": "RateLimitErrorResponse"
+      },
+      "ReadOnlyKeyErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "read_only_key",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ReadOnlyKeyErrorDetail"
+      },
+      "ReadOnlyKeyErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ReadOnlyKeyErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ReadOnlyKeyErrorResponse"
       },
       "ReadinessCheck": {
         "properties": {
@@ -10765,6 +14834,154 @@
         ],
         "title": "RuleActionResponse"
       },
+      "RunawayRunConfig": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "runaway_run",
+            "title": "Type"
+          },
+          "spend_threshold_usd": {
+            "type": "number",
+            "maximum": 1999999.99,
+            "exclusiveMinimum": 0.0,
+            "title": "Spend Threshold Usd"
+          },
+          "call_threshold": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Threshold"
+          },
+          "window_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1440.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Minutes"
+          },
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channel Ids"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "spend_threshold_usd"
+        ],
+        "title": "RunawayRunConfig",
+        "description": "Per-run spend and optional call-velocity safety alert."
+      },
+      "RunawayRunStateResponse": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "runaway_run",
+            "title": "Type"
+          },
+          "rule_key": {
+            "type": "string",
+            "title": "Rule Key"
+          },
+          "spend_threshold_usd": {
+            "type": "number",
+            "title": "Spend Threshold Usd"
+          },
+          "call_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Threshold"
+          },
+          "window_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Minutes"
+          },
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channel Ids"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/AlertRouting"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "rule_key",
+          "spend_threshold_usd",
+          "channel_ids",
+          "routing"
+        ],
+        "title": "RunawayRunStateResponse",
+        "description": "Public response shape for a runaway_run rule."
+      },
       "SavingsSummary": {
         "properties": {
           "saved_cost": {
@@ -10787,6 +15004,153 @@
           "blocked_call_count"
         ],
         "title": "SavingsSummary"
+      },
+      "ScopedBudgetConfig": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "scoped_budget",
+            "title": "Type"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "model",
+              "provider",
+              "agent_run"
+            ],
+            "title": "Scope"
+          },
+          "match": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Match",
+            "description": "Exact selector. Model matches use the 2048-character wire model bound; agent-run matches use the 256-character wire run-id bound; provider matches must be an exact ProviderName value."
+          },
+          "limit": {
+            "type": "number",
+            "maximum": 999999.999999,
+            "exclusiveMinimum": 0.0,
+            "title": "Limit",
+            "description": "Exact micro-dollar limit with cumulative Redis/JavaScript headroom."
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BudgetMode"
+          },
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channel Ids"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "scope",
+          "match",
+          "limit",
+          "mode"
+        ],
+        "title": "ScopedBudgetConfig",
+        "description": "Exact model, provider, or agent-run spending cap (U8)."
+      },
+      "ScopedBudgetStateResponse": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "scoped_budget",
+            "title": "Type"
+          },
+          "rule_key": {
+            "type": "string",
+            "title": "Rule Key"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "model",
+              "provider",
+              "agent_run"
+            ],
+            "title": "Scope"
+          },
+          "match": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Match"
+          },
+          "limit": {
+            "type": "number",
+            "maximum": 999999.999999,
+            "exclusiveMinimum": 0.0,
+            "title": "Limit"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BudgetMode"
+          },
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channel Ids"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/AlertRouting"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "rule_key",
+          "scope",
+          "match",
+          "limit",
+          "mode",
+          "channel_ids",
+          "routing"
+        ],
+        "title": "ScopedBudgetStateResponse",
+        "description": "Public response shape for a scoped_budget rule."
       },
       "SignupRequest": {
         "properties": {
@@ -10861,6 +15225,72 @@
           "display_name"
         ],
         "title": "SignupRequest"
+      },
+      "SimulationCaveats": {
+        "properties": {
+          "pricing_version": {
+            "type": "string",
+            "title": "Pricing Version",
+            "default": "2026-07-13"
+          },
+          "current_rates_snapshot": {
+            "type": "boolean",
+            "title": "Current Rates Snapshot",
+            "default": true
+          },
+          "baseline_uses_stored_actual_cost": {
+            "type": "boolean",
+            "title": "Baseline Uses Stored Actual Cost",
+            "default": true
+          },
+          "tokenizer_equivalence_approximation": {
+            "type": "boolean",
+            "title": "Tokenizer Equivalence Approximation",
+            "default": true
+          },
+          "unpriced_and_local_excluded": {
+            "type": "boolean",
+            "title": "Unpriced And Local Excluded",
+            "default": true
+          },
+          "modality_mismatches_excluded": {
+            "type": "boolean",
+            "title": "Modality Mismatches Excluded",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SimulationCaveats",
+        "description": "Fixed truthfulness markers attached to every simulation."
+      },
+      "SimulationExcludedCounts": {
+        "properties": {
+          "unpriced": {
+            "type": "integer",
+            "title": "Unpriced",
+            "default": 0
+          },
+          "local": {
+            "type": "integer",
+            "title": "Local",
+            "default": 0
+          },
+          "modality_mismatch": {
+            "type": "integer",
+            "title": "Modality Mismatch",
+            "default": 0
+          },
+          "missing_breakdown": {
+            "type": "integer",
+            "title": "Missing Breakdown",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SimulationExcludedCounts",
+        "description": "Per-reason event exclusions from target repricing."
       },
       "SlackConfig": {
         "properties": {
@@ -11122,6 +15552,88 @@
           "snoozed_until"
         ],
         "title": "SnoozeResponse"
+      },
+      "SpendControlAttestation": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1",
+            "title": "Schema Version"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AttestationScope"
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "7d",
+              "30d",
+              "90d",
+              "365d",
+              "custom"
+            ],
+            "title": "Range"
+          },
+          "window": {
+            "$ref": "#/components/schemas/AttestationWindow"
+          },
+          "spend_summary": {
+            "$ref": "#/components/schemas/AttestationSpendSummary"
+          },
+          "budgets": {
+            "items": {
+              "$ref": "#/components/schemas/AttestationBudget"
+            },
+            "type": "array",
+            "title": "Budgets"
+          },
+          "alerts": {
+            "$ref": "#/components/schemas/AttestationAlerts"
+          },
+          "account_spend_alert": {
+            "$ref": "#/components/schemas/AttestationAccountSpendAlert"
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/AttestationSubscription"
+          },
+          "audit": {
+            "$ref": "#/components/schemas/AttestationAudit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "scope",
+          "range",
+          "window",
+          "spend_summary",
+          "budgets",
+          "alerts",
+          "account_spend_alert",
+          "subscription",
+          "audit"
+        ],
+        "title": "SpendControlAttestation"
+      },
+      "StringDetailErrorResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "StringDetailErrorResponse"
       },
       "StripeWebhookResponse": {
         "properties": {
@@ -11507,6 +16019,22 @@
             "description": "Audio output tokens (OpenAI)",
             "default": 0
           },
+          "image_input_tokens": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": 0.0,
+            "title": "Image Input Tokens",
+            "description": "Image input tokens — a SUBSET of input_tokens (mirrors reasoning ⊂ output). OpenAI Images/Responses report image_tokens inside input_tokens_details; documented, not validator-enforced.",
+            "default": 0
+          },
+          "image_output_tokens": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": 0.0,
+            "title": "Image Output Tokens",
+            "description": "Image output tokens — a SUBSET of output_tokens (mirrors reasoning ⊂ output). Generated-image tokens reported in the output channel; documented, not validator-enforced.",
+            "default": 0
+          },
           "accepted_prediction_tokens": {
             "type": "integer",
             "maximum": 100000000.0,
@@ -11541,7 +16069,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TokenDetails",
-        "description": "Normalized token usage breakdown for one LLM call.\n\nProvider adapters populate whichever fields their API exposes; the rest\nstay at 0.  The API uses this struct to compute exact costs rather than\ntrusting SDK-side estimates.\n\nNormalization contract: ``input_tokens`` includes uncached input, cached\ninput reads, and cache-creation writes.  PricingService subtracts cached\nbuckets from ``input_tokens`` to derive uncached input, so provider adapters\nmust not send \"uncached only\" input totals."
+        "description": "Normalized token usage breakdown for one LLM call.\n\nProvider adapters populate whichever fields their API exposes; the rest\nstay at 0.  The API uses this struct to compute exact costs rather than\ntrusting SDK-side estimates.\n\nNormalization contract: ``input_tokens`` includes uncached input, cached\ninput reads, and cache-creation writes.  PricingService subtracts cached\nbuckets from ``input_tokens`` to derive uncached input, so provider adapters\nmust not send \"uncached only\" input totals.\n\nNesting contract: ``image_input_tokens`` is a SUBSET of ``input_tokens`` and\n``image_output_tokens`` a SUBSET of ``output_tokens`` (probed live 2026-07-10:\nan images.edit response reported input_tokens=222 with image_tokens=194 in\n``input_tokens_details``). These mirror the existing ``reasoning_tokens`` ⊂\n``output_tokens`` relationship — DOCUMENTED semantics, NOT validator-enforced\n(reasoning is likewise unenforced). The only enforced subset invariant is the\ncache-bucket one below; image tokens deliberately do not participate in it."
       },
       "TokenResponse": {
         "properties": {
@@ -12353,5 +16881,5 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-07-10"
+  "x-solwyn-snapshot-date": "2026-07-16"
 }

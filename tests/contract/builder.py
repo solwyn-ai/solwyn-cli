@@ -56,7 +56,7 @@ EXIT_CODE_MEANINGS: dict[ExitCode, str] = {
     ),
     ExitCode.AUTH_ERROR: (
         "Authentication, authorization, or credential-storage failure "
-        "(includes HTTP 401)."
+        "(includes HTTP 401 and 403)."
     ),
     ExitCode.BUDGET_DENIED: (
         "A budget guardrail denied spend or a utilization gate tripped."

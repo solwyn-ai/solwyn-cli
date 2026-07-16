@@ -660,6 +660,19 @@
         }
       },
       "properties": {
+        "agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Id"
+        },
         "estimated_input_tokens": {
           "minimum": 0,
           "title": "Estimated Input Tokens",

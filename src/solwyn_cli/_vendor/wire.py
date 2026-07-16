@@ -172,6 +172,7 @@ class BudgetCheckRequest(_WireModel):
     fallback_models: Annotated[
         list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)
     ] = Field(default_factory=list)
+    agent_run_id: Annotated[str, Field(max_length=256)] | None = None
 
 
 class BudgetConfirmRequest(_WireModel):

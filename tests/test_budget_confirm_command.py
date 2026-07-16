@@ -257,6 +257,50 @@ def test_budget_confirm_missing_reservation_explains_fail_open_and_skipping(
     assert "skip confirm" in result.stderr
 
 
+def test_budget_confirm_read_only_key_403_exits_auth_with_an_actionable_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(
+                403,
+                json={
+                    "detail": {
+                        "code": "read_only_key",
+                        "message": "This project key is read-only.",
+                    }
+                },
+            )
+        )
+    ]
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "read_only_key"
+    assert error["hint"] == (
+        "Set SOLWYN_API_KEY to a project key with write scope, or store one "
+        "with solwyn login --with-key."
+    )
+
+
+def test_budget_confirm_plain_403_exits_auth_without_a_read_only_key_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    FakeClient.responses = [
+        error_from_response(httpx.Response(403, json={"detail": "Forbidden."}))
+    ]
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS])
+
+    assert result.exit_code == 3
+    assert json.loads(result.stderr)["hint"] is None
+
+
 @pytest.mark.parametrize("output_format", ["table", "json"])
 def test_budget_confirm_expired_or_consumed_404_is_actionable_and_not_retried(
     monkeypatch: pytest.MonkeyPatch,

@@ -58,6 +58,26 @@ _FAIL_OPEN_NOTICE = "fail-open, unreserved — skip confirm"
 _CONFIRM_NOT_FOUND_HINT = (
     "Expired or already consumed. Run a fresh check before spend; confirm once."
 )
+# Budget check and confirm are the only CLI surfaces the API can reject for key
+# scope, so the hint lives with them rather than in the shared error machinery.
+# The server message already states the key is read-only; the hint is remedy only.
+_READ_ONLY_KEY_HINT = (
+    "Set SOLWYN_API_KEY to a project key with write scope, or store one with "
+    "solwyn login --with-key."
+)
+
+
+def _read_only_key_hinted(error: ApiError) -> ApiError:
+    """Make a read-only-key rejection actionable without altering other errors."""
+    if error.status_code != 403 or error.code != "read_only_key":
+        return error
+    return ApiError(
+        status_code=error.status_code,
+        code=error.code,
+        message=error.message,
+        hint=_READ_ONLY_KEY_HINT,
+        detail=error.detail,
+    )
 
 
 class _RoutingChannel(BaseModel):
@@ -244,7 +264,10 @@ def request_budget_check(
     response = client.request(
         "POST",
         "/api/v1/budgets/check",
-        json=request.model_dump(mode="json"),
+        # Unset optional fields are omitted rather than sent as explicit nulls:
+        # an omitted agent_run_id is the API's project-only default, so callers
+        # that do not opt in keep posting the exact body they post today.
+        json=request.model_dump(mode="json", exclude_none=True),
     )
     return _BudgetCheckData.model_validate(response.json())
 
@@ -424,6 +447,16 @@ def check(
             help="Fallback model aligned with each fallback provider.",
         ),
     ] = None,
+    agent_run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--agent-run-id",
+            help=(
+                "Optional agent run identifier for per-run budget enforcement; "
+                "omit for project-only behavior."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Reserve budget immediately before one un-instrumented provider call."""
     providers = fallback_providers or []
@@ -448,6 +481,7 @@ def check(
             provider=provider,
             fallback_providers=providers,
             fallback_models=models,
+            agent_run_id=agent_run_id,
         )
     except ValidationError:
         exit_with_error(
@@ -455,7 +489,10 @@ def check(
             OutputError(
                 code="invalid_budget_check_request",
                 message="The budget check request is invalid.",
-                hint="Check model lengths and use no more than eight fallbacks.",
+                hint=(
+                    "Check model and agent run id lengths and use no more than "
+                    "eight fallbacks."
+                ),
             ),
             semantic=ErrorSemantic.USAGE,
         )
@@ -483,7 +520,7 @@ def check(
         ) as client:
             data = request_budget_check(client=client, request=request)
     except ApiError as error:
-        exit_with_error(context, error)
+        exit_with_error(context, _read_only_key_hinted(error))
     except AuthError as error:
         exit_with_error(
             context,
@@ -727,7 +764,7 @@ def confirm(
                 hint=_CONFIRM_NOT_FOUND_HINT,
                 detail=error.detail,
             )
-        exit_with_error(context, error)
+        exit_with_error(context, _read_only_key_hinted(error))
     except AuthError as error:
         exit_with_error(
             context,

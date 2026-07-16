@@ -49,6 +49,7 @@ from solwyn_cli._vendor.wire import (
                 "provider",
                 "fallback_providers",
                 "fallback_models",
+                "agent_run_id",
             },
             {"estimated_input_tokens", "model", "provider"},
         ),

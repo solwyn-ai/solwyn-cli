@@ -44,6 +44,7 @@ ResultT = TypeVar("ResultT", bound="_ToolResult[BaseModel]")
 BudgetCheckModel = Annotated[str, Field(max_length=2048)]
 BudgetFallbackProviders = Annotated[list[ProviderName], Field(max_length=8)]
 BudgetFallbackModels = Annotated[list[BudgetCheckModel], Field(max_length=8)]
+BudgetAgentRunId = Annotated[str, Field(max_length=256)]
 TOOL_NAMES = (
     "budget_status",
     "budget_check",
@@ -67,6 +68,7 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
         "project_not_found",
         "quota_exceeded",
         "rate_limited",
+        "read_only_key",
         "reservation_not_found",
         "token_expired",
         "unauthorized",
@@ -80,6 +82,10 @@ _SAFE_REMOTE_HINTS = {
     "authentication_required": "Run solwyn login, then retry.",
     "forbidden": "Check account access for this operation, then retry.",
     "invalid_token": "Run solwyn login again, then retry.",
+    "read_only_key": (
+        "The configured project key is read-only; set SOLWYN_API_KEY to a key "
+        "with write scope, then retry."
+    ),
     "reservation_not_found": (
         "The reservation expired or was consumed; run a fresh check before spend."
     ),
@@ -396,6 +402,7 @@ def _budget_check_operation(
     provider: ProviderName,
     fallback_providers: list[ProviderName],
     fallback_models: list[str],
+    agent_run_id: str | None,
 ) -> _BudgetCheckResult:
     if len(fallback_providers) != len(fallback_models):
         return _error(
@@ -410,6 +417,7 @@ def _budget_check_operation(
             provider=provider,
             fallback_providers=fallback_providers,
             fallback_models=fallback_models,
+            agent_run_id=agent_run_id,
         )
     except ValidationError:
         return _error(
@@ -618,6 +626,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         provider: ProviderName,
         fallback_providers: BudgetFallbackProviders | None = None,
         fallback_models: BudgetFallbackModels | None = None,
+        agent_run_id: BudgetAgentRunId | None = None,
     ) -> _BudgetCheckResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -628,6 +637,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 provider=provider,
                 fallback_providers=fallback_providers or [],
                 fallback_models=fallback_models or [],
+                agent_run_id=agent_run_id,
             )
         )
 

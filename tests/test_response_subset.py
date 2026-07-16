@@ -4,7 +4,7 @@ import copy
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
@@ -226,6 +226,29 @@ _BUDGET_THRESHOLD_COMPONENTS = {
     "daily_anomaly": "DailyAnomalyStateResponse",
     "unit_cost_anomaly": "UnitCostAnomalyStateResponse",
 }
+# Rule types the live API can return that the budget commands do NOT model.
+#
+# THIS IS AN OPEN DEFECT, NOT A BENIGN OMISSION. _BudgetStatusData's threshold
+# union is closed and extra="forbid", so budget status, budget set, and the MCP
+# budget_status tool hard-fail (exit 1, invalid_budget_response) against the live
+# API for any project that configures one of these rules. Failing closed is the
+# deliberate, safety-correct behavior for a budget tool — silently dropping an
+# unknown guardrail would misrepresent the user's spend protection — so the fix
+# is to ADOPT these rule types, not to relax the union. Adoption is pending in a
+# follow-up batch.
+#
+# Registered here so the union stays pinned exactly: a seventh rule type still
+# trips this guard rather than slipping in behind the two known gaps.
+_UNMODELLED_THRESHOLD_COMPONENTS = {
+    # unadopted — breaks budget status against the live API; adoption pending.
+    "runaway_run": "RunawayRunStateResponse",
+    # unadopted — breaks budget status against the live API; adoption pending.
+    "scoped_budget": "ScopedBudgetStateResponse",
+}
+_ALL_THRESHOLD_COMPONENTS = {
+    **_BUDGET_THRESHOLD_COMPONENTS,
+    **_UNMODELLED_THRESHOLD_COMPONENTS,
+}
 
 
 def _assert_field_path(
@@ -341,7 +364,7 @@ def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     )
     expected_refs = {
         f"#/components/schemas/{component}"
-        for component in _BUDGET_THRESHOLD_COMPONENTS.values()
+        for component in _ALL_THRESHOLD_COMPONENTS.values()
     }
     actual_refs = [
         branch.get("$ref") if isinstance(branch, dict) else None for branch in branches
@@ -359,7 +382,7 @@ def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     )
     expected_mapping = {
         rule_type: f"#/components/schemas/{component}"
-        for rule_type, component in _BUDGET_THRESHOLD_COMPONENTS.items()
+        for rule_type, component in _ALL_THRESHOLD_COMPONENTS.items()
     }
     assert discriminator.get("mapping") == expected_mapping, (
         "BudgetStatusResponse.thresholds: discriminator mapping differs"
@@ -500,6 +523,21 @@ def _snapshot() -> dict[str, Any]:
 
 def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
+
+
+def test_threshold_registries_match_the_rule_types_the_cli_actually_models() -> None:
+    """Split the union honestly: the registry cannot excuse a modelled rule type."""
+    union, _ = get_args(budget._ThresholdState)
+    modelled = {
+        get_args(member.model_fields["type"].annotation)[0]
+        for member in get_args(union)
+    }
+
+    assert modelled == set(_BUDGET_THRESHOLD_COMPONENTS)
+    assert not modelled & set(_UNMODELLED_THRESHOLD_COMPONENTS)
+    assert set(_ALL_THRESHOLD_COMPONENTS) == modelled | set(
+        _UNMODELLED_THRESHOLD_COMPONENTS
+    )
 
 
 def test_project_create_response_fields_and_201_operation_are_registered() -> None:
@@ -709,7 +747,7 @@ def test_replacing_every_budget_threshold_state_ref_trips_response_guard() -> No
 
 @pytest.mark.parametrize(
     ("rule_type", "component"),
-    list(_BUDGET_THRESHOLD_COMPONENTS.items()),
+    list(_ALL_THRESHOLD_COMPONENTS.items()),
 )
 @pytest.mark.parametrize(
     "mutation", ["replace_ref", "remove_ref", "replace_mapping", "remove_mapping"]

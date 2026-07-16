@@ -240,6 +240,20 @@
           "name": "fallback_models",
           "required": false,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run-id"
+          ],
+          "default": null,
+          "help": "Optional agent run identifier for per-run budget enforcement; omit for project-only behavior.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run_id",
+          "required": false,
+          "type": "text"
         }
       ],
       "path": [
@@ -1156,7 +1170,7 @@
     },
     {
       "code": 3,
-      "meaning": "Authentication, authorization, or credential-storage failure (includes HTTP 401).",
+      "meaning": "Authentication, authorization, or credential-storage failure (includes HTTP 401 and 403).",
       "name": "AUTH_ERROR"
     },
     {

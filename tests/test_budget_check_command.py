@@ -143,6 +143,86 @@ def test_budget_check_posts_exact_call_shaped_request_with_project_key(
     ]
 
 
+def test_budget_check_sends_agent_run_id_only_when_the_flag_is_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The opt-in field is on the wire when asked for, and absent otherwise."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue()
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS, "--agent-run-id", "run_42"])
+
+    assert result.exit_code == 0
+    assert FakeClient.instances[0].requests == [
+        (
+            "POST",
+            "/api/v1/budgets/check",
+            {
+                "json": {
+                    "estimated_input_tokens": 1200,
+                    "model": "gpt-5",
+                    "provider": "openai",
+                    "fallback_providers": [],
+                    "fallback_models": [],
+                    "agent_run_id": "run_42",
+                }
+            },
+        )
+    ]
+
+
+def test_budget_check_omits_agent_run_id_rather_than_posting_an_explicit_null(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unset run id leaves the wire body byte-identical to a pre-flag check."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue()
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS])
+
+    assert result.exit_code == 0
+    (_, _, kwargs) = FakeClient.instances[0].requests[0]
+    assert "agent_run_id" not in kwargs["json"]
+    assert kwargs["json"] == {
+        "estimated_input_tokens": 1200,
+        "model": "gpt-5",
+        "provider": "openai",
+        "fallback_providers": [],
+        "fallback_models": [],
+    }
+
+
+def test_budget_check_rejects_an_over_long_agent_run_id_before_auth_and_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolution_calls: list[None] = []
+    monkeypatch.setattr(
+        budget_module,
+        "resolve_credential",
+        lambda: resolution_calls.append(None),
+        raising=False,
+    )
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS, "--agent-run-id", "r" * 257])
+
+    assert result.exit_code == 2
+    assert resolution_calls == []
+    assert FakeClient.instances == []
+    assert json.loads(result.stderr)["code"] == "invalid_budget_check_request"
+
+
+def test_budget_check_accepts_an_agent_run_id_at_the_exact_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue()
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS, "--agent-run-id", "r" * 256])
+
+    assert result.exit_code == 0
+    assert FakeClient.instances[0].requests[0][2]["json"]["agent_run_id"] == "r" * 256
+
+
 def test_budget_check_rejects_jwt_locally_with_project_key_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -369,6 +449,52 @@ def test_budget_check_preserves_structured_api_errors(
     assert result.exit_code == 1
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "unknown_model"
+
+
+def _queue_error(status_code: int, detail: object) -> None:
+    FakeClient.responses = [
+        error_from_response(httpx.Response(status_code, json={"detail": detail}))
+    ]
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_budget_check_read_only_key_403_exits_auth_with_an_actionable_hint(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue_error(
+        403,
+        {"code": "read_only_key", "message": "This project key is read-only."},
+    )
+    output_options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(app, [*output_options, *BASE_ARGS])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stderr,
+        GOLDEN_DIR / f"budget-check-read-only-key-{output_format}.{suffix}",
+    )
+
+
+def test_budget_check_plain_403_exits_auth_without_a_read_only_key_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 403 that is not about key scope must not claim the key is read-only."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue_error(403, "Forbidden.")
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "http_error"
+    assert error["hint"] is None
+    assert "read-only" not in result.stderr
 
 
 def test_budget_check_never_leaks_credentials_to_output_exception_or_goldens(
