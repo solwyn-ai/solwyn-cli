@@ -19,7 +19,12 @@ from pydantic import (
 )
 
 from solwyn_cli._vendor.validation import validate_project_key_format
-from solwyn_cli._vendor.wire import BudgetMode, BudgetPeriod, ProjectCreateRequest
+from solwyn_cli._vendor.wire import (
+    BudgetMode,
+    BudgetPeriod,
+    ProjectCreateRequest,
+    ProjectKeyScope,
+)
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
@@ -80,6 +85,7 @@ class _CreatedProject(BaseModel):
     budget_mode: BudgetMode
     created_at: AwareDatetime
     key_prefix: str = Field(pattern=r"^sk_proj_[a-f0-9]{16}$")
+    scope: ProjectKeyScope
 
 
 class _ProjectCreateResponse(_CreatedProject):
@@ -117,7 +123,10 @@ def request_project_creation(
     response = client.request(
         "POST",
         "/api/v1/projects",
-        json=request.model_dump(mode="json"),
+        # exclude_unset posts exactly the fields the caller chose; anything left
+        # unset falls to the API default the mirror declares and the drift guard
+        # pins.
+        json=request.model_dump(mode="json", exclude_unset=True),
         retry_rate_limit=False,
         retry_auth=False,
     )
@@ -184,6 +193,7 @@ def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableDat
         ("Budget mode", project.budget_mode),
         ("Created", _date_time(project.created_at)),
         ("Key prefix", project.key_prefix),
+        ("Scope", project.scope.value),
     )
     if stored:
         rows = (*rows, ("Stored", "true"))
@@ -241,6 +251,13 @@ def create_project(
         BudgetMode,
         typer.Option("--mode", help="Initial budget enforcement mode."),
     ] = BudgetMode.ALERT_ONLY,
+    scope: Annotated[
+        ProjectKeyScope | None,
+        typer.Option(
+            "--scope",
+            help="Scope for the project's first key; omit for the API default.",
+        ),
+    ] = None,
     store_key: Annotated[
         bool,
         typer.Option("--store-key", help="Store the new key in the OS keychain."),
@@ -263,6 +280,9 @@ def create_project(
             budget_limit=budget,
             budget_period=period.value,
             budget_mode=mode.value,
+            # Left unset when no scope is chosen so the field is omitted rather
+            # than posted: the API rejects a null scope on creation.
+            **({} if scope is None else {"scope": scope.value}),
         )
     except ValidationError:
         exit_with_error(

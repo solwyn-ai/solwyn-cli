@@ -986,6 +986,7 @@ def test_tty_no_projects_creates_and_stores_key_without_displaying_secret(
         "name": "Created project",
         "key": CREATED_KEY,
         "key_prefix": CREATED_KEY[:24],
+        "scope": "full",
     }
     FakeClient.responses = [
         httpx.Response(200, json=[]),
@@ -1029,6 +1030,7 @@ def test_created_key_storage_failure_never_leaks_secret(
                 **PROJECT,
                 "key": CREATED_KEY,
                 "key_prefix": CREATED_KEY[:24],
+                "scope": "full",
             },
         ),
     ]

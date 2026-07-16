@@ -48,6 +48,7 @@ RESPONSE_READS = {
         "created_at",
         "key",
         "key_prefix",
+        "scope",
     ),
     "ProjectKeyResponse": (
         "id",
@@ -57,12 +58,14 @@ RESPONSE_READS = {
         "expires_at",
         "rotation_grace_until",
         "created_at",
+        "scope",
     ),
     "ProjectKeyRotateResponse": (
         "id",
         "key",
         "key_prefix",
         "rotation_grace_until",
+        "scope",
     ),
     "BudgetStatusResponse": (
         "project_id",
@@ -573,6 +576,7 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
         "created_at",
         "key",
         "key_prefix",
+        "scope",
     )
     assert OPERATION_RESPONSE_BINDINGS[("POST", "/api/v1/projects")] == (
         "201",
@@ -891,6 +895,7 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("ProjectCreateResponse", "created_at"),
         ("ProjectCreateResponse", "key"),
         ("ProjectCreateResponse", "key_prefix"),
+        ("ProjectCreateResponse", "scope"),
         ("ProjectKeyResponse", "id"),
         ("ProjectKeyResponse", "key_prefix"),
         ("ProjectKeyResponse", "name"),
@@ -898,10 +903,12 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("ProjectKeyResponse", "expires_at"),
         ("ProjectKeyResponse", "rotation_grace_until"),
         ("ProjectKeyResponse", "created_at"),
+        ("ProjectKeyResponse", "scope"),
         ("ProjectKeyRotateResponse", "id"),
         ("ProjectKeyRotateResponse", "key"),
         ("ProjectKeyRotateResponse", "key_prefix"),
         ("ProjectKeyRotateResponse", "rotation_grace_until"),
+        ("ProjectKeyRotateResponse", "scope"),
         ("BudgetStatusResponse", "project_id"),
         ("BudgetStatusResponse", "budget_limit"),
         ("BudgetStatusResponse", "current_usage"),

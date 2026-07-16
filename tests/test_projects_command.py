@@ -55,6 +55,7 @@ PROJECT_CREATE_RESPONSE = {
     "created_at": "2026-07-10T12:30:00Z",
     "key": CREATED_KEY,
     "key_prefix": CREATED_PREFIX,
+    "scope": "full",
 }
 
 
@@ -380,6 +381,66 @@ def test_projects_create_uses_frozen_defaults_and_does_not_select_project(
         "budget_mode": "alert_only",
     }
     assert runtime.load_config().default_project is None
+
+
+@pytest.mark.parametrize("scope", ["full", "read_only"])
+def test_projects_create_posts_the_chosen_key_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(201, json={**PROJECT_CREATE_RESPONSE, "scope": scope})
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "create", "--name", "Created project", "--scope", scope],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests[0][2]["json"] == {
+        "name": "Created project",
+        "budget_limit": 100.0,
+        "budget_period": "monthly",
+        "budget_mode": "alert_only",
+        "scope": scope,
+    }
+    assert json.loads(result.stdout)["scope"] == scope
+
+
+def test_projects_create_omits_scope_entirely_when_it_is_not_chosen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The API's create scope is not nullable, so an unchosen scope is omitted."""
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "create", "--name", "Created project"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "scope" not in FakeClient.instances[0].requests[0][2]["json"]
+
+
+def test_projects_create_rejects_an_unknown_scope_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        projects_module,
+        "resolve_credential",
+        lambda: pytest.fail("must parse before auth"),
+    )
+
+    result = runner.invoke(
+        app,
+        ["projects", "create", "--name", "Created project", "--scope", "admin"],
+    )
+
+    assert result.exit_code == 2
+    assert FakeClient.instances == []
 
 
 @pytest.mark.parametrize("status_code", [200, 202, 204])

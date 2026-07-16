@@ -17,7 +17,7 @@ from pydantic import (
 )
 
 from solwyn_cli._vendor.validation import validate_project_key_format
-from solwyn_cli._vendor.wire import ProjectKeyRotateRequest
+from solwyn_cli._vendor.wire import ProjectKeyRotateRequest, ProjectKeyScope
 from solwyn_cli.auth import (
     AuthError,
     JwtCredential,
@@ -55,6 +55,7 @@ class _ProjectKeyMetadata(BaseModel):
     expires_at: AwareDatetime | None
     rotation_grace_until: AwareDatetime | None
     created_at: AwareDatetime
+    scope: ProjectKeyScope
 
 
 class _ProjectKeyRotateResponse(BaseModel):
@@ -64,6 +65,7 @@ class _ProjectKeyRotateResponse(BaseModel):
     key: SecretStr
     key_prefix: str = Field(pattern=r"^sk_proj_[a-f0-9]{16}$")
     rotation_grace_until: AwareDatetime
+    scope: ProjectKeyScope
 
     @field_validator("key")
     @classmethod
@@ -107,6 +109,7 @@ def _metadata_table(data: _ProjectKeyMetadata) -> TableData:
             ("Expires", _date_time(data.expires_at)),
             ("Rotation grace until", _date_time(data.rotation_grace_until)),
             ("Created", _date_time(data.created_at)),
+            ("Scope", data.scope.value),
         ),
         right_align=("Value",),
     )
@@ -119,6 +122,7 @@ def _rotate_table(data: _ProjectKeyRotateResponse) -> TableData:
             ("ID", data.id),
             ("Key prefix", data.key_prefix),
             ("Rotation grace until", _date_time(data.rotation_grace_until)),
+            ("Scope", data.scope.value),
         ),
         right_align=("Value",),
     )
@@ -278,12 +282,19 @@ def rotate_key(
             help="Seconds the old key remains valid (0 through 604800).",
         ),
     ] = None,
+    scope: Annotated[
+        ProjectKeyScope | None,
+        typer.Option(
+            "--scope",
+            help="Scope for the replacement key; omit to keep the current scope.",
+        ),
+    ] = None,
 ) -> None:
     """Rotate the active key and reveal its replacement exactly once."""
     runtime = command_context(context)
     project_id = _validated_identifier(context, runtime.project, label="project")
     try:
-        request = ProjectKeyRotateRequest(grace_seconds=grace_seconds)
+        request = ProjectKeyRotateRequest(grace_seconds=grace_seconds, scope=scope)
     except ValidationError:
         exit_with_error(
             context,

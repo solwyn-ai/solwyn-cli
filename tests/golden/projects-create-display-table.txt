@@ -6,6 +6,7 @@ Budget period                    weekly
 Budget mode                   hard_deny
 Created            2026-07-10T12:30:00Z
 Key prefix     sk_proj_abababababababab
+Scope                              full
 ╭────────────────────────── One-time project key ──────────────────────────╮
 │ sk_proj_abababababababababababababababababababababababababababababababab │
 ╰──────────────────────────────────────────────────────────────────────────╯

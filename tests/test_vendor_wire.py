@@ -11,6 +11,7 @@ from solwyn_cli._vendor.wire import (
     BudgetUpdateRequest,
     LoginRequest,
     ProjectCreateRequest,
+    ProjectKeyRotateRequest,
     RefreshRequest,
 )
 
@@ -26,8 +27,13 @@ from solwyn_cli._vendor.wire import (
         (RefreshRequest, {"refresh_token"}, {"refresh_token"}),
         (
             ProjectCreateRequest,
-            {"name", "budget_limit", "budget_period", "budget_mode"},
+            {"name", "budget_limit", "budget_period", "budget_mode", "scope"},
             {"name"},
+        ),
+        (
+            ProjectKeyRotateRequest,
+            {"grace_seconds", "scope"},
+            set(),
         ),
         (
             BudgetUpdateRequest,
@@ -75,7 +81,7 @@ def test_request_model_field_sets_and_required_fields(
     schema = model.model_json_schema()
 
     assert set(schema["properties"]) == fields
-    assert set(schema["required"]) == required
+    assert set(schema.get("required", [])) == required
 
 
 @pytest.mark.parametrize(
@@ -133,7 +139,14 @@ def test_login_and_project_create_preserve_wire_defaults() -> None:
         "budget_limit": 100.0,
         "budget_period": "monthly",
         "budget_mode": "alert_only",
+        "scope": "full",
     }
+    # The declared scope default documents the API's own default; it reaches the
+    # wire only when a caller sets it, which is what keeps omission faithful.
+    assert project.model_dump(exclude_unset=True) == {"name": "Example"}
+    assert ProjectCreateRequest(name="Example", scope="read_only").model_dump(
+        exclude_unset=True
+    ) == {"name": "Example", "scope": "read_only"}
 
 
 def test_login_request_redacts_password_but_serializes_wire_value() -> None:

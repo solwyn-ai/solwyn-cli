@@ -923,6 +923,24 @@
           "name": "grace_seconds",
           "required": false,
           "type": "integer"
+        },
+        {
+          "choices": [
+            "full",
+            "read_only"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": "Scope for the replacement key; omit to keep the current scope.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "choice"
         }
       ],
       "path": [
@@ -1076,6 +1094,24 @@
           "kind": "option",
           "multiple": false,
           "name": "mode",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "full",
+            "read_only"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": "Scope for the project's first key; omit for the API default.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
           "required": false,
           "type": "choice"
         },
@@ -1301,7 +1337,8 @@
         "key",
         "key_prefix",
         "rotation_grace_until",
-        "schema"
+        "schema",
+        "scope"
       ],
       "optional_keys": [],
       "schema": "solwyn.keys-rotate.v1",
@@ -1316,7 +1353,8 @@
         "last_used_at",
         "name",
         "rotation_grace_until",
-        "schema"
+        "schema",
+        "scope"
       ],
       "optional_keys": [],
       "schema": "solwyn.keys-show.v1",
@@ -1351,6 +1389,7 @@
         "key_prefix",
         "name",
         "schema",
+        "scope",
         "stored"
       ],
       "optional_keys": [

@@ -1098,7 +1098,8 @@ def test_read_only_key_403_keeps_its_code_and_points_agents_at_key_scope(
         "message": "The Solwyn API rejected the request.",
         "hint": (
             "The configured project key is read-only; set SOLWYN_API_KEY to a "
-            "key with write scope, then retry."
+            "write-scoped key, then retry. Confirm a key's scope with "
+            "solwyn keys show."
         ),
         "status_code": 403,
     }

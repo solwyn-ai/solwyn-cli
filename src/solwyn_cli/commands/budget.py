@@ -62,8 +62,8 @@ _CONFIRM_NOT_FOUND_HINT = (
 # scope, so the hint lives with them rather than in the shared error machinery.
 # The server message already states the key is read-only; the hint is remedy only.
 _READ_ONLY_KEY_HINT = (
-    "Set SOLWYN_API_KEY to a project key with write scope, or store one with "
-    "solwyn login --with-key."
+    "Set SOLWYN_API_KEY to a write-scoped key, or run solwyn login and "
+    "solwyn keys rotate --scope full to replace this project's key with one."
 )
 
 

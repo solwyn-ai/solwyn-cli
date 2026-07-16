@@ -39,6 +39,9 @@ DECLARED_DEFAULT_FIELDS = {
         "budget_limit",
         "budget_period",
         "budget_mode",
+        # Declared but omitted from the body unless chosen; pinning the two
+        # defaults together is what makes the omission behavior-preserving.
+        "scope",
     ),
     "ProjectKeyRotateRequest": ("grace_seconds",),
 }
@@ -66,8 +69,6 @@ UNADOPTED_OPTIONAL_FIELDS = {
         "modality",
     ),
     "TokenDetails": ("image_input_tokens", "image_output_tokens"),
-    "ProjectCreateRequest": ("scope",),
-    "ProjectKeyRotateRequest": ("scope",),
 }
 # Threshold rule configs the CLI cannot construct.
 #
@@ -85,8 +86,6 @@ UNADOPTED_FIELD_OWNERS = {
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
     "TokenDetails": TokenDetails,
-    "ProjectCreateRequest": ProjectCreateRequest,
-    "ProjectKeyRotateRequest": ProjectKeyRotateRequest,
 }
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 

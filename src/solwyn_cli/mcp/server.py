@@ -82,9 +82,12 @@ _SAFE_REMOTE_HINTS = {
     "authentication_required": "Run solwyn login, then retry.",
     "forbidden": "Check account access for this operation, then retry.",
     "invalid_token": "Run solwyn login again, then retry.",
+    # Rotation is JWT-only and destructive, so the agent-facing hint stops at the
+    # remedy an agent can actually apply and at a read-only way to inspect scope.
     "read_only_key": (
-        "The configured project key is read-only; set SOLWYN_API_KEY to a key "
-        "with write scope, then retry."
+        "The configured project key is read-only; set SOLWYN_API_KEY to a "
+        "write-scoped key, then retry. Confirm a key's scope with "
+        "solwyn keys show."
     ),
     "reservation_not_found": (
         "The reservation expired or was consumed; run a fresh check before spend."

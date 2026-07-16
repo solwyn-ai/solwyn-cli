@@ -62,6 +62,13 @@ class BudgetMode(StrEnum):
     HARD_DENY = "hard_deny"
 
 
+class ProjectKeyScope(StrEnum):
+    """Capability scope granted to a single project API key."""
+
+    FULL = "full"
+    READ_ONLY = "read_only"
+
+
 class _ThresholdConfig(_WireModel):
     type: Literal["budget_threshold"] = "budget_threshold"
     percent: Annotated[int, Field(ge=1, le=100)]
@@ -172,10 +179,17 @@ class ProjectCreateRequest(_WireModel):
     budget_mode: Annotated[str, Field(pattern=r"^(alert_only|hard_deny)$")] = (
         "alert_only"
     )
+    # Declared, never posted unless chosen: the request is serialized with
+    # exclude_unset, so an unset scope is omitted and the API applies this same
+    # default. The drift guard pins the two defaults together.
+    scope: ProjectKeyScope = ProjectKeyScope.FULL
 
 
 class ProjectKeyRotateRequest(_WireModel):
     grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
+    # No default on the wire: a null scope asks the API to carry the replaced
+    # key's scope over to the replacement.
+    scope: ProjectKeyScope | None = None
 
 
 class BudgetUpdateRequest(_WireModel):
