@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 MAX_SNAPSHOT_AGE_DAYS = 30
+COMMIT_OID = re.compile(r"[0-9a-f]{40}")
 
 
 def assert_snapshot_fresh(snapshot: dict[str, object], *, today: date) -> None:
@@ -43,6 +45,17 @@ def _snapshot() -> dict[str, object]:
 
 def test_checked_in_snapshot_is_at_most_thirty_days_old() -> None:
     assert_snapshot_fresh(_snapshot(), today=datetime.now(UTC).date())
+
+
+def test_checked_in_snapshot_records_a_core_ref() -> None:
+    """A synced snapshot pins its Core commit, or says outright that it cannot."""
+    snapshot = _snapshot()
+
+    assert "x-solwyn-core-ref" in snapshot, "x-solwyn-core-ref is missing"
+    core_ref = snapshot["x-solwyn-core-ref"]
+    assert core_ref is None or (
+        isinstance(core_ref, str) and COMMIT_OID.fullmatch(core_ref) is not None
+    ), "x-solwyn-core-ref must be null or a full 40-character lowercase commit id"
 
 
 def test_snapshot_exactly_thirty_days_old_is_accepted() -> None:

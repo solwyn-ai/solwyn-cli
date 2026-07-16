@@ -296,7 +296,11 @@ def request_budget_confirm(
     response = client.request(
         "POST",
         "/api/v1/budgets/confirm",
-        json=request.model_dump(mode="json"),
+        # Unset optional fields are omitted rather than sent as explicit nulls,
+        # matching the SDK serializer: the endpoint parses an omitted
+        # provider_region or service_tier exactly as it parses an explicit null,
+        # and settles from the value either way.
+        json=request.model_dump(mode="json", exclude_none=True),
         retry_rate_limit=False,
     )
     if response.status_code != 204 or response.content:

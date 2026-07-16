@@ -560,8 +560,6 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "tool_use_input_tokens": 11,
                     "is_estimated": True,
                 },
-                "provider_region": None,
-                "service_tier": None,
             },
         ),
         ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
@@ -1274,8 +1272,6 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
                     "tool_use_input_tokens": 0,
                     "is_estimated": False,
                 },
-                "provider_region": None,
-                "service_tier": None,
             },
         )
     ]

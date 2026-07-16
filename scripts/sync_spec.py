@@ -3,7 +3,9 @@
 import argparse
 import json
 import os
+import re
 import stat
+import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime
@@ -17,6 +19,7 @@ SNAPSHOT_PATH = (
     / "spec"
     / "openapi_snapshot.json"
 )
+_COMMIT_OID = re.compile(r"[0-9a-f]{40}")
 
 
 def _read_source(source_path: Path) -> dict[str, Any]:
@@ -33,11 +36,61 @@ def _read_source(source_path: Path) -> dict[str, Any]:
     return document
 
 
-def sync_spec(checkout: Path, destination: Path = SNAPSHOT_PATH) -> None:
-    """Copy ``shared/openapi.json`` and add the current UTC sync date."""
-    source_path = checkout.expanduser().resolve() / "shared" / "openapi.json"
+def _git(checkout: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(checkout), *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        raise ValueError(f"Cannot run git for checkout: {checkout} ({exc})") from exc
+
+
+def _resolve_core_ref(checkout: Path) -> str:
+    """Return the checkout's HEAD commit, refusing anything unreproducible."""
+    head = _git(checkout, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        raise ValueError(
+            f"Core checkout is not a git repository with a resolvable HEAD: {checkout}"
+        )
+    core_ref = head.stdout.strip()
+    if not _COMMIT_OID.fullmatch(core_ref):
+        raise ValueError(f"Core checkout HEAD is not a commit id: {checkout}")
+
+    status = _git(checkout, "status", "--porcelain")
+    if status.returncode != 0:
+        raise ValueError(f"Cannot read git status for Core checkout: {checkout}")
+    if status.stdout.strip():
+        raise ValueError(
+            f"Core checkout has uncommitted changes: {checkout}. Commit them, or "
+            "pass --allow-dirty to stamp a null ref instead."
+        )
+    return core_ref
+
+
+def sync_spec(
+    checkout: Path,
+    destination: Path = SNAPSHOT_PATH,
+    *,
+    allow_dirty: bool = False,
+) -> None:
+    """Copy ``shared/openapi.json``, stamping the UTC sync date and Core commit."""
+    checkout_path = checkout.expanduser().resolve()
+    source_path = checkout_path / "shared" / "openapi.json"
     document = _read_source(source_path)
+    try:
+        core_ref: str | None = _resolve_core_ref(checkout_path)
+    except ValueError:
+        if not allow_dirty:
+            raise
+        # --allow-dirty keeps an unreproducible sync explicit: the snapshot says
+        # outright that no Core commit pins it, rather than defaulting to null.
+        core_ref = None
+
     document["x-solwyn-snapshot-date"] = datetime.now(UTC).date().isoformat()
+    document["x-solwyn-core-ref"] = core_ref
     serialized = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -85,13 +138,21 @@ def _parser() -> argparse.ArgumentParser:
         default=SNAPSHOT_PATH,
         help="Snapshot destination (defaults to the CLI package snapshot).",
     )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help=(
+            "Sync from a dirty or non-git checkout, recording a null "
+            "x-solwyn-core-ref instead of failing."
+        ),
+    )
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
     try:
-        sync_spec(args.checkout, args.destination)
+        sync_spec(args.checkout, args.destination, allow_dirty=args.allow_dirty)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

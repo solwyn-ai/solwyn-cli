@@ -155,6 +155,9 @@ RESPONSE_READS = {
         "sub_period_enabled",
         "max_thresholds",
     ),
+    # failover_directive is deliberately unread — declined: it is only attached
+    # when a request opts in via failover_directive_version, which the CLI does
+    # not send (see the request-side registry in test_request_drift.py).
     "BudgetCheckResponse": (
         "allowed",
         "remaining_budget",

@@ -50,10 +50,21 @@ DECLARED_DEFAULT_FIELDS = {
 UNADOPTED_OPTIONAL_FIELDS = {
     "BudgetCheckRequest": (
         "estimated_media",
+        # Declined: the directive it requests only tunes SDK-side retry and
+        # circuit-breaker behavior, which the CLI does not perform; opting in
+        # would also switch the check response to null-omitting encoding.
         "failover_directive_version",
+        # Declined: inert on this endpoint — the budget aggregator never reads
+        # it; Core derives modality from (provider, model) itself.
         "modality",
     ),
-    "BudgetConfirmRequest": ("media_usage", "modality"),
+    "BudgetConfirmRequest": (
+        # Declined: the confirm endpoint settles from token_details only and
+        # never reads it.
+        "media_usage",
+        # Declined: same as check — inert on this endpoint.
+        "modality",
+    ),
     "TokenDetails": ("image_input_tokens", "image_output_tokens"),
     "ProjectCreateRequest": ("scope",),
     "ProjectKeyRotateRequest": ("scope",),
