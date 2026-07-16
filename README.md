@@ -4,7 +4,7 @@ The command-line client for Solwyn. This repository is private while the first r
 
 ## Installation
 
-Before the first release, install Solwyn CLI from a local checkout:
+Solwyn CLI is not published yet. Before the first release, install it from a local checkout:
 
 ```console
 uv tool install .

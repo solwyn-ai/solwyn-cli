@@ -50,6 +50,80 @@ BUDGET_RESPONSE = {
         "max_thresholds": 50,
     },
 }
+ROUTING = {
+    "will_send": True,
+    "email": "alerts@example.test",
+    "channels": [{"id": "chan_ops", "name": "#ops"}],
+    "source": "project_default",
+    "muted": None,
+}
+# One rule of every type the spec declares, in the spec's union order. Live
+# projects configure runaway_run and scoped_budget, so budget_status must read
+# them rather than fail closed on the response union.
+EVERY_RULE_TYPE_THRESHOLDS = [
+    {
+        "type": "budget_threshold",
+        "rule_key": "budget:80",
+        "percent": 80,
+        "channel_ids": ["channel-budget"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "forecast_overrun",
+        "rule_key": "forecast:125",
+        "spend_threshold_usd": 125.5,
+        "period": "month",
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "runaway_run",
+        "rule_key": "runaway:50",
+        "spend_threshold_usd": 50.0,
+        "call_threshold": 100,
+        "window_minutes": 60,
+        "channel_ids": ["channel-runaway"],
+        "routing": ROUTING,
+        "snoozed_until": "2026-07-11T12:00:00Z",
+        "paused": False,
+    },
+    {
+        "type": "daily_anomaly",
+        "rule_key": "daily:2.5:14",
+        "multiplier": 2.5,
+        "lookback_days": 14,
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "unit_cost_anomaly",
+        "rule_key": "unit:3:21",
+        "multiplier": 3.0,
+        "lookback_days": 21,
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": True,
+    },
+    {
+        "type": "scoped_budget",
+        "rule_key": "scoped:model:gpt-4o",
+        "scope": "model",
+        "match": "gpt-4o",
+        "limit": 25.5,
+        "mode": "hard_deny",
+        "channel_ids": ["channel-scoped"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+]
 CHECK_RESPONSE = {
     "allowed": True,
     "remaining_budget": 86.5,
@@ -365,6 +439,7 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "provider",
                     "fallback_providers",
                     "fallback_models",
+                    "agent_run_id",
                 },
                 {
                     "reservation_id",
@@ -715,6 +790,48 @@ def test_list_projects_returns_structured_jwt_remediation_under_project_key(
     assert VALID_KEY not in str(result)
 
 
+def test_budget_status_reads_every_threshold_rule_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every declared rule type survives the tool's closed response union."""
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200,
+                json={**BUDGET_RESPONSE, "thresholds": EVERY_RULE_TYPE_THRESHOLDS},
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(_call_tool, "budget_status", {})
+
+    assert result.structuredContent["ok"] is True
+    thresholds = result.structuredContent["data"]["thresholds"]
+    assert [rule["type"] for rule in thresholds] == [
+        "budget_threshold",
+        "forecast_overrun",
+        "runaway_run",
+        "daily_anomaly",
+        "unit_cost_anomaly",
+        "scoped_budget",
+    ]
+    assert thresholds[2]["spend_threshold_usd"] == 50.0
+    assert thresholds[2]["call_threshold"] == 100
+    assert thresholds[2]["window_minutes"] == 60
+    assert thresholds[5]["scope"] == "model"
+    assert thresholds[5]["match"] == "gpt-4o"
+    assert thresholds[5]["limit"] == 25.5
+    assert thresholds[5]["mode"] == "hard_deny"
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None)
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
 def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -929,6 +1046,131 @@ def test_remote_error_fields_never_reflect_untrusted_secret_material(
     ]
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "path"),
+    [
+        (
+            "budget_check",
+            {"estimated_input_tokens": 1200, "model": "gpt-5", "provider": "openai"},
+            "/api/v1/budgets/check",
+        ),
+        (
+            "budget_confirm",
+            {
+                "reservation_id": "res_01JZEXAMPLE",
+                "call_id": "12345678-1234-1234-1234-123456789abc",
+                "model": "gpt-5",
+                "provider": "openai",
+            },
+            "/api/v1/budgets/confirm",
+        ),
+    ],
+)
+def test_read_only_key_403_keeps_its_code_and_points_agents_at_key_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+    path: str,
+) -> None:
+    """The code survives normalization and the hint names scope, not account access."""
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, response_queue = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                403,
+                json={
+                    "detail": {
+                        "code": "read_only_key",
+                        "message": f"read-only key; secret must not escape: {VALID_KEY}",
+                    }
+                },
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(_call_tool, tool, arguments)
+
+    error = result.structuredContent["error"]
+    assert error == {
+        "code": "read_only_key",
+        "message": "The Solwyn API rejected the request.",
+        "hint": (
+            "The configured project key is read-only; set SOLWYN_API_KEY to a "
+            "key with write scope, then retry."
+        ),
+        "status_code": 403,
+    }
+    assert VALID_KEY not in str(result)
+    assert [method for method, _, _ in requests] == ["POST"]
+    assert requests[0][1] == path
+    assert response_queue == []
+
+
+def test_plain_403_still_collapses_to_forbidden_without_a_key_scope_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 403 that is not about key scope keeps the generic account-access hint."""
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    _install_http(
+        monkeypatch,
+        responses=[httpx.Response(403, json={"detail": "Forbidden."})],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {"estimated_input_tokens": 1200, "model": "gpt-5", "provider": "openai"},
+    )
+
+    error = result.structuredContent["error"]
+    assert error["code"] == "forbidden"
+    assert error["status_code"] == 403
+    assert error["hint"] == "Check account access for this operation, then retry."
+    assert "read-only" not in str(error)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_run_id"),
+    [
+        ({}, None),
+        ({"agent_run_id": "run_42"}, "run_42"),
+    ],
+)
+def test_budget_check_puts_agent_run_id_on_the_wire_only_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: dict[str, Any],
+    expected_run_id: str | None,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, response_queue = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=CHECK_RESPONSE)],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {
+            "estimated_input_tokens": 1200,
+            "model": "gpt-5",
+            "provider": "openai",
+            **arguments,
+        },
+    )
+
+    assert result.structuredContent["ok"] is True
+    (_, _, _, body) = _wire_requests(requests)[0]
+    if expected_run_id is None:
+        assert "agent_run_id" not in body
+    else:
+        assert body["agent_run_id"] == expected_run_id
+    assert response_queue == []
 
 
 def test_budget_check_honors_exactly_one_429_retry(

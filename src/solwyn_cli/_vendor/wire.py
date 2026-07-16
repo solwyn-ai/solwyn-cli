@@ -79,6 +79,16 @@ class _ForecastOverrunConfig(_WireModel):
     paused: bool = False
 
 
+class _RunawayRunConfig(_WireModel):
+    type: Literal["runaway_run"]
+    spend_threshold_usd: Annotated[float, Field(gt=0, le=1999999.99)]
+    call_threshold: Annotated[int, Field(ge=1)] | None = None
+    window_minutes: Annotated[int, Field(ge=1, le=1440)] | None = None
+    channel_ids: list[str] = Field(default_factory=list)
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
 class _DailyAnomalyConfig(_WireModel):
     type: Literal["daily_anomaly"]
     multiplier: Annotated[float, Field(gt=1, le=100)]
@@ -97,11 +107,24 @@ class _UnitCostAnomalyConfig(_WireModel):
     paused: bool = False
 
 
+class _ScopedBudgetConfig(_WireModel):
+    type: Literal["scoped_budget"]
+    scope: Literal["model", "provider", "agent_run"]
+    match: Annotated[str, Field(min_length=1, max_length=2048)]
+    limit: Annotated[float, Field(gt=0, le=999999.999999)]
+    mode: BudgetMode
+    channel_ids: list[str] = Field(default_factory=list)
+    snoozed_until: datetime | None = None
+    paused: bool = False
+
+
 _BudgetRule = (
     _ThresholdConfig
     | _ForecastOverrunConfig
+    | _RunawayRunConfig
     | _DailyAnomalyConfig
     | _UnitCostAnomalyConfig
+    | _ScopedBudgetConfig
 )
 
 
@@ -172,6 +195,7 @@ class BudgetCheckRequest(_WireModel):
     fallback_models: Annotated[
         list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)
     ] = Field(default_factory=list)
+    agent_run_id: Annotated[str, Field(max_length=256)] | None = None
 
 
 class BudgetConfirmRequest(_WireModel):

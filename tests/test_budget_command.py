@@ -39,6 +39,78 @@ BUDGET_RESPONSE = {
         "max_thresholds": 50,
     },
 }
+ROUTING = {
+    "will_send": True,
+    "email": "alerts@example.test",
+    "channels": [{"id": "chan_ops", "name": "#ops"}],
+    "source": "project_default",
+    "muted": None,
+}
+# One rule of every type the spec declares, in the spec's union order.
+EVERY_RULE_TYPE_THRESHOLDS = [
+    {
+        "type": "budget_threshold",
+        "rule_key": "budget:80",
+        "percent": 80,
+        "channel_ids": ["channel-budget"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "forecast_overrun",
+        "rule_key": "forecast:125",
+        "spend_threshold_usd": 125.5,
+        "period": "month",
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "runaway_run",
+        "rule_key": "runaway:50",
+        "spend_threshold_usd": 50.0,
+        "call_threshold": 100,
+        "window_minutes": 60,
+        "channel_ids": ["channel-runaway"],
+        "routing": ROUTING,
+        "snoozed_until": "2026-07-11T12:00:00Z",
+        "paused": False,
+    },
+    {
+        "type": "daily_anomaly",
+        "rule_key": "daily:2.5:14",
+        "multiplier": 2.5,
+        "lookback_days": 14,
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "unit_cost_anomaly",
+        "rule_key": "unit:3:21",
+        "multiplier": 3.0,
+        "lookback_days": 21,
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": True,
+    },
+    {
+        "type": "scoped_budget",
+        "rule_key": "scoped:model:gpt-4o",
+        "scope": "model",
+        "match": "gpt-4o",
+        "limit": 25.5,
+        "mode": "hard_deny",
+        "channel_ids": ["channel-scoped"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+]
 
 
 class FakeClient:
@@ -129,6 +201,40 @@ def test_budget_status_supports_both_auth_modes_with_one_get_and_no_reservation(
     rendered = result.stdout + result.stderr + repr(result.exception)
     for secret in (VALID_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
         assert secret not in rendered
+
+
+def test_budget_status_reads_every_threshold_rule_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A project configuring any declared rule type still reads its budget.
+
+    The response threshold union is closed, so an unmodelled rule type fails the
+    whole read with invalid_budget_response rather than dropping one rule.
+    """
+    monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
+    _queue_budget_response(thresholds=EVERY_RULE_TYPE_THRESHOLDS)
+
+    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert json.loads(result.stdout)["utilization_pct"] == 75.0
+
+
+def test_budget_status_still_rejects_an_undeclared_threshold_rule_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adopting two rule types must not open the union to a seventh."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
+    _queue_budget_response(
+        thresholds=[{**EVERY_RULE_TYPE_THRESHOLDS[0], "type": "future_rule"}]
+    )
+
+    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_budget_response"
 
 
 @pytest.mark.parametrize("output_format", ["table", "json"])

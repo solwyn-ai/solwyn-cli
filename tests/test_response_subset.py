@@ -4,7 +4,7 @@ import copy
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
@@ -97,6 +97,17 @@ RESPONSE_READS = {
         "snoozed_until",
         "paused",
     ),
+    "RunawayRunStateResponse": (
+        "type",
+        "rule_key",
+        "spend_threshold_usd",
+        "call_threshold",
+        "window_minutes",
+        "channel_ids",
+        "routing",
+        "snoozed_until",
+        "paused",
+    ),
     "DailyAnomalyStateResponse": (
         "type",
         "rule_key",
@@ -112,6 +123,18 @@ RESPONSE_READS = {
         "rule_key",
         "multiplier",
         "lookback_days",
+        "channel_ids",
+        "routing",
+        "snoozed_until",
+        "paused",
+    ),
+    "ScopedBudgetStateResponse": (
+        "type",
+        "rule_key",
+        "scope",
+        "match",
+        "limit",
+        "mode",
         "channel_ids",
         "routing",
         "snoozed_until",
@@ -223,8 +246,28 @@ NO_CONTENT_OPERATION_BINDINGS = {
 _BUDGET_THRESHOLD_COMPONENTS = {
     "budget_threshold": "ThresholdStateResponse",
     "forecast_overrun": "ForecastOverrunStateResponse",
+    "runaway_run": "RunawayRunStateResponse",
     "daily_anomaly": "DailyAnomalyStateResponse",
     "unit_cost_anomaly": "UnitCostAnomalyStateResponse",
+    "scoped_budget": "ScopedBudgetStateResponse",
+}
+# Rule types the live API can return that the budget commands do NOT model.
+#
+# Empty: the CLI now models every rule type the spec declares. Keep the registry
+# — it is how a future unmodelled rule type is declared, and an unmodelled type
+# that is NOT registered here still trips the guard rather than slipping in.
+#
+# Any entry added here is an OPEN DEFECT, NOT A BENIGN OMISSION. _BudgetStatusData's
+# threshold union is closed and extra="forbid", so budget status, budget set, and
+# the MCP budget_status tool hard-fail (exit 1, invalid_budget_response) against
+# the live API for any project that configures an unmodelled rule. Failing closed
+# is the deliberate, safety-correct behavior for a budget tool — silently dropping
+# an unknown guardrail would misrepresent the user's spend protection — so the fix
+# is always to ADOPT the rule type, not to relax the union.
+_UNMODELLED_THRESHOLD_COMPONENTS: dict[str, str] = {}
+_ALL_THRESHOLD_COMPONENTS = {
+    **_BUDGET_THRESHOLD_COMPONENTS,
+    **_UNMODELLED_THRESHOLD_COMPONENTS,
 }
 
 
@@ -341,7 +384,7 @@ def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     )
     expected_refs = {
         f"#/components/schemas/{component}"
-        for component in _BUDGET_THRESHOLD_COMPONENTS.values()
+        for component in _ALL_THRESHOLD_COMPONENTS.values()
     }
     actual_refs = [
         branch.get("$ref") if isinstance(branch, dict) else None for branch in branches
@@ -359,7 +402,7 @@ def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     )
     expected_mapping = {
         rule_type: f"#/components/schemas/{component}"
-        for rule_type, component in _BUDGET_THRESHOLD_COMPONENTS.items()
+        for rule_type, component in _ALL_THRESHOLD_COMPONENTS.items()
     }
     assert discriminator.get("mapping") == expected_mapping, (
         "BudgetStatusResponse.thresholds: discriminator mapping differs"
@@ -500,6 +543,21 @@ def _snapshot() -> dict[str, Any]:
 
 def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
+
+
+def test_threshold_registries_match_the_rule_types_the_cli_actually_models() -> None:
+    """Split the union honestly: the registry cannot excuse a modelled rule type."""
+    union, _ = get_args(budget._ThresholdState)
+    modelled = {
+        get_args(member.model_fields["type"].annotation)[0]
+        for member in get_args(union)
+    }
+
+    assert modelled == set(_BUDGET_THRESHOLD_COMPONENTS)
+    assert not modelled & set(_UNMODELLED_THRESHOLD_COMPONENTS)
+    assert set(_ALL_THRESHOLD_COMPONENTS) == modelled | set(
+        _UNMODELLED_THRESHOLD_COMPONENTS
+    )
 
 
 def test_project_create_response_fields_and_201_operation_are_registered() -> None:
@@ -709,7 +767,7 @@ def test_replacing_every_budget_threshold_state_ref_trips_response_guard() -> No
 
 @pytest.mark.parametrize(
     ("rule_type", "component"),
-    list(_BUDGET_THRESHOLD_COMPONENTS.items()),
+    list(_ALL_THRESHOLD_COMPONENTS.items()),
 )
 @pytest.mark.parametrize(
     "mutation", ["replace_ref", "remove_ref", "replace_mapping", "remove_mapping"]
@@ -868,6 +926,15 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("ForecastOverrunStateResponse", "routing"),
         ("ForecastOverrunStateResponse", "snoozed_until"),
         ("ForecastOverrunStateResponse", "paused"),
+        ("RunawayRunStateResponse", "type"),
+        ("RunawayRunStateResponse", "rule_key"),
+        ("RunawayRunStateResponse", "spend_threshold_usd"),
+        ("RunawayRunStateResponse", "call_threshold"),
+        ("RunawayRunStateResponse", "window_minutes"),
+        ("RunawayRunStateResponse", "channel_ids"),
+        ("RunawayRunStateResponse", "routing"),
+        ("RunawayRunStateResponse", "snoozed_until"),
+        ("RunawayRunStateResponse", "paused"),
         ("DailyAnomalyStateResponse", "type"),
         ("DailyAnomalyStateResponse", "rule_key"),
         ("DailyAnomalyStateResponse", "multiplier"),
@@ -876,6 +943,16 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("DailyAnomalyStateResponse", "routing"),
         ("DailyAnomalyStateResponse", "snoozed_until"),
         ("DailyAnomalyStateResponse", "paused"),
+        ("ScopedBudgetStateResponse", "type"),
+        ("ScopedBudgetStateResponse", "rule_key"),
+        ("ScopedBudgetStateResponse", "scope"),
+        ("ScopedBudgetStateResponse", "match"),
+        ("ScopedBudgetStateResponse", "limit"),
+        ("ScopedBudgetStateResponse", "mode"),
+        ("ScopedBudgetStateResponse", "channel_ids"),
+        ("ScopedBudgetStateResponse", "routing"),
+        ("ScopedBudgetStateResponse", "snoozed_until"),
+        ("ScopedBudgetStateResponse", "paused"),
         ("UnitCostAnomalyStateResponse", "type"),
         ("UnitCostAnomalyStateResponse", "rule_key"),
         ("UnitCostAnomalyStateResponse", "multiplier"),

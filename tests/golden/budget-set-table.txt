@@ -7,5 +7,5 @@ Budget period        monthly
 Budget mode        hard_deny
 Sub-period             daily
 Sub-limit              20.00
-Threshold rules            4
+Threshold rules            6
 Utilization           20.00%

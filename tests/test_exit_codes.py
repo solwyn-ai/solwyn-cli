@@ -39,7 +39,8 @@ def test_exit_code_table_is_frozen_and_complete() -> None:
         (RuntimeError("safe"), ErrorSemantic.USAGE, ExitCode.USAGE_ERROR),
         (AuthError("Authentication required."), None, ExitCode.AUTH_ERROR),
         (_api_error(401), None, ExitCode.AUTH_ERROR),
-        (_api_error(403), None, ExitCode.GENERIC_ERROR),
+        (_api_error(403), None, ExitCode.AUTH_ERROR),
+        (_api_error(403, "read_only_key"), None, ExitCode.AUTH_ERROR),
         (_api_error(403), ErrorSemantic.AUTH, ExitCode.AUTH_ERROR),
         (
             _api_error(409, "budget_denied"),

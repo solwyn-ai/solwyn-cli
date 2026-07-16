@@ -1,0 +1,1412 @@
+{
+  "commands": [
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "solwyn",
+      "output_kind": "varies-by-subcommand",
+      "params": [
+        {
+          "cli_names": [
+            "--version"
+          ],
+          "default": false,
+          "help": "Show the installed version and exit.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--project",
+            "-p"
+          ],
+          "default": null,
+          "help": "Project ID for this invocation.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--api-url"
+          ],
+          "default": null,
+          "help": "Solwyn API base URL.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "api_url",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--format"
+          ],
+          "default": null,
+          "help": "Output format: table or json.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--json"
+          ],
+          "default": false,
+          "help": "Emit schema-bearing JSON output.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--no-color"
+          ],
+          "default": false,
+          "help": "Disable terminal color.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_color",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [],
+      "summary": "Work with Solwyn from the command line."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "agent-context",
+      "output_kind": "plain-text",
+      "params": [],
+      "path": [
+        "agent-context"
+      ],
+      "summary": "Print safe Solwyn budget guidance for coding agents."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "budget",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "budget"
+      ],
+      "summary": "Inspect budgets and run pre-flight guardrail checks."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget-check.v1",
+      "name": "check",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--estimated-input-tokens"
+          ],
+          "default": null,
+          "help": "Estimated input tokens for the pending provider call.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "estimated_input_tokens",
+          "required": true,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Primary provider model name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Primary provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--fallback-provider"
+          ],
+          "default": null,
+          "help": "Fallback provider in attempt order; repeat with fallback model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "fallback_providers",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--fallback-model"
+          ],
+          "default": null,
+          "help": "Fallback model aligned with each fallback provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "fallback_models",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run-id"
+          ],
+          "default": null,
+          "help": "Optional agent run identifier for per-run budget enforcement; omit for project-only behavior.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run_id",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "check"
+      ],
+      "summary": "Reserve budget immediately before one un-instrumented provider call."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget-confirm.v1",
+      "name": "confirm",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--call-id"
+          ],
+          "default": null,
+          "help": "Unique identifier for the provider call.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "call_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Model that actually served the call.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Provider that actually served the call.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--reservation-id"
+          ],
+          "default": null,
+          "help": "Reservation returned by the immediately preceding budget check.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "reservation_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--is-provider-fallback"
+          ],
+          "default": false,
+          "help": "Mark that a fallback provider served the call.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "is_provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Serving cloud region, when relevant.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Provider service tier used for the call.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--output-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cached-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cached_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cache-creation-5m-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cache_creation_5m_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cache-creation-1h-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cache_creation_1h_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--reasoning-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "reasoning_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--audio-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--audio-output-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--accepted-prediction-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "accepted_prediction_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--rejected-prediction-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "rejected_prediction_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--tool-use-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "tool_use_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--is-estimated"
+          ],
+          "default": false,
+          "help": "Mark the token breakdown as estimated rather than provider-reported.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "is_estimated",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "budget",
+        "confirm"
+      ],
+      "summary": "Settle one reservation after an un-instrumented provider call."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget-set.v1",
+      "name": "set",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": null,
+          "help": "Set the project budget limit in USD.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "choices": [
+            "daily",
+            "weekly",
+            "monthly"
+          ],
+          "cli_names": [
+            "--period"
+          ],
+          "default": null,
+          "help": "Set the project budget period.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "period",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": null,
+          "help": "Set the project budget enforcement mode.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "budget",
+        "set"
+      ],
+      "summary": "Update selected budget settings while preserving all other configuration."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget-status.v1",
+      "name": "status",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--max-utilization"
+          ],
+          "default": null,
+          "help": "CI deploy gate: exit 4 when utilization is at or above this percentage.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100.0,
+          "min": 0.0,
+          "multiple": false,
+          "name": "max_utilization",
+          "required": false,
+          "type": "float range"
+        }
+      ],
+      "path": [
+        "budget",
+        "status"
+      ],
+      "summary": "Read current project budget status without authorizing spend."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "config",
+      "output_kind": "plain-text",
+      "params": [],
+      "path": [
+        "config"
+      ],
+      "summary": "Inspect and update local configuration."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "get",
+      "output_kind": "plain-text",
+      "params": [
+        {
+          "cli_names": [
+            "key"
+          ],
+          "default": null,
+          "help": "Configuration key to read.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "config",
+        "get"
+      ],
+      "summary": "Print one configuration value."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "list",
+      "output_kind": "plain-text",
+      "params": [],
+      "path": [
+        "config",
+        "list"
+      ],
+      "summary": "Print every allowlisted configuration value in deterministic order."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "set",
+      "output_kind": "plain-text",
+      "params": [
+        {
+          "cli_names": [
+            "key"
+          ],
+          "default": null,
+          "help": "Configuration key to update.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "value"
+          ],
+          "default": null,
+          "help": "New configuration value.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "value",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "config",
+        "set"
+      ],
+      "summary": "Validate and persist one configuration value."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.v1",
+      "name": "costs",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Aggregation range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "day",
+            "model",
+            "provider"
+          ],
+          "cli_names": [
+            "--group-by"
+          ],
+          "default": "model",
+          "help": "Aggregation dimension.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "group_by",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "costs"
+      ],
+      "summary": "Show aggregate project costs."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.init.v1",
+      "name": "init",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--agents"
+          ],
+          "default": false,
+          "help": "Write Claude, Cursor, and AGENTS.md guidance.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "agents",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "init"
+      ],
+      "summary": "Configure Solwyn safely for the current repository."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "keys",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "keys"
+      ],
+      "summary": "Recover from leaked or expired project keys."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-revoke.v1",
+      "name": "revoke",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--key-id"
+          ],
+          "default": null,
+          "help": "Identifier of the key to hard-revoke.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "keys",
+        "revoke"
+      ],
+      "summary": "Hard-revoke a project key without minting a replacement."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-rotate.v1",
+      "name": "rotate",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--grace-seconds"
+          ],
+          "default": null,
+          "help": "Seconds the old key remains valid (0 through 604800).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "grace_seconds",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "path": [
+        "keys",
+        "rotate"
+      ],
+      "summary": "Rotate the active key and reveal its replacement exactly once."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-show.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "keys",
+        "show"
+      ],
+      "summary": "Show active project-key metadata without revealing key material."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.login.v1",
+      "name": "login",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--with-key"
+          ],
+          "default": false,
+          "help": "Read and store a project API key from a hidden prompt or stdin.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "with_key",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "login"
+      ],
+      "summary": "Authenticate with Solwyn."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.logout.v1",
+      "name": "logout",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "logout"
+      ],
+      "summary": "Clear all stored Solwyn credentials."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "mcp",
+      "output_kind": "mcp-stdio",
+      "params": [],
+      "path": [
+        "mcp"
+      ],
+      "summary": "Serve Solwyn tools over local MCP stdio."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "projects",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "projects"
+      ],
+      "summary": "Inspect Solwyn projects."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.projects-create.v1",
+      "name": "create",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": "Name for the new project.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--budget"
+          ],
+          "default": 100.0,
+          "help": "Initial project budget in USD.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "budget",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "choices": [
+            "daily",
+            "weekly",
+            "monthly"
+          ],
+          "cli_names": [
+            "--period"
+          ],
+          "default": "monthly",
+          "help": "Initial budget period.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "period",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": "alert_only",
+          "help": "Initial budget enforcement mode.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--store-key"
+          ],
+          "default": false,
+          "help": "Store the new key in the OS keychain.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "store_key",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "projects",
+        "create"
+      ],
+      "summary": "Create a project and capture its first API key exactly once."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.projects-list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "projects",
+        "list"
+      ],
+      "summary": "List projects available to the logged-in user."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.projects-show.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "projects",
+        "show"
+      ],
+      "summary": "Show the project selected by the global project context."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.status.v1",
+      "name": "status",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "status"
+      ],
+      "summary": "Show project budget and provider health."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.whoami.v1",
+      "name": "whoami",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "whoami"
+      ],
+      "summary": "Show the current Solwyn identity and project context."
+    }
+  ],
+  "contract_version": 1,
+  "exit_codes": [
+    {
+      "code": 0,
+      "meaning": "The command completed successfully.",
+      "name": "SUCCESS"
+    },
+    {
+      "code": 1,
+      "meaning": "Unclassified failure: an API or network error, an invalid server response, or another runtime error.",
+      "name": "GENERIC_ERROR"
+    },
+    {
+      "code": 2,
+      "meaning": "Invalid command-line usage: a missing, unknown, malformed, or conflicting option or argument.",
+      "name": "USAGE_ERROR"
+    },
+    {
+      "code": 3,
+      "meaning": "Authentication, authorization, or credential-storage failure (includes HTTP 401 and 403).",
+      "name": "AUTH_ERROR"
+    },
+    {
+      "code": 4,
+      "meaning": "A budget guardrail denied spend or a utilization gate tripped.",
+      "name": "BUDGET_DENIED"
+    },
+    {
+      "code": 5,
+      "meaning": "The requested resource does not exist (includes HTTP 404), such as a missing project or an expired or already-consumed reservation.",
+      "name": "NOT_FOUND"
+    }
+  ],
+  "json_schemas": [
+    {
+      "keys": [
+        "allowed",
+        "budget_limit",
+        "current_usage",
+        "denied_by_period",
+        "mode",
+        "price_hints",
+        "project_id",
+        "remaining_budget",
+        "reservation_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget-check.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "call_id",
+        "reservation_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget-confirm.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget_limit",
+        "budget_mode",
+        "budget_period",
+        "current_usage",
+        "period_date",
+        "project_id",
+        "remaining_budget",
+        "schema",
+        "sub_limit",
+        "sub_period",
+        "thresholds",
+        "utilization_pct"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget-set.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget_limit",
+        "budget_mode",
+        "budget_period",
+        "current_usage",
+        "project_id",
+        "remaining_budget",
+        "schema",
+        "utilization_pct"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget-status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "group_by",
+        "groups",
+        "project_id",
+        "range",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "code",
+        "detail",
+        "hint",
+        "message",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.error.v1",
+      "universal_error_envelope": true
+    },
+    {
+      "keys": [
+        "api_url",
+        "config_path",
+        "detected_providers",
+        "project_id",
+        "schema",
+        "snippets",
+        "verification"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.init.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "key_id",
+        "project_id",
+        "revoked",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.keys-revoke.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "id",
+        "key",
+        "key_prefix",
+        "rotation_grace_until",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.keys-rotate.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "created_at",
+        "expires_at",
+        "id",
+        "key_prefix",
+        "last_used_at",
+        "name",
+        "rotation_grace_until",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.keys-show.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "auth_type",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.login.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "cleared",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.logout.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget_limit",
+        "budget_mode",
+        "budget_period",
+        "created_at",
+        "id",
+        "key",
+        "key_prefix",
+        "name",
+        "schema",
+        "stored"
+      ],
+      "optional_keys": [
+        "key",
+        "stored"
+      ],
+      "schema": "solwyn.projects-create.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "projects",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.projects-list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget_limit",
+        "budget_mode",
+        "budget_period",
+        "created_at",
+        "id",
+        "name",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.projects-show.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget",
+        "project_id",
+        "providers",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "auth_source",
+        "auth_type",
+        "configured_project",
+        "hint",
+        "projects",
+        "schema",
+        "user"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.whoami.v1",
+      "universal_error_envelope": false
+    }
+  ]
+}

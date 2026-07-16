@@ -1,0 +1,3 @@
+Error [read_only_key]: This project key is read-only.
+Hint: Set SOLWYN_API_KEY to a project key with write scope, or store one with 
+solwyn login --with-key.

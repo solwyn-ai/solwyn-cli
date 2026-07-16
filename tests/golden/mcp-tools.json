@@ -197,6 +197,8 @@
                     "budget_threshold": "#/$defs/_BudgetThresholdState",
                     "daily_anomaly": "#/$defs/_DailyAnomalyState",
                     "forecast_overrun": "#/$defs/_ForecastOverrunState",
+                    "runaway_run": "#/$defs/_RunawayRunState",
+                    "scoped_budget": "#/$defs/_ScopedBudgetState",
                     "unit_cost_anomaly": "#/$defs/_UnitCostAnomalyState"
                   },
                   "propertyName": "type"
@@ -209,10 +211,16 @@
                     "$ref": "#/$defs/_ForecastOverrunState"
                   },
                   {
+                    "$ref": "#/$defs/_RunawayRunState"
+                  },
+                  {
                     "$ref": "#/$defs/_DailyAnomalyState"
                   },
                   {
                     "$ref": "#/$defs/_UnitCostAnomalyState"
+                  },
+                  {
+                    "$ref": "#/$defs/_ScopedBudgetState"
                   }
                 ]
               },
@@ -472,6 +480,168 @@
           "title": "_RoutingMuted",
           "type": "object"
         },
+        "_RunawayRunState": {
+          "additionalProperties": false,
+          "properties": {
+            "call_threshold": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Threshold"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "spend_threshold_usd": {
+              "exclusiveMinimum": 0,
+              "maximum": 1999999.99,
+              "title": "Spend Threshold Usd",
+              "type": "number"
+            },
+            "type": {
+              "const": "runaway_run",
+              "title": "Type",
+              "type": "string"
+            },
+            "window_minutes": {
+              "anyOf": [
+                {
+                  "maximum": 1440,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window Minutes"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "spend_threshold_usd"
+          ],
+          "title": "_RunawayRunState",
+          "type": "object"
+        },
+        "_ScopedBudgetState": {
+          "additionalProperties": false,
+          "properties": {
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "limit": {
+              "exclusiveMinimum": 0,
+              "maximum": 999999.999999,
+              "title": "Limit",
+              "type": "number"
+            },
+            "match": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Match",
+              "type": "string"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "model",
+                "provider",
+                "agent_run"
+              ],
+              "title": "Scope",
+              "type": "string"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "type": {
+              "const": "scoped_budget",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "scope",
+            "match",
+            "limit",
+            "mode"
+          ],
+          "title": "_ScopedBudgetState",
+          "type": "object"
+        },
         "_ToolError": {
           "additionalProperties": false,
           "description": "Safe structured MCP error with no raw server or credential material.",
@@ -660,6 +830,19 @@
         }
       },
       "properties": {
+        "agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Id"
+        },
         "estimated_input_tokens": {
           "minimum": 0,
           "title": "Estimated Input Tokens",
