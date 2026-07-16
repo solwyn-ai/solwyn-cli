@@ -3,6 +3,7 @@
 import copy
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -57,18 +58,18 @@ UNADOPTED_OPTIONAL_FIELDS = {
     "ProjectCreateRequest": ("scope",),
     "ProjectKeyRotateRequest": ("scope",),
 }
-# Threshold rule configs the CLI cannot construct. Unlike the optional fields
-# above, THIS IS AN OPEN DEFECT, NOT A BENIGN OMISSION: budget set round-trips
-# the rules budget status read, and the matching response rule types are rejected
-# outright by the command's closed threshold union — see the write-up on
-# _UNMODELLED_THRESHOLD_COMPONENTS in test_response_subset.py. Adoption is
-# pending in a follow-up batch; do not relax the union instead.
-UNADOPTED_THRESHOLD_CONFIGS = (
-    # unadopted — breaks budget status against the live API; adoption pending.
-    "RunawayRunConfig",
-    # unadopted — breaks budget status against the live API; adoption pending.
-    "ScopedBudgetConfig",
-)
+# Threshold rule configs the CLI cannot construct.
+#
+# Empty: the mirror now covers every config branch the spec declares. Keep the
+# registry — it is how a future unadopted config is declared, and a config that
+# is NOT registered here still trips the guard rather than slipping in.
+#
+# Unlike the optional fields above, any entry added here is an OPEN DEFECT, NOT A
+# BENIGN OMISSION: budget set round-trips the rules budget status read, and the
+# matching response rule types are rejected outright by the command's closed
+# threshold union — see the write-up on _UNMODELLED_THRESHOLD_COMPONENTS in
+# test_response_subset.py. Adopt the rule type; do not relax the union instead.
+UNADOPTED_THRESHOLD_CONFIGS: tuple[str, ...] = ()
 UNADOPTED_FIELD_OWNERS = {
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
@@ -657,14 +658,27 @@ def test_new_unregistered_threshold_config_trips_drift_guard() -> None:
         assert_request_mirrors_match(mutated)
 
 
-@pytest.mark.parametrize("config", UNADOPTED_THRESHOLD_CONFIGS)
-def test_removed_unadopted_threshold_config_trips_drift_guard(config: str) -> None:
+def test_stale_unadopted_threshold_config_entry_trips_drift_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registered config that leaves the snapshot still trips the guard.
+
+    Nothing is unadopted today, so parametrizing over the registry would collect
+    no cases and quietly stop covering the mechanism. Register a real config
+    branch instead, then withdraw it from the snapshot: that is exactly the
+    staleness a future gap would depend on the registry to catch.
+    """
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "UNADOPTED_THRESHOLD_CONFIGS",
+        ("ScopedBudgetConfig",),
+    )
     mutated = copy.deepcopy(_snapshot())
     thresholds = _schema(mutated, "BudgetUpdateRequest")["properties"]["thresholds"]
     thresholds["items"]["oneOf"] = [
         branch
         for branch in thresholds["items"]["oneOf"]
-        if branch.get("$ref") != f"#/components/schemas/{config}"
+        if branch.get("$ref") != "#/components/schemas/ScopedBudgetConfig"
     ]
 
     with pytest.raises(AssertionError, match="are no longer all present"):

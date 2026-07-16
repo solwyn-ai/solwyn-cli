@@ -50,6 +50,80 @@ BUDGET_RESPONSE = {
         "max_thresholds": 50,
     },
 }
+ROUTING = {
+    "will_send": True,
+    "email": "alerts@example.test",
+    "channels": [{"id": "chan_ops", "name": "#ops"}],
+    "source": "project_default",
+    "muted": None,
+}
+# One rule of every type the spec declares, in the spec's union order. Live
+# projects configure runaway_run and scoped_budget, so budget_status must read
+# them rather than fail closed on the response union.
+EVERY_RULE_TYPE_THRESHOLDS = [
+    {
+        "type": "budget_threshold",
+        "rule_key": "budget:80",
+        "percent": 80,
+        "channel_ids": ["channel-budget"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "forecast_overrun",
+        "rule_key": "forecast:125",
+        "spend_threshold_usd": 125.5,
+        "period": "month",
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "runaway_run",
+        "rule_key": "runaway:50",
+        "spend_threshold_usd": 50.0,
+        "call_threshold": 100,
+        "window_minutes": 60,
+        "channel_ids": ["channel-runaway"],
+        "routing": ROUTING,
+        "snoozed_until": "2026-07-11T12:00:00Z",
+        "paused": False,
+    },
+    {
+        "type": "daily_anomaly",
+        "rule_key": "daily:2.5:14",
+        "multiplier": 2.5,
+        "lookback_days": 14,
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
+        "type": "unit_cost_anomaly",
+        "rule_key": "unit:3:21",
+        "multiplier": 3.0,
+        "lookback_days": 21,
+        "channel_ids": [],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": True,
+    },
+    {
+        "type": "scoped_budget",
+        "rule_key": "scoped:model:gpt-4o",
+        "scope": "model",
+        "match": "gpt-4o",
+        "limit": 25.5,
+        "mode": "hard_deny",
+        "channel_ids": ["channel-scoped"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+]
 CHECK_RESPONSE = {
     "allowed": True,
     "remaining_budget": 86.5,
@@ -714,6 +788,48 @@ def test_list_projects_returns_structured_jwt_remediation_under_project_key(
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
     assert VALID_KEY not in str(result)
+
+
+def test_budget_status_reads_every_threshold_rule_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every declared rule type survives the tool's closed response union."""
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200,
+                json={**BUDGET_RESPONSE, "thresholds": EVERY_RULE_TYPE_THRESHOLDS},
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(_call_tool, "budget_status", {})
+
+    assert result.structuredContent["ok"] is True
+    thresholds = result.structuredContent["data"]["thresholds"]
+    assert [rule["type"] for rule in thresholds] == [
+        "budget_threshold",
+        "forecast_overrun",
+        "runaway_run",
+        "daily_anomaly",
+        "unit_cost_anomaly",
+        "scoped_budget",
+    ]
+    assert thresholds[2]["spend_threshold_usd"] == 50.0
+    assert thresholds[2]["call_threshold"] == 100
+    assert thresholds[2]["window_minutes"] == 60
+    assert thresholds[5]["scope"] == "model"
+    assert thresholds[5]["match"] == "gpt-4o"
+    assert thresholds[5]["limit"] == 25.5
+    assert thresholds[5]["mode"] == "hard_deny"
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None)
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
 
 
 def test_fail_open_check_returns_null_reservation_without_hidden_confirm(

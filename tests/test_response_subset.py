@@ -97,6 +97,17 @@ RESPONSE_READS = {
         "snoozed_until",
         "paused",
     ),
+    "RunawayRunStateResponse": (
+        "type",
+        "rule_key",
+        "spend_threshold_usd",
+        "call_threshold",
+        "window_minutes",
+        "channel_ids",
+        "routing",
+        "snoozed_until",
+        "paused",
+    ),
     "DailyAnomalyStateResponse": (
         "type",
         "rule_key",
@@ -112,6 +123,18 @@ RESPONSE_READS = {
         "rule_key",
         "multiplier",
         "lookback_days",
+        "channel_ids",
+        "routing",
+        "snoozed_until",
+        "paused",
+    ),
+    "ScopedBudgetStateResponse": (
+        "type",
+        "rule_key",
+        "scope",
+        "match",
+        "limit",
+        "mode",
         "channel_ids",
         "routing",
         "snoozed_until",
@@ -223,28 +246,25 @@ NO_CONTENT_OPERATION_BINDINGS = {
 _BUDGET_THRESHOLD_COMPONENTS = {
     "budget_threshold": "ThresholdStateResponse",
     "forecast_overrun": "ForecastOverrunStateResponse",
+    "runaway_run": "RunawayRunStateResponse",
     "daily_anomaly": "DailyAnomalyStateResponse",
     "unit_cost_anomaly": "UnitCostAnomalyStateResponse",
+    "scoped_budget": "ScopedBudgetStateResponse",
 }
 # Rule types the live API can return that the budget commands do NOT model.
 #
-# THIS IS AN OPEN DEFECT, NOT A BENIGN OMISSION. _BudgetStatusData's threshold
-# union is closed and extra="forbid", so budget status, budget set, and the MCP
-# budget_status tool hard-fail (exit 1, invalid_budget_response) against the live
-# API for any project that configures one of these rules. Failing closed is the
-# deliberate, safety-correct behavior for a budget tool — silently dropping an
-# unknown guardrail would misrepresent the user's spend protection — so the fix
-# is to ADOPT these rule types, not to relax the union. Adoption is pending in a
-# follow-up batch.
+# Empty: the CLI now models every rule type the spec declares. Keep the registry
+# — it is how a future unmodelled rule type is declared, and an unmodelled type
+# that is NOT registered here still trips the guard rather than slipping in.
 #
-# Registered here so the union stays pinned exactly: a seventh rule type still
-# trips this guard rather than slipping in behind the two known gaps.
-_UNMODELLED_THRESHOLD_COMPONENTS = {
-    # unadopted — breaks budget status against the live API; adoption pending.
-    "runaway_run": "RunawayRunStateResponse",
-    # unadopted — breaks budget status against the live API; adoption pending.
-    "scoped_budget": "ScopedBudgetStateResponse",
-}
+# Any entry added here is an OPEN DEFECT, NOT A BENIGN OMISSION. _BudgetStatusData's
+# threshold union is closed and extra="forbid", so budget status, budget set, and
+# the MCP budget_status tool hard-fail (exit 1, invalid_budget_response) against
+# the live API for any project that configures an unmodelled rule. Failing closed
+# is the deliberate, safety-correct behavior for a budget tool — silently dropping
+# an unknown guardrail would misrepresent the user's spend protection — so the fix
+# is always to ADOPT the rule type, not to relax the union.
+_UNMODELLED_THRESHOLD_COMPONENTS: dict[str, str] = {}
 _ALL_THRESHOLD_COMPONENTS = {
     **_BUDGET_THRESHOLD_COMPONENTS,
     **_UNMODELLED_THRESHOLD_COMPONENTS,
@@ -906,6 +926,15 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("ForecastOverrunStateResponse", "routing"),
         ("ForecastOverrunStateResponse", "snoozed_until"),
         ("ForecastOverrunStateResponse", "paused"),
+        ("RunawayRunStateResponse", "type"),
+        ("RunawayRunStateResponse", "rule_key"),
+        ("RunawayRunStateResponse", "spend_threshold_usd"),
+        ("RunawayRunStateResponse", "call_threshold"),
+        ("RunawayRunStateResponse", "window_minutes"),
+        ("RunawayRunStateResponse", "channel_ids"),
+        ("RunawayRunStateResponse", "routing"),
+        ("RunawayRunStateResponse", "snoozed_until"),
+        ("RunawayRunStateResponse", "paused"),
         ("DailyAnomalyStateResponse", "type"),
         ("DailyAnomalyStateResponse", "rule_key"),
         ("DailyAnomalyStateResponse", "multiplier"),
@@ -914,6 +943,16 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
         ("DailyAnomalyStateResponse", "routing"),
         ("DailyAnomalyStateResponse", "snoozed_until"),
         ("DailyAnomalyStateResponse", "paused"),
+        ("ScopedBudgetStateResponse", "type"),
+        ("ScopedBudgetStateResponse", "rule_key"),
+        ("ScopedBudgetStateResponse", "scope"),
+        ("ScopedBudgetStateResponse", "match"),
+        ("ScopedBudgetStateResponse", "limit"),
+        ("ScopedBudgetStateResponse", "mode"),
+        ("ScopedBudgetStateResponse", "channel_ids"),
+        ("ScopedBudgetStateResponse", "routing"),
+        ("ScopedBudgetStateResponse", "snoozed_until"),
+        ("ScopedBudgetStateResponse", "paused"),
         ("UnitCostAnomalyStateResponse", "type"),
         ("UnitCostAnomalyStateResponse", "rule_key"),
         ("UnitCostAnomalyStateResponse", "multiplier"),

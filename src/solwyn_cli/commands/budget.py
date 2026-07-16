@@ -125,6 +125,13 @@ class _ForecastOverrunState(_ThresholdStateBase):
     period: Literal["month"] = "month"
 
 
+class _RunawayRunState(_ThresholdStateBase):
+    type: Literal["runaway_run"]
+    spend_threshold_usd: Annotated[FiniteFloat, Field(gt=0, le=1999999.99)]
+    call_threshold: Annotated[int, Field(ge=1)] | None = None
+    window_minutes: Annotated[int, Field(ge=1, le=1440)] | None = None
+
+
 class _DailyAnomalyState(_ThresholdStateBase):
     type: Literal["daily_anomaly"]
     multiplier: Annotated[FiniteFloat, Field(gt=1, le=100)]
@@ -137,11 +144,21 @@ class _UnitCostAnomalyState(_ThresholdStateBase):
     lookback_days: Annotated[int, Field(ge=3, le=30)] = 7
 
 
+class _ScopedBudgetState(_ThresholdStateBase):
+    type: Literal["scoped_budget"]
+    scope: Literal["model", "provider", "agent_run"]
+    match: Annotated[str, Field(min_length=1, max_length=2048)]
+    limit: Annotated[FiniteFloat, Field(gt=0, le=999999.999999)]
+    mode: BudgetMode
+
+
 _ThresholdState = Annotated[
     _BudgetThresholdState
     | _ForecastOverrunState
+    | _RunawayRunState
     | _DailyAnomalyState
-    | _UnitCostAnomalyState,
+    | _UnitCostAnomalyState
+    | _ScopedBudgetState,
     Field(discriminator="type"),
 ]
 

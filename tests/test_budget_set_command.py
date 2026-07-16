@@ -50,6 +50,17 @@ THRESHOLDS = [
         "paused": False,
     },
     {
+        "type": "runaway_run",
+        "rule_key": "runaway:50",
+        "spend_threshold_usd": 50.0,
+        "call_threshold": 100,
+        "window_minutes": 60,
+        "channel_ids": ["channel-runaway"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
         "type": "daily_anomaly",
         "rule_key": "daily:2.5:14",
         "multiplier": 2.5,
@@ -68,6 +79,18 @@ THRESHOLDS = [
         "routing": ROUTING,
         "snoozed_until": None,
         "paused": True,
+    },
+    {
+        "type": "scoped_budget",
+        "rule_key": "scoped:model:gpt-4o",
+        "scope": "model",
+        "match": "gpt-4o",
+        "limit": 25.5,
+        "mode": "hard_deny",
+        "channel_ids": ["channel-scoped"],
+        "routing": ROUTING,
+        "snoozed_until": None,
+        "paused": False,
     },
 ]
 BUDGET_RESPONSE = {
@@ -106,6 +129,15 @@ EXPECTED_THRESHOLD_CONFIGS = [
         "paused": False,
     },
     {
+        "type": "runaway_run",
+        "spend_threshold_usd": 50.0,
+        "call_threshold": 100,
+        "window_minutes": 60,
+        "channel_ids": ["channel-runaway"],
+        "snoozed_until": None,
+        "paused": False,
+    },
+    {
         "type": "daily_anomaly",
         "multiplier": 2.5,
         "lookback_days": 14,
@@ -120,6 +152,16 @@ EXPECTED_THRESHOLD_CONFIGS = [
         "channel_ids": ["channel-unit"],
         "snoozed_until": None,
         "paused": True,
+    },
+    {
+        "type": "scoped_budget",
+        "scope": "model",
+        "match": "gpt-4o",
+        "limit": 25.5,
+        "mode": "hard_deny",
+        "channel_ids": ["channel-scoped"],
+        "snoozed_until": None,
+        "paused": False,
     },
 ]
 
