@@ -2,6 +2,7 @@ Field                                    Value
 ID                             key_replacement
 Key prefix            sk_proj_cdcdcdcdcdcdcdcd
 Rotation grace until      2026-07-10T13:30:00Z
+Scope                                     full
 ╭──────────────────── One-time replacement project key ────────────────────╮
 │ sk_proj_cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd │
 ╰──────────────────────────────────────────────────────────────────────────╯

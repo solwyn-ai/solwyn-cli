@@ -62,6 +62,13 @@ class BudgetMode(StrEnum):
     HARD_DENY = "hard_deny"
 
 
+class ProjectKeyScope(StrEnum):
+    """Capability scope granted to a single project API key."""
+
+    FULL = "full"
+    READ_ONLY = "read_only"
+
+
 class _ThresholdConfig(_WireModel):
     type: Literal["budget_threshold"] = "budget_threshold"
     percent: Annotated[int, Field(ge=1, le=100)]
@@ -139,9 +146,32 @@ class TokenDetails(_WireModel):
     reasoning_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     audio_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     audio_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    # Subset buckets, not additional spend: image input is counted inside
+    # input_tokens and image output inside output_tokens, exactly as reasoning
+    # tokens are counted inside output_tokens. The API prices image-rate models
+    # from them, so omitting them under-settles image spend.
+    image_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    image_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     accepted_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     rejected_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
     tool_use_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0
+    is_estimated: bool = False
+
+
+class MediaUsage(_WireModel):
+    """Non-text billing quantities the API prices a media call from.
+
+    A quantity is null when it is unobservable for the call — never zero, which
+    would claim the call billed none of it.
+    """
+
+    image_count: Annotated[int, Field(ge=0)] | None = None
+    generation_count: Annotated[int, Field(ge=0)] | None = None
+    video_seconds: Annotated[float, Field(ge=0)] | None = None
+    audio_seconds: Annotated[float, Field(ge=0)] | None = None
+    input_characters: Annotated[int, Field(ge=0)] | None = None
+    resolution: Annotated[str, Field(max_length=32)] | None = None
+    quality: Annotated[str, Field(max_length=32)] | None = None
     is_estimated: bool = False
 
 
@@ -172,10 +202,17 @@ class ProjectCreateRequest(_WireModel):
     budget_mode: Annotated[str, Field(pattern=r"^(alert_only|hard_deny)$")] = (
         "alert_only"
     )
+    # Declared, never posted unless chosen: the request is serialized with
+    # exclude_unset, so an unset scope is omitted and the API applies this same
+    # default. The drift guard pins the two defaults together.
+    scope: ProjectKeyScope = ProjectKeyScope.FULL
 
 
 class ProjectKeyRotateRequest(_WireModel):
     grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
+    # No default on the wire: a null scope asks the API to carry the replaced
+    # key's scope over to the replacement.
+    scope: ProjectKeyScope | None = None
 
 
 class BudgetUpdateRequest(_WireModel):
@@ -191,6 +228,8 @@ class BudgetCheckRequest(_WireModel):
     estimated_input_tokens: Annotated[int, Field(ge=0)]
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
+    # Null for text-only calls: the API then prices the reservation from tokens.
+    estimated_media: MediaUsage | None = None
     fallback_providers: list[ProviderName] = Field(default_factory=list)
     fallback_models: Annotated[
         list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)

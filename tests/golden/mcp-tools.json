@@ -843,6 +843,19 @@
           "default": null,
           "title": "Agent Run Id"
         },
+        "audio_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Seconds"
+        },
         "estimated_input_tokens": {
           "minimum": 0,
           "title": "Estimated Input Tokens",
@@ -881,6 +894,50 @@
           "default": null,
           "title": "Fallback Providers"
         },
+        "generation_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation Count"
+        },
+        "image_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Count"
+        },
+        "input_characters": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Characters"
+        },
+        "is_estimated": {
+          "default": false,
+          "title": "Is Estimated",
+          "type": "boolean"
+        },
         "model": {
           "maxLength": 2048,
           "title": "Model",
@@ -888,6 +945,45 @@
         },
         "provider": {
           "$ref": "#/$defs/ProviderName"
+        },
+        "quality": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quality"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolution"
+        },
+        "video_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Seconds"
         }
       },
       "required": [
@@ -1210,6 +1306,20 @@
           "minLength": 1,
           "title": "Call Id",
           "type": "string"
+        },
+        "image_input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Image Input Tokens",
+          "type": "integer"
+        },
+        "image_output_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Image Output Tokens",
+          "type": "integer"
         },
         "input_tokens": {
           "default": 0,

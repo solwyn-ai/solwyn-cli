@@ -13,6 +13,7 @@ from solwyn_cli import auth, runtime
 from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
     BudgetConfirmRequest,
+    MediaUsage,
     ProviderName,
     ServiceTier,
     TokenDetails,
@@ -82,9 +83,12 @@ _SAFE_REMOTE_HINTS = {
     "authentication_required": "Run solwyn login, then retry.",
     "forbidden": "Check account access for this operation, then retry.",
     "invalid_token": "Run solwyn login again, then retry.",
+    # Rotation is JWT-only and destructive, so the agent-facing hint stops at the
+    # remedy an agent can actually apply and at a read-only way to inspect scope.
     "read_only_key": (
-        "The configured project key is read-only; set SOLWYN_API_KEY to a key "
-        "with write scope, then retry."
+        "The configured project key is read-only; set SOLWYN_API_KEY to a "
+        "write-scoped key, then retry. Confirm a key's scope with "
+        "solwyn keys show."
     ),
     "reservation_not_found": (
         "The reservation expired or was consumed; run a fresh check before spend."
@@ -403,6 +407,14 @@ def _budget_check_operation(
     fallback_providers: list[ProviderName],
     fallback_models: list[str],
     agent_run_id: str | None,
+    image_count: int | None,
+    generation_count: int | None,
+    video_seconds: float | None,
+    audio_seconds: float | None,
+    input_characters: int | None,
+    resolution: str | None,
+    quality: str | None,
+    is_estimated: bool,
 ) -> _BudgetCheckResult:
     if len(fallback_providers) != len(fallback_models):
         return _error(
@@ -410,11 +422,37 @@ def _budget_check_operation(
             code="fallback_alignment_required",
             message="Fallback providers and models must have aligned counts.",
         )
+    quantities = (
+        image_count,
+        generation_count,
+        video_seconds,
+        audio_seconds,
+        input_characters,
+        resolution,
+        quality,
+    )
     try:
+        # No media argument at all means a text-only call: the request omits
+        # estimated_media entirely rather than posting an all-null object.
+        estimated_media = (
+            MediaUsage(
+                image_count=image_count,
+                generation_count=generation_count,
+                video_seconds=video_seconds,
+                audio_seconds=audio_seconds,
+                input_characters=input_characters,
+                resolution=resolution,
+                quality=quality,
+                is_estimated=is_estimated,
+            )
+            if is_estimated or any(value is not None for value in quantities)
+            else None
+        )
         request = BudgetCheckRequest(
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,
+            estimated_media=estimated_media,
             fallback_providers=fallback_providers,
             fallback_models=fallback_models,
             agent_run_id=agent_run_id,
@@ -460,6 +498,8 @@ def _budget_confirm_operation(
     reasoning_tokens: int,
     audio_input_tokens: int,
     audio_output_tokens: int,
+    image_input_tokens: int,
+    image_output_tokens: int,
     accepted_prediction_tokens: int,
     rejected_prediction_tokens: int,
     tool_use_input_tokens: int,
@@ -483,6 +523,8 @@ def _budget_confirm_operation(
                 reasoning_tokens=reasoning_tokens,
                 audio_input_tokens=audio_input_tokens,
                 audio_output_tokens=audio_output_tokens,
+                image_input_tokens=image_input_tokens,
+                image_output_tokens=image_output_tokens,
                 accepted_prediction_tokens=accepted_prediction_tokens,
                 rejected_prediction_tokens=rejected_prediction_tokens,
                 tool_use_input_tokens=tool_use_input_tokens,
@@ -627,6 +669,14 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         fallback_providers: BudgetFallbackProviders | None = None,
         fallback_models: BudgetFallbackModels | None = None,
         agent_run_id: BudgetAgentRunId | None = None,
+        image_count: Annotated[int, Field(ge=0)] | None = None,
+        generation_count: Annotated[int, Field(ge=0)] | None = None,
+        video_seconds: Annotated[float, Field(ge=0)] | None = None,
+        audio_seconds: Annotated[float, Field(ge=0)] | None = None,
+        input_characters: Annotated[int, Field(ge=0)] | None = None,
+        resolution: Annotated[str, Field(max_length=32)] | None = None,
+        quality: Annotated[str, Field(max_length=32)] | None = None,
+        is_estimated: bool = False,
     ) -> _BudgetCheckResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -638,6 +688,14 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 fallback_providers=fallback_providers or [],
                 fallback_models=fallback_models or [],
                 agent_run_id=agent_run_id,
+                image_count=image_count,
+                generation_count=generation_count,
+                video_seconds=video_seconds,
+                audio_seconds=audio_seconds,
+                input_characters=input_characters,
+                resolution=resolution,
+                quality=quality,
+                is_estimated=is_estimated,
             )
         )
 
@@ -664,6 +722,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         reasoning_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         audio_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         audio_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
+        image_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
+        image_output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         accepted_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         rejected_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         tool_use_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
@@ -688,6 +748,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 reasoning_tokens=reasoning_tokens,
                 audio_input_tokens=audio_input_tokens,
                 audio_output_tokens=audio_output_tokens,
+                image_input_tokens=image_input_tokens,
+                image_output_tokens=image_output_tokens,
                 accepted_prediction_tokens=accepted_prediction_tokens,
                 rejected_prediction_tokens=rejected_prediction_tokens,
                 tool_use_input_tokens=tool_use_input_tokens,

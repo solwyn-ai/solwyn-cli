@@ -51,12 +51,16 @@ ALL_TOKEN_ARGS = [
     "17",
     "--audio-output-tokens",
     "18",
-    "--accepted-prediction-tokens",
+    "--image-input-tokens",
     "19",
-    "--rejected-prediction-tokens",
+    "--image-output-tokens",
     "20",
-    "--tool-use-input-tokens",
+    "--accepted-prediction-tokens",
     "21",
+    "--rejected-prediction-tokens",
+    "22",
+    "--tool-use-input-tokens",
+    "23",
     "--is-estimated",
 ]
 TOKEN_COUNT_FLAGS = [
@@ -68,6 +72,8 @@ TOKEN_COUNT_FLAGS = [
     "--reasoning-tokens",
     "--audio-input-tokens",
     "--audio-output-tokens",
+    "--image-input-tokens",
+    "--image-output-tokens",
     "--accepted-prediction-tokens",
     "--rejected-prediction-tokens",
     "--tool-use-input-tokens",
@@ -178,9 +184,11 @@ def test_budget_confirm_posts_every_token_detail_with_project_key(
                         "reasoning_tokens": 16,
                         "audio_input_tokens": 17,
                         "audio_output_tokens": 18,
-                        "accepted_prediction_tokens": 19,
-                        "rejected_prediction_tokens": 20,
-                        "tool_use_input_tokens": 21,
+                        "image_input_tokens": 19,
+                        "image_output_tokens": 20,
+                        "accepted_prediction_tokens": 21,
+                        "rejected_prediction_tokens": 22,
+                        "tool_use_input_tokens": 23,
                         "is_estimated": True,
                     },
                     "provider_region": "us-east-1",
@@ -190,6 +198,66 @@ def test_budget_confirm_posts_every_token_detail_with_project_key(
             },
         )
     ]
+
+
+def test_budget_confirm_posts_zero_image_buckets_when_the_flags_are_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset image buckets settle at 0, exactly like every other token bucket."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue_success()
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS])
+
+    assert result.exit_code == 0
+    (_, _, kwargs) = FakeClient.instances[0].requests[0]
+    assert kwargs["json"]["token_details"] == {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
+        "reasoning_tokens": 0,
+        "audio_input_tokens": 0,
+        "audio_output_tokens": 0,
+        "image_input_tokens": 0,
+        "image_output_tokens": 0,
+        "accepted_prediction_tokens": 0,
+        "rejected_prediction_tokens": 0,
+        "tool_use_input_tokens": 0,
+        "is_estimated": False,
+    }
+
+
+def test_budget_confirm_posts_image_buckets_inside_the_reported_totals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Image buckets are subsets, so the totals stay the provider's own totals."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue_success()
+
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            *BASE_ARGS,
+            "--input-tokens",
+            "222",
+            "--image-input-tokens",
+            "194",
+            "--output-tokens",
+            "1056",
+            "--image-output-tokens",
+            "1024",
+        ],
+    )
+
+    assert result.exit_code == 0
+    token_details = FakeClient.instances[0].requests[0][2]["json"]["token_details"]
+    assert token_details["input_tokens"] == 222
+    assert token_details["image_input_tokens"] == 194
+    assert token_details["output_tokens"] == 1056
+    assert token_details["image_output_tokens"] == 1024
 
 
 @pytest.mark.parametrize("output_format", ["table", "json"])
@@ -282,8 +350,8 @@ def test_budget_confirm_read_only_key_403_exits_auth_with_an_actionable_hint(
     error = json.loads(result.stderr)
     assert error["code"] == "read_only_key"
     assert error["hint"] == (
-        "Set SOLWYN_API_KEY to a project key with write scope, or store one "
-        "with solwyn login --with-key."
+        "Set SOLWYN_API_KEY to a write-scoped key, or run solwyn login and "
+        "solwyn keys rotate --scope full to replace this project's key with one."
     )
 
 

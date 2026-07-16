@@ -34,12 +34,14 @@ KEY_METADATA = {
     "expires_at": None,
     "rotation_grace_until": None,
     "created_at": "2026-07-01T08:00:00Z",
+    "scope": "read_only",
 }
 ROTATE_RESPONSE = {
     "id": "key_replacement",
     "key": ROTATED_KEY,
     "key_prefix": ROTATED_KEY[:24],
     "rotation_grace_until": "2026-07-10T13:30:00Z",
+    "scope": "full",
 }
 
 
@@ -207,7 +209,7 @@ def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
             "POST",
             "/api/v1/projects/proj%2Frecovery/key/rotate",
             {
-                "json": {"grace_seconds": 3600},
+                "json": {"grace_seconds": 3600, "scope": None},
                 "retry_rate_limit": False,
                 "retry_auth": False,
             },
@@ -222,16 +224,62 @@ def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
     )
 
 
-def test_keys_rotate_maps_omitted_grace_to_explicit_null(
+def test_keys_rotate_maps_omitted_grace_and_scope_to_explicit_nulls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """An omitted scope posts null, which asks the API to keep the current one."""
     monkeypatch.setattr(keys_module, "resolve_credential", _jwt)
     FakeClient.responses = [httpx.Response(200, json=ROTATE_RESPONSE)]
 
     result = runner.invoke(app, ["--json", "--project", "proj", "keys", "rotate"])
 
     assert result.exit_code == 0, result.stderr
-    assert FakeClient.instances[0].requests[0][2]["json"] == {"grace_seconds": None}
+    assert FakeClient.instances[0].requests[0][2]["json"] == {
+        "grace_seconds": None,
+        "scope": None,
+    }
+
+
+@pytest.mark.parametrize("scope", ["full", "read_only"])
+def test_keys_rotate_posts_the_chosen_scope_for_the_replacement_key(
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+) -> None:
+    monkeypatch.setattr(keys_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json={**ROTATE_RESPONSE, "scope": scope})
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "proj", "keys", "rotate", "--scope", scope],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests[0][2]["json"] == {
+        "grace_seconds": None,
+        "scope": scope,
+    }
+    # The minted scope is echoed back so the result confirms what now exists.
+    assert json.loads(result.stdout)["scope"] == scope
+
+
+def test_keys_rotate_rejects_an_unknown_scope_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        keys_module,
+        "resolve_credential",
+        lambda: pytest.fail("must validate before auth"),
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "proj", "keys", "rotate", "--scope", "admin"],
+    )
+
+    assert result.exit_code == 2
+    assert FakeClient.instances == []
 
 
 @pytest.mark.parametrize("output_format", ["table", "json"])
@@ -441,6 +489,31 @@ def test_keys_show_not_found_matches_golden(
         ),
         (["show"], httpx.Response(201, json=KEY_METADATA)),
         (["rotate"], httpx.Response(201, json=ROTATE_RESPONSE)),
+        # The spec requires scope on both responses: absent or unknown is invalid.
+        (
+            ["show"],
+            httpx.Response(
+                200,
+                json={
+                    field: value
+                    for field, value in KEY_METADATA.items()
+                    if field != "scope"
+                },
+            ),
+        ),
+        (["show"], httpx.Response(200, json={**KEY_METADATA, "scope": "admin"})),
+        (
+            ["rotate"],
+            httpx.Response(
+                200,
+                json={
+                    field: value
+                    for field, value in ROTATE_RESPONSE.items()
+                    if field != "scope"
+                },
+            ),
+        ),
+        (["rotate"], httpx.Response(200, json={**ROTATE_RESPONSE, "scope": "admin"})),
         (
             ["rotate"],
             httpx.Response(

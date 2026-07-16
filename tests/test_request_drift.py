@@ -17,7 +17,6 @@ from solwyn_cli._vendor.wire import (
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
     RefreshRequest,
-    TokenDetails,
 )
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
@@ -39,6 +38,9 @@ DECLARED_DEFAULT_FIELDS = {
         "budget_limit",
         "budget_period",
         "budget_mode",
+        # Declared but omitted from the body unless chosen; pinning the two
+        # defaults together is what makes the omission behavior-preserving.
+        "scope",
     ),
     "ProjectKeyRotateRequest": ("grace_seconds",),
 }
@@ -49,14 +51,21 @@ DECLARED_DEFAULT_FIELDS = {
 # it. Mirrors stay an exact match against everything the CLI actually posts.
 UNADOPTED_OPTIONAL_FIELDS = {
     "BudgetCheckRequest": (
-        "estimated_media",
+        # Declined: the directive it requests only tunes SDK-side retry and
+        # circuit-breaker behavior, which the CLI does not perform; opting in
+        # would also switch the check response to null-omitting encoding.
         "failover_directive_version",
+        # Declined: inert on this endpoint — the budget aggregator never reads
+        # it; Core derives modality from (provider, model) itself.
         "modality",
     ),
-    "BudgetConfirmRequest": ("media_usage", "modality"),
-    "TokenDetails": ("image_input_tokens", "image_output_tokens"),
-    "ProjectCreateRequest": ("scope",),
-    "ProjectKeyRotateRequest": ("scope",),
+    "BudgetConfirmRequest": (
+        # Declined: the confirm endpoint settles from token_details only and
+        # never reads it.
+        "media_usage",
+        # Declined: same as check — inert on this endpoint.
+        "modality",
+    ),
 }
 # Threshold rule configs the CLI cannot construct.
 #
@@ -73,9 +82,6 @@ UNADOPTED_THRESHOLD_CONFIGS: tuple[str, ...] = ()
 UNADOPTED_FIELD_OWNERS = {
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
-    "TokenDetails": TokenDetails,
-    "ProjectCreateRequest": ProjectCreateRequest,
-    "ProjectKeyRotateRequest": ProjectKeyRotateRequest,
 }
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 
@@ -535,6 +541,8 @@ def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
         "reasoning_tokens",
         "audio_input_tokens",
         "audio_output_tokens",
+        "image_input_tokens",
+        "image_output_tokens",
         "accepted_prediction_tokens",
         "rejected_prediction_tokens",
         "tool_use_input_tokens",

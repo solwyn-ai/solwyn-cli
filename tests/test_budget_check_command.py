@@ -192,6 +192,119 @@ def test_budget_check_omits_agent_run_id_rather_than_posting_an_explicit_null(
     }
 
 
+def test_budget_check_omits_estimated_media_for_a_text_only_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No media flag leaves the wire body byte-identical to a pre-flag check."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue()
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS])
+
+    assert result.exit_code == 0
+    (_, _, kwargs) = FakeClient.instances[0].requests[0]
+    assert "estimated_media" not in kwargs["json"]
+
+
+def test_budget_check_posts_every_media_quantity_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue()
+
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            *BASE_ARGS,
+            "--image-count",
+            "2",
+            "--generation-count",
+            "1",
+            "--video-seconds",
+            "8.5",
+            "--audio-seconds",
+            "12",
+            "--input-characters",
+            "480",
+            "--resolution",
+            "1024x1024",
+            "--quality",
+            "hd",
+            "--is-estimated",
+        ],
+    )
+
+    assert result.exit_code == 0
+    (_, _, kwargs) = FakeClient.instances[0].requests[0]
+    assert kwargs["json"]["estimated_media"] == {
+        "image_count": 2,
+        "generation_count": 1,
+        "video_seconds": 8.5,
+        "audio_seconds": 12.0,
+        "input_characters": 480,
+        "resolution": "1024x1024",
+        "quality": "hd",
+        "is_estimated": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "expected_media"),
+    [
+        (["--video-seconds", "8"], {"video_seconds": 8.0, "is_estimated": False}),
+        (["--image-count", "0"], {"image_count": 0, "is_estimated": False}),
+        (["--is-estimated"], {"is_estimated": True}),
+    ],
+)
+def test_budget_check_sends_only_the_media_quantities_it_was_given(
+    monkeypatch: pytest.MonkeyPatch,
+    extra_args: list[str],
+    expected_media: dict[str, object],
+) -> None:
+    """An unobservable quantity is omitted rather than sent as a zero."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    _queue()
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS, *extra_args])
+
+    assert result.exit_code == 0
+    (_, _, kwargs) = FakeClient.instances[0].requests[0]
+    assert kwargs["json"]["estimated_media"] == expected_media
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--image-count", "-1"],
+        ["--generation-count", "-1"],
+        ["--video-seconds", "-0.5"],
+        ["--audio-seconds", "-0.5"],
+        ["--input-characters", "-1"],
+        ["--video-seconds", "nan"],
+        ["--resolution", "r" * 33],
+        ["--quality", "q" * 33],
+    ],
+)
+def test_budget_check_rejects_invalid_media_values_before_auth_and_network(
+    monkeypatch: pytest.MonkeyPatch,
+    extra_args: list[str],
+) -> None:
+    resolution_calls: list[None] = []
+    monkeypatch.setattr(
+        budget_module,
+        "resolve_credential",
+        lambda: resolution_calls.append(None),
+        raising=False,
+    )
+
+    result = runner.invoke(app, ["--json", *BASE_ARGS, *extra_args])
+
+    assert result.exit_code == 2
+    assert resolution_calls == []
+    assert FakeClient.instances == []
+
+
 def test_budget_check_rejects_an_over_long_agent_run_id_before_auth_and_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
