@@ -1,0 +1,9 @@
+Field                 Value            
+Channels              ch_one           
+Severity              warning          
+Events                all events       
+Email                 true             
+SMS                   false            
+Available channels    email, sms, slack
+SMS allowed events    budget_exceeded  
+Email allowed events  budget_threshold 

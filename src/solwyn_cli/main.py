@@ -6,6 +6,9 @@ import typer
 from pydantic import ValidationError
 
 from solwyn_cli import __version__
+from solwyn_cli.commands.account import app as account_app
+from solwyn_cli.commands.channels import app as channels_app
+from solwyn_cli.commands.notifications import app as notifications_app
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
@@ -41,6 +44,9 @@ app = typer.Typer(
     ),
 )
 app.add_typer(budget_app, name="budget")
+app.add_typer(account_app, name="account")
+app.add_typer(channels_app, name="channels")
+app.add_typer(notifications_app, name="notifications")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")

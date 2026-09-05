@@ -14,6 +14,102 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("account",): {
+        "endpoint": "composite router for account subcommands",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("account", "alert-email"): {
+        "endpoint": "composite router for account alert-email subcommands",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("account", "alert-email", "show"): {
+        "endpoint": "GET /api/v1/account/alert-email",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.account.alert-email.v1",
+    },
+    ("account", "alert-email", "set"): {
+        "endpoint": "PUT /api/v1/account/alert-email",
+        "auth": "JWT; owner for mutations",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.account.alert-email.v1",
+    },
+    ("account", "alert-email", "clear"): {
+        "endpoint": "DELETE /api/v1/account/alert-email",
+        "auth": "JWT; owner for mutations",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.account.alert-email.v1",
+    },
+    ("channels",): {
+        "endpoint": "composite router for channels subcommands",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("channels", "list"): {
+        "endpoint": "GET /api/v1/account/notification-channels",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.channels.list.v1",
+    },
+    ("channels", "show"): {
+        "endpoint": "GET /api/v1/account/notification-channels/{channel_id}",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.channels.v1",
+    },
+    ("channels", "create"): {
+        "endpoint": "POST /api/v1/account/notification-channels",
+        "auth": "JWT; owner for mutations",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.channels.v1",
+    },
+    ("channels", "update"): {
+        "endpoint": "GET then PUT /api/v1/account/notification-channels/{channel_id}",
+        "auth": "JWT; owner for mutations",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.channels.v1",
+    },
+    ("channels", "test"): {
+        "endpoint": "POST /api/v1/account/notification-channels/{channel_id}/test",
+        "auth": "JWT; owner for mutations",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.channels.test.v1",
+    },
+    ("channels", "delete"): {
+        "endpoint": "DELETE /api/v1/account/notification-channels/{channel_id}",
+        "auth": "JWT; owner for mutations",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.channels.delete.v1",
+    },
+    ("notifications",): {
+        "endpoint": "composite router for notifications subcommands",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("notifications", "show"): {
+        "endpoint": "GET /api/v1/projects/{project}/notifications",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.notifications.v1",
+    },
+    ("notifications", "set"): {
+        "endpoint": "PUT /api/v1/projects/{project}/notifications",
+        "auth": "any; full-scope key for writes",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.notifications.v1",
+    },
+    ("notifications", "test"): {
+        "endpoint": "POST /api/v1/projects/{project}/notifications/test-{channel}",
+        "auth": "any; email requires JWT",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.notifications.test.v1",
+    },
     (): {
         "endpoint": "composite command router",
         "auth": "varies by command",
