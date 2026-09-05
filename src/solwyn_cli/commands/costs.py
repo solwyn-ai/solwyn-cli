@@ -63,7 +63,7 @@ class _CostsData(BaseModel):
     range: Literal["7d", "30d", "90d", "365d"]
     group_by: Literal["day", "model", "provider"]
     groups: list[_CostGroup]
-    truncated: bool = False
+    truncated: bool
 
 
 CostsData = _CostsData

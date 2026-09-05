@@ -220,8 +220,6 @@ def test_tty_key_and_password_prompts_are_hidden_and_write_prompts_to_stderr(
     assert request[2]["json"] == {
         "email": "person@example.com",
         "password": "password-value",
-        "plan": None,
-        "billing_interval": None,
     }
     assert FakeClient.instances[0].api_url == "https://api.solwyn.ai"
     assert_matches_golden(result.stdout, GOLDEN_DIR / "login-jwt.json")

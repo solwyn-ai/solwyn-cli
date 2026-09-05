@@ -75,6 +75,7 @@ def _response(
         "range": time_range,
         "group_by": group_by,
         "groups": copy.deepcopy(GROUPS[group_by]),
+        "truncated": False,
         "savings": None,
     }
 
@@ -455,3 +456,14 @@ def test_truncated_costs_note_stays_on_stderr(output_format, monkeypatch):
         GOLDEN_DIR
         / f"costs-truncated-{output_format}.{'json' if output_format == 'json' else 'txt'}",
     )
+
+
+def test_costs_rejects_missing_truncation_flag(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    response = _response()
+    response.pop("truncated", None)
+    FakeClient.responses = [httpx.Response(200, json=response)]
+    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_costs_response"

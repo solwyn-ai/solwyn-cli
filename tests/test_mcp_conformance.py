@@ -152,6 +152,7 @@ PROVIDERS_RESPONSE = [
     }
 ]
 COSTS_RESPONSE = {
+    "truncated": False,
     "project_id": "proj_alpha",
     "range": "30d",
     "group_by": "provider",

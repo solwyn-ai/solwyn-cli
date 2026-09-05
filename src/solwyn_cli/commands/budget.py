@@ -425,6 +425,56 @@ def _threshold_configs(data: _BudgetStatusData) -> list[dict[str, object]]:
     ]
 
 
+def _configuration_from_status(data: BudgetStatusData) -> BudgetUpdateRequest:
+    """Normalize persisted configuration, excluding all server-only state."""
+    return BudgetUpdateRequest(
+        limit_usd=data.budget_limit,
+        period=data.budget_period,
+        mode=data.budget_mode,
+        sub_period=data.sub_period,
+        sub_limit_usd=data.sub_limit,
+        thresholds=_threshold_configs(data),
+    )
+
+
+def request_budget_update(
+    *, client: SolwynClient, project_id: str, request: BudgetUpdateRequest
+) -> BudgetStatusData:
+    """Write configuration; reconcile a possibly committed 503 without replaying it.
+
+    Core commits before reading the response snapshot. A matching follow-up GET
+    proves the intended configuration is now present; any other result leaves
+    the write outcome indeterminate. Ordinary bounded 429 handling is unchanged.
+    """
+    project_path = quote(project_id, safe="")
+    try:
+        response = client.request(
+            "PUT",
+            f"/api/v1/projects/{project_path}/budget",
+            json=request.model_dump(mode="json"),
+        )
+    except ApiError as error:
+        if error.status_code != 503:
+            raise
+        try:
+            updated = request_budget_status(client=client, project_id=project_id)
+            if _configuration_from_status(updated) == request:
+                return updated
+        except (ApiError, AuthError, ValueError, TypeError):
+            pass
+        raise ApiError(
+            status_code=503,
+            code="budget_update_indeterminate",
+            message="The budget update may have been saved, but its result could not be confirmed.",
+            hint="Run solwyn budget status and review the full configuration before retrying the update.",
+            detail=None,
+        ) from error
+    updated = _BudgetStatusData.model_validate(response.json())
+    if updated.project_id != project_id:
+        raise ValueError("Budget response project did not match the request.")
+    return updated
+
+
 def _set_data(data: _BudgetStatusData) -> _BudgetSetData:
     return _BudgetSetData(
         project_id=data.project_id,
@@ -1062,14 +1112,9 @@ def set_budget(
                 sub_limit_usd=current.sub_limit,
                 thresholds=_threshold_configs(current),
             )
-            updated_response = client.request(
-                "PUT",
-                endpoint,
-                json=request.model_dump(mode="json"),
+            updated = request_budget_update(
+                client=client, project_id=project_id, request=request
             )
-            updated = _BudgetStatusData.model_validate(updated_response.json())
-            if updated.project_id != project_id:
-                raise ValueError("Budget response project did not match the request.")
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
