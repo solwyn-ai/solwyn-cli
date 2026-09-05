@@ -324,7 +324,7 @@ def test_costs_rejects_non_frozen_options_before_request(option: list[str]) -> N
     assert FakeClient.instances == []
 
 
-def test_costs_relays_founder_gated_402_for_free_project_key(
+def test_costs_relays_production_gated_402_for_free_project_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = _credential()
@@ -425,3 +425,33 @@ def test_costs_goldens_never_contain_synthetic_credentials() -> None:
         assert VALID_KEY not in rendered
         assert ACCESS_TOKEN not in rendered
         assert REFRESH_TOKEN not in rendered
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_truncated_costs_note_stays_on_stderr(output_format, monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential, raising=False)
+    response = _response()
+    response["truncated"] = True
+    response["groups"][0]["agent_run_name"] = "Research job"
+    FakeClient.responses = [httpx.Response(200, json=response)]
+    result = runner.invoke(
+        app,
+        [
+            "--project",
+            "proj_alpha",
+            *(["--json"] if output_format == "json" else []),
+            "costs",
+        ],
+    )
+    assert result.exit_code == 0
+    assert result.stderr == "showing top 100 groups\n"
+    assert "showing top" not in result.stdout
+    if output_format == "json":
+        assert (
+            json.loads(result.stdout)["groups"][0]["agent_run_name"] == "Research job"
+        )
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR
+        / f"costs-truncated-{output_format}.{'json' if output_format == 'json' else 'txt'}",
+    )

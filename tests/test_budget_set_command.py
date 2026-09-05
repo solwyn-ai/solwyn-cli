@@ -51,6 +51,7 @@ THRESHOLDS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "rule_key": "runaway:50",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
@@ -82,6 +83,8 @@ THRESHOLDS = [
     },
     {
         "type": "scoped_budget",
+        "current_usage": None,
+        "match_value": None,
         "rule_key": "scoped:model:gpt-4o",
         "scope": "model",
         "match": "gpt-4o",
@@ -101,6 +104,7 @@ BUDGET_RESPONSE = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 25.0,
     "thresholds": THRESHOLDS,
     "sub_period": "daily",
@@ -130,6 +134,7 @@ EXPECTED_THRESHOLD_CONFIGS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
         "window_minutes": 60,
@@ -155,6 +160,7 @@ EXPECTED_THRESHOLD_CONFIGS = [
     },
     {
         "type": "scoped_budget",
+        "match_value": None,
         "scope": "model",
         "match": "gpt-4o",
         "limit": 25.5,

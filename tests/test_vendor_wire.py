@@ -51,6 +51,7 @@ from solwyn_cli._vendor.wire import (
         (
             BudgetCheckRequest,
             {
+                "price_hints_version",
                 "estimated_input_tokens",
                 "model",
                 "provider",

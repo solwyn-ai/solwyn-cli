@@ -33,7 +33,7 @@
           "health"
         ],
         "summary": "Readiness Check",
-        "description": "Deep readiness — DB ping, Redis ping (if configured), billing task supervisor.\n\nReturns 200 with ``status=\"ready\"`` when all non-skipped checks pass,\n503 with ``status=\"degraded\"`` and the offending checks otherwise. ECS task\nhealth checks should poll this endpoint so a replica with a crashed\nmeter-flush loop is taken out of the load balancer.",
+        "description": "Deep readiness — DB ping, Redis ping, billing task supervisor.\n\nReturns 200 with ``status=\"ready\"`` when all non-skipped gating checks\npass, 503 with ``status=\"degraded\"`` and the offending checks otherwise.\nECS task health checks should poll this endpoint so a replica with a\ncrashed meter-flush loop is taken out of the load balancer.\n\nRedis is reported but does NOT gate readiness (R3). The replica can serve\nevery request without it — budget checks fail open, limiters enforce\nlocally, alerts still deliver off the Postgres outbox (see\ndocs/operations/redis-degraded-modes.md). Failing readiness on a Redis\nping would pull *every* replica out of the load balancer during a routine\nElastiCache failover, converting a documented degraded mode into a total\noutage. The check stays in the payload so operators can see it.",
         "operationId": "readiness_check_health_ready_get",
         "responses": {
           "200": {
@@ -134,6 +134,326 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/projects/{project_id}/untracked-surfaces": {
+      "get": {
+        "tags": [
+          "health",
+          "providers"
+        ],
+        "summary": "List Untracked Surfaces",
+        "description": "List recent, approximate observations for provider surfaces Solwyn does not meter.",
+        "operationId": "list_untracked_surfaces_api_v1_projects__project_id__untracked_surfaces_get",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d"
+              ],
+              "type": "string",
+              "default": "7d",
+              "title": "Range"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UntrackedSurfaceResponse"
+                  },
+                  "title": "Response List Untracked Surfaces Api V1 Projects  Project Id  Untracked Surfaces Get"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Project access denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "health",
+          "providers"
+        ],
+        "summary": "Ingest Untracked Surfaces",
+        "description": "Persist content-free SDK observations for surfaces Solwyn does not meter.",
+        "operationId": "ingest_untracked_surfaces_api_v1_projects__project_id__untracked_surfaces_post",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/UntrackedSurfaceReport"
+                },
+                "maxItems": 100,
+                "title": "Reports"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UntrackedSurfaceAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Batch exceeds the limit or repeats an observation key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the advisory report byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Reports require a writable API key with valid project scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Ingest Untracked Surfaces Api V1 Projects  Project Id  Untracked Surfaces Post"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/untracked-surfaces": {
+      "post": {
+        "tags": [
+          "health",
+          "providers"
+        ],
+        "summary": "Ingest Untracked Surfaces For Api Key Project",
+        "description": "Persist content-free SDK observations for the API key's project.",
+        "operationId": "ingest_untracked_surfaces_for_api_key_project_api_v1_untracked_surfaces_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/UntrackedSurfaceReport"
+                },
+                "type": "array",
+                "maxItems": 100,
+                "title": "Reports"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UntrackedSurfaceAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Batch exceeds the limit or repeats an observation key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the advisory report byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Reports require a writable API key with valid project scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Ingest Untracked Surfaces For Api Key Project Api V1 Untracked Surfaces Post"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
       }
     },
     "/api/v1/projects/{project_id}/providers": {
@@ -1003,6 +1323,35 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Project admission rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Budget state temporarily unreadable; retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1018,7 +1367,7 @@
           "budgets"
         ],
         "summary": "Budget Confirm",
-        "description": "Confirm actual cost for a budget reservation.\n\n``body.provider`` and ``body.is_provider_fallback`` are the *served*\nfailover attribution. They are accepted but **not persisted here** — the\ndurable served attribution is written via the metadata-ingest path onto\n``cost_events`` (see ``metadata_ingest._store_cost_event``). Confirm only\nsettles the Redis budget counter, so it has nothing to attribute them to.",
+        "description": "Confirm actual cost for the authority that funded one served call.\n\nThe body names EXACTLY ONE funding source (wire-enforced): a\n``reservation_id`` from the legacy per-call check, or the ``lease_id`` the\ncall drew its tokens from. A lease-funded confirm has no reservation to look\nup — the lease itself is the ownership proof, bound to the caller's project\ninside the settlement — so it skips the reservation choreography entirely.\n\n``body.provider`` and ``body.is_provider_fallback`` are the *served*\nfailover attribution. They are accepted but **not persisted here** — the\ndurable served attribution is written via the metadata-ingest path onto\n``cost_events`` (see ``metadata_ingest._store_cost_event``). Confirm only\nsettles the Redis budget counter, so it has nothing to attribute them to.",
         "operationId": "budget_confirm_api_v1_budgets_confirm_post",
         "requestBody": {
           "content": {
@@ -1066,6 +1415,420 @@
                     }
                   ],
                   "title": "Response 422 Budget Confirm Api V1 Budgets Confirm Post"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Budget backend (Redis) temporarily unavailable; retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/budgets/check/batch": {
+      "post": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Budget Check Batch",
+        "description": "Several pre-flight checks in one round trip.\n\nEach item runs through the SAME per-call path as ``/budgets/check`` and is\nreserved atomically on its own; the batch is a transport optimization, not a\nnew enforcement semantic. Results are index-aligned with ``body.checks``.\n\nA single bad item — an unknown model — rides back as a per-item structured\nerror rather than failing the batch, exactly like the metadata-ingest\nrejection contract. Failing 31 valid checks because the 32nd named a model\nSolwyn cannot price would turn a pricing gap into an outage.",
+        "operationId": "budget_check_batch_api_v1_budgets_check_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetCheckBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetCheckBatchResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only API key cannot perform budget enforcement writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Budget Check Batch Api V1 Budgets Check Batch Post"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Project admission rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Budget state temporarily unreadable; retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/budgets/lease": {
+      "post": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Budget Lease Grant",
+        "description": "Grant a token lease for one (project, agent run, holder).\n\nThree populations share the 200: a GRANT, an INELIGIBLE answer (the run uses\nthe legacy per-call path), and a DENY verdict. Only the refusals below are\nnon-200, and each one is something the SDK recovers from without ever\nblocking a customer call.\n\nThe response serializes ``exclude_none`` so the lease block disappears\nentirely from the ineligible and deny shapes.",
+        "operationId": "budget_lease_grant_api_v1_budgets_lease_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseGrantResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only API key cannot take or mutate a budget lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Budget Lease Grant Api V1 Budgets Lease Post"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown lease (or a key/holder binding mismatch), or unknown project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LeaseErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 404 Budget Lease Grant Api V1 Budgets Lease Post"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active-holder cap exceeded, or the echoed generation is not fenceable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Project admission rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lease infrastructure unavailable; the run falls back to per-call checks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/budgets/lease/renew": {
+      "post": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Budget Lease Renew",
+        "description": "Acknowledge the current grant, report drawdown, and issue the successor.\n\nThe echoed ``generation`` is the idempotency key: a renewal whose response\nwas lost replays byte-identically, and anything unfenceable is a 409 the SDK\nanswers by dropping its lease and asking for a fresh grant.",
+        "operationId": "budget_lease_renew_api_v1_budgets_lease_renew_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseRenewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseGrantResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only API key cannot take or mutate a budget lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Budget Lease Renew Api V1 Budgets Lease Renew Post"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown lease (or a key/holder binding mismatch), or unknown project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LeaseErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 404 Budget Lease Renew Api V1 Budgets Lease Renew Post"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active-holder cap exceeded, or the echoed generation is not fenceable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lease infrastructure unavailable; the run falls back to per-call checks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/budgets/lease/surrender": {
+      "post": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Budget Lease Surrender",
+        "description": "Release a lease's float on clean shutdown (DHCPRELEASE-style).\n\nIdempotent by design: surrendering an already-released lease returns\n``released_tokens: 0`` rather than 404, because a retried surrender from a\nprocess that is exiting must never look like an error.",
+        "operationId": "budget_lease_surrender_api_v1_budgets_lease_surrender_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseSurrenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseSurrenderResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only API key cannot take or mutate a budget lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Budget Lease Surrender Api V1 Budgets Lease Surrender Post"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown lease, or a key/holder binding mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lease infrastructure unavailable; the run falls back to per-call checks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1119,6 +1882,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Budget state temporarily unreadable; retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
                 }
               }
             }
@@ -1203,6 +1976,16 @@
                     }
                   ],
                   "title": "Response 422 Update Budget Api V1 Projects  Project Id  Budget Put"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Budget configuration saved, but the status snapshot is temporarily unreadable; fetch status again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
                 }
               }
             }
@@ -2423,7 +3206,7 @@
           "costs"
         ],
         "summary": "List Cost Events",
-        "description": "Paginated raw cost events for a project.\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
+        "description": "Paginated raw cost events for a project.",
         "operationId": "list_cost_events_api_v1_projects__project_id__costs_events_get",
         "security": [
           {
@@ -2446,9 +3229,11 @@
             "required": false,
             "schema": {
               "type": "string",
+              "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window. A status probe (`limit=1` without `cursor`) bypasses range entitlement and custom-duration gates but remains retention-clamped.",
               "default": "7d",
               "title": "Range"
-            }
+            },
+            "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window. A status probe (`limit=1` without `cursor`) bypasses range entitlement and custom-duration gates but remains retention-clamped."
           },
           {
             "name": "limit",
@@ -2476,6 +3261,22 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
             }
           },
           {
@@ -2528,6 +3329,26 @@
               ],
               "title": "Agent Run Id"
             }
+          },
+          {
+            "name": "agent_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422.",
+              "title": "Agent Run"
+            },
+            "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422."
           },
           {
             "name": "status",
@@ -2668,6 +3489,18 @@
               ],
               "title": "To"
             }
+          },
+          {
+            "name": "tag.<key>",
+            "in": "query",
+            "required": false,
+            "description": "Filter by an exact event tag. `tag.<key>` is a documentation placeholder and MUST NOT be sent literally. Replace `<key>` with the actual tag key; for example, send `tag.environment=production`. Generated clients that cannot add undeclared parameters must use their raw query-string or query-parameter transport escape hatch. Multiple tag filters use AND semantics. Keys must be 1-64 characters, values may be 0-256 characters, and duplicate keys are rejected with 422. Tag filtering is available on Team and Scale tiers.",
+            "example": "production",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "x-solwyn-dynamic-query-prefix": "tag."
           }
         ],
         "responses": {
@@ -2710,7 +3543,7 @@
           "costs"
         ],
         "summary": "Query Costs",
-        "description": "Aggregated cost data for a project (D15).\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
+        "description": "Aggregated cost data for a project (D15).",
         "operationId": "query_costs_api_v1_projects__project_id__costs_get",
         "security": [
           {
@@ -2733,19 +3566,11 @@
             "required": false,
             "schema": {
               "type": "string",
+              "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window.",
               "default": "7d",
               "title": "Range"
-            }
-          },
-          {
-            "name": "group_by",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "model",
-              "title": "Group By"
-            }
+            },
+            "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window."
           },
           {
             "name": "model",
@@ -2778,6 +3603,61 @@
               ],
               "title": "Provider"
             }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Modality"
+            }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "agent_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422.",
+              "title": "Agent Run"
+            },
+            "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422."
           },
           {
             "name": "status",
@@ -2835,25 +3715,6 @@
                 }
               ],
               "title": "Provider Region"
-            }
-          },
-          {
-            "name": "agent_run_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 36,
-                  "maxLength": 36,
-                  "pattern": "^run_[0-9a-f]{32}$"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Agent Run Id"
             }
           },
           {
@@ -2937,6 +3798,30 @@
               ],
               "title": "To"
             }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Group results by exactly one of `model`, `provider`, `day`, `status`, `service_tier`, `provider_region`, `failover_reason`, `agent_run`, or a tag key using `tag:<key>` (for example, `tag:environment`). Availability is tier-dependent; tag grouping and agent-run grouping are available on Team and Scale tiers. Aggregated groupings return at most the top 100 groups by spend and report overflow via `truncated`; `day` is a time series that always returns the full window in chronological order and is never truncated.",
+              "default": "model",
+              "title": "Group By"
+            },
+            "description": "Group results by exactly one of `model`, `provider`, `day`, `status`, `service_tier`, `provider_region`, `failover_reason`, `agent_run`, or a tag key using `tag:<key>` (for example, `tag:environment`). Availability is tier-dependent; tag grouping and agent-run grouping are available on Team and Scale tiers. Aggregated groupings return at most the top 100 groups by spend and report overflow via `truncated`; `day` is a time series that always returns the full window in chronological order and is never truncated."
+          },
+          {
+            "name": "tag.<key>",
+            "in": "query",
+            "required": false,
+            "description": "Filter by an exact event tag. `tag.<key>` is a documentation placeholder and MUST NOT be sent literally. Replace `<key>` with the actual tag key; for example, send `tag.environment=production`. Generated clients that cannot add undeclared parameters must use their raw query-string or query-parameter transport escape hatch. Multiple tag filters use AND semantics. Keys must be 1-64 characters, values may be 0-256 characters, and duplicate keys are rejected with 422. Tag filtering is available on Team and Scale tiers.",
+            "example": "production",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "x-solwyn-dynamic-query-prefix": "tag."
           }
         ],
         "responses": {
@@ -2979,7 +3864,7 @@
           "costs"
         ],
         "summary": "Total Costs",
-        "description": "Return the server-authoritative real-spend total for an events window.\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
+        "description": "Return the server-authoritative real-spend total for an events window.",
         "operationId": "total_costs_api_v1_projects__project_id__costs_total_get",
         "security": [
           {
@@ -3002,9 +3887,11 @@
             "required": false,
             "schema": {
               "type": "string",
+              "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window.",
               "default": "7d",
               "title": "Range"
-            }
+            },
+            "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window."
           },
           {
             "name": "model",
@@ -3053,6 +3940,45 @@
               ],
               "title": "Modality"
             }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "agent_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422.",
+              "title": "Agent Run"
+            },
+            "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422."
           },
           {
             "name": "status",
@@ -3113,25 +4039,6 @@
             }
           },
           {
-            "name": "agent_run_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 36,
-                  "maxLength": 36,
-                  "pattern": "^run_[0-9a-f]{32}$"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Agent Run Id"
-            }
-          },
-          {
             "name": "is_model_fallback",
             "in": "query",
             "required": false,
@@ -3177,6 +4084,173 @@
                 }
               ],
               "title": "Failover Reason"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "tag.<key>",
+            "in": "query",
+            "required": false,
+            "description": "Filter by an exact event tag. `tag.<key>` is a documentation placeholder and MUST NOT be sent literally. Replace `<key>` with the actual tag key; for example, send `tag.environment=production`. Generated clients that cannot add undeclared parameters must use their raw query-string or query-parameter transport escape hatch. Multiple tag filters use AND semantics. Keys must be 1-64 characters, values may be 0-256 characters, and duplicate keys are rejected with 422. Tag filtering is available on Team and Scale tiers.",
+            "example": "production",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "x-solwyn-dynamic-query-prefix": "tag."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostTotalResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tier-gated or quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/costs": {
+      "get": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Query Account Costs",
+        "description": "Account-wide cost rollup with group-by, savings, and per-project rows.\n\nOne request replaces the per-project budget/costs fan-out on the Overview\nand projects-list surfaces, and it is the only place that can answer which\nmodel or provider burned money across projects.",
+        "operationId": "query_account_costs_api_v1_account_costs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window.",
+              "default": "7d",
+              "title": "Range"
+            },
+            "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window."
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Group results by exactly one of `project`, `day`, `model`, or `provider`. `project` is available on every tier; the rest follow the tier's analytics entitlement. Rows for `project` carry `project_name`, `current_period_cost`, and `daily`, and include every active project even when it has no spend in the window.",
+              "default": "project",
+              "title": "Group By"
+            },
+            "description": "Group results by exactly one of `project`, `day`, `model`, or `provider`. `project` is available on every tier; the rest follow the tier's analytics entitlement. Rows for `project` carry `project_name`, `current_period_cost`, and `daily`, and include every active project even when it has no spend in the window."
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Modality"
             }
           },
           {
@@ -3220,7 +4294,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CostTotalResponse"
+                  "$ref": "#/components/schemas/AccountCostQueryResponse"
                 }
               }
             }
@@ -3254,7 +4328,7 @@
           "costs"
         ],
         "summary": "Export Costs Csv",
-        "description": "Export cost data as CSV or NDJSON, raw or aggregated by group_by.\n\nAdditionally accepts dynamic `tag.<key>=<value>` query parameters, which are\nnot part of the generated schema and so are invisible to codegen clients —\npass them as raw query params. Each filters to events carrying that exact\ntag key/value pair; multiple are ANDed. Keys are 1-64 characters, values at\nmost 256, and repeating the same key is a 422.",
+        "description": "Export cost data as CSV or NDJSON, raw or aggregated by group_by.",
         "operationId": "export_costs_csv_api_v1_projects__project_id__costs_export_get",
         "security": [
           {
@@ -3272,44 +4346,16 @@
             }
           },
           {
-            "name": "format",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "enum": [
-                "csv",
-                "json"
-              ],
-              "type": "string",
-              "default": "csv",
-              "title": "Format"
-            }
-          },
-          {
             "name": "range",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
+              "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window.",
               "default": "30d",
               "title": "Range"
-            }
-          },
-          {
-            "name": "group_by",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Group By"
-            }
+            },
+            "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window."
           },
           {
             "name": "model",
@@ -3358,6 +4404,45 @@
               ],
               "title": "Modality"
             }
+          },
+          {
+            "name": "agent_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 36,
+                  "maxLength": 36,
+                  "pattern": "^run_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Run Id"
+            }
+          },
+          {
+            "name": "agent_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422.",
+              "title": "Agent Run"
+            },
+            "description": "Filter by the raw agent run id supplied to `solwyn.run()`. The server namespaces it with the project owner's identity before matching stored events. Do not combine this parameter with `agent_run_id`; supplying both returns 422."
           },
           {
             "name": "status",
@@ -3415,25 +4500,6 @@
                 }
               ],
               "title": "Provider Region"
-            }
-          },
-          {
-            "name": "agent_run_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 36,
-                  "maxLength": 36,
-                  "pattern": "^run_[0-9a-f]{32}$"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Agent Run Id"
             }
           },
           {
@@ -3517,11 +4583,63 @@
               ],
               "title": "To"
             }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Group results by exactly one of `model`, `provider`, `day`, `status`, `service_tier`, `provider_region`, `failover_reason`, `agent_run`, or a tag key using `tag:<key>` (for example, `tag:environment`). Availability is tier-dependent; tag grouping and agent-run grouping are available on Team and Scale tiers. Aggregated groupings return at most the top 100 groups by spend and report overflow via `truncated`; `day` is a time series that always returns the full window in chronological order and is never truncated.",
+              "title": "Group By"
+            },
+            "description": "Group results by exactly one of `model`, `provider`, `day`, `status`, `service_tier`, `provider_region`, `failover_reason`, `agent_run`, or a tag key using `tag:<key>` (for example, `tag:environment`). Availability is tier-dependent; tag grouping and agent-run grouping are available on Team and Scale tiers. Aggregated groupings return at most the top 100 groups by spend and report overflow via `truncated`; `day` is a time series that always returns the full window in chronological order and is never truncated."
+          },
+          {
+            "name": "tag.<key>",
+            "in": "query",
+            "required": false,
+            "description": "Filter by an exact event tag. `tag.<key>` is a documentation placeholder and MUST NOT be sent literally. Replace `<key>` with the actual tag key; for example, send `tag.environment=production`. Generated clients that cannot add undeclared parameters must use their raw query-string or query-parameter transport escape hatch. Multiple tag filters use AND semantics. Keys must be 1-64 characters, values may be 0-256 characters, and duplicate keys are rejected with 422. Tag filtering is available on Team and Scale tiers.",
+            "example": "production",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "x-solwyn-dynamic-query-prefix": "tag."
           }
         ],
         "responses": {
           "200": {
             "description": "Cost export stream",
+            "headers": {
+              "X-Solwyn-Truncated": {
+                "description": "Whether an aggregated export was capped to the top 100 groups by spend. Always `false` for `group_by=day`, which exports every day in the window in chronological order.",
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            },
             "content": {
               "text/csv": {
                 "schema": {
@@ -3564,7 +4682,7 @@
           "costs"
         ],
         "summary": "Metadata Ingest",
-        "description": "Batch ingest metadata events from SDK instances (D16).\n\nResolves the project from the authenticated API key, deduplicates,\nand stores events as CostEvent records. Max batch size: 1000 events.\n\nReturns 202 for every well-formed request with per-event dispositions:\nevents the API refuses (unknown model, unknown service tier) appear in\n``rejected`` while accepted events commit — a rejected event never\ncosts the rest of the batch.",
+        "description": "Batch ingest metadata events from SDK instances (D16).\n\nResolves the project from the authenticated API key, deduplicates,\nand stores events as CostEvent records. Max batch size: 1000 events.\n\nReturns 202 for every well-formed request with per-event dispositions:\nevents the API refuses (unknown model, unknown service tier) appear in\n``rejected`` while accepted events commit — a rejected event never\ncosts the rest of the batch. Events a dedup surface already holds a\ndurable row for appear in ``duplicates``: neither ingested nor rejected,\nso ``len(submitted) == ingested + len(rejected) + len(duplicates)``.",
         "operationId": "metadata_ingest_api_v1_metadata_ingest_post",
         "requestBody": {
           "content": {
@@ -3622,6 +4740,7 @@
             "headers": {
               "Retry-After": {
                 "description": "Seconds until the next request is allowed.",
+                "required": true,
                 "schema": {
                   "type": "integer"
                 }
@@ -3669,6 +4788,252 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/projects/{project_id}/tags": {
+      "get": {
+        "tags": [
+          "tags"
+        ],
+        "summary": "Discover active account tag keys",
+        "description": "Returns every active tag key registered by successful ingest for the project's account. The response is account-scoped, uses the bounded registry instead of scanning raw telemetry, and reports likely whitespace/case variants without merging or rewriting their identities. Requires the Team tier or above.",
+        "operationId": "list_project_tags_api_v1_projects__project_id__tags_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagDiscoveryResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tag analytics are not entitled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found or inaccessible"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/tags/values": {
+      "get": {
+        "tags": [
+          "tags"
+        ],
+        "summary": "List values for an active tag key",
+        "description": "Lists verbatim values from the account registry for one active key. `key` is a query parameter so legal slashes, question marks, hashes, and spaces remain usable. Results use ascending keyset pagination; `q` applies a literal, case-sensitive prefix before pagination. Requires the Team tier or above.",
+        "operationId": "list_project_tag_values_api_v1_projects__project_id__tags_values_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "Verbatim tag key supplied as a query parameter, never as a path segment. Reserved URL characters and spaces are legal when URL-encoded.",
+              "examples": [
+                "route /? # ="
+              ],
+              "title": "Key"
+            },
+            "description": "Verbatim tag key supplied as a query parameter, never as a path segment. Reserved URL characters and spaces are legal when URL-encoded."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional case-sensitive, verbatim value prefix filter.",
+              "examples": [
+                "customer/"
+              ],
+              "title": "Q"
+            },
+            "description": "Optional case-sensitive, verbatim value prefix filter."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum values to return; the server reads one extra row for `has_more`.",
+              "default": 25,
+              "title": "Limit"
+            },
+            "description": "Maximum values to return; the server reads one extra row for `has_more`."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor returned by the preceding page for the same key and prefix.",
+              "title": "Cursor"
+            },
+            "description": "Opaque cursor returned by the preceding page for the same key and prefix."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagValuesPage"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Tag analytics are not entitled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or active tag key not found"
+          },
+          "422": {
+            "description": "Invalid query or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/tags": {
+      "delete": {
+        "tags": [
+          "tags"
+        ],
+        "summary": "Retire an account tag key",
+        "description": "Retires an existing account tag key so it no longer appears in discovery and no longer consumes an active-key slot. Historical value registry rows are retained. Deleting an already-retired key is idempotent; a later successful ingest may reactivate it if account capacity permits. Retirement is namespace management, not analytics, so it is available on every tier. JWT authentication with the admin or owner role is required.",
+        "operationId": "retire_account_tag_api_v1_account_tags_delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "Verbatim tag key supplied as a query parameter, never as a path segment. Reserved URL characters and spaces are legal when URL-encoded.",
+              "examples": [
+                "route /? # ="
+              ],
+              "title": "Key"
+            },
+            "description": "Verbatim tag key supplied as a query parameter, never as a path segment. Reserved URL characters and spaces are legal when URL-encoded."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Tag key retired, or it was already retired"
+          },
+          "403": {
+            "description": "JWT authentication with an admin or owner role required"
+          },
+          "404": {
+            "description": "The account has never registered this key"
+          },
+          "422": {
+            "description": "Invalid key query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/projects/{project_id}/notifications": {
@@ -3938,7 +5303,7 @@
           "notifications"
         ],
         "summary": "Test Sms Connection",
-        "description": "Confirm SMS eligibility without sending a live message.\n\nRequires:\n- SMS channel entitlement (founder+ tier)\n- Verified phone number on the account\n- Account-level SMS alerts consent\n\nReturns success only when the caller could route SMS alerts to this\nproject right now. No message sent.",
+        "description": "Confirm SMS eligibility without sending a live message.\n\nRequires:\n- SMS channel entitlement (production+ tier)\n- Verified phone number on the account\n- Account-level SMS alerts consent\n\nReturns success only when the caller could route SMS alerts to this\nproject right now. No message sent.",
         "operationId": "test_sms_connection_api_v1_projects__project_id__notifications_test_sms_post",
         "security": [
           {
@@ -4133,7 +5498,7 @@
             }
           },
           "402": {
-            "description": "SMS requires the Founder tier or above",
+            "description": "SMS requires the Production tier or above",
             "content": {
               "application/json": {
                 "schema": {
@@ -4190,7 +5555,7 @@
             }
           },
           "402": {
-            "description": "SMS requires the Founder tier or above",
+            "description": "SMS requires the Production tier or above",
             "content": {
               "application/json": {
                 "schema": {
@@ -4277,7 +5642,7 @@
             }
           },
           "402": {
-            "description": "SMS requires the Founder tier or above",
+            "description": "SMS requires the Production tier or above",
             "content": {
               "application/json": {
                 "schema": {
@@ -5133,6 +6498,40 @@
             }
           },
           {
+            "name": "rule_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rule Type"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,
@@ -5244,6 +6643,40 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "name": "rule_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rule Type"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
             }
           },
           {
@@ -5919,14 +7352,100 @@
             "in": "query",
             "required": false,
             "schema": {
-              "enum": [
-                "7d",
-                "30d",
-                "90d"
-              ],
               "type": "string",
-              "default": "30d",
+              "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window.",
+              "default": "7d",
               "title": "Range"
+            },
+            "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lower-inclusive custom window bound. Only timezone-aware RFC 3339 datetime strings are accepted; other datetime encodings, such as epoch seconds, are rejected with 422.",
+              "title": "From"
+            },
+            "description": "Lower-inclusive custom window bound. Only timezone-aware RFC 3339 datetime strings are accepted; other datetime encodings, such as epoch seconds, are rejected with 422."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Upper-exclusive custom window bound. Only timezone-aware RFC 3339 datetime strings are accepted; other datetime encodings, such as epoch seconds, are rejected with 422.",
+              "title": "To"
+            },
+            "description": "Upper-exclusive custom window bound. Only timezone-aware RFC 3339 datetime strings are accepted; other datetime encodings, such as epoch seconds, are rejected with 422."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive literal substring match on the agent-run name. SQL LIKE wildcard characters are treated literally.",
+              "title": "Q"
+            },
+            "description": "Case-insensitive literal substring match on the agent-run name. SQL LIKE wildcard characters are treated literally."
+          },
+          {
+            "name": "parent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter direct children by parent run. Accepts either the caller-visible raw run id or the stored tenant-namespaced run_ hash.",
+              "title": "Parent"
+            },
+            "description": "Filter direct children by parent run. Accepts either the caller-visible raw run id or the stored tenant-namespaced run_ hash."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
             }
           },
           {
@@ -5968,6 +7487,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRunListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid preset range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Analytics window unavailable on this tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error402Response"
                 }
               }
             }
@@ -6025,6 +7564,93 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRunEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/agent-runs/{run_id}/stop": {
+      "post": {
+        "tags": [
+          "agent-runs"
+        ],
+        "summary": "Stop Project Agent Run",
+        "description": "Stop one customer-addressable run and revoke its outstanding authority.",
+        "operationId": "stop_project_agent_run_api_v1_projects__project_id__agent_runs__run_id__stop_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunStopResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or agent run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Agent run is an auto-grouped explorer bucket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunNotStoppableErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lease revocation infrastructure unavailable; retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseErrorResponse"
                 }
               }
             }
@@ -6167,7 +7793,7 @@
           "unit-economics"
         ],
         "summary": "Get Project Unit Economics",
-        "description": "Return the unit-economics drawer payload for the project.\n\nJWT auth must own the project; API-key auth must be scoped to the same\nproject (mirrors the forecast / spend-baseline endpoints).\n\nWindow math:\n    ``cur_end = utcnow()``\n    ``cur_start = cur_end - range_to_timedelta(range)``\n    When ``vs_prev`` is true, the previous window is the immediately\n    preceding same-length window: ``[cur_start - (cur_end - cur_start),\n    cur_start)``.\n\nThe ``cause`` flag is accepted today for OpenAPI shape stability; the\nresponse's ``suspected_cause`` field is always ``None`` until P7.",
+        "description": "Return the unit-economics drawer payload for the project.\n\nJWT auth must own the project; API-key auth must be scoped to the same\nproject (mirrors the forecast / spend-baseline endpoints).\n\nWindow math:\n    ``cur_end = utcnow()``\n    ``cur_start = cur_end - range_to_timedelta(range)``\n    When ``vs_prev`` is true, the previous window is the immediately\n    preceding same-length window: ``[cur_start - (cur_end - cur_start),\n    cur_start)``.\n\nWhen ``cause`` is true, the response's ``suspected_cause`` field carries\nthe spike attribution from ``infer_suspected_cause``; otherwise it is\n``None``.",
         "operationId": "get_project_unit_economics_api_v1_projects__project_id__unit_economics_get",
         "security": [
           {
@@ -7649,6 +9275,198 @@
         ],
         "title": "AccountAlertUpdateRequest"
       },
+      "AccountCostDailyPoint": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "cost"
+        ],
+        "title": "AccountCostDailyPoint",
+        "description": "One day of real spend for one project, for the list-surface sparklines."
+      },
+      "AccountCostGroup": {
+        "properties": {
+          "group_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Key"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
+          },
+          "agent_run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Name"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "total_input_tokens": {
+            "type": "integer",
+            "title": "Total Input Tokens"
+          },
+          "total_output_tokens": {
+            "type": "integer",
+            "title": "Total Output Tokens"
+          },
+          "call_count": {
+            "type": "integer",
+            "title": "Call Count"
+          },
+          "unpriced_call_count": {
+            "type": "integer",
+            "title": "Unpriced Call Count",
+            "default": 0
+          },
+          "local_call_count": {
+            "type": "integer",
+            "title": "Local Call Count",
+            "default": 0
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "current_period_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period Cost"
+          },
+          "daily": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AccountCostDailyPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_key",
+          "total_cost",
+          "total_input_tokens",
+          "total_output_tokens",
+          "call_count"
+        ],
+        "title": "AccountCostGroup",
+        "description": "A rollup row. The three trailing fields are `group_by=project` only.\n\nThey mirror the `agent_run_name` precedent: enrichment attached to the\ngrouping that owns it, null everywhere else, so one model serves every\naccount group_by without a discriminated union."
+      },
+      "AccountCostQueryResponse": {
+        "properties": {
+          "range": {
+            "type": "string",
+            "title": "Range"
+          },
+          "group_by": {
+            "type": "string",
+            "title": "Group By"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/AccountCostGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "True when the response was capped to the top 100 groups by spend. Always false for `group_by=day`, which returns every day in the window in chronological order."
+          },
+          "analytics_withheld": {
+            "type": "boolean",
+            "title": "Analytics Withheld",
+            "description": "True when the caller is a free account past its monthly request quota and `group_by=project`. Rows then carry only `group_key`, `project_name` and `current_period_cost` (the budget-gauge inputs, which are never quota-gated), while `daily` is an empty list and every other analytics field is zero and must not be rendered. Other `group_by` values return 402 `quota_exceeded` instead.",
+            "default": false
+          },
+          "savings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavingsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
+          }
+        },
+        "type": "object",
+        "required": [
+          "range",
+          "group_by",
+          "groups",
+          "truncated",
+          "window"
+        ],
+        "title": "AccountCostQueryResponse"
+      },
       "AccountEmailStateResponse": {
         "properties": {
           "email": {
@@ -7798,7 +9616,7 @@
             "type": "string",
             "enum": [
               "free",
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -7887,6 +9705,17 @@
             "type": "string",
             "title": "Name"
           },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
           "project_id": {
             "type": "string",
             "title": "Project Id"
@@ -7907,7 +9736,8 @@
           },
           "total_cost": {
             "type": "number",
-            "title": "Total Cost"
+            "title": "Total Cost",
+            "description": "The lifetime-denormalized cost aggregate for the run; the listing window controls which runs qualify and does not recalculate this total."
           },
           "total_denied_cost": {
             "type": "number",
@@ -7920,6 +9750,49 @@
           "total_output_tokens": {
             "type": "integer",
             "title": "Total Output Tokens"
+          },
+          "velocity_flags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Velocity Flags"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          },
+          "stopped_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped By User Id"
+          },
+          "stoppable": {
+            "type": "boolean",
+            "title": "Stoppable",
+            "description": "Auto-grouped ingestion buckets are explorer-only, not controllable runs.",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -7927,6 +9800,7 @@
         "required": [
           "id",
           "name",
+          "parent_run_id",
           "project_id",
           "started_at",
           "last_seen_at",
@@ -7934,10 +9808,14 @@
           "total_cost",
           "total_denied_cost",
           "total_input_tokens",
-          "total_output_tokens"
+          "total_output_tokens",
+          "velocity_flags",
+          "stopped_at",
+          "stopped_by_user_id",
+          "stoppable"
         ],
         "title": "AgentRunEntry",
-        "description": "Per-run aggregate exposed to the dashboard."
+        "description": "Per-run lifetime aggregate exposed to the dashboard."
       },
       "AgentRunListResponse": {
         "properties": {
@@ -7962,6 +9840,9 @@
           "has_more": {
             "type": "boolean",
             "title": "Has More"
+          },
+          "window": {
+            "$ref": "#/components/schemas/CostWindow"
           }
         },
         "additionalProperties": false,
@@ -7969,9 +9850,245 @@
         "required": [
           "runs",
           "next_cursor",
-          "has_more"
+          "has_more",
+          "window"
         ],
         "title": "AgentRunListResponse"
+      },
+      "AgentRunNotStoppableErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "run_not_stoppable",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "AgentRunNotStoppableErrorDetail",
+        "description": "Structured 409 detail for auto-grouped explorer buckets."
+      },
+      "AgentRunNotStoppableErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/AgentRunNotStoppableErrorDetail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "AgentRunNotStoppableErrorResponse",
+        "description": "OpenAPI envelope for a run that cannot be stopped directly."
+      },
+      "AgentRunStopResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "run_name": {
+            "type": "string",
+            "title": "Run Name"
+          },
+          "stopped_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Stopped At"
+          },
+          "already_stopped": {
+            "type": "boolean",
+            "title": "Already Stopped"
+          },
+          "leases_revoked": {
+            "type": "integer",
+            "title": "Leases Revoked"
+          },
+          "enforcement_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement Deadline"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "run_id",
+          "run_name",
+          "stopped_at",
+          "already_stopped",
+          "leases_revoked",
+          "enforcement_deadline"
+        ],
+        "title": "AgentRunStopResponse",
+        "description": "Durable result of stopping one customer-addressable agent run."
+      },
+      "AlertDeliveryLegEntry": {
+        "properties": {
+          "leg_key": {
+            "type": "string",
+            "title": "Leg Key"
+          },
+          "channel_type": {
+            "type": "string",
+            "title": "Channel Type"
+          },
+          "channel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "retrying",
+              "accepted",
+              "delivered",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "title": "Attempt Count"
+          },
+          "last_attempted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempted At"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "leg_key",
+          "channel_type",
+          "channel_name",
+          "status",
+          "attempt_count",
+          "last_attempted_at",
+          "delivered_at",
+          "error"
+        ],
+        "title": "AlertDeliveryLegEntry"
+      },
+      "AlertDeliveryStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "retrying",
+              "processed",
+              "delivered",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "description": "Parent delivery state derived from the outbox row and its per-channel legs. 'processed' means the alert was acknowledged by the dispatcher without per-channel receipts; the alert may have been suppressed by project filters or had no deliverable destination, so it is not evidence of delivery. 'delivered' means every recorded leg succeeded, 'partial' that some leg failed while another succeeded, and 'failed' that no leg succeeded."
+          },
+          "attempt_count": {
+            "type": "integer",
+            "title": "Attempt Count"
+          },
+          "next_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
+          },
+          "dead_lettered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Lettered At"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/AlertDeliveryLegEntry"
+            },
+            "type": "array",
+            "title": "Legs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "attempt_count",
+          "next_attempt_at",
+          "dead_lettered_at",
+          "legs"
+        ],
+        "title": "AlertDeliveryStatus"
       },
       "AlertEmailResponse": {
         "properties": {
@@ -8105,6 +10222,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Metadata Json"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertDeliveryStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -8119,7 +10246,8 @@
           "rule_type",
           "value_at_event",
           "threshold_at_event",
-          "period_key"
+          "period_key",
+          "delivery"
         ],
         "title": "AlertEventEntry"
       },
@@ -8326,6 +10454,10 @@
             "type": "array",
             "title": "Allowed Group By"
           },
+          "tags": {
+            "type": "boolean",
+            "title": "Tags"
+          },
           "csv_export_mode": {
             "type": "string",
             "enum": [
@@ -8344,6 +10476,7 @@
         "required": [
           "allowed_ranges",
           "allowed_group_by",
+          "tags",
           "csv_export_mode",
           "cost_events_paginated"
         ],
@@ -8554,6 +10687,18 @@
       },
       "AttestationAlerts": {
         "properties": {
+          "begins_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Begins At"
+          },
           "delivery_evidence_available": {
             "type": "boolean",
             "title": "Delivery Evidence Available"
@@ -8584,6 +10729,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "begins_at",
           "delivery_evidence_available",
           "delivered_count",
           "coverage_note",
@@ -9271,7 +11417,7 @@
             "propertyNames": {
               "enum": [
                 "free",
-                "founder",
+                "production",
                 "team",
                 "scale"
               ]
@@ -9296,7 +11442,7 @@
             "type": "string",
             "enum": [
               "free",
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -9662,6 +11808,85 @@
         ],
         "title": "BudgetCapabilities"
       },
+      "BudgetCheckBatchItem": {
+        "properties": {
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetCheckResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code",
+            "description": "Per-item failure code, e.g. 'unknown_model'"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BudgetCheckBatchItem",
+        "description": "One batched result — a check response OR a per-item structured error.\n\nA single unknown model must never fail the whole batch, so per-item errors\nride the body exactly like the metadata-ingest rejection contract."
+      },
+      "BudgetCheckBatchRequest": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCheckRequest"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Checks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "checks"
+        ],
+        "title": "BudgetCheckBatchRequest",
+        "description": "Several legacy checks in one round trip; each is processed atomically."
+      },
+      "BudgetCheckBatchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCheckBatchItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "BudgetCheckBatchResponse",
+        "description": "Index-aligned with ``BudgetCheckBatchRequest.checks``."
+      },
       "BudgetCheckRequest": {
         "properties": {
           "estimated_input_tokens": {
@@ -9735,6 +11960,27 @@
             "title": "Agent Run Id",
             "description": "Optional caller-supplied agent run identifier for per-run budget enforcement. Omitted requests retain project-only behavior."
           },
+          "tags": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "propertyNames": {
+                  "maxLength": 64,
+                  "minLength": 1
+                },
+                "type": "object",
+                "maxProperties": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "Optional exact tags for tag-scoped budget enforcement. An omitted mapping cannot match or be denied by a tag-scoped rule."
+          },
           "failover_directive_version": {
             "anyOf": [
               {
@@ -9747,6 +11993,32 @@
             ],
             "title": "Failover Directive Version",
             "description": "Explicit opt-in to the version 1 server failover directive. Omitted requests retain the legacy response shape."
+          },
+          "run_directive_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Directive Version",
+            "description": "Explicit opt-in to the version 1 run-control directive. Omitted requests retain the legacy response shape."
+          },
+          "price_hints_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Hints Version",
+            "description": "Explicit opt-in to server price hints on the response. Omitted requests keep price_hints null (no statement)."
           }
         },
         "additionalProperties": false,
@@ -9830,7 +12102,7 @@
               }
             ],
             "title": "Price Hints",
-            "description": "Server-provided RELATIVE price signal per provider for cost routing; SDK never computes price. Schema-only — left None this release."
+            "description": "Server-provided RELATIVE price signal per provider for cost routing; SDK never computes price. Populated only when the request opts in with price_hints_version. Values are normalized standard-tier token rates over the request's declared failover chain: cheapest positively-priced provider = 1.0, zero-cost local lanes = 0.0, unpriceable providers omitted. An empty mapping clears client-held hints; null makes no statement (client keeps last known)."
           },
           "failover_directive": {
             "anyOf": [
@@ -9842,6 +12114,17 @@
               }
             ],
             "description": "Versioned server policy for SDK-managed failover. Present only when the request opts in with failover_directive_version."
+          },
+          "run_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunControlDirective"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Versioned instruction for a stopped run. Present only when the request opts in with run_directive_version."
           }
         },
         "additionalProperties": false,
@@ -9860,9 +12143,29 @@
       "BudgetConfirmRequest": {
         "properties": {
           "reservation_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Reservation Id",
-            "description": "Budget reservation ID returned by BudgetCheckResponse"
+            "description": "Budget reservation ID returned by BudgetCheckResponse. None when the call was funded by a lease (set lease_id instead)."
+          },
+          "lease_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Id",
+            "description": "Budget lease that funded the call, from LeaseGrantResponse. None when the call was funded by a per-call reservation."
           },
           "model": {
             "type": "string",
@@ -9896,8 +12199,9 @@
           "call_id": {
             "type": "string",
             "maxLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
             "title": "Call Id",
-            "description": "uuid per intercepted call; dedups confirm vs metadata reconciliation"
+            "description": "uuid per intercepted call; dedups confirm vs metadata reconciliation. Canonical lowercase UUID enforced server-side (same identity contract as MetadataEvent.call_id)."
           },
           "token_details": {
             "$ref": "#/components/schemas/TokenDetails",
@@ -9952,14 +12256,13 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "reservation_id",
           "model",
           "provider",
           "call_id",
           "token_details"
         ],
         "title": "BudgetConfirmRequest",
-        "description": "Post-call budget confirmation sent after an LLM call completes.\n\nTies the pre-flight reservation to actual token usage so the API can\ncompute the exact cost via PricingService and settle the reserved budget."
+        "description": "Post-call budget confirmation sent after an LLM call completes.\n\nTies one call's actual token usage to the authority that funded it so the\nAPI can compute the exact cost via PricingService and settle it.\n\nA call draws on EXACTLY ONE funding source, so exactly one of the two ids\nis set (PJ-2):\n\n* ``reservation_id`` — the legacy per-call path: the pre-flight check\n  reserved an estimate, and this confirm trues it up.\n* ``lease_id`` — the run held a budget LEASE and drew the call from the\n  granted tokens, so there is no per-call reservation to settle. The server\n  folds the actual cost into the lease's settled total and moves the\n  enforcement counters only for spend that overshoots the lease's claim.\n\nNaming both would settle the same call against one budget twice; naming\nneither leaves nothing to settle."
       },
       "BudgetConstraintsResponse": {
         "properties": {
@@ -10128,6 +12431,22 @@
           },
           "constraints": {
             "$ref": "#/components/schemas/BudgetConstraintsResponse"
+          },
+          "outage_overspend_ceiling_usd": {
+            "type": "number",
+            "title": "Outage Overspend Ceiling Usd"
+          },
+          "lease_float_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Float Usd",
+            "description": "The unspent claims of this project period's LIVE agent-run leases, already included in current_usage. Reserved authority, not spend: it drops when a lease is surrendered, expires, or settles. null means the float could not be determined on this read."
           }
         },
         "additionalProperties": false,
@@ -10142,7 +12461,8 @@
           "period_date",
           "utilization_pct",
           "thresholds",
-          "constraints"
+          "constraints",
+          "outage_overspend_ceiling_usd"
         ],
         "title": "BudgetStatusResponse"
       },
@@ -10379,7 +12699,7 @@
           "tier": {
             "type": "string",
             "enum": [
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -10507,6 +12827,17 @@
           "project_id": {
             "type": "string",
             "title": "Project Id"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
           },
           "provider": {
             "type": "string",
@@ -10637,6 +12968,32 @@
             "type": "number",
             "title": "Cost"
           },
+          "denied_cost": {
+            "type": "number",
+            "title": "Denied Cost"
+          },
+          "deny_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deny Source"
+          },
+          "deny_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deny Reason"
+          },
           "estimated_cost": {
             "anyOf": [
               {
@@ -10708,11 +13065,15 @@
         "required": [
           "id",
           "project_id",
+          "agent_run_id",
           "provider",
           "model",
           "input_tokens",
           "output_tokens",
           "cost",
+          "denied_cost",
+          "deny_source",
+          "deny_reason",
           "estimated_cost",
           "status",
           "is_model_fallback",
@@ -10794,6 +13155,17 @@
             ],
             "title": "Modality"
           },
+          "agent_run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Name"
+          },
           "total_cost": {
             "type": "number",
             "title": "Total Cost"
@@ -10852,6 +13224,11 @@
             "type": "array",
             "title": "Groups"
           },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "True when the response was capped to the top 100 groups by spend. Always false for `group_by=day`, which returns every day in the window in chronological order."
+          },
           "savings": {
             "anyOf": [
               {
@@ -10872,6 +13249,7 @@
           "range",
           "group_by",
           "groups",
+          "truncated",
           "window"
         ],
         "title": "CostQueryResponse"
@@ -11608,6 +13986,20 @@
         "title": "EmailTestResponse",
         "description": "Response for the email connection test."
       },
+      "EnforcementCapabilities": {
+        "properties": {
+          "checks_per_minute": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Checks Per Minute"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checks_per_minute"
+        ],
+        "title": "EnforcementCapabilities"
+      },
       "Error402Response": {
         "properties": {
           "detail": {
@@ -11666,7 +14058,8 @@
         "enum": [
           "circuit_open",
           "primary_error",
-          "model_fallback"
+          "model_fallback",
+          "cost_routed"
         ],
         "title": "FailoverReason",
         "description": "Why the router advanced past the requested primary target (SDK v0.1.6)."
@@ -11915,6 +14308,39 @@
         ],
         "title": "IngestCapabilities"
       },
+      "IngestDuplicate": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Index",
+            "description": "Position of the dedup-skipped event in the SUBMITTED batch. Independent of `rejected[].index` — neither lane shifts the other."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "legacy_key",
+              "call_id"
+            ],
+            "title": "Reason",
+            "description": "Which dedup surface hit: `legacy_key` for the (timestamp, sdk_instance_id) uniqueness key, `call_id` for the (project_id, call_id, attempt_index) ledger identity. Attribution is the probe that hit, legacy first — exactly one per event."
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id",
+            "description": "call_id of the dedup-skipped event, echoed so a client can correlate without positional bookkeeping"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "reason",
+          "call_id"
+        ],
+        "title": "IngestDuplicate",
+        "description": "Per-event duplicate disposition returned in the 202 ingest body.\n\nA duplicate is neither ingested nor rejected: the API already holds (or is\nstoring, for an intra-batch redelivery) a durable row for this logical\nevent, so nothing was written and nothing is wrong with the event. Before\nthis lane existed the drop was reported only server-side, as a log line and\na counter, which made a colliding batch read as silent data loss.\n\n``index`` is the position in the SUBMITTED batch, exactly like\n``IngestRejection.index``. The two lanes are independent: duplicates do not\nshift rejection indexes and rejections do not shift duplicate ones, so\n``len(submitted) == ingested + len(rejected) + len(duplicates)``."
+      },
       "IngestMetadataEvent": {
         "properties": {
           "model": {
@@ -11942,12 +14368,14 @@
           },
           "input_tokens": {
             "type": "integer",
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Input Tokens",
             "description": "Input token count"
           },
           "output_tokens": {
             "type": "integer",
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Output Tokens",
             "description": "Output token count"
@@ -12053,8 +14481,9 @@
           "call_id": {
             "type": "string",
             "maxLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
             "title": "Call Id",
-            "description": "uuid per intercepted call; join key for cache-hit spend reconciliation. Always present on the wire — it is NOT content. max_length=36 (D7) bounds the DB column and the Redis dedup key."
+            "description": "uuid per intercepted call; join key for cache-hit spend reconciliation. Always present on the wire — it is NOT content. max_length=36 (D7) bounds the DB column and the Redis dedup key. Canonical lowercase UUID enforced server-side: the cost_event_ledger treats this as durable spend identity, so an empty or attacker-chosen string must never become a dedup key."
           },
           "possibly_succeeded": {
             "anyOf": [
@@ -12105,6 +14534,19 @@
             "title": "Agent Run Id",
             "description": "Optional caller-supplied agent run identifier. When omitted the API falls back to an auto-id `_auto-{sdk_instance_id}-{date}` so calls from pre-P6 SDKs are still attributable to a run."
           },
+          "parent_agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Agent Run Id",
+            "description": "Optional caller-supplied parent run identifier for orchestrator-to-sub-agent hierarchies. The API namespaces it with the same account-owner identity used for agent_run_id."
+          },
           "agent_run_name": {
             "anyOf": [
               {
@@ -12117,6 +14559,19 @@
             ],
             "title": "Agent Run Name",
             "description": "Optional human-readable name for the run. When the run is being created (no prior row with this id), defaults to ``agent_run_id``."
+          },
+          "lease_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Id",
+            "description": "Budget lease whose claim funded this call's admission, from LeaseGrantResponse; the same id the call's confirm carries. None when the call was funded by a per-call reservation, admitted from the allow cache, admitted fail-open or uncounted, or denied. Server-minted opaque id (lse_...), never content; bounded by LEASE_ID_MAX_LENGTH exactly as BudgetConfirmRequest.lease_id (D7)."
           },
           "provider_region": {
             "anyOf": [
@@ -12144,7 +14599,117 @@
               }
             ],
             "title": "Tags",
-            "description": "Explicit customer-supplied metadata. String mapping shape is envelope-validated; bounded tag policy failures are returned in the 202 rejected list."
+            "description": "Explicit customer-supplied metadata. Each event may contain at most 10 tags; keys are 1-64 characters and values are at most 256 characters. Across an account, at most 100 distinct tag keys and at most 1,000 distinct values per key are accepted. Tag policy failures are rejected individually in the 202 response, leaving well-formed siblings eligible for ingest; account-cardinality rejections use code `tag_cardinality_exceeded`."
+          },
+          "deny_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "server",
+                  "sticky_replay",
+                  "local_enforcement",
+                  "lease_exhausted",
+                  "local_velocity",
+                  "run_terminated",
+                  "aggregate_replay"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deny Source",
+            "description": "Authority that produced a denial receipt."
+          },
+          "deny_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deny Reason",
+            "description": "Bounded machine-readable denial reason."
+          },
+          "denied_by_period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denied By Period",
+            "description": "Budget period that caused the denial when applicable."
+          },
+          "estimated_output_bound": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Output Bound",
+            "description": "Output-token upper bound used to price a denied call."
+          },
+          "velocity_flags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "repeat_size",
+                    "monotonic_growth",
+                    "rate_acceleration"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Velocity Flags",
+            "description": "Bounded content-free velocity rules observed for this receipt."
+          },
+          "receipt_aggregate_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Aggregate Count",
+            "description": "Number of already-summed denial observations represented by this receipt."
+          },
+          "receipt_pricing_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Pricing Input Tokens",
+            "description": "Original per-call input-token count used only to select the pricing card for a homogeneous aggregate receipt. Requires receipt_aggregate_count. Absent on a COARSE aggregate, whose folded receipts had differing per-call input sizes: the aggregate has no single pricing card and the server prices it unpriced rather than reading a card off the summed total. Denial evidence — count, run, reason, period, token totals — survives either way."
           }
         },
         "additionalProperties": false,
@@ -12170,7 +14735,7 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Index",
-            "description": "Position of the rejected event in the SUBMITTED batch — the SDK correlates without the server echoing events back. Dedup-skipped duplicates are neither ingested nor rejected and do not shift these indexes."
+            "description": "Position of the rejected event in the SUBMITTED batch — the SDK correlates without the server echoing events back. Dedup-skipped duplicates are neither ingested nor rejected and do not shift these indexes; they are reported in `duplicates[]`."
           },
           "code": {
             "$ref": "#/components/schemas/IngestRejectionCode",
@@ -12224,6 +14789,14 @@
             "type": "array",
             "title": "Rejected",
             "description": "Per-event rejections, indexed by position in the submitted batch"
+          },
+          "duplicates": {
+            "items": {
+              "$ref": "#/components/schemas/IngestDuplicate"
+            },
+            "type": "array",
+            "title": "Duplicates",
+            "description": "Per-event dedup skips, indexed by position in the submitted batch. Neither ingested nor rejected: the API already holds a durable row for the event. Independent of `rejected[].index` — neither lane shifts the other."
           }
         },
         "type": "object",
@@ -12232,7 +14805,7 @@
           "rejected"
         ],
         "title": "IngestResponse",
-        "description": "202 body for metadata ingest: per-event dispositions.\n\nEvery well-formed request gets a 202 — even all-rejected batches.\nWhole-request errors remain only for a malformed envelope (422), batch\nsize (400), auth (403), and infrastructure faults (5xx)."
+        "description": "202 body for metadata ingest: per-event dispositions.\n\nEvery well-formed request gets a 202 — even all-rejected batches.\nWhole-request errors remain only for a malformed envelope (422), batch\nsize (400), auth (403), and infrastructure faults (5xx).\n\nThe three lanes partition the submitted batch:\n``len(submitted) == ingested + len(rejected) + len(duplicates)``."
       },
       "InvalidDisclosureVersion400Response": {
         "properties": {
@@ -12439,6 +15012,492 @@
         ],
         "title": "InvoiceSummary"
       },
+      "LeaseErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "lease_holder_cap_exceeded",
+              "lease_not_found",
+              "lease_generation_conflict",
+              "lease_unavailable"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "LeaseErrorDetail",
+        "description": "Body of a structured budget-lease refusal (409 / 404 / 503).\n\nThe SDK dispatches on ``code`` alone: ``lease_holder_cap_exceeded`` and\n``lease_unavailable`` mark the run lease-ineligible (legacy per-call path),\n``lease_not_found`` and ``lease_generation_conflict`` drop the local lease\nand ask for a fresh grant. None of them ever blocks a customer call."
+      },
+      "LeaseErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/LeaseErrorDetail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "LeaseErrorResponse",
+        "description": "OpenAPI envelope for every structured budget-lease refusal."
+      },
+      "LeaseGrantRequest": {
+        "properties": {
+          "agent_run_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Agent Run Id",
+            "description": "Caller-supplied agent run identifier the lease is scoped to"
+          },
+          "holder_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Holder Id",
+            "description": "SDK instance id — one holder per SDK process"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Model",
+            "description": "Primary model the run intends to call"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName",
+            "description": "Primary provider for the run"
+          },
+          "fallback_providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderName"
+            },
+            "type": "array",
+            "title": "Fallback Providers",
+            "description": "Configured failover providers, in attempt order (chain hint)"
+          },
+          "fallback_models": {
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Fallback Models",
+            "description": "Failover models aligned element-for-element with fallback_providers"
+          },
+          "fail_open": {
+            "type": "boolean",
+            "title": "Fail Open",
+            "description": "The client's configured unreachable posture, echoed back as posture.on_unreachable so the grant is the single self-describing artifact the outage ladder reads.",
+            "default": true
+          },
+          "estimated_input_tokens": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Estimated Input Tokens",
+            "description": "Token estimate of the call that triggered the grant (demand hint)",
+            "default": 0
+          },
+          "run_directive_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Directive Version",
+            "description": "Explicit opt-in to the version 1 run-control directive"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_run_id",
+          "holder_id",
+          "model",
+          "provider"
+        ],
+        "title": "LeaseGrantRequest",
+        "description": "Ask for a token lease covering one agent run, from one SDK process."
+      },
+      "LeaseGrantResponse": {
+        "properties": {
+          "eligible": {
+            "type": "boolean",
+            "title": "Eligible",
+            "description": "False → the run is lease-ineligible; use the legacy per-call path"
+          },
+          "ineligible_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ineligible Reason",
+            "description": "Why the run is lease-ineligible (e.g. 'unit_priced_model', 'zero_rate_model', 'scoped_rules_present'). Omitted when eligible."
+          },
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed",
+            "description": "False → authoritative HARD DENY verdict for this run"
+          },
+          "denied_by_period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denied By Period",
+            "description": "Which budget period denied — deny responses only, same literals as the check"
+          },
+          "run_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunControlDirective"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Versioned instruction for a stopped run"
+          },
+          "lease_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "granted_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted Tokens",
+            "description": "Tokens the holder may draw down; may be 0"
+          },
+          "refresh_interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Interval S",
+            "description": "Server-jittered renew-ahead cadence"
+          },
+          "lease_length_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Length S",
+            "description": "Client-side authority window for this grant"
+          },
+          "headroom_share_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headroom Share Tokens",
+            "description": "This holder's apportioned share of project headroom — the outage drawdown bound"
+          },
+          "posture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeasePosture"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_grant": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Grant",
+            "description": "True → wind-down; no further grants will be issued"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BudgetMode"
+          },
+          "budget_limit": {
+            "type": "number",
+            "title": "Budget Limit"
+          },
+          "current_usage": {
+            "type": "number",
+            "title": "Current Usage"
+          },
+          "remaining_budget": {
+            "type": "number",
+            "title": "Remaining Budget"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "eligible",
+          "allowed",
+          "project_id",
+          "mode",
+          "budget_limit",
+          "current_usage",
+          "remaining_budget"
+        ],
+        "title": "LeaseGrantResponse",
+        "description": "Grant and renew response — one shape, three populations.\n\n* INELIGIBLE (``eligible=False``): the run takes the legacy per-call path;\n  no lease block.\n* DENY (``allowed=False``): an authoritative hard-deny verdict feeding the\n  SDK's existing sticky-deny machinery; no lease block.\n* GRANT: the lease block is present. ``granted_tokens`` may be 0 (an\n  alert_only project past its cap) — admission then falls to the legacy\n  per-call path for each call without the run becoming ineligible.\n\nThe display snapshot at the bottom is always present so the SDK can log a\nlast-known budget position on any of the three."
+      },
+      "LeasePosture": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/BudgetMode",
+            "description": "The CUSTOMER's configured project budget mode"
+          },
+          "on_unreachable": {
+            "type": "string",
+            "enum": [
+              "fail_open",
+              "local_enforce"
+            ],
+            "title": "On Unreachable",
+            "description": "What the holder does when Solwyn is unreachable and the share is exhausted — echoed from the client's configured fail_open until a server-side setting exists."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "on_unreachable"
+        ],
+        "title": "LeasePosture",
+        "description": "The two policy facts the SDK's outage ladder reads off a grant."
+      },
+      "LeaseRenewRequest": {
+        "properties": {
+          "lease_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Lease Id"
+          },
+          "holder_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Holder Id"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Generation",
+            "description": "Generation of the grant the holder operates under — echoing it acknowledges it"
+          },
+          "spent_tokens": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Spent Tokens",
+            "description": "Trued-up drawdown since the last successful report",
+            "default": 0
+          },
+          "reserved_tokens": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Reserved Tokens",
+            "description": "Currently in-flight reservations. Accepted but not read by the server today; reserved as a future sizing input (demand hint).",
+            "default": 0
+          },
+          "uncounted_calls": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Uncounted Calls",
+            "description": "Outage fail-open calls since the last successful report",
+            "default": 0
+          },
+          "uncounted_tokens": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Uncounted Tokens",
+            "description": "Tokens burned by those uncounted calls",
+            "default": 0
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Optional model re-declaration; the server UNIONS it into the declared set"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderName"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider for `model`"
+          },
+          "fallback_providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderName"
+            },
+            "type": "array",
+            "title": "Fallback Providers"
+          },
+          "fallback_models": {
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Fallback Models"
+          },
+          "run_directive_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Directive Version",
+            "description": "Explicit opt-in to the version 1 run-control directive"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lease_id",
+          "holder_id",
+          "generation"
+        ],
+        "title": "LeaseRenewRequest",
+        "description": "Renew a lease, acknowledge the current grant, and report drawdown.\n\nThe echoed ``generation`` IS the idempotency key: echoing the server's\ncurrent generation acknowledges it and asks for the successor; echoing the\npredecessor of an already-issued successor replays that stored response."
+      },
+      "LeaseSurrenderRequest": {
+        "properties": {
+          "lease_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Lease Id"
+          },
+          "holder_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Holder Id"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Generation"
+          },
+          "spent_tokens": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Spent Tokens",
+            "description": "Final true-up report",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lease_id",
+          "holder_id",
+          "generation"
+        ],
+        "title": "LeaseSurrenderRequest",
+        "description": "Release a lease cleanly (enforcer close / interpreter exit)."
+      },
+      "LeaseSurrenderResponse": {
+        "properties": {
+          "released_tokens": {
+            "type": "integer",
+            "title": "Released Tokens",
+            "description": "Tokens of outstanding claim returned to the budget counters"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "released_tokens"
+        ],
+        "title": "LeaseSurrenderResponse",
+        "description": "What the surrender handed back to the project's headroom."
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -12456,7 +15515,7 @@
               {
                 "type": "string",
                 "enum": [
-                  "founder",
+                  "production",
                   "team",
                   "scale"
                 ]
@@ -12524,7 +15583,7 @@
             "type": "string",
             "enum": [
               "free",
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -12651,6 +15710,7 @@
             "anyOf": [
               {
                 "type": "integer",
+                "maximum": 100000000,
                 "minimum": 0.0
               },
               {
@@ -12664,6 +15724,7 @@
             "anyOf": [
               {
                 "type": "integer",
+                "maximum": 100000000,
                 "minimum": 0.0
               },
               {
@@ -12677,6 +15738,7 @@
             "anyOf": [
               {
                 "type": "number",
+                "maximum": 100000000,
                 "minimum": 0.0
               },
               {
@@ -12690,6 +15752,7 @@
             "anyOf": [
               {
                 "type": "number",
+                "maximum": 100000000,
                 "minimum": 0.0
               },
               {
@@ -12703,6 +15766,7 @@
             "anyOf": [
               {
                 "type": "integer",
+                "maximum": 100000000,
                 "minimum": 0.0
               },
               {
@@ -13408,6 +16472,16 @@
             "format": "date",
             "title": "Period End"
           },
+          "savings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavingsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "quota_exceeded": {
             "type": "boolean",
             "title": "Quota Exceeded"
@@ -13542,7 +16616,7 @@
           "tier": {
             "type": "string",
             "enum": [
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -13635,7 +16709,7 @@
               {
                 "type": "string",
                 "enum": [
-                  "founder",
+                  "production",
                   "team",
                   "scale"
                 ]
@@ -13765,7 +16839,7 @@
           "target_tier": {
             "type": "string",
             "enum": [
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -13793,7 +16867,7 @@
           "target_tier": {
             "type": "string",
             "enum": [
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -14401,6 +17475,24 @@
           "event_count": {
             "type": "integer",
             "title": "Event Count"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
+          },
+          "first_seen": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen"
+          },
+          "is_unpriced": {
+            "type": "boolean",
+            "title": "Is Unpriced"
           }
         },
         "additionalProperties": false,
@@ -14412,7 +17504,11 @@
           "served_model",
           "failover_reason",
           "failover_error_class",
-          "event_count"
+          "event_count",
+          "total_cost_usd",
+          "first_seen",
+          "last_seen",
+          "is_unpriced"
         ],
         "title": "ProviderFailoverResponse"
       },
@@ -14581,7 +17677,8 @@
           "detail",
           "retry_after"
         ],
-        "title": "RateLimitErrorResponse"
+        "title": "RateLimitErrorResponse",
+        "description": "429 body shared by ingest and budget-plane admission; the SDK parses it."
       },
       "ReadOnlyKeyErrorDetail": {
         "properties": {
@@ -14834,6 +17931,40 @@
         ],
         "title": "RuleActionResponse"
       },
+      "RunControlDirective": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "1",
+            "title": "Version"
+          },
+          "action": {
+            "type": "string",
+            "const": "terminate",
+            "title": "Action"
+          },
+          "agent_run_id": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Agent Run Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "action",
+          "agent_run_id",
+          "reason"
+        ],
+        "title": "RunControlDirective",
+        "description": "Versioned server instruction to terminate one agent run."
+      },
       "RunawayRunConfig": {
         "properties": {
           "type": {
@@ -14871,6 +18002,10 @@
               }
             ],
             "title": "Window Minutes"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/BudgetMode",
+            "default": "alert_only"
           },
           "channel_ids": {
             "items": {
@@ -14943,6 +18078,10 @@
             ],
             "title": "Window Minutes"
           },
+          "mode": {
+            "$ref": "#/components/schemas/BudgetMode",
+            "default": "alert_only"
+          },
           "channel_ids": {
             "items": {
               "type": "string"
@@ -14988,6 +18127,17 @@
             "type": "number",
             "title": "Saved Cost"
           },
+          "saved_cost_upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Cost Upper"
+          },
           "saved_input_tokens": {
             "type": "integer",
             "title": "Saved Input Tokens"
@@ -15000,6 +18150,7 @@
         "type": "object",
         "required": [
           "saved_cost",
+          "saved_cost_upper",
           "saved_input_tokens",
           "blocked_call_count"
         ],
@@ -15017,7 +18168,8 @@
             "enum": [
               "model",
               "provider",
-              "agent_run"
+              "agent_run",
+              "tag"
             ],
             "title": "Scope"
           },
@@ -15027,6 +18179,19 @@
             "minLength": 1,
             "title": "Match",
             "description": "Exact selector. Model matches use the 2048-character wire model bound; agent-run matches use the 256-character wire run-id bound; provider matches must be an exact ProviderName value."
+          },
+          "match_value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Value",
+            "description": "Exact tag value, required only when scope is tag."
           },
           "limit": {
             "type": "number",
@@ -15073,7 +18238,7 @@
           "mode"
         ],
         "title": "ScopedBudgetConfig",
-        "description": "Exact model, provider, or agent-run spending cap (U8)."
+        "description": "Exact model, provider, agent-run, or tag spending cap."
       },
       "ScopedBudgetStateResponse": {
         "properties": {
@@ -15091,7 +18256,8 @@
             "enum": [
               "model",
               "provider",
-              "agent_run"
+              "agent_run",
+              "tag"
             ],
             "title": "Scope"
           },
@@ -15100,6 +18266,18 @@
             "maxLength": 2048,
             "minLength": 1,
             "title": "Match"
+          },
+          "match_value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Value"
           },
           "limit": {
             "type": "number",
@@ -15135,6 +18313,18 @@
             "type": "boolean",
             "title": "Paused",
             "default": false
+          },
+          "current_usage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Usage",
+            "description": "Current scoped spend in USD; null when Redis is unavailable."
           }
         },
         "additionalProperties": false,
@@ -15147,7 +18337,8 @@
           "limit",
           "mode",
           "channel_ids",
-          "routing"
+          "routing",
+          "current_usage"
         ],
         "title": "ScopedBudgetStateResponse",
         "description": "Public response shape for a scoped_budget rule."
@@ -15191,7 +18382,7 @@
               {
                 "type": "string",
                 "enum": [
-                  "founder",
+                  "production",
                   "team",
                   "scale"
                 ]
@@ -15231,7 +18422,7 @@
           "pricing_version": {
             "type": "string",
             "title": "Pricing Version",
-            "default": "2026-07-13"
+            "default": "2026-08-06"
           },
           "current_rates_snapshot": {
             "type": "boolean",
@@ -15658,7 +18849,7 @@
             "type": "string",
             "enum": [
               "free",
-              "founder",
+              "production",
               "team",
               "scale"
             ],
@@ -15766,6 +18957,211 @@
           "capabilities"
         ],
         "title": "SubscriptionStatusResponse"
+      },
+      "TagDiscoveryResponse": {
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/TagKeySummary"
+            },
+            "type": "array",
+            "title": "Keys"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TagRegistryUsage"
+          },
+          "scope": {
+            "type": "string",
+            "const": "account",
+            "title": "Scope",
+            "default": "account"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "keys",
+          "usage"
+        ],
+        "title": "TagDiscoveryResponse",
+        "description": "Active tag keys visible from every project in the same account.",
+        "examples": [
+          {
+            "keys": [
+              {
+                "first_seen_at": "2026-08-01T10:00:00Z",
+                "key": "environment",
+                "last_seen_at": "2026-08-05T18:30:00Z",
+                "similar": [
+                  " Environment"
+                ],
+                "values_count": 3
+              }
+            ],
+            "scope": "account",
+            "usage": {
+              "keys_cap": 100,
+              "keys_used": 1,
+              "values_cap_per_key": 1000
+            }
+          }
+        ]
+      },
+      "TagKeySummary": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "Verbatim customer-supplied tag key."
+          },
+          "values_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Values Count",
+            "description": "Number of distinct values registered for this key, including retained history."
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Seen At",
+            "description": "Earliest event timestamp stored for the key across all successful ingests."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At",
+            "description": "Latest event timestamp stored for the key across all successful ingests; never moves backwards."
+          },
+          "similar": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Similar",
+            "description": "Other active verbatim keys with the same whitespace-trimmed, case-insensitive comparison form. Keys remain separate identities."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "values_count",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "title": "TagKeySummary",
+        "description": "One active, verbatim tag key registered for the account."
+      },
+      "TagRegistryUsage": {
+        "properties": {
+          "keys_used": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Keys Used"
+          },
+          "keys_cap": {
+            "type": "integer",
+            "const": 100,
+            "title": "Keys Cap",
+            "default": 100
+          },
+          "values_cap_per_key": {
+            "type": "integer",
+            "const": 1000,
+            "title": "Values Cap Per Key",
+            "default": 1000
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "keys_used"
+        ],
+        "title": "TagRegistryUsage",
+        "description": "Current account usage and hard registry bounds."
+      },
+      "TagValueSummary": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Seen At",
+            "description": "Earliest event timestamp stored for the key/value pair across all successful ingests."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At",
+            "description": "Latest event timestamp stored for the key/value pair across all successful ingests; never moves backwards."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "title": "TagValueSummary",
+        "description": "One verbatim value registered for an active tag key."
+      },
+      "TagValuesPage": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/TagValueSummary"
+            },
+            "type": "array",
+            "title": "Values"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "values",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "TagValuesPage",
+        "description": "Stable keyset page of values for one active account tag key.",
+        "examples": [
+          {
+            "has_more": false,
+            "key": "route /? # =",
+            "values": [
+              {
+                "first_seen_at": "2026-08-01T10:00:00Z",
+                "last_seen_at": "2026-08-05T18:30:00Z",
+                "value": "checkout"
+              }
+            ]
+          }
+        ]
       },
       "TeamsConfig": {
         "properties": {
@@ -15932,6 +19328,9 @@
           "ingest": {
             "$ref": "#/components/schemas/IngestCapabilities"
           },
+          "enforcement": {
+            "$ref": "#/components/schemas/EnforcementCapabilities"
+          },
           "failover_entitlement": {
             "type": "boolean",
             "title": "Failover Entitlement"
@@ -15948,6 +19347,7 @@
           "notifications",
           "api_keys",
           "ingest",
+          "enforcement",
           "failover_entitlement",
           "data_retention_days"
         ],
@@ -15957,7 +19357,7 @@
         "properties": {
           "input_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Input Tokens",
             "description": "Total input tokens (normalized)",
@@ -15965,7 +19365,7 @@
           },
           "output_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Output Tokens",
             "description": "Total output tokens (normalized)",
@@ -15973,7 +19373,7 @@
           },
           "cached_input_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Cached Input Tokens",
             "description": "Input tokens served from prompt cache",
@@ -15981,7 +19381,7 @@
           },
           "cache_creation_5m_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Cache Creation 5M Tokens",
             "description": "Anthropic ephemeral_5m_input_tokens — cache write with 5-minute TTL.",
@@ -15989,7 +19389,7 @@
           },
           "cache_creation_1h_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Cache Creation 1H Tokens",
             "description": "Anthropic ephemeral_1h_input_tokens — cache write with 1-hour TTL.",
@@ -15997,7 +19397,7 @@
           },
           "reasoning_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Reasoning Tokens",
             "description": "Tokens used for chain-of-thought / thinking",
@@ -16005,7 +19405,7 @@
           },
           "audio_input_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Audio Input Tokens",
             "description": "Audio input tokens (OpenAI)",
@@ -16013,7 +19413,7 @@
           },
           "audio_output_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Audio Output Tokens",
             "description": "Audio output tokens (OpenAI)",
@@ -16021,7 +19421,7 @@
           },
           "image_input_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Image Input Tokens",
             "description": "Image input tokens — a SUBSET of input_tokens (mirrors reasoning ⊂ output). OpenAI Images/Responses report image_tokens inside input_tokens_details; documented, not validator-enforced.",
@@ -16029,7 +19429,7 @@
           },
           "image_output_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Image Output Tokens",
             "description": "Image output tokens — a SUBSET of output_tokens (mirrors reasoning ⊂ output). Generated-image tokens reported in the output channel; documented, not validator-enforced.",
@@ -16037,7 +19437,7 @@
           },
           "accepted_prediction_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Accepted Prediction Tokens",
             "description": "Predicted output tokens accepted (OpenAI)",
@@ -16045,7 +19445,7 @@
           },
           "rejected_prediction_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Rejected Prediction Tokens",
             "description": "Predicted output tokens rejected (OpenAI)",
@@ -16053,7 +19453,7 @@
           },
           "tool_use_input_tokens": {
             "type": "integer",
-            "maximum": 100000000.0,
+            "maximum": 100000000,
             "minimum": 0.0,
             "title": "Tool Use Input Tokens",
             "description": "Tokens used for tool/function definitions (Google)",
@@ -16387,6 +19787,206 @@
         ],
         "title": "UnknownNotificationChannelDetail",
         "description": "Body of a 422 raised when channel_ids are unknown or inaccessible."
+      },
+      "UntrackedSurfaceAccepted": {
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Accepted",
+            "description": "Number of reports received and accepted for processing. An idempotent transport replay may already be durable and therefore not increment stored occurrences or observers. Persisted occurrence totals are advisory approximations and are never billing truth."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "UntrackedSurfaceAccepted",
+        "description": "Receipt for advisory signals whose stored occurrence totals are approximate."
+      },
+      "UntrackedSurfaceReport": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName"
+          },
+          "client_shape": {
+            "type": "string",
+            "enum": [
+              "openai_sdk",
+              "native_together",
+              "anthropic_sdk",
+              "google_generativeai",
+              "google_genai",
+              "bedrock_boto3",
+              "bedrock_aioboto3"
+            ],
+            "title": "Client Shape"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "sync",
+              "async"
+            ],
+            "title": "Mode"
+          },
+          "surface": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*){0,7}$",
+            "title": "Surface"
+          },
+          "rule_kind": {
+            "type": "string",
+            "enum": [
+              "unmetered_spend",
+              "unknown"
+            ],
+            "title": "Rule Kind"
+          },
+          "capability_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "operation",
+                  "client",
+                  "resource",
+                  "raw_response",
+                  "arbitrary_endpoint"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Scope"
+          },
+          "posture": {
+            "type": "string",
+            "enum": [
+              "warn",
+              "allow"
+            ],
+            "title": "Posture"
+          },
+          "occurrences": {
+            "type": "integer",
+            "maximum": 1000000000.0,
+            "minimum": 1.0,
+            "title": "Occurrences"
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Seen At"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At"
+          },
+          "sdk_instance_id": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Sdk Instance Id"
+          },
+          "report_id": {
+            "type": "string",
+            "maxLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Report Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "client_shape",
+          "mode",
+          "surface",
+          "rule_kind",
+          "posture",
+          "occurrences",
+          "first_seen_at",
+          "last_seen_at",
+          "sdk_instance_id",
+          "report_id"
+        ],
+        "title": "UntrackedSurfaceReport",
+        "description": "Content-free SDK observation for a provider surface Solwyn does not meter."
+      },
+      "UntrackedSurfaceResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "client_shape": {
+            "type": "string",
+            "title": "Client Shape"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "surface": {
+            "type": "string",
+            "title": "Surface"
+          },
+          "rule_kind": {
+            "type": "string",
+            "title": "Rule Kind"
+          },
+          "capability_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Scope"
+          },
+          "posture": {
+            "type": "string",
+            "title": "Posture"
+          },
+          "occurrences": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Occurrences",
+            "description": "Approximate advisory count with bounded overcount; never billing truth."
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Seen At"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "client_shape",
+          "mode",
+          "surface",
+          "rule_kind",
+          "capability_scope",
+          "posture",
+          "occurrences",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "title": "UntrackedSurfaceResponse",
+        "description": "One approximate observation aggregate for an unmetered provider surface."
       },
       "UpgradeRequiredDetail": {
         "properties": {
@@ -16881,6 +20481,6 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-07-16",
-  "x-solwyn-core-ref": "60cffb7b1a36b5af9db12863682158a2f26d11ec"
+  "x-solwyn-snapshot-date": "2026-09-05",
+  "x-solwyn-core-ref": "690d61c0de1f11c6653f7a8a17800356f5009a8c"
 }

@@ -105,6 +105,31 @@ def error_from_response(
         if hint_builder is not None and cta_path is not None:
             hint = hint_builder(cta_path)
 
+        allowed_values = detail.get("allowed_values")
+        if (
+            response.status_code == 402
+            and isinstance(allowed_values, list)
+            and all(isinstance(value, str) for value in allowed_values)
+        ):
+            allowed_hint = "Allowed values: " + ", ".join(allowed_values)
+            hint = f"{allowed_hint}. {hint}" if hint else allowed_hint
+
+    if response.status_code == 403:
+        role_codes = {
+            "permission_required",
+            "owner_required",
+            "admin_required",
+            "role_required",
+        }
+        if code == "read_only_key":
+            hint = "Rotate to a full-scope key with solwyn keys rotate --scope full."
+        elif detail == "This endpoint requires JWT authentication":
+            hint = "Run solwyn login to authenticate with your user account."
+        elif code in role_codes or isinstance(detail, str) and detail in role_codes:
+            hint = (
+                "Your role cannot perform this action; use solwyn whoami to inspect it."
+            )
+
     return ApiError(
         status_code=response.status_code,
         code=code,

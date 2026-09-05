@@ -55,11 +55,17 @@ UNADOPTED_OPTIONAL_FIELDS = {
         # circuit-breaker behavior, which the CLI does not perform; opting in
         # would also switch the check response to null-omitting encoding.
         "failover_directive_version",
+        # Adopted in W1.16 with tag parsing and enforcement flags.
+        "tags",
+        # Adopted in W1.9 with run-control directives.
+        "run_directive_version",
         # Declined: inert on this endpoint — the budget aggregator never reads
         # it; Core derives modality from (provider, model) itself.
         "modality",
     ),
     "BudgetConfirmRequest": (
+        # No CLI lease plane: confirmation always requires a reservation.
+        "lease_id",
         # Declined: the confirm endpoint settles from token_details only and
         # never reads it.
         "media_usage",
@@ -280,6 +286,19 @@ def _adopted_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
                 f"{component}.{field}: registered as unadopted but the snapshot "
                 f"now requires it; the CLI must send it"
             )
+
+    # Reservation-only specialization of Core's XOR funding contract. Assert
+    # the upstream shape before narrowing it; never waive general requiredness.
+    confirm = schemas["BudgetConfirmRequest"]
+    reservation = confirm["properties"].get("reservation_id", {})
+    assert "reservation_id" not in confirm.get("required", []), (
+        "BudgetConfirmRequest.reservation_id: Core optionality changed"
+    )
+    assert reservation.get("anyOf") == [{"type": "string"}, {"type": "null"}], (
+        "BudgetConfirmRequest.reservation_id: funding-source shape changed"
+    )
+    confirm["required"].append("reservation_id")
+    confirm["properties"]["reservation_id"] = {"type": "string"}
 
     thresholds = schemas["BudgetUpdateRequest"]["properties"]["thresholds"]
     branches = thresholds["items"]["oneOf"]
@@ -1283,3 +1302,17 @@ def test_swapped_union_discriminators_trip_drift_guard() -> None:
         r"(?:DailyAnomalyConfig|ThresholdConfig)>\.type",
     ):
         assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize("mutation", ["required", "not_nullable", "removed"])
+def test_reservation_funding_specialization_still_guards_core_shape(mutation):
+    snapshot = copy.deepcopy(_snapshot())
+    confirm = _schema(snapshot, "BudgetConfirmRequest")
+    if mutation == "required":
+        confirm["required"].append("reservation_id")
+    elif mutation == "not_nullable":
+        confirm["properties"]["reservation_id"] = {"type": "string"}
+    else:
+        confirm["properties"].pop("reservation_id")
+    with pytest.raises(AssertionError, match="BudgetConfirmRequest.reservation_id"):
+        assert_request_mirrors_match(snapshot)

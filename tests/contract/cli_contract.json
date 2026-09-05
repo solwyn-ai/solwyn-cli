@@ -1427,9 +1427,12 @@
         "budget_mode",
         "budget_period",
         "current_usage",
+        "lease_float_usd",
+        "outage_overspend_ceiling_usd",
         "project_id",
         "remaining_budget",
         "schema",
+        "thresholds",
         "utilization_pct"
       ],
       "optional_keys": [],
@@ -1442,7 +1445,8 @@
         "groups",
         "project_id",
         "range",
-        "schema"
+        "schema",
+        "truncated"
       ],
       "optional_keys": [],
       "schema": "solwyn.costs.v1",

@@ -684,3 +684,34 @@ def test_whoami_table_and_no_color_match_golden(
     assert result.exit_code == 0
     assert_matches_golden(result.stdout, GOLDEN_DIR / "whoami-key-table.txt")
     assert "\x1b" not in result.stdout
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_whoami_production_tier(output_format, monkeypatch):
+    credential = auth.JwtCredential(
+        access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN
+    )
+    monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(whoami_module, "SolwynClient", FakeClient)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "user_id": "user_123",
+                "email": "person@example.com",
+                "display_name": "Person Example",
+                "subscription_tier": "production",
+            },
+        ),
+        httpx.Response(200, json=[]),
+    ]
+    result = runner.invoke(
+        app, [*(["--json"] if output_format == "json" else []), "whoami"]
+    )
+    assert result.exit_code == 0
+    assert "production" in result.stdout
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR
+        / f"whoami-production-{output_format}.{'json' if output_format == 'json' else 'txt'}",
+    )

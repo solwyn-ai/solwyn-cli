@@ -4,7 +4,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_serializer,
+    model_validator,
+)
 
 
 class _WireModel(BaseModel):
@@ -87,6 +94,7 @@ class _ForecastOverrunConfig(_WireModel):
 
 
 class _RunawayRunConfig(_WireModel):
+    mode: BudgetMode = BudgetMode.ALERT_ONLY
     type: Literal["runaway_run"]
     spend_threshold_usd: Annotated[float, Field(gt=0, le=1999999.99)]
     call_threshold: Annotated[int, Field(ge=1)] | None = None
@@ -116,13 +124,27 @@ class _UnitCostAnomalyConfig(_WireModel):
 
 class _ScopedBudgetConfig(_WireModel):
     type: Literal["scoped_budget"]
-    scope: Literal["model", "provider", "agent_run"]
+    scope: Literal["model", "provider", "agent_run", "tag"]
+    match_value: Annotated[str, Field(max_length=256)] | None = None
     match: Annotated[str, Field(min_length=1, max_length=2048)]
     limit: Annotated[float, Field(gt=0, le=999999.999999)]
     mode: BudgetMode
     channel_ids: list[str] = Field(default_factory=list)
     snoozed_until: datetime | None = None
     paused: bool = False
+
+    @model_validator(mode="after")
+    def validate_tag_selector(self) -> "_ScopedBudgetConfig":
+        if self.scope == "tag":
+            if self.match_value is None:
+                raise ValueError("Tag scope requires match_value")
+            if len(self.match) > 64:
+                raise ValueError("Tag keys must be at most 64 characters")
+            if "\x00" in self.match or "\x00" in self.match_value:
+                raise ValueError("Tag selectors cannot contain NUL")
+        elif self.match_value is not None:
+            raise ValueError("match_value is only valid for tag scope")
+        return self
 
 
 _BudgetRule = (
@@ -180,7 +202,7 @@ class LoginRequest(_WireModel):
 
     email: str
     password: Annotated[SecretStr, Field(max_length=128)]
-    plan: Literal["founder", "team", "scale"] | None = None
+    plan: Literal["production", "team", "scale"] | None = None
     billing_interval: Literal["month", "year"] | None = None
 
     @field_serializer("password")
@@ -225,6 +247,7 @@ class BudgetUpdateRequest(_WireModel):
 
 
 class BudgetCheckRequest(_WireModel):
+    price_hints_version: Literal["1"] | None = None
     estimated_input_tokens: Annotated[int, Field(ge=0)]
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
@@ -238,6 +261,8 @@ class BudgetCheckRequest(_WireModel):
 
 
 class BudgetConfirmRequest(_WireModel):
+    # Core requires exactly one of reservation_id / lease_id. The CLI owns no
+    # lease plane: require a reservation and never emit lease_id.
     reservation_id: str
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
