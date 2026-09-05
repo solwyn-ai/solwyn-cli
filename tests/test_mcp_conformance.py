@@ -1272,6 +1272,62 @@ def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
     assert responses == []
 
 
+def test_agent_runs_custom_window_gate_does_not_blame_default_preset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                402,
+                json={
+                    "detail": {
+                        "code": "upgrade_required",
+                        "message": "Custom windows longer than 7 days are not available on your tier",
+                        "allowed_values": ["7d"],
+                        "cta_path": "/billing",
+                    }
+                },
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "list_agent_runs",
+        {
+            "from_time": "2026-07-01T00:00:00Z",
+            "to_time": "2026-08-01T00:00:00Z",
+        },
+    )
+
+    error = result.structuredContent["error"]
+    assert error == {
+        "code": "upgrade_required",
+        "message": "Custom windows longer than 7 days are not available on your tier.",
+        "hint": "Allowed values: 7d. Review upgrade options in the dashboard: /billing",
+        "status_code": 402,
+    }
+    assert "Range '7d'" not in str(error)
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/agent-runs",
+            {
+                "range": "7d",
+                "from": "2026-07-01T00:00:00Z",
+                "to": "2026-08-01T00:00:00Z",
+                "sort": "last_seen_at",
+                "limit": "25",
+            },
+            None,
+        )
+    ]
+    assert responses == []
+
+
 @pytest.mark.parametrize(
     ("from_time", "to_time"),
     [

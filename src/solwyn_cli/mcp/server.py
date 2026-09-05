@@ -741,10 +741,20 @@ def _agent_runs_operation(
                 if allowed_hint is not None and entitlement_hint is not None
                 else allowed_hint or entitlement_hint
             )
+            if from_time is not None:
+                message = (
+                    "Custom windows longer than "
+                    f"{allowed[-1].removesuffix('d')} days are not available on "
+                    "your tier."
+                    if allowed
+                    else "The requested custom window is not available on your tier."
+                )
+            else:
+                message = f"Range '{time_range.value}' is not available on your tier."
             return _error(
                 _AgentRunsResult,
                 code="upgrade_required",
-                message=f"Range '{time_range.value}' is not available on your tier.",
+                message=message,
                 hint=hint,
                 status_code=402,
             )
