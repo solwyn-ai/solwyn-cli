@@ -1,0 +1,8 @@
+Field                                                Value
+Project                                         proj_alpha
+Run ID                run_1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a
+Run name                                    checkout-agent
+Stopped at                            2026-08-08T12:00:00Z
+Already stopped                                         no
+Leases revoked                                           2
+Enforcement deadline                  2026-08-08T12:00:30Z

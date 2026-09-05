@@ -57,8 +57,6 @@ UNADOPTED_OPTIONAL_FIELDS = {
         "failover_directive_version",
         # Adopted in W1.16 with tag parsing and enforcement flags.
         "tags",
-        # Adopted in W1.9 with run-control directives.
-        "run_directive_version",
         # Declined: inert on this endpoint — the budget aggregator never reads
         # it; Core derives modality from (provider, model) itself.
         "modality",

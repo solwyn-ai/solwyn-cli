@@ -1,4 +1,4 @@
-"""FastMCP stdio server and the frozen six-tool Solwyn surface."""
+"""FastMCP stdio server and the frozen eight-tool Solwyn surface."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -36,6 +36,19 @@ from solwyn_cli.commands.costs import (
     fetch_costs,
 )
 from solwyn_cli.commands.projects import ProjectsListData, fetch_projects
+from solwyn_cli.commands.runs import (
+    AgentRunAmbiguousError,
+    AgentRunEntry,
+    AgentRunListData,
+    AgentRunNotFoundError,
+    RunRange,
+    RunSort,
+    _cursor_sort,
+    _validate_custom_window,
+    fetch_agent_runs,
+    get_agent_run,
+    resolve_agent_run_id,
+)
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
 from solwyn_cli.errors import ApiError
 
@@ -53,6 +66,8 @@ TOOL_NAMES = (
     "get_project_status",
     "get_costs",
     "list_projects",
+    "list_agent_runs",
+    "get_agent_run",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -194,6 +209,20 @@ class _ProjectsResult(_ToolResult[ProjectsListData]):
     )
 
 
+class _AgentRunsResult(_ToolResult[AgentRunListData]):
+    schema_name: Literal["solwyn.mcp.agent-runs.v1"] = Field(
+        default="solwyn.mcp.agent-runs.v1",
+        alias="schema",
+    )
+
+
+class _AgentRunResult(_ToolResult[AgentRunEntry]):
+    schema_name: Literal["solwyn.mcp.agent-run.v1"] = Field(
+        default="solwyn.mcp.agent-run.v1",
+        alias="schema",
+    )
+
+
 @contextmanager
 def tool_call_client(
     launch_options: McpLaunchOptions | None = None,
@@ -235,6 +264,14 @@ COSTS_DESCRIPTION = (
 )
 PROJECTS_DESCRIPTION = (
     "List projects visible to the logged-in user. Requires login/JWT authentication."
+)
+AGENT_RUNS_DESCRIPTION = (
+    "List project agent runs. Costs are lifetime totals; the window only selects "
+    "which runs qualify. Accepts a project key or login."
+)
+AGENT_RUN_DESCRIPTION = (
+    "Read one agent run by storage ID or exact raw run name. Accepts a project "
+    "key or login."
 )
 
 
@@ -294,6 +331,21 @@ def _operation_error(
     *,
     invalid_response_code: str,
 ) -> ResultT:
+    if isinstance(error, AgentRunAmbiguousError):
+        return _error(
+            result_type,
+            code="ambiguous_agent_run",
+            message="More than one run has that exact name.",
+            hint="Candidates: " + ", ".join(error.candidate_ids),
+        )
+    if isinstance(error, AgentRunNotFoundError):
+        return _error(
+            result_type,
+            code="agent_run_not_found",
+            message="Agent run not found.",
+            hint="Call list_agent_runs to inspect visible run names and IDs.",
+            status_code=404,
+        )
     if isinstance(error, ApiError):
         code = _normalized_remote_error_code(error)
         return _error(
@@ -450,6 +502,7 @@ def _budget_check_operation(
         )
         request = BudgetCheckRequest(
             price_hints_version="1",
+            run_directive_version="1" if agent_run_id is not None else None,
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,
@@ -626,8 +679,99 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
         )
 
 
+def _agent_runs_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    project_id: str | None,
+    time_range: RunRange,
+    from_time: str | None,
+    to_time: str | None,
+    query: str | None,
+    parent: str | None,
+    sort: RunSort,
+    limit: int,
+    cursor: str | None,
+) -> _AgentRunsResult:
+    try:
+        _validate_custom_window(from_time, to_time)
+    except ValueError as error:
+        return _error(
+            _AgentRunsResult,
+            code=str(error),
+            message="The custom run window is invalid.",
+            hint="Provide both timezone-aware bounds with to_time later than from_time.",
+        )
+    if cursor is not None:
+        embedded_sort = _cursor_sort(cursor)
+        if embedded_sort is not None and embedded_sort != sort.value:
+            return _error(
+                _AgentRunsResult,
+                code="cursor_sort_mismatch",
+                message="The cursor was created with a different sort.",
+                hint="Remove cursor when changing sort.",
+            )
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            resolved_project = _project_id(command_runtime, project_id)
+            data = fetch_agent_runs(
+                client=client,
+                project_id=resolved_project,
+                time_range=time_range,
+                from_=from_time,
+                to=to_time,
+                query=query,
+                parent=parent,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        return _success(_AgentRunsResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _AgentRunsResult,
+            error,
+            invalid_response_code="invalid_agent_runs_response",
+        )
+
+
+def _agent_run_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    run: str,
+    project_id: str | None,
+) -> _AgentRunResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            resolved_project = _project_id(command_runtime, project_id)
+            storage_run_id = resolve_agent_run_id(
+                client=client,
+                project_id=resolved_project,
+                run=run,
+            )
+            data = get_agent_run(
+                client=client,
+                project_id=resolved_project,
+                storage_run_id=storage_run_id,
+            )
+        return _success(_AgentRunResult, data)
+    except (
+        AgentRunAmbiguousError,
+        AgentRunNotFoundError,
+        ApiError,
+        AuthError,
+        ValidationError,
+        ValueError,
+        TypeError,
+    ) as error:
+        return _operation_error(
+            _AgentRunResult,
+            error,
+            invalid_response_code="invalid_agent_run_response",
+        )
+
+
 def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
-    """Build the stateless local MCP server and register exactly six tools."""
+    """Build the stateless local MCP server and register exactly eight tools."""
     launch = launch_options or McpLaunchOptions()
     server = _ToolOnlyFastMCP(
         name="solwyn",
@@ -797,5 +941,55 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     )
     async def list_projects() -> _ProjectsResult:
         return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
+
+    @server.tool(
+        name=TOOL_NAMES[6],
+        description=AGENT_RUNS_DESCRIPTION,
+        structured_output=True,
+    )
+    async def list_agent_runs(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: RunRange = RunRange.SEVEN_DAYS,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        query: Annotated[str | None, Field(max_length=255)] = None,
+        parent: Annotated[str | None, Field(min_length=1, max_length=256)] = None,
+        sort: RunSort = RunSort.LAST_SEEN_AT,
+        limit: Annotated[int, Field(ge=1, le=100)] = 25,
+        cursor: str | None = None,
+    ) -> _AgentRunsResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _agent_runs_operation,
+                launch_options=launch,
+                project_id=project_id,
+                time_range=time_range,
+                from_time=from_time,
+                to_time=to_time,
+                query=query,
+                parent=parent,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+
+    @server.tool(
+        name=TOOL_NAMES[7],
+        description=AGENT_RUN_DESCRIPTION,
+        structured_output=True,
+    )
+    async def get_agent_run_tool(
+        run: Annotated[str, Field(min_length=1, max_length=255)],
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _AgentRunResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _agent_run_operation,
+                launch_options=launch,
+                run=run,
+                project_id=project_id,
+            )
+        )
 
     return server

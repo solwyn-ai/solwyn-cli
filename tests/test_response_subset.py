@@ -176,6 +176,42 @@ RESPONSE_READS = {
         "denied_by_period",
         "project_id",
         "price_hints",
+        "run_control",
+    ),
+    "RunControlDirective": ("version", "action", "agent_run_id", "reason"),
+    "AgentRunEntry": (
+        "id",
+        "name",
+        "parent_run_id",
+        "project_id",
+        "started_at",
+        "last_seen_at",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "stopped_at",
+        "stopped_by_user_id",
+        "stoppable",
+    ),
+    "AgentRunListResponse": ("runs", "next_cursor", "has_more", "window"),
+    "CostWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AgentRunStopResponse": (
+        "project_id",
+        "run_id",
+        "run_name",
+        "stopped_at",
+        "already_stopped",
+        "leases_revoked",
+        "enforcement_deadline",
     ),
     "ProviderHealthResponse": (
         "provider",
@@ -230,6 +266,21 @@ OPERATION_RESPONSE_BINDINGS = {
         "200",
         "object",
         "BudgetCheckResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/agent-runs"): (
+        "200",
+        "object",
+        "AgentRunListResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/agent-runs/{run_id}"): (
+        "200",
+        "object",
+        "AgentRunEntry",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/agent-runs/{run_id}/stop"): (
+        "200",
+        "object",
+        "AgentRunStopResponse",
     ),
     ("GET", "/api/v1/projects/{project_id}/providers"): (
         "200",
@@ -589,6 +640,56 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
         "object",
         "ProjectCreateResponse",
     )
+
+
+def test_agent_run_response_fields_and_operations_are_registered() -> None:
+    assert RESPONSE_READS["AgentRunEntry"] == (
+        "id",
+        "name",
+        "parent_run_id",
+        "project_id",
+        "started_at",
+        "last_seen_at",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "stopped_at",
+        "stopped_by_user_id",
+        "stoppable",
+    )
+    assert RESPONSE_READS["AgentRunListResponse"] == (
+        "runs",
+        "next_cursor",
+        "has_more",
+        "window",
+    )
+    assert RESPONSE_READS["AgentRunStopResponse"] == (
+        "project_id",
+        "run_id",
+        "run_name",
+        "stopped_at",
+        "already_stopped",
+        "leases_revoked",
+        "enforcement_deadline",
+    )
+    assert RESPONSE_READS["RunControlDirective"] == (
+        "version",
+        "action",
+        "agent_run_id",
+        "reason",
+    )
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/projects/{project_id}/agent-runs")
+    ] == ("200", "object", "AgentRunListResponse")
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/projects/{project_id}/agent-runs/{run_id}")
+    ] == ("200", "object", "AgentRunEntry")
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("POST", "/api/v1/projects/{project_id}/agent-runs/{run_id}/stop")
+    ] == ("200", "object", "AgentRunStopResponse")
 
 
 def test_init_reuses_guarded_project_login_and_budget_response_operations() -> None:

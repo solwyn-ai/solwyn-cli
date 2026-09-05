@@ -1,0 +1,16 @@
+Field                                           Value
+Name                                   checkout-agent
+ID               run_1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a
+Project                                    proj_alpha
+Parent                                              -
+Started                          2026-08-01T10:00:00Z
+Last seen                        2026-08-07T12:30:00Z
+Lifetime cost                               12.345678
+Lifetime denied                              1.250000
+Calls                                              42
+Input tokens                                    12000
+Output tokens                                    3400
+Velocity flags       rate_acceleration, future_signal
+Stopped                                             -
+Stopped by                                          -
+Stoppable                                         yes

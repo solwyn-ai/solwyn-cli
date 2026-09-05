@@ -41,6 +41,8 @@ _TOOL_NAMES = [
     "get_project_status",
     "get_costs",
     "list_projects",
+    "list_agent_runs",
+    "get_agent_run",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,7 +108,7 @@ def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
         )
 
         with (tmp_path / "mcp-stderr.log").open("w+", encoding="utf-8") as stderr:
-            # Six complete tool schemas make startup sensitive to loaded CI hosts;
+            # Eight complete tool schemas make startup sensitive to loaded CI hosts;
             # 30 seconds remains a bounded protocol-stall and shutdown detector.
             with anyio.fail_after(30):
                 async with stdio_client(server, errlog=stderr) as streams:

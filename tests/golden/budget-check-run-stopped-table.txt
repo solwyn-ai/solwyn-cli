@@ -1,0 +1,10 @@
+Field                                                                    Value
+Allowed                                                                     no
+Reservation ID                                                               -
+Project                                                          proj_from_key
+Budget mode                                                          hard_deny
+Budget limit                                                            100.00
+Current usage                                                            18.75
+Remaining budget                                                          0.00
+Denied by period                                                   run_stopped
+Reason            run stopped by an operator — do not retry under a new run id

@@ -1,4 +1,4 @@
-"""In-process MCP conformance tests for the frozen six-tool surface."""
+"""In-process MCP conformance tests for the frozen eight-tool surface."""
 
 from collections.abc import Callable, Iterator
 from copy import deepcopy
@@ -29,6 +29,8 @@ TOOL_NAMES = [
     "get_project_status",
     "get_costs",
     "list_projects",
+    "list_agent_runs",
+    "get_agent_run",
 ]
 
 BUDGET_RESPONSE = {
@@ -180,6 +182,36 @@ PROJECTS_RESPONSE = [
         "created_at": "2026-07-10T12:00:00Z",
     }
 ]
+RUN_ID = "run_" + "1a" * 16
+RUN_RESPONSE = {
+    "id": RUN_ID,
+    "name": "checkout-agent",
+    "parent_run_id": None,
+    "project_id": "proj_alpha",
+    "started_at": "2026-08-01T10:00:00Z",
+    "last_seen_at": "2026-08-07T12:30:00Z",
+    "total_calls": 42,
+    "total_cost": 12.345678,
+    "total_denied_cost": 1.25,
+    "total_input_tokens": 12000,
+    "total_output_tokens": 3400,
+    "velocity_flags": ["future_signal"],
+    "stopped_at": None,
+    "stopped_by_user_id": None,
+    "stoppable": True,
+}
+RUN_LIST_RESPONSE = {
+    "runs": [RUN_RESPONSE],
+    "next_cursor": None,
+    "has_more": False,
+    "window": {
+        "requested_from": "2026-08-01T00:00:00Z",
+        "requested_to": "2026-08-08T00:00:00Z",
+        "effective_from": "2026-08-01T00:00:00Z",
+        "effective_to": "2026-08-08T00:00:00Z",
+        "retention_clamped": False,
+    },
+}
 MCP_TOOLS_GOLDEN = Path(__file__).parent / "golden" / "mcp-tools.json"
 
 
@@ -387,6 +419,8 @@ def mcp_http(
         httpx.Response(200, json=PROVIDERS_RESPONSE),
         httpx.Response(200, json=COSTS_RESPONSE),
         httpx.Response(200, json=PROJECTS_RESPONSE),
+        httpx.Response(200, json=RUN_LIST_RESPONSE),
+        httpx.Response(200, json=RUN_RESPONSE),
     ]
 
     project_key = auth.ProjectKeyCredential(
@@ -404,17 +438,19 @@ def mcp_http(
             project_key,
             project_key,
             jwt,
+            project_key,
+            project_key,
         ],
     )
 
     yield requests
 
     assert response_queue == []
-    assert len(clients) == 6
+    assert len(clients) == 8
     assert all(client.is_closed for client in clients)
 
 
-def test_exact_six_tool_contract_and_mocked_http_conformance(
+def test_exact_eight_tool_contract_and_mocked_http_conformance(
     mcp_http: list[tuple[str, str, dict[str, Any]]],
 ) -> None:
     caller_thread = get_ident()
@@ -481,6 +517,18 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                 {"project_id"},
                 {"project_id", "time_range", "group_by"},
                 set(),
+                {
+                    "project_id",
+                    "time_range",
+                    "from_time",
+                    "to_time",
+                    "query",
+                    "parent",
+                    "sort",
+                    "limit",
+                    "cursor",
+                },
+                {"run", "project_id"},
             ]
 
             calls = [
@@ -493,6 +541,7 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                         "provider": "openai",
                         "fallback_providers": ["anthropic"],
                         "fallback_models": ["claude-sonnet-4"],
+                        "agent_run_id": "raw-run-42",
                     },
                 ),
                 await session.call_tool(
@@ -523,11 +572,16 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "get_costs", {"time_range": "30d", "group_by": "provider"}
                 ),
                 await session.call_tool("list_projects", {}),
+                await session.call_tool(
+                    "list_agent_runs",
+                    {"time_range": "30d", "query": "checkout"},
+                ),
+                await session.call_tool("get_agent_run", {"run": RUN_ID}),
             ]
 
         assert all(call.isError is False for call in calls)
         assert all(call.structuredContent is not None for call in calls)
-        assert [call.structuredContent["ok"] for call in calls] == [True] * 6
+        assert [call.structuredContent["ok"] for call in calls] == [True] * 8
         assert calls[0].structuredContent["data"]["project_id"] == "proj_alpha"
         assert calls[1].structuredContent["data"]["reservation_id"] == "res_01JZEXAMPLE"
         assert calls[2].structuredContent["data"] == {
@@ -537,6 +591,8 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
         assert calls[3].structuredContent["data"]["providers"] == PROVIDERS_RESPONSE
         assert calls[4].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
         assert calls[5].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
+        assert calls[6].structuredContent["data"]["runs"] == [RUN_RESPONSE]
+        assert calls[7].structuredContent["data"] == RUN_RESPONSE
 
     anyio.run(exercise_protocol)
 
@@ -553,6 +609,8 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                 "provider": "openai",
                 "fallback_providers": ["anthropic"],
                 "fallback_models": ["claude-sonnet-4"],
+                "agent_run_id": "raw-run-42",
+                "run_directive_version": "1",
             },
         ),
         (
@@ -592,6 +650,18 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
             None,
         ),
         ("GET", "/api/v1/projects", {}, None),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/agent-runs",
+            {"range": "30d", "q": "checkout", "sort": "last_seen_at", "limit": "25"},
+            None,
+        ),
+        (
+            "GET",
+            f"/api/v1/projects/proj_alpha/agent-runs/{RUN_ID}",
+            {},
+            None,
+        ),
     ]
     assert {request[2]["authorization"] for request in mcp_http} == {
         f"Bearer {VALID_KEY}",

@@ -258,6 +258,7 @@ class BudgetCheckRequest(_WireModel):
         list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)
     ] = Field(default_factory=list)
     agent_run_id: Annotated[str, Field(max_length=256)] | None = None
+    run_directive_version: Literal["1"] | None = None
 
 
 class BudgetConfirmRequest(_WireModel):

@@ -167,6 +167,7 @@ def test_budget_check_sends_agent_run_id_only_when_the_flag_is_supplied(
                     "fallback_providers": [],
                     "fallback_models": [],
                     "agent_run_id": "run_42",
+                    "run_directive_version": "1",
                 }
             },
         )
@@ -193,6 +194,125 @@ def test_budget_check_omits_agent_run_id_rather_than_posting_an_explicit_null(
         "fallback_providers": [],
         "fallback_models": [],
     }
+
+
+def test_budget_check_accepts_null_omitting_directive_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dropping any optional response key must not turn an allow into an error."""
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "allowed": True,
+                "remaining_budget": 81.25,
+                "mode": "hard_deny",
+                "budget_limit": 100.0,
+                "current_usage": 18.75,
+                "project_id": "proj_from_key",
+            },
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", *BASE_ARGS, "--agent-run-id", "raw-run-42"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["run_control"] is None
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_budget_check_run_stop_denial_emits_termination_directive_and_reason(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "allowed": False,
+                "remaining_budget": 0.0,
+                "mode": "hard_deny",
+                "budget_limit": 100.0,
+                "current_usage": 18.75,
+                "denied_by_period": "run_stopped",
+                "project_id": "proj_from_key",
+                "run_control": {
+                    "version": "1",
+                    "action": "terminate",
+                    "agent_run_id": "raw-run-42",
+                    "reason": "manual_kill",
+                },
+            },
+        )
+    ]
+    output_options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(
+        app,
+        [*output_options, *BASE_ARGS, "--agent-run-id", "raw-run-42"],
+    )
+
+    assert result.exit_code == 4
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"budget-check-run-stopped-{output_format}.{suffix}",
+    )
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "run_control",
+    [
+        None,
+        {
+            "version": "1",
+            "action": "terminate_run",
+            "agent_run_id": "raw-run-42",
+            "reason": "manual_kill",
+        },
+        {
+            "version": "1",
+            "action": "terminate",
+            "agent_run_id": "raw-run-42",
+            "reason": "operator_request",
+        },
+    ],
+)
+def test_budget_check_rejects_missing_or_invalid_opted_in_stop_directive(
+    monkeypatch: pytest.MonkeyPatch,
+    run_control: dict[str, str] | None,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "allowed": False,
+                "remaining_budget": 0.0,
+                "mode": "hard_deny",
+                "budget_limit": 100.0,
+                "current_usage": 18.75,
+                "denied_by_period": "run_stopped",
+                "project_id": "proj_from_key",
+                **({} if run_control is None else {"run_control": run_control}),
+            },
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", *BASE_ARGS, "--agent-run-id", "raw-run-42"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_budget_check_response"
 
 
 def test_budget_check_omits_estimated_media_for_a_text_only_call(
