@@ -1225,6 +1225,87 @@ def test_plain_403_still_collapses_to_forbidden_without_a_key_scope_claim(
     assert "read-only" not in str(error)
 
 
+def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                402,
+                json={
+                    "detail": {
+                        "code": "upgrade_required",
+                        "message": f"hostile remote detail {VALID_KEY}",
+                        "allowed_values": ["7d", "hostile", "90d"],
+                        "cta_path": "/billing",
+                    }
+                },
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "list_agent_runs",
+        {"time_range": "30d"},
+    )
+
+    assert result.structuredContent["error"] == {
+        "code": "upgrade_required",
+        "message": "Range '30d' is not available on your tier.",
+        "hint": "Allowed values: 7d, 90d. Review upgrade options in the dashboard: /billing",
+        "status_code": 402,
+    }
+    assert VALID_KEY not in str(result)
+    assert "hostile" not in str(result)
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/agent-runs",
+            {"range": "30d", "sort": "last_seen_at", "limit": "25"},
+            None,
+        )
+    ]
+    assert responses == []
+
+
+@pytest.mark.parametrize(
+    ("from_time", "to_time"),
+    [
+        ("1785542400", "1785628800"),
+        ("2026-08-01 00:00:00Z", "2026-08-02T00:00:00Z"),
+    ],
+)
+def test_agent_runs_rejects_non_rfc3339_custom_window_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+    from_time: str,
+    to_time: str,
+) -> None:
+    monkeypatch.setattr(
+        auth,
+        "resolve_credential",
+        lambda: pytest.fail("must not resolve auth"),
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "list_agent_runs",
+        {"from_time": from_time, "to_time": to_time},
+    )
+
+    assert result.structuredContent["error"] == {
+        "code": "custom_window_invalid",
+        "message": "The custom run window is invalid.",
+        "hint": (
+            "Provide both timezone-aware bounds with to_time later than from_time."
+        ),
+        "status_code": None,
+    }
+
+
 @pytest.mark.parametrize(
     ("arguments", "expected_run_id"),
     [

@@ -246,6 +246,34 @@ def test_runs_list_rejects_unpaired_custom_window_before_auth(
     assert json.loads(result.stderr)["code"] == "custom_window_pair_required"
 
 
+@pytest.mark.parametrize(
+    ("from_time", "to_time"),
+    [
+        ("1785542400", "1785628800"),
+        ("2026-08-01 00:00:00Z", "2026-08-02T00:00:00Z"),
+    ],
+)
+def test_runs_list_rejects_non_rfc3339_custom_window_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+    from_time: str,
+    to_time: str,
+) -> None:
+    monkeypatch.setattr(
+        runs_module,
+        "resolve_credential",
+        lambda: pytest.fail("must not resolve auth"),
+    )
+
+    result = runner.invoke(
+        app,
+        _run_args("list", "--from", from_time, "--to", to_time, json_output=True),
+    )
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["code"] == "custom_window_invalid"
+    assert FakeClient.instances == []
+
+
 def test_runs_list_preserves_range_gate_allowed_values_and_dashboard_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -276,6 +304,30 @@ def test_runs_list_preserves_range_gate_allowed_values_and_dashboard_path(
     assert error["message"] == "Range '30d' is not available on your tier"
     assert error["hint"] == (
         "Allowed values: 7d. Review upgrade options in the dashboard: /billing"
+    )
+
+
+def test_runs_list_cross_project_key_error_has_project_selection_guidance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runs_module, "resolve_credential", _key)
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(
+                403,
+                json={"detail": "Cannot access agent runs for a different project"},
+            )
+        )
+    ]
+
+    result = runner.invoke(app, _run_args("list", json_output=True))
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["message"] == "Cannot access agent runs for a different project"
+    assert error["hint"] == (
+        "Select the project associated with this key, or configure a key for the "
+        "selected project."
     )
 
 
@@ -419,6 +471,49 @@ def test_runs_stop_refuses_project_keys_before_network(
     assert FakeClient.instances == []
 
 
+@pytest.mark.parametrize(
+    ("json_output", "golden"),
+    [
+        (False, "runs-stop-key-refusal-table.txt"),
+        (True, "runs-stop-key-refusal-json.json"),
+    ],
+)
+def test_runs_stop_project_key_refusal_matches_goldens(
+    monkeypatch: pytest.MonkeyPatch,
+    json_output: bool,
+    golden: str,
+) -> None:
+    monkeypatch.setattr(runs_module, "resolve_credential", _key)
+
+    result = runner.invoke(
+        app,
+        _run_args("stop", STORAGE_ID, json_output=json_output),
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert_matches_golden(result.stderr, GOLDEN_DIR / golden)
+    assert FakeClient.instances == []
+
+
+def test_runs_stop_surfaces_missing_budget_write_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda: JWT)
+    FakeClient.responses = [
+        error_from_response(httpx.Response(403, json={"detail": "permission_required"}))
+    ]
+
+    result = runner.invoke(app, _run_args("stop", STORAGE_ID, json_output=True))
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["message"] == "permission_required"
+    assert error["hint"] == (
+        "Your role cannot perform this action; use solwyn whoami to inspect it."
+    )
+
+
 @pytest.mark.parametrize("json_output", [False, True])
 def test_runs_stop_resolves_raw_name_and_emits_honest_stop_result(
     monkeypatch: pytest.MonkeyPatch,
@@ -458,8 +553,17 @@ def test_runs_stop_resolves_raw_name_and_emits_honest_stop_result(
     )
 
 
+@pytest.mark.parametrize(
+    ("json_output", "golden"),
+    [
+        (False, "runs-stop-not-stoppable-table.txt"),
+        (True, "runs-stop-not-stoppable-json.json"),
+    ],
+)
 def test_runs_stop_surfaces_not_stoppable_conflict_as_generic_failure(
     monkeypatch: pytest.MonkeyPatch,
+    json_output: bool,
+    golden: str,
 ) -> None:
     monkeypatch.setattr(runs_module, "resolve_credential", lambda: JWT)
     FakeClient.responses = [
@@ -476,7 +580,11 @@ def test_runs_stop_surfaces_not_stoppable_conflict_as_generic_failure(
         )
     ]
 
-    result = runner.invoke(app, _run_args("stop", STORAGE_ID, json_output=True))
+    result = runner.invoke(
+        app,
+        _run_args("stop", STORAGE_ID, json_output=json_output),
+    )
 
     assert result.exit_code == 1
-    assert json.loads(result.stderr)["code"] == "run_not_stoppable"
+    assert result.stdout == ""
+    assert_matches_golden(result.stderr, GOLDEN_DIR / golden)

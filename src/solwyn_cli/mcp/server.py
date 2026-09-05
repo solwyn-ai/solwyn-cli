@@ -44,6 +44,7 @@ from solwyn_cli.commands.runs import (
     RunRange,
     RunSort,
     _cursor_sort,
+    _known_allowed_ranges,
     _validate_custom_window,
     fetch_agent_runs,
     get_agent_run,
@@ -727,6 +728,26 @@ def _agent_runs_operation(
             )
         return _success(_AgentRunsResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        if (
+            isinstance(error, ApiError)
+            and error.status_code == 402
+            and error.code == "upgrade_required"
+        ):
+            allowed = _known_allowed_ranges(error)
+            entitlement_hint = _safe_remote_error_hint(error, "upgrade_required")
+            allowed_hint = "Allowed values: " + ", ".join(allowed) if allowed else None
+            hint = (
+                f"{allowed_hint}. {entitlement_hint}"
+                if allowed_hint is not None and entitlement_hint is not None
+                else allowed_hint or entitlement_hint
+            )
+            return _error(
+                _AgentRunsResult,
+                code="upgrade_required",
+                message=f"Range '{time_range.value}' is not available on your tier.",
+                hint=hint,
+                status_code=402,
+            )
         return _operation_error(
             _AgentRunsResult,
             error,

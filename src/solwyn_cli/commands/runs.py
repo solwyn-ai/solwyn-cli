@@ -35,6 +35,9 @@ from solwyn_cli.runtime import command_context, output_engine
 
 
 _STORAGE_RUN_ID = re.compile(r"^run_[0-9a-f]{32}$")
+_RFC3339_QUERY = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})"
+)
 _AWARE_DATETIME = TypeAdapter(AwareDatetime)
 _RANGE_ORDER = ("7d", "30d", "90d", "365d")
 
@@ -179,6 +182,8 @@ def _validate_custom_window(from_: str | None, to: str | None) -> None:
         raise ValueError("custom_window_pair_required")
     if from_ is None or to is None:
         return
+    if _RFC3339_QUERY.fullmatch(from_) is None or _RFC3339_QUERY.fullmatch(to) is None:
+        raise ValueError("custom_window_invalid")
     try:
         parsed_from = _AWARE_DATETIME.validate_python(from_)
         parsed_to = _AWARE_DATETIME.validate_python(to)
@@ -261,13 +266,17 @@ def stop_agent_run(
     return data
 
 
-def _largest_allowed_range(error: ApiError) -> RunRange | None:
+def _known_allowed_ranges(error: ApiError) -> tuple[str, ...]:
     if error.status_code != 402 or not isinstance(error.detail, dict):
-        return None
+        return ()
     allowed = error.detail.get("allowed_values")
     if not isinstance(allowed, list):
-        return None
-    known = [value for value in _RANGE_ORDER if value in allowed]
+        return ()
+    return tuple(value for value in _RANGE_ORDER if value in allowed)
+
+
+def _largest_allowed_range(error: ApiError) -> RunRange | None:
+    known = _known_allowed_ranges(error)
     return RunRange(known[-1]) if known else None
 
 
@@ -628,7 +637,7 @@ def _jwt_credential(context: typer.Context) -> JwtCredential:
             context,
             OutputError(
                 code="authentication_required",
-                message="User login with budget-write permission is required to stop runs.",
+                message="Stopping a run requires login with budget.write permission.",
                 hint=hint,
             ),
             semantic=ErrorSemantic.AUTH,

@@ -1,0 +1,1 @@
+{"schema":"solwyn.error.v1","code":"run_not_stoppable","message":"Auto-grouped agent runs cannot be stopped.","hint":null,"detail":{"code":"run_not_stoppable","message":"Auto-grouped agent runs cannot be stopped."}}
