@@ -14,6 +14,90 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("budget", "rules"): {
+        "endpoint": "GET /api/v1/projects/{project_id}/budget",
+        "auth": "key or JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rules.v1",
+    },
+    ("budget", "rules", "list"): {
+        "endpoint": "GET /api/v1/projects/{project_id}/budget",
+        "auth": "key or JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rules.v1",
+    },
+    ("budget", "rule"): {
+        "endpoint": "composite budget rule router",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "threshold"): {
+        "endpoint": "composite budget threshold router",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "rule", "add"): {
+        "endpoint": "GET then PUT /api/v1/projects/{project_id}/budget",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rules.v1",
+    },
+    ("budget", "restore-defaults"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/restore-defaults; GET /api/v1/projects/{project_id}/budget",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rules.v1",
+    },
+    ("budget", "rule", "preview"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/alerts/preview",
+        "auth": "key or JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_preview.v1",
+    },
+    ("budget", "rule", "remove"): {
+        "endpoint": "DELETE /api/v1/projects/{project_id}/budget/rule/{rule_key}",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "rule", "pause"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/pause",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "rule", "resume"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/resume",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "rule", "snooze"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/snooze",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "rule", "unsnooze"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "threshold", "snooze"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/threshold/{percent}/snooze",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
+    ("budget", "threshold", "unsnooze"): {
+        "endpoint": "POST /api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze",
+        "auth": "JWT owner/admin",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.rule_action.v1",
+    },
     (): {
         "endpoint": "composite command router",
         "auth": "varies by command",
@@ -177,6 +261,7 @@ _INIT_REMOTE_OPERATIONS = (
     "GET /api/v1/projects",
     "optional POST /api/v1/projects",
     "final GET /api/v1/projects/{project}/budget",
+    "--run-cap adds a rule with GET/GET/PUT /api/v1/projects/{project}/budget after creation",
 )
 _INIT_LOCAL_OPERATIONS = (
     "write local configuration",
@@ -264,7 +349,7 @@ def test_mcp_help_names_the_exact_six_tool_surface() -> None:
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_costs, list_projects."
+        "get_costs, list_projects, list_budget_rules."
     ) in rendered
 
 

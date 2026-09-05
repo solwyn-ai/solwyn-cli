@@ -17,6 +17,8 @@ from solwyn_cli._vendor.wire import (
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
     RefreshRequest,
+    SnoozeRequest,
+    ProjectAlertsPreviewRequest,
 )
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
@@ -32,6 +34,8 @@ REQUEST_MIRRORS = {
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
+    SnoozeRequest: "SnoozeRequest",
+    ProjectAlertsPreviewRequest: "ProjectAlertsPreviewRequest",
 }
 DECLARED_DEFAULT_FIELDS = {
     "ProjectCreateRequest": (

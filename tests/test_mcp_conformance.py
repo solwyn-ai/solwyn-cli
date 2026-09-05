@@ -29,6 +29,7 @@ TOOL_NAMES = [
     "get_project_status",
     "get_costs",
     "list_projects",
+    "list_budget_rules",
 ]
 
 BUDGET_RESPONSE = {
@@ -481,6 +482,7 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                 {"project_id"},
                 {"project_id", "time_range", "group_by"},
                 set(),
+                {"project_id"},
             ]
 
             calls = [
@@ -1441,3 +1443,22 @@ def test_shared_client_honors_one_jwt_refresh_and_retry(
     rendered = str(result)
     for secret in (JWT_ACCESS, JWT_REFRESH, new_access, new_refresh):
         assert secret not in rendered
+
+
+def test_list_budget_rules_is_read_only_with_project_key(monkeypatch):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200, json={**BUDGET_RESPONSE, "thresholds": EVERY_RULE_TYPE_THRESHOLDS}
+            )
+        ],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(_call_tool, "list_budget_rules", {})
+    assert not result.isError
+    assert result.structuredContent["schema"] == "solwyn.budget.rules.v1"
+    assert len(result.structuredContent["data"]["rules"]) == 6
+    assert [r[:2] for r in requests] == [("GET", "/api/v1/projects/proj_alpha/budget")]

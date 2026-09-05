@@ -271,3 +271,16 @@ class BudgetConfirmRequest(_WireModel):
     token_details: TokenDetails
     provider_region: Annotated[str, Field(max_length=32)] | None = None
     service_tier: ServiceTier | None = None
+
+
+class SnoozeRequest(_WireModel):
+    snoozed_until: datetime
+
+
+class AlertPreviewItem(_WireModel):
+    rule: _BudgetRule
+    channel_ids: list[str] | None = None
+
+
+class ProjectAlertsPreviewRequest(_WireModel):
+    alerts: Annotated[list[AlertPreviewItem], Field(max_length=50)]

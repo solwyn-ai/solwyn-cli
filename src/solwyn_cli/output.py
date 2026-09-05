@@ -56,6 +56,7 @@ class TableData(BaseModel):
     columns: tuple[str, ...]
     rows: tuple[tuple[Any, ...], ...]
     right_align: tuple[str, ...] = ()
+    fold_cells: bool = False
 
     @model_validator(mode="after")
     def validate_shape(self) -> "TableData":
@@ -225,6 +226,7 @@ class OutputEngine:
             rich_table.add_column(
                 Text(_terminal_safe(column)),
                 justify="right" if column in table.right_align else "left",
+                overflow="fold" if table.fold_cells else "ellipsis",
             )
         for row in table.rows:
             rich_table.add_row(*(Text(_terminal_safe(cell)) for cell in row))

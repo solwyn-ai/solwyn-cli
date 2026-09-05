@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from solwyn_cli import __version__
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.budget import app as budget_app
+from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import COSTS_HELP, costs
 from solwyn_cli.commands.init import INIT_HELP, init
@@ -40,6 +41,7 @@ app = typer.Typer(
         ),
     ),
 )
+register_budget_rules(budget_app)
 app.add_typer(budget_app, name="budget")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")

@@ -21,6 +21,7 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.artifacts import agent_guidance
 from solwyn_cli.auth import AuthError, JwtCredential, ProjectKeyCredential
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rules
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
     BudgetConfirmData,
@@ -53,6 +54,7 @@ TOOL_NAMES = (
     "get_project_status",
     "get_costs",
     "list_projects",
+    "list_budget_rules",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -156,6 +158,12 @@ class _BudgetStatusResult(_ToolResult[BudgetStatusData]):
     schema_name: Literal["solwyn.mcp.budget-status.v1"] = Field(
         default="solwyn.mcp.budget-status.v1",
         alias="schema",
+    )
+
+
+class _BudgetRulesResult(_ToolResult[BudgetRulesData]):
+    schema_name: Literal["solwyn.budget.rules.v1"] = Field(
+        default="solwyn.budget.rules.v1", alias="schema"
     )
 
 
@@ -395,6 +403,23 @@ def _budget_status_operation(
             _BudgetStatusResult,
             error,
             invalid_response_code="invalid_budget_status_response",
+        )
+
+
+def _budget_rules_operation(
+    project_id: str | None, launch_options: McpLaunchOptions
+) -> _BudgetRulesResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            data = request_budget_rules(
+                client=client, project_id=_project_id(command_runtime, project_id)
+            )
+        return _success(_BudgetRulesResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _BudgetRulesResult,
+            error,
+            invalid_response_code="invalid_budget_rules_response",
         )
 
 
@@ -797,5 +822,17 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     )
     async def list_projects() -> _ProjectsResult:
         return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
+
+    @server.tool(
+        name="list_budget_rules",
+        description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
+        structured_output=True,
+    )
+    async def list_budget_rules(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _BudgetRulesResult:
+        return await anyio.to_thread.run_sync(
+            partial(_budget_rules_operation, project_id, launch)
+        )
 
     return server

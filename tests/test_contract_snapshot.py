@@ -94,3 +94,9 @@ def test_contract_omits_proprietary_api_internals() -> None:
     rendered = render_contract()
     for forbidden in ("/api/", "http://", "https://"):
         assert forbidden not in rendered
+
+
+def test_underscore_rule_action_schema_is_declared_and_captured() -> None:
+    assert "solwyn.budget.rule_action.v1" in declared_schema_tokens()
+    schemas = {entry["schema"] for entry in build_cli_contract()["json_schemas"]}
+    assert "solwyn.budget.rule_action.v1" in schemas

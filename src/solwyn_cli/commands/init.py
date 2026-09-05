@@ -24,6 +24,7 @@ from solwyn_cli.auth import (
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
+from solwyn_cli.commands.budget_rules import build_rule, request_rule_add
 from solwyn_cli.commands.login import (
     authenticate_with_password,
     authenticate_with_project_key,
@@ -77,7 +78,8 @@ INIT_HELP = help_contract(
     guidance=(
         "Remote operations: conditional POST /api/v1/auth/login; "
         "GET /api/v1/projects; optional POST /api/v1/projects; "
-        "final GET /api/v1/projects/{project}/budget.",
+        "final GET /api/v1/projects/{project}/budget; --run-cap adds a rule with "
+        "GET/GET/PUT /api/v1/projects/{project}/budget after creation.",
         "Local operations: write local configuration; scan Python imports; "
         "render SDK snippets; optionally write agent artifacts with --agents.",
         "Provider credentials are never collected; --agents writes safe agent guidance.",
@@ -225,6 +227,7 @@ def _resolve_auth(context: typer.Context) -> ResolvedCredential:
 def _create_project(
     context: typer.Context,
     client: SolwynClient,
+    run_cap: float | None = None,
 ) -> tuple[str, ResolvedCredential | None]:
     name = typer.prompt("Project name", err=True).strip()
     budget = typer.prompt("Initial monthly budget", type=float, default=100.0, err=True)
@@ -250,6 +253,24 @@ def _create_project(
             request=request,
         )
         stored_credential = store_project_key(created.key.get_secret_value())
+        if run_cap is not None:
+            try:
+                request_rule_add(
+                    client=client,
+                    project_id=created.id,
+                    rule=build_rule(
+                        kind="runaway_run", spend=run_cap, mode="hard_deny"
+                    ),
+                )
+            except (ApiError, ValueError, TypeError):
+                typer.echo(
+                    f"Project {created.id} was created; review its budget rules before retrying the run-cap setup.",
+                    err=True,
+                )
+                raise
+            typer.echo(
+                "Per-run hard cap configured: caps every run at min(caps).", err=True
+            )
     except ApiError as error:
         exit_with_error(context, error)
     except CredentialStorageError as error:
@@ -277,12 +298,17 @@ def _resolve_jwt_project(
     context: typer.Context,
     credential: JwtCredential,
     explicit_project: str | None,
+    run_cap: float | None = None,
 ) -> tuple[str, ResolvedCredential]:
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             projects = fetch_projects(client=client)
             by_id = {project.id: project for project in projects}
+            if run_cap is not None and (
+                explicit_project is not None or len(projects) == 1
+            ):
+                _run_cap_requires_creation(context)
             if explicit_project is not None:
                 if explicit_project not in by_id:
                     exit_with_error(
@@ -308,7 +334,7 @@ def _resolve_jwt_project(
                     semantic=ErrorSemantic.USAGE,
                 )
             if not projects:
-                project_id, stored = _create_project(context, client)
+                project_id, stored = _create_project(context, client, run_cap)
                 return project_id, stored or client.current_credential
 
             project_ids = ", ".join(project.id for project in projects)
@@ -317,7 +343,7 @@ def _resolve_jwt_project(
                 err=True,
             ).strip()
             if selection == "create":
-                project_id, stored = _create_project(context, client)
+                project_id, stored = _create_project(context, client, run_cap)
                 return project_id, stored or client.current_credential
             if selection not in by_id:
                 exit_with_error(
@@ -329,6 +355,8 @@ def _resolve_jwt_project(
                     ),
                     semantic=ErrorSemantic.USAGE,
                 )
+            if run_cap is not None:
+                _run_cap_requires_creation(context)
             return selection, client.current_credential
     except ApiError as error:
         exit_with_error(context, error)
@@ -348,12 +376,27 @@ def _resolve_jwt_project(
         )
 
 
+def _run_cap_requires_creation(context: typer.Context) -> None:
+    exit_with_error(
+        context,
+        OutputError(
+            code="run_cap_requires_creation",
+            message="init --run-cap requires creating a new project.",
+            hint="For an existing project, use budget rule add --type runaway_run --spend USD --mode hard_deny.",
+        ),
+        semantic=ErrorSemantic.USAGE,
+    )
+
+
 def _resolve_project(
     context: typer.Context,
     credential: ResolvedCredential,
+    run_cap: float | None = None,
 ) -> tuple[str, ResolvedCredential]:
     selected = command_context(context).project
     if isinstance(credential, ProjectKeyCredential):
+        if run_cap is not None:
+            _run_cap_requires_creation(context)
         if selected is None:
             exit_with_error(
                 context,
@@ -365,7 +408,7 @@ def _resolve_project(
                 semantic=ErrorSemantic.USAGE,
             )
         return selected, credential
-    return _resolve_jwt_project(context, credential, selected)
+    return _resolve_jwt_project(context, credential, selected, run_cap)
 
 
 def _write_config(api_url: str, project_id: str) -> Path:
@@ -596,10 +639,29 @@ def init(
             help="Write Claude, Cursor, and AGENTS.md guidance.",
         ),
     ] = False,
+    run_cap: Annotated[
+        float | None,
+        typer.Option(
+            "--run-cap",
+            help="Create a wildcard per-run hard cap after project creation; caps every run at min(caps). ",
+        ),
+    ] = None,
 ) -> None:
     """Configure Solwyn safely for the current repository."""
+    if run_cap is not None:
+        try:
+            build_rule(kind="runaway_run", spend=run_cap, mode="hard_deny")
+        except ValueError:
+            exit_with_error(
+                context,
+                OutputError(
+                    code="invalid_run_cap",
+                    message="Run cap must be a positive finite amount in whole cents, at most 1999999.99.",
+                ),
+                semantic=ErrorSemantic.USAGE,
+            )
     credential = _resolve_auth(context)
-    project_id, credential = _resolve_project(context, credential)
+    project_id, credential = _resolve_project(context, credential, run_cap)
     runtime = command_context(context)
     config_path = _persist_config(context, runtime.api_url, project_id)
     providers, module_imports = _detect_providers(Path.cwd())

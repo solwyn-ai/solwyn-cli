@@ -1,0 +1,1 @@
+{"schema":"solwyn.budget.rules.v1","project_id":"proj_alpha","rules":[{"rule_key":"new-rule-key","channel_ids":["ch-one"],"routing":{"will_send":false,"email":null,"channels":[],"source":"project_default","muted":{"reason":"email_off","severity_floor":null}},"snoozed_until":null,"paused":false,"type":"unit_cost_anomaly","multiplier":5.0,"lookback_days":7}]}

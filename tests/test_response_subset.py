@@ -14,6 +14,11 @@ from solwyn_cli.commands import budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "RuleActionResponse": ("rule_key", "paused", "deleted"),
+    "SnoozeResponse": ("snoozed_until",),
+    "AlertsPreviewResponse": ("results",),
+    "BudgetRestoreDefaultsResponse": ("project_id", "thresholds"),
+    "BudgetThresholdEntry": ("percent", "channel_ids", "snoozed_until"),
     "TokenResponse": ("access_token", "refresh_token", "token_type"),
     "Error402Response": (
         "detail.code",
@@ -202,6 +207,51 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("DELETE", "/api/v1/projects/{project_id}/budget/rule/{rule_key}"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/pause"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/resume"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/snooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/threshold/{percent}/snooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/alerts/preview"): (
+        "200",
+        "object",
+        "AlertsPreviewResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/restore-defaults"): (
+        "200",
+        "object",
+        "BudgetRestoreDefaultsResponse",
+    ),
     ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
     ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
     ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),
