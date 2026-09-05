@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
+from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
 
@@ -189,8 +190,6 @@ def test_webhooks_create_posts_open_event_string_and_reveals_secret_once(
                     "url": "https://hooks.example.com/solwyn",
                     "events": "budget_threshold,future.delivery_ready",
                 },
-                "retry_rate_limit": False,
-                "retry_auth": False,
             },
         )
     ]
@@ -351,7 +350,7 @@ def test_webhooks_rotate_quotes_ids_posts_no_body_and_reveals_secret_once(
         (
             "POST",
             "/api/v1/projects/proj%2Fwebhooks/webhooks/wh%2Falpha/rotate",
-            {"retry_rate_limit": False, "retry_auth": False},
+            {},
         )
     ]
     rendered = result.stdout + result.stderr + repr(result.exception) + caplog.text
@@ -392,7 +391,7 @@ def test_webhooks_delete_requires_bodyless_204_and_matches_golden(
         (
             "DELETE",
             "/api/v1/projects/proj%2Fwebhooks/webhooks/wh%2Falpha",
-            {"retry_rate_limit": False, "retry_auth": False},
+            {},
         )
     ]
     assert result.stderr == ""
@@ -707,3 +706,258 @@ def test_webhook_request_and_response_contracts_are_registered() -> None:
         ]
         == "204"
     )
+
+
+_MUTATION_CASES = [
+    pytest.param(
+        [
+            "create",
+            "--url",
+            "https://hooks.example.com/solwyn",
+            "--events",
+            "future.delivery_ready",
+        ],
+        201,
+        {**CREATE_RESPONSE, "events": "future.delivery_ready"},
+        SIGNING_SECRET,
+        id="create",
+    ),
+    pytest.param(
+        ["rotate", WEBHOOK_ID],
+        200,
+        ROTATE_RESPONSE,
+        ROTATED_SECRET,
+        id="rotate",
+    ),
+    pytest.param(["delete", WEBHOOK_ID], 204, None, None, id="delete"),
+]
+
+
+def _success_response(status: int, payload: object) -> httpx.Response:
+    return (
+        httpx.Response(status)
+        if payload is None
+        else httpx.Response(status, json=payload)
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "status", "response_payload", "one_time_secret"),
+    _MUTATION_CASES,
+)
+def test_webhook_mutations_use_real_client_bounded_429_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    status: int,
+    response_payload: object,
+    one_time_secret: str | None,
+) -> None:
+    module = _module()
+    attempts = 0
+    waits: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(
+                429,
+                headers={"Retry-After": "3"},
+                json={"detail": "Slow down."},
+            )
+        return _success_response(status, response_payload)
+
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*, api_url: str, credential: object = None) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+            sleeper=waits.append,
+        )
+
+    monkeypatch.setattr(module, "resolve_credential", _jwt)
+    monkeypatch.setattr(module, "SolwynClient", client_factory)
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", PROJECT_ID, "webhooks", *command],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert attempts == 2
+    assert waits == [3.0]
+    rendered = result.stdout + result.stderr + repr(result.exception)
+    if one_time_secret is None:
+        assert SIGNING_SECRET not in rendered
+        assert ROTATED_SECRET not in rendered
+    else:
+        assert rendered.count(one_time_secret) == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "status", "response_payload", "one_time_secret"),
+    _MUTATION_CASES,
+)
+def test_webhook_mutations_use_real_client_reactive_jwt_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    status: int,
+    response_payload: object,
+    one_time_secret: str | None,
+) -> None:
+    module = _module()
+    original = _jwt()
+    rotated = auth.JwtCredential(
+        access_token="rotated-webhook-access-token",
+        refresh_token="rotated-webhook-refresh-token",
+    )
+    events: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        authorization = request.headers.get("Authorization")
+        events.append((f"{request.method} {request.url.path}", authorization))
+        if request.url.path == "/api/v1/auth/refresh":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": rotated.bearer_value(),
+                    "refresh_token": rotated.refresh_value(),
+                    "token_type": "bearer",
+                },
+            )
+        if authorization == f"Bearer {ACCESS_TOKEN}":
+            return httpx.Response(401, json={"detail": "Expired access token."})
+        assert authorization == f"Bearer {rotated.bearer_value()}"
+        return _success_response(status, response_payload)
+
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*, api_url: str, credential: object = None) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(module, "resolve_credential", lambda: original)
+    monkeypatch.setattr(module, "SolwynClient", client_factory)
+    monkeypatch.setattr(auth, "store_jwt_pair", lambda *_args: rotated)
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", PROJECT_ID, "webhooks", *command],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert events[0][1] == f"Bearer {ACCESS_TOKEN}"
+    assert events[1] == ("POST /api/v1/auth/refresh", None)
+    assert events[2][1] == f"Bearer {rotated.bearer_value()}"
+    assert len(events) == 3
+    rendered = result.stdout + result.stderr + repr(result.exception)
+    if one_time_secret is None:
+        assert SIGNING_SECRET not in rendered
+        assert ROTATED_SECRET not in rendered
+    else:
+        assert rendered.count(one_time_secret) == 1
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["create", "--url", "https://hooks.example.com/solwyn"],
+        ["rotate", WEBHOOK_ID],
+        ["delete", WEBHOOK_ID],
+    ],
+)
+@pytest.mark.parametrize("failure", ["503", "transport"])
+def test_webhook_mutations_do_not_replay_503_or_transport_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    failure: str,
+) -> None:
+    module = _module()
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if failure == "transport":
+            raise httpx.ConnectError("connection failed", request=request)
+        return httpx.Response(503, json={"detail": "Temporarily unavailable."})
+
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*, api_url: str, credential: object = None) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(module, "resolve_credential", _jwt)
+    monkeypatch.setattr(module, "SolwynClient", client_factory)
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", PROJECT_ID, "webhooks", *command],
+    )
+
+    assert result.exit_code == 1
+    assert attempts == 1
+
+
+@pytest.mark.parametrize("command", ["list", "create"])
+def test_webhook_responses_accept_core_naive_created_at_without_inventing_zone(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "resolve_credential", _jwt)
+    naive_created_at = "2026-08-31T14:30:00"
+    response = {**WEBHOOK_RESPONSE, "created_at": naive_created_at}
+    if command == "list":
+        args = ["list"]
+        FakeClient.responses = [httpx.Response(200, json=[response])]
+    else:
+        args = ["create", "--url", "https://hooks.example.com/solwyn"]
+        FakeClient.responses = [
+            httpx.Response(
+                201,
+                json={
+                    **response,
+                    "secret_prefix": SIGNING_SECRET[:8] + "...",
+                    "signing_secret": SIGNING_SECRET,
+                },
+            )
+        ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", PROJECT_ID, "webhooks", *args],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    if command == "list":
+        assert payload["webhooks"][0]["created_at"] == naive_created_at
+    else:
+        assert payload["created_at"] == naive_created_at
+        assert result.stdout.count(SIGNING_SECRET) == 1
+
+
+def test_webhooks_list_table_has_no_trailing_padding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "resolve_credential", _jwt)
+    FakeClient.responses = [httpx.Response(200, json=[WEBHOOK_RESPONSE])]
+
+    result = runner.invoke(
+        app,
+        ["--no-color", "--project", PROJECT_ID, "webhooks", "list"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert all(not line.endswith(" ") for line in result.stdout.splitlines())

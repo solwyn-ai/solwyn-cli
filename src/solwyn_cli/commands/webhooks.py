@@ -1,12 +1,12 @@
 """JWT-authenticated webhook target commands."""
 
 import re
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import quote
 
 import typer
 from pydantic import (
-    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -68,7 +68,7 @@ class WebhookResponse(BaseModel):
     events: str
     is_active: bool
     secret_prefix: str = Field(pattern=_SECRET_PREFIX_PATTERN)
-    created_at: AwareDatetime
+    created_at: datetime
 
 
 class WebhookCreateResponse(WebhookResponse):
@@ -139,7 +139,7 @@ class _WebhookDeleteData(BaseModel):
 _WEBHOOK_LIST_ADAPTER = TypeAdapter(list[WebhookResponse])
 
 
-def _date_time(value: AwareDatetime) -> str:
+def _date_time(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
@@ -232,6 +232,7 @@ def _list_table(data: _WebhookListData) -> TableData:
             (webhook.id, webhook.url, webhook.events, webhook.secret_prefix)
             for webhook in data.webhooks
         ),
+        right_align=("Secret prefix",),
     )
 
 
@@ -369,8 +370,6 @@ def create_webhook(
                 "POST",
                 f"/api/v1/projects/{project_path}/webhooks",
                 json=request.model_dump(mode="json"),
-                retry_rate_limit=False,
-                retry_auth=False,
             )
         if response.status_code != 201:
             raise ValueError("Webhook creation did not return 201")
@@ -428,8 +427,6 @@ def rotate_webhook(
             response = client.request(
                 "POST",
                 f"/api/v1/projects/{project_path}/webhooks/{webhook_path}/rotate",
-                retry_rate_limit=False,
-                retry_auth=False,
             )
         if response.status_code != 200:
             raise ValueError("Webhook rotation did not return 200")
@@ -484,8 +481,6 @@ def delete_webhook(
             response = client.request(
                 "DELETE",
                 f"/api/v1/projects/{project_path}/webhooks/{webhook_path}",
-                retry_rate_limit=False,
-                retry_auth=False,
             )
         if response.status_code != 204 or response.content:
             raise ValueError("Webhook deletion did not return a bodyless 204")
