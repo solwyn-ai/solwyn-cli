@@ -1,4 +1,4 @@
-"""In-process MCP conformance tests for the frozen six-tool surface."""
+"""In-process MCP conformance tests for the supported tool surface."""
 
 from collections.abc import Callable, Iterator
 from copy import deepcopy
@@ -29,6 +29,7 @@ TOOL_NAMES = [
     "get_project_status",
     "get_costs",
     "list_projects",
+    "get_cost_total",
 ]
 
 BUDGET_RESPONSE = {
@@ -152,6 +153,13 @@ PROVIDERS_RESPONSE = [
     }
 ]
 COSTS_RESPONSE = {
+    "window": {
+        "requested_from": "2026-07-09T00:00:00Z",
+        "requested_to": "2026-07-16T00:00:00Z",
+        "effective_from": "2026-07-09T00:00:00Z",
+        "effective_to": "2026-07-16T00:00:00Z",
+        "retention_clamped": False,
+    },
     "truncated": False,
     "project_id": "proj_alpha",
     "range": "30d",
@@ -159,6 +167,7 @@ COSTS_RESPONSE = {
     "groups": [
         {
             "group_key": "openai",
+            "modality": None,
             "agent_run_name": None,
             "provider": "openai",
             "total_cost": 1.25,
@@ -414,7 +423,7 @@ def mcp_http(
     assert all(client.is_closed for client in clients)
 
 
-def test_exact_six_tool_contract_and_mocked_http_conformance(
+def test_exact_tool_contract_and_mocked_http_conformance(
     mcp_http: list[tuple[str, str, dict[str, Any]]],
 ) -> None:
     caller_thread = get_ident()
@@ -479,8 +488,42 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "is_estimated",
                 },
                 {"project_id"},
-                {"project_id", "time_range", "group_by"},
+                {
+                    "project_id",
+                    "time_range",
+                    "group_by",
+                    "from_",
+                    "to",
+                    "model",
+                    "provider",
+                    "modality",
+                    "status",
+                    "service_tier",
+                    "provider_region",
+                    "agent_run",
+                    "failover_reason",
+                    "model_fallback",
+                    "provider_fallback",
+                    "tag",
+                },
                 set(),
+                {
+                    "project_id",
+                    "time_range",
+                    "from_",
+                    "to",
+                    "model",
+                    "provider",
+                    "modality",
+                    "status",
+                    "service_tier",
+                    "provider_region",
+                    "agent_run",
+                    "failover_reason",
+                    "model_fallback",
+                    "provider_fallback",
+                    "tag",
+                },
             ]
 
             calls = [
@@ -1441,3 +1484,54 @@ def test_shared_client_honors_one_jwt_refresh_and_retry(
     rendered = str(result)
     for secret in (JWT_ACCESS, JWT_REFRESH, new_access, new_refresh):
         assert secret not in rendered
+
+
+@pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])
+def test_cost_tools_forward_complete_filters(monkeypatch, tool):
+    payload = deepcopy(COSTS_RESPONSE)
+    if tool == "get_cost_total":
+        payload = {
+            "project_id": "proj_alpha",
+            "range": "custom",
+            "total_cost": 1.25,
+            "total_input_tokens": 100,
+            "total_output_tokens": 20,
+            "call_count": 2,
+            "unpriced_call_count": 0,
+            "local_call_count": 0,
+            "window": COSTS_RESPONSE["window"],
+            "savings": None,
+        }
+    requests, clients, remaining = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=payload)],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    args = {
+        "from_": "2026-07-01T00:00:00Z",
+        "to": "2026-07-02T00:00:00Z",
+        "model": "m",
+        "provider": "p",
+        "modality": "text",
+        "status": "success",
+        "service_tier": "flex",
+        "provider_region": "region",
+        "agent_run": "run_" + "a" * 32,
+        "failover_reason": "primary_error",
+        "model_fallback": False,
+        "provider_fallback": True,
+        "tag": ["x=a=b"],
+    }
+    result = anyio.run(_call_tool, tool, args)
+    assert result.structuredContent["ok"] is True
+    query = requests[0][2]["query"]
+    assert "range" not in query
+    assert query["agent_run_id"] == "run_" + "a" * 32
+    assert query["tag.x"] == "a=b"
+    assert query["is_model_fallback"] == "false"
+    assert query["is_provider_fallback"] == "true"
+    assert query["provider_region"] == "region"
+    assert not remaining
+    assert clients[0].is_closed

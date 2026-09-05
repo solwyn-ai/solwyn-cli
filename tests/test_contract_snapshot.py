@@ -94,3 +94,14 @@ def test_contract_omits_proprietary_api_internals() -> None:
     rendered = render_contract()
     for forbidden in ("/api/", "http://", "https://"):
         assert forbidden not in rendered
+
+
+def test_cost_export_declares_stream_output_kind() -> None:
+    contract = build_cli_contract()
+    export = next(
+        command
+        for command in contract["commands"]
+        if command["path"] == ["costs", "export"]
+    )
+    assert export["output_kind"] == "stream"
+    assert export["json_schema"] is None

@@ -9,7 +9,7 @@ from solwyn_cli import __version__
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
-from solwyn_cli.commands.costs import COSTS_HELP, costs
+from solwyn_cli.commands.costs import app as costs_app
 from solwyn_cli.commands.init import INIT_HELP, init
 from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
 from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
@@ -45,7 +45,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
-app.command("costs", epilog=COSTS_HELP)(costs)
+app.add_typer(costs_app, name="costs")
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)

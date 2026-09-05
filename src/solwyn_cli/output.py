@@ -2,9 +2,9 @@
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import StrEnum
-from typing import Any, TextIO
+from typing import Any, BinaryIO, TextIO
 
 from pydantic import (
     BaseModel,
@@ -261,3 +261,10 @@ class OutputEngine:
             hint = Text("Hint: ", style="bold yellow")
             hint.append(Text(_terminal_safe(error.hint)))
             console.print(hint)
+
+
+def write_byte_stream(*, chunks: Iterable[bytes], output: BinaryIO) -> None:
+    """Write export bytes incrementally without decoding or wrapping the payload."""
+    for chunk in chunks:
+        output.write(chunk)
+        output.flush()

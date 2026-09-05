@@ -1,0 +1,22 @@
+---
+title: Scripting cost analytics
+---
+
+Use `--json` before `costs` for a versioned JSON envelope. Use `costs total` when
+summing all spend: grouped results can contain only the top 100 groups. Inspect
+`window.retention_clamped` and `truncated` before treating a result as complete.
+A null savings upper bound is unknown, not zero savings.
+
+```sh
+solwyn --json --project "$SOLWYN_PROJECT_ID" costs total --range 7d
+solwyn --project "$SOLWYN_PROJECT_ID" costs export --format json > costs.jsonl 2> costs-export.log
+```
+
+Export writes raw CSV or NDJSON rather than the CLI JSON envelope. Keep stdout and
+stderr separate; stderr contains Core's `X-Solwyn-*` window and truncation headers.
+Write exports to a temporary file and rename only after exit 0 so a failed
+connection does not publish a partial file. Preserve CSV formula-safety prefixes.
+
+MCP `get_costs` accepts the same filters and `from_`/`to` bounds. `get_cost_total`
+returns uncapped totals and the effective window. Neither tool records spend or
+mutates account settings. Use the tool's structured `ok` and `error` fields.

@@ -1,0 +1,58 @@
+---
+title: Costs
+---
+
+`solwyn costs` shows project costs grouped by model. Select the project with
+`--project` (or `SOLWYN_PROJECT_ID`) before `costs`. Project keys and user login
+both work. Use `--json` before `costs` for the `solwyn.costs.v1` envelope.
+
+```sh
+solwyn --project proj_example costs --group-by day
+solwyn --json --project proj_example costs --group-by tag:customer --tag customer=example
+solwyn --project proj_example costs total --from 2026-08-01T00:00:00Z --to 2026-09-01T00:00:00Z
+solwyn --project proj_example costs events --limit 25 --cursor CURSOR
+solwyn --project proj_example costs export --format json > costs.jsonl
+```
+
+All reads accept `--model`, `--provider`, `--modality`, `--status`, `--service-tier`,
+`--provider-region`, `--agent-run`, `--failover-reason`,
+`--model-fallback/--no-model-fallback`, `--provider-fallback/--no-provider-fallback`,
+and repeatable `--tag key=value`. Tag filters split at the first `=` and preserve
+spaces and empty values; duplicate keys are rejected. Tag keys contain 1–64
+characters, values at most 256, and neither may contain NUL.
+
+`--agent-run` accepts either the raw run identifier or the stored
+`run_<32 lowercase hex>` identifier and sends only the matching Core parameter.
+
+`--range` defaults to `7d`; export defaults to `30d`. Paired timezone-aware
+`--from` and `--to` replace the preset. The end is exclusive. The CLI reads billing
+capabilities once per invocation to check the requested range and dimension and
+show current plan choices. Core decides whether an unavailable choice is invalid
+or needs an upgrade. If capability discovery fails, the cost request still runs.
+No plan-specific grouping list is embedded in the CLI.
+
+Aggregate `--group-by` accepts Core dimensions and `tag:<key>`. Tag analytics need
+Team. Core caps non-day groups at 100 and returns `truncated`; use `costs total`
+for uncapped totals. JSON includes the requested and effective `window`; retention
+clamp warnings go to stderr. `agent_run_name` is displayed when supplied. Missing
+savings are omitted from CLI JSON, and an unavailable savings upper bound is `—`
+in the human summary, never zero.
+
+`costs events` emits `solwyn.costs.events.v1`, including `items`, `next_cursor`,
+`has_more`, and `window`. Rows preserve denied cost, denial source/reason, SDK
+instance ID, and entitled tags. Events require Production except the onboarding
+probe (`--limit 1` without a cursor). Limits are 1–100. The event API omits
+`call_id`, provider fallback and failover reason; raw export provides the failover
+columns. `costs total` emits `solwyn.costs.total.v1`.
+
+`costs export --format csv|json` copies response bytes directly to stdout. JSON
+means NDJSON, one object per line. Raw export requires Team; set `--group-by` for
+Production's aggregate export. Free accounts cannot export. Core's CSV apostrophe
+prefix prevents formula injection and is preserved. Parse columns by header;
+new columns may be appended. Requested/effective window, retention-clamp, and
+truncation headers are printed to stderr. An interrupted stream exits nonzero;
+its output can be incomplete and is never automatically replayed.
+
+Invalid queries (Core 400/422) exit 2; authentication/authorization errors exit 3.
+Upgrade errors print Core's message, allowed choices when supplied, and a safe
+dashboard path. They never launch a checkout.

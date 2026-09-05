@@ -1,9 +1,9 @@
-"""FastMCP stdio server and the frozen six-tool Solwyn surface."""
+"""FastMCP stdio server and the supported Solwyn tool surface."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
-from typing import Annotated, Generic, Literal, TypeVar
+from typing import Any, Annotated, Generic, Literal, TypeVar
 
 import anyio
 from mcp.server.fastmcp import FastMCP
@@ -30,10 +30,11 @@ from solwyn_cli.commands.budget import (
     request_budget_status,
 )
 from solwyn_cli.commands.costs import (
-    CostGrouping,
     CostRange,
     CostsData,
     fetch_costs,
+    fetch_cost_total,
+    CostTotalResponse,
 )
 from solwyn_cli.commands.projects import ProjectsListData, fetch_projects
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
@@ -53,6 +54,7 @@ TOOL_NAMES = (
     "get_project_status",
     "get_costs",
     "list_projects",
+    "get_cost_total",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -187,6 +189,12 @@ class _CostsResult(_ToolResult[CostsData]):
     )
 
 
+class _CostTotalResult(_ToolResult[CostTotalResponse]):
+    schema_name: Literal["solwyn.mcp.cost-total.v1"] = Field(
+        default="solwyn.mcp.cost-total.v1", alias="schema"
+    )
+
+
 class _ProjectsResult(_ToolResult[ProjectsListData]):
     schema_name: Literal["solwyn.mcp.projects.v1"] = Field(
         default="solwyn.mcp.projects.v1",
@@ -230,9 +238,7 @@ def _canonical_guidance_line(fragment: str) -> str:
 
 
 PROJECT_STATUS_DESCRIPTION = "Read the configured project's budget and provider health without authorizing spend."
-COSTS_DESCRIPTION = (
-    "Read aggregated project costs for one frozen time range and grouping."
-)
+COSTS_DESCRIPTION = "Read project costs grouped by a Core dimension or tag:<key>, with shared cost filters and timezone-aware custom windows."
 PROJECTS_DESCRIPTION = (
     "List projects visible to the logged-in user. Requires login/JWT authentication."
 )
@@ -583,7 +589,8 @@ def _costs_operation(
     launch_options: McpLaunchOptions,
     project_id: str | None,
     time_range: CostRange,
-    group_by: CostGrouping,
+    group_by: str,
+    **filters: Any,
 ) -> _CostsResult:
     try:
         with tool_call_client(launch_options) as (command_runtime, client):
@@ -593,6 +600,7 @@ def _costs_operation(
                 project_id=resolved_project,
                 time_range=time_range,
                 group_by=group_by,
+                **filters,
             )
         return _success(_CostsResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
@@ -600,6 +608,28 @@ def _costs_operation(
             _CostsResult,
             error,
             invalid_response_code="invalid_costs_response",
+        )
+
+
+def _cost_total_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    project_id: str | None,
+    time_range: str = "7d",
+    **filters: Any,
+) -> _CostTotalResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            data = fetch_cost_total(
+                client=client,
+                project_id=_project_id(command_runtime, project_id),
+                time_range=time_range,
+                **filters,
+            )
+        return _success(_CostTotalResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _CostTotalResult, error, invalid_response_code="invalid_costs_response"
         )
 
 
@@ -778,7 +808,20 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     async def get_costs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
         time_range: CostRange = CostRange.SEVEN_DAYS,
-        group_by: CostGrouping = CostGrouping.MODEL,
+        group_by: str = "model",
+        from_: str | None = None,
+        to: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        modality: str | None = None,
+        status: str | None = None,
+        service_tier: str | None = None,
+        provider_region: str | None = None,
+        agent_run: str | None = None,
+        failover_reason: str | None = None,
+        model_fallback: bool | None = None,
+        provider_fallback: bool | None = None,
+        tag: list[str] | None = None,
     ) -> _CostsResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -787,6 +830,19 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 project_id=project_id,
                 time_range=time_range,
                 group_by=group_by,
+                from_=from_,
+                to=to,
+                model=model,
+                provider=provider,
+                modality=modality,
+                status=status,
+                service_tier=service_tier,
+                provider_region=provider_region,
+                agent_run=agent_run,
+                failover_reason=failover_reason,
+                model_fallback=model_fallback,
+                provider_fallback=provider_fallback,
+                tag=tag,
             )
         )
 
@@ -797,5 +853,49 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     )
     async def list_projects() -> _ProjectsResult:
         return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
+
+    @server.tool(
+        name="get_cost_total",
+        description="Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
+        structured_output=True,
+    )
+    async def get_cost_total(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: CostRange = CostRange.SEVEN_DAYS,
+        from_: str | None = None,
+        to: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        modality: str | None = None,
+        status: str | None = None,
+        service_tier: str | None = None,
+        provider_region: str | None = None,
+        agent_run: str | None = None,
+        failover_reason: str | None = None,
+        model_fallback: bool | None = None,
+        provider_fallback: bool | None = None,
+        tag: list[str] | None = None,
+    ) -> _CostTotalResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _cost_total_operation,
+                launch_options=launch,
+                project_id=project_id,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+                model=model,
+                provider=provider,
+                modality=modality,
+                status=status,
+                service_tier=service_tier,
+                provider_region=provider_region,
+                agent_run=agent_run,
+                failover_reason=failover_reason,
+                model_fallback=model_fallback,
+                provider_fallback=provider_fallback,
+                tag=tag,
+            )
+        )
 
     return server

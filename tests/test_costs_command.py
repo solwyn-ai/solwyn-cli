@@ -3,6 +3,7 @@
 import copy
 import json
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ import pytest
 from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
+from test_entitlement import BILLING
+from solwyn_cli.commands._entitlement import TierCapabilities
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import costs as costs_module
 from solwyn_cli.config import Config
@@ -23,6 +26,14 @@ GOLDEN_DIR = Path(__file__).parent / "golden"
 VALID_KEY = "sk_proj_" + "c3" * 32
 ACCESS_TOKEN = "costs-access-token"
 REFRESH_TOKEN = "costs-refresh-token"
+
+WINDOW = {
+    "requested_from": "2026-07-09T00:00:00Z",
+    "requested_to": "2026-07-16T00:00:00Z",
+    "effective_from": "2026-07-09T00:00:00Z",
+    "effective_to": "2026-07-16T00:00:00Z",
+    "retention_clamped": False,
+}
 
 GROUPS = {
     "day": [
@@ -77,6 +88,7 @@ def _response(
         "groups": copy.deepcopy(GROUPS[group_by]),
         "truncated": False,
         "savings": None,
+        "window": WINDOW,
     }
 
 
@@ -98,6 +110,14 @@ class FakeClient:
     def __exit__(self, *args: object) -> None:
         return None
 
+    @contextmanager
+    def stream(self, method: str, path: str, **kwargs: Any):
+        response = self.request(method, path, **kwargs)
+        try:
+            yield response
+        finally:
+            response.close()
+
     def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         self.requests.append((method, path, kwargs))
         result = self.__class__.responses.pop(0)
@@ -110,6 +130,7 @@ class FakeClient:
 def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     FakeClient.instances = []
     FakeClient.responses = []
+    monkeypatch.setattr(costs_module, "get_capabilities", lambda **kwargs: None)
     monkeypatch.setattr(costs_module, "SolwynClient", FakeClient, raising=False)
     yield
 
@@ -314,11 +335,11 @@ def test_costs_missing_credentials_is_auth_error_without_api_calls(
 @pytest.mark.parametrize(
     "option",
     [
-        ["--range", "1d"],
-        ["--group-by", "service"],
+        ["--group-by", "tag:"],
+        ["--group-by", "tag:" + "x" * 65],
     ],
 )
-def test_costs_rejects_non_frozen_options_before_request(option: list[str]) -> None:
+def test_costs_rejects_malformed_tag_group_before_request(option: list[str]) -> None:
     result = runner.invoke(app, ["-p", "proj_alpha", "costs", *option])
 
     assert result.exit_code == 2
@@ -467,3 +488,376 @@ def test_costs_rejects_missing_truncation_flag(monkeypatch):
     assert result.exit_code == 1
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "invalid_costs_response"
+
+
+@pytest.mark.parametrize(
+    "dimension",
+    [
+        "status",
+        "service_tier",
+        "provider_region",
+        "failover_reason",
+        "agent_run",
+        "tag:customer",
+    ],
+)
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_expanded_dimensions_match_goldens(monkeypatch, dimension, output_format):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    payload = _response()
+    payload["group_by"] = dimension
+    payload["groups"][0]["group_key"] = "example"
+    if dimension == "agent_run":
+        payload["groups"][0]["agent_run_name"] = "Research job"
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+    result = runner.invoke(
+        app,
+        [
+            "--format",
+            output_format,
+            "-p",
+            "proj_alpha",
+            "costs",
+            "--group-by",
+            dimension,
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests[0][2]["params"]["group_by"] == dimension
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"costs-{dimension.replace(':', '-')}-{output_format}.{suffix}",
+    )
+
+
+EVENT = {
+    "id": "event_1",
+    "project_id": "proj_alpha",
+    "agent_run_id": None,
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "input_tokens": 100,
+    "output_tokens": 0,
+    "cost": 0.0,
+    "denied_cost": 0.25,
+    "deny_source": "server",
+    "deny_reason": "budget_exceeded",
+    "estimated_cost": None,
+    "status": "budget_denied",
+    "is_model_fallback": False,
+    "latency_ms": 0,
+    "sdk_instance_id": "instance_1",
+    "created_at": "2026-07-10T00:00:00Z",
+    "tags": {"customer": "example"},
+}
+TOTAL = {
+    "project_id": "proj_alpha",
+    "range": "7d",
+    "total_cost": 2.5,
+    "total_input_tokens": 2400,
+    "total_output_tokens": 680,
+    "call_count": 8,
+    "unpriced_call_count": 0,
+    "local_call_count": 2,
+    "savings": None,
+    "window": WINDOW,
+}
+
+
+@pytest.mark.parametrize(
+    "command,payload",
+    [
+        (
+            "events",
+            {
+                "items": [EVENT],
+                "next_cursor": "next_page",
+                "has_more": True,
+                "window": WINDOW,
+            },
+        ),
+        ("total", TOTAL),
+    ],
+)
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_events_and_total_goldens(monkeypatch, command, payload, output_format):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+    result = runner.invoke(
+        app, ["--format", output_format, "-p", "proj_alpha", "costs", command]
+    )
+    assert result.exit_code == 0, result.stderr
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout, GOLDEN_DIR / f"costs-{command}-{output_format}.{suffix}"
+    )
+
+
+def test_all_filters_and_custom_window_reach_core(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    FakeClient.responses = [httpx.Response(200, json=TOTAL)]
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_alpha",
+            "costs",
+            "total",
+            "--from",
+            "2026-07-01T00:00:00Z",
+            "--to",
+            "2026-07-02T00:00:00Z",
+            "--model",
+            "m",
+            "--provider",
+            "p",
+            "--modality",
+            "text",
+            "--status",
+            "success",
+            "--service-tier",
+            "flex",
+            "--provider-region",
+            "us-east-1",
+            "--agent-run",
+            "raw",
+            "--failover-reason",
+            "primary_error",
+            "--no-model-fallback",
+            "--provider-fallback",
+            "--tag",
+            "x=a=b",
+        ],
+    )
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests[0][2]["params"] == {
+        "from": "2026-07-01T00:00:00Z",
+        "to": "2026-07-02T00:00:00Z",
+        "model": "m",
+        "provider": "p",
+        "modality": "text",
+        "status": "success",
+        "service_tier": "flex",
+        "provider_region": "us-east-1",
+        "agent_run": "raw",
+        "failover_reason": "primary_error",
+        "is_model_fallback": False,
+        "is_provider_fallback": True,
+        "tag.x": "a=b",
+    }
+
+
+@pytest.mark.parametrize("status_code", [400, 422])
+def test_core_invalid_query_is_usage_error(monkeypatch, status_code):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(status_code, json={"detail": "Invalid group_by from Core"})
+        )
+    ]
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_alpha", "costs", "--group-by", "invalid"]
+    )
+    assert result.exit_code == 2
+    assert "Invalid group_by from Core" in result.stderr
+
+
+def test_retention_clamp_and_nullable_savings(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    payload = copy.deepcopy(TOTAL)
+    payload["window"]["retention_clamped"] = True
+    payload["savings"] = {
+        "saved_cost": 1.0,
+        "saved_cost_upper": None,
+        "saved_input_tokens": 100,
+        "blocked_call_count": 2,
+    }
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs", "total"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["savings"]["saved_cost_upper"] is None
+    assert "Retention clamped" in result.stderr
+    assert "upper —" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["events", "total", "export"])
+@pytest.mark.parametrize(
+    "option",
+    [
+        ["--from", "2026-07-01T00:00:00Z"],
+        ["--from", "2026-07-01", "--to", "2026-07-02"],
+    ],
+)
+def test_all_cost_subcommands_reject_invalid_windows_before_auth(command, option):
+    result = runner.invoke(app, ["-p", "proj_alpha", "costs", command, *option])
+    assert result.exit_code == 2
+    assert not FakeClient.instances
+
+
+@pytest.mark.parametrize("limit", ["0", "101"])
+def test_events_limit_bounds(limit):
+    result = runner.invoke(
+        app, ["-p", "proj_alpha", "costs", "events", "--limit", limit]
+    )
+    assert result.exit_code == 2
+    assert not FakeClient.instances
+
+
+def test_events_cursor_and_probe_limit_reach_core(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "items": [],
+                "next_cursor": None,
+                "has_more": False,
+                "window": WINDOW,
+            },
+        )
+    ]
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_alpha",
+            "costs",
+            "events",
+            "--limit",
+            "1",
+            "--cursor",
+            "page",
+        ],
+    )
+    assert result.exit_code == 0
+    assert FakeClient.instances[0].requests[0][2]["params"] == {
+        "range": "7d",
+        "limit": 1,
+        "cursor": "page",
+    }
+
+
+def test_current_capabilities_supply_choices_without_static_dimension_list(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    monkeypatch.setattr(
+        costs_module,
+        "get_capabilities",
+        lambda **kwargs: TierCapabilities.model_validate(BILLING["capabilities"]),
+    )
+    payload = _response()
+    payload["group_by"] = "future_dimension"
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_alpha", "costs", "--group-by", "future_dimension"]
+    )
+    assert result.exit_code == 0
+    assert not result.stderr
+    assert json.loads(result.stdout)["group_by"] == "future_dimension"
+
+
+def test_disallowed_capabilities_keep_core_400_message_and_show_current_choices(
+    monkeypatch,
+):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    monkeypatch.setattr(
+        costs_module,
+        "get_capabilities",
+        lambda **kwargs: TierCapabilities.model_validate(BILLING["capabilities"]),
+    )
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(400, json={"detail": "Invalid group_by from Core"})
+        )
+    ]
+    result = runner.invoke(app, ["-p", "proj_alpha", "costs", "--group-by", "bad"])
+    assert result.exit_code == 2
+    assert "future_dimension" in result.stderr
+    assert "Invalid group_by from Core" in result.stderr
+
+
+def test_parent_filters_are_not_silently_ignored_for_subcommands():
+    result = runner.invoke(app, ["-p", "proj_alpha", "costs", "--model", "m", "total"])
+    assert result.exit_code == 2
+    assert "after the subcommand" in result.stderr
+    assert not FakeClient.instances
+
+
+@pytest.mark.parametrize(
+    "command,feature,tier",
+    [
+        ("events", "cost_events", "production"),
+        ("export", "csv_export", "production"),
+        ("export", "csv_export.raw", "team"),
+    ],
+)
+def test_cost_feature_upgrade_ladder_preserves_core_message(
+    monkeypatch, command, feature, tier
+):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    detail = {
+        "code": "upgrade_required",
+        "feature": feature,
+        "current_tier": "free" if tier == "production" else "production",
+        "required_tier": tier,
+        "message": f"{feature} requires {tier}",
+        "allowed_values": None,
+        "cta_path": "/billing",
+    }
+    FakeClient.responses = [
+        error_from_response(httpx.Response(402, json={"detail": detail}))
+    ]
+    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs", command])
+    assert result.exit_code == 1
+    assert not result.stdout
+    error = json.loads(result.stderr)
+    assert error["message"] == f"{feature} requires {tier}"
+    assert "/billing" in error["hint"]
+
+
+def test_ndjson_export_is_not_wrapped_or_decoded(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    content = '{"model":"模型"}\n{"model":"second"}\n'.encode()
+    FakeClient.responses = [httpx.Response(200, content=content)]
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_alpha",
+            "costs",
+            "export",
+            "--format",
+            "json",
+            "--group-by",
+            "model",
+        ],
+    )
+    assert result.exit_code == 0
+    assert result.stdout_bytes == content
+    assert FakeClient.instances[0].requests[0][2]["params"] == {
+        "range": "30d",
+        "format": "json",
+        "group_by": "model",
+    }
+
+
+def test_entitlement_hints_keep_json_error_envelope_parseable(monkeypatch):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    monkeypatch.setattr(
+        costs_module,
+        "get_capabilities",
+        lambda **kwargs: TierCapabilities.model_validate(BILLING["capabilities"]),
+    )
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(400, json={"detail": "Invalid group_by from Core"})
+        )
+    ]
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_alpha", "costs", "--group-by", "bad"]
+    )
+    assert result.exit_code == 2
+    assert "future_dimension" in json.loads(result.stderr)["hint"]

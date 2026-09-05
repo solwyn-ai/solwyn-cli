@@ -1817,21 +1817,10 @@
   {
     "name": "get_costs",
     "title": null,
-    "description": "Read aggregated project costs for one frozen time range and grouping.",
+    "description": "Read project costs grouped by a Core dimension or tag:<key>, with shared cost filters and timezone-aware custom windows.",
     "inputSchema": {
       "$defs": {
-        "CostGrouping": {
-          "description": "Supported aggregate dimensions frozen for the v1 command.",
-          "enum": [
-            "day",
-            "model",
-            "provider"
-          ],
-          "title": "CostGrouping",
-          "type": "string"
-        },
         "CostRange": {
-          "description": "Supported aggregate windows frozen for the v1 command.",
           "enum": [
             "7d",
             "30d",
@@ -1861,8 +1850,168 @@
           "default": "7d"
         },
         "group_by": {
-          "$ref": "#/$defs/CostGrouping",
-          "default": "model"
+          "default": "model",
+          "title": "Group By",
+          "type": "string"
+        },
+        "from_": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "modality": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modality"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Tier"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "agent_run": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run"
+        },
+        "failover_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failover Reason"
+        },
+        "model_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Fallback"
+        },
+        "provider_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Fallback"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
         }
       },
       "title": "get_costsArguments",
@@ -1870,13 +2019,9 @@
     },
     "outputSchema": {
       "$defs": {
-        "_CostGroup": {
+        "CostGroup": {
           "properties": {
             "group_key": {
-              "title": "Group Key",
-              "type": "string"
-            },
-            "agent_run_name": {
               "anyOf": [
                 {
                   "type": "string"
@@ -1885,8 +2030,7 @@
                   "type": "null"
                 }
               ],
-              "default": null,
-              "title": "Agent Run Name"
+              "title": "Group Key"
             },
             "provider": {
               "anyOf": [
@@ -1899,6 +2043,30 @@
               ],
               "default": null,
               "title": "Provider"
+            },
+            "modality": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Modality"
+            },
+            "agent_run_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Run Name"
             },
             "total_cost": {
               "title": "Total Cost",
@@ -1934,37 +2102,26 @@
             "total_output_tokens",
             "call_count"
           ],
-          "title": "_CostGroup",
+          "title": "CostGroup",
           "type": "object"
         },
-        "_CostsData": {
+        "CostQueryResponse": {
           "properties": {
             "project_id": {
               "title": "Project Id",
               "type": "string"
             },
             "range": {
-              "enum": [
-                "7d",
-                "30d",
-                "90d",
-                "365d"
-              ],
               "title": "Range",
               "type": "string"
             },
             "group_by": {
-              "enum": [
-                "day",
-                "model",
-                "provider"
-              ],
               "title": "Group By",
               "type": "string"
             },
             "groups": {
               "items": {
-                "$ref": "#/$defs/_CostGroup"
+                "$ref": "#/$defs/CostGroup"
               },
               "title": "Groups",
               "type": "array"
@@ -1972,6 +2129,20 @@
             "truncated": {
               "title": "Truncated",
               "type": "boolean"
+            },
+            "savings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SavingsSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "window": {
+              "$ref": "#/$defs/CostWindow"
             }
           },
           "required": [
@@ -1979,9 +2150,78 @@
             "range",
             "group_by",
             "groups",
-            "truncated"
+            "truncated",
+            "window"
           ],
-          "title": "_CostsData",
+          "title": "CostQueryResponse",
+          "type": "object"
+        },
+        "CostWindow": {
+          "properties": {
+            "requested_from": {
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "CostWindow",
+          "type": "object"
+        },
+        "SavingsSummary": {
+          "properties": {
+            "saved_cost": {
+              "title": "Saved Cost",
+              "type": "number"
+            },
+            "saved_cost_upper": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Cost Upper"
+            },
+            "saved_input_tokens": {
+              "title": "Saved Input Tokens",
+              "type": "integer"
+            },
+            "blocked_call_count": {
+              "title": "Blocked Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "saved_cost",
+            "saved_cost_upper",
+            "saved_input_tokens",
+            "blocked_call_count"
+          ],
+          "title": "SavingsSummary",
           "type": "object"
         },
         "_ToolError": {
@@ -2044,7 +2284,7 @@
         "data": {
           "anyOf": [
             {
-              "$ref": "#/$defs/_CostsData"
+              "$ref": "#/$defs/CostQueryResponse"
             },
             {
               "type": "null"
@@ -2226,6 +2466,428 @@
         "ok"
       ],
       "title": "_ProjectsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_cost_total",
+    "title": null,
+    "description": "Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
+    "inputSchema": {
+      "$defs": {
+        "CostRange": {
+          "enum": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "title": "CostRange",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "time_range": {
+          "$ref": "#/$defs/CostRange",
+          "default": "7d"
+        },
+        "from_": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "modality": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modality"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Tier"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "agent_run": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run"
+        },
+        "failover_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failover Reason"
+        },
+        "model_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Fallback"
+        },
+        "provider_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Fallback"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        }
+      },
+      "title": "get_cost_totalArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "CostTotalResponse": {
+          "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "range": {
+              "title": "Range",
+              "type": "string"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "call_count": {
+              "title": "Call Count",
+              "type": "integer"
+            },
+            "unpriced_call_count": {
+              "title": "Unpriced Call Count",
+              "type": "integer"
+            },
+            "local_call_count": {
+              "title": "Local Call Count",
+              "type": "integer"
+            },
+            "savings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SavingsSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "window": {
+              "$ref": "#/$defs/CostWindow"
+            }
+          },
+          "required": [
+            "project_id",
+            "range",
+            "total_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "call_count",
+            "unpriced_call_count",
+            "local_call_count",
+            "window"
+          ],
+          "title": "CostTotalResponse",
+          "type": "object"
+        },
+        "CostWindow": {
+          "properties": {
+            "requested_from": {
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "CostWindow",
+          "type": "object"
+        },
+        "SavingsSummary": {
+          "properties": {
+            "saved_cost": {
+              "title": "Saved Cost",
+              "type": "number"
+            },
+            "saved_cost_upper": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Cost Upper"
+            },
+            "saved_input_tokens": {
+              "title": "Saved Input Tokens",
+              "type": "integer"
+            },
+            "blocked_call_count": {
+              "title": "Blocked Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "saved_cost",
+            "saved_cost_upper",
+            "saved_input_tokens",
+            "blocked_call_count"
+          ],
+          "title": "SavingsSummary",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.cost-total.v1",
+          "default": "solwyn.mcp.cost-total.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CostTotalResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_CostTotalResult",
       "type": "object"
     },
     "icons": null,
