@@ -14,6 +14,7 @@ from solwyn_cli._vendor.wire import (
     BudgetConfirmRequest,
     BudgetUpdateRequest,
     LoginRequest,
+    IngestMetadataEvent,
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
     RefreshRequest,
@@ -32,6 +33,7 @@ REQUEST_MIRRORS = {
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
+    IngestMetadataEvent: "IngestMetadataEvent",
 }
 DECLARED_DEFAULT_FIELDS = {
     "ProjectCreateRequest": (
@@ -50,13 +52,25 @@ DECLARED_DEFAULT_FIELDS = {
 # trips the guard — and any field NOT listed here trips it the moment Core adds
 # it. Mirrors stay an exact match against everything the CLI actually posts.
 UNADOPTED_OPTIONAL_FIELDS = {
+    "IngestMetadataEvent": (
+        # SDK-internal velocity observation and aggregate receipt accounting.
+        "velocity_flags",
+        "receipt_aggregate_count",
+        "receipt_pricing_input_tokens",
+        # SDK router/abort state is not observed by the CLI.
+        "possibly_succeeded",
+        "failover_reason",
+        "failover_error_class",
+        "requested_provider",
+        "requested_model",
+        # Reservation-only wave: the CLI has no lease plane, including batch input.
+        "lease_id",
+    ),
     "BudgetCheckRequest": (
         # Declined: the directive it requests only tunes SDK-side retry and
         # circuit-breaker behavior, which the CLI does not perform; opting in
         # would also switch the check response to null-omitting encoding.
         "failover_directive_version",
-        # Adopted in W1.16 with tag parsing and enforcement flags.
-        "tags",
         # Adopted in W1.9 with run-control directives.
         "run_directive_version",
         # Declined: inert on this endpoint — the budget aggregator never reads
@@ -86,6 +100,7 @@ UNADOPTED_OPTIONAL_FIELDS = {
 # test_response_subset.py. Adopt the rule type; do not relax the union instead.
 UNADOPTED_THRESHOLD_CONFIGS: tuple[str, ...] = ()
 UNADOPTED_FIELD_OWNERS = {
+    "IngestMetadataEvent": IngestMetadataEvent,
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
 }

@@ -1,0 +1,142 @@
+"""Shared synchronous attribution transport for CLI and MCP."""
+
+import re
+from datetime import UTC, datetime
+from typing import Literal
+from uuid import uuid4
+
+import typer
+from pydantic import BaseModel, ConfigDict, Field
+
+from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent
+from solwyn_cli.auth import AuthError
+from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._tags import validate_tags
+from solwyn_cli.errors import ApiError
+
+CALL_ID_HINT = "Use a canonical lowercase UUID: uuidgen | tr A-F a-f"
+
+
+class IngestRejection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    index: int = Field(ge=0)
+    code: Literal[
+        "unknown_model",
+        "unknown_service_tier",
+        "invalid_tags",
+        "tag_cardinality_exceeded",
+        "unsupported_modality",
+    ]
+    model: str
+    message: str
+
+
+class IngestDuplicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    index: int = Field(ge=0)
+    reason: Literal["call_id", "legacy_key"]
+    call_id: str
+
+
+class IngestResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ingested: int = Field(ge=0)
+    rejected: list[IngestRejection] = Field(default_factory=list)
+    duplicates: list[IngestDuplicate] = Field(default_factory=list)
+
+
+class RecordingResult(IngestResponse):
+    status: Literal["ingested", "deduplicated", "rejected", "skipped", "failed"]
+    call_ids: list[str] = Field(default_factory=list)
+
+
+def validate_call_id(call_id: str) -> str:
+    if re.fullmatch(CALL_ID_PATTERN, call_id) is None:
+        raise ValueError(CALL_ID_HINT)
+    return call_id
+
+
+def build_event(**inputs: object) -> IngestMetadataEvent:
+    """Build one event; caller may share a fresh instance id across a batch."""
+    values: dict[str, object] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "latency_ms": 0.0,
+        "status": "success",
+        "is_model_fallback": False,
+        "sdk_instance_id": str(uuid4()),
+        "timestamp": datetime.now(UTC),
+        "call_id": str(uuid4()),
+    }
+    values.update(inputs)
+    validate_call_id(values["call_id"])
+    event = IngestMetadataEvent.model_validate(values)
+    validate_tags(event.tags)
+    return event
+
+
+def request_ingest(
+    *, client: SolwynClient, events: list[IngestMetadataEvent]
+) -> RecordingResult:
+    """Post one batch through the client's bounded 429 retry path."""
+    response = client.request(
+        "POST",
+        "/api/v1/metadata/ingest",
+        json=[event.model_dump(mode="json", exclude_none=True) for event in events],
+    )
+    if response.status_code != 202:
+        raise ValueError("Metadata ingest did not return 202.")
+    data = IngestResponse.model_validate(response.json())
+    indexes = [item.index for item in [*data.rejected, *data.duplicates]]
+    if len(set(indexes)) != len(indexes) or any(
+        index >= len(events) for index in indexes
+    ):
+        raise ValueError("Invalid ingest disposition indexes.")
+    if data.ingested + len(indexes) != len(events):
+        raise ValueError(
+            "Incomplete ingest dispositions; durability could not be verified."
+        )
+    for duplicate in data.duplicates:
+        if duplicate.call_id != events[duplicate.index].call_id:
+            raise ValueError(
+                "Ingest duplicate call ID did not match the submitted event."
+            )
+    for rejection in data.rejected:
+        typer.echo(rejection.message, err=True)
+    legacy = any(item.reason == "legacy_key" for item in data.duplicates)
+    if legacy:
+        typer.echo(
+            "Warning: legacy_key collision cannot prove this logical call is durable.",
+            err=True,
+        )
+    status = (
+        "failed"
+        if legacy
+        else "rejected"
+        if data.rejected
+        else "deduplicated"
+        if data.duplicates
+        else "ingested"
+    )
+    return RecordingResult(
+        **data.model_dump(), status=status, call_ids=[event.call_id for event in events]
+    )
+
+
+def record_best_effort(
+    *, client: SolwynClient, event: IngestMetadataEvent, no_record: bool = False
+) -> RecordingResult:
+    """Recording must never undo successful settlement or the denial decision."""
+    if no_record:
+        return RecordingResult(status="skipped", ingested=0, call_ids=[event.call_id])
+    try:
+        result = request_ingest(client=client, events=[event])
+        if result.status in ("rejected", "failed"):
+            typer.echo(
+                "Warning: attribution was not recorded; the budget outcome is unchanged.",
+                err=True,
+            )
+        return result
+    except (ApiError, AuthError, ValueError, TypeError) as error:
+        typer.echo(f"Warning: attribution recording failed: {error}", err=True)
+        return RecordingResult(status="failed", ingested=0, call_ids=[event.call_id])

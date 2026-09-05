@@ -14,6 +14,9 @@ from solwyn_cli.commands import budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "IngestResponse": ("ingested", "rejected", "duplicates"),
+    "IngestRejection": ("index", "code", "model", "message"),
+    "IngestDuplicate": ("index", "reason", "call_id"),
     "TokenResponse": ("access_token", "refresh_token", "token_type"),
     "Error402Response": (
         "detail.code",
@@ -202,6 +205,7 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("POST", "/api/v1/metadata/ingest"): ("202", "object", "IngestResponse"),
     ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
     ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
     ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),
