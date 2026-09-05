@@ -63,7 +63,10 @@ HELP_CONTRACTS = {
         "schema": "solwyn.budget.rules.v1",
     },
     ("budget", "restore-defaults"): {
-        "endpoint": "POST /api/v1/projects/{project_id}/budget/restore-defaults; GET /api/v1/projects/{project_id}/budget",
+        "endpoint": "POST "
+        "/api/v1/projects/{project_id}/budget/restore-defaults; "
+        "GET "
+        "/api/v1/projects/{project_id}/budget",
         "auth": "JWT owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rules.v1",
@@ -99,19 +102,22 @@ HELP_CONTRACTS = {
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "rule", "unsnooze"): {
-        "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze",
+        "endpoint": "POST "
+        "/api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze",
         "auth": "JWT owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "threshold", "snooze"): {
-        "endpoint": "POST /api/v1/projects/{project_id}/budget/threshold/{percent}/snooze",
+        "endpoint": "POST "
+        "/api/v1/projects/{project_id}/budget/threshold/{percent}/snooze",
         "auth": "JWT owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "threshold", "unsnooze"): {
-        "endpoint": "POST /api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze",
+        "endpoint": "POST "
+        "/api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze",
         "auth": "JWT owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
@@ -131,19 +137,22 @@ HELP_CONTRACTS = {
     ("account", "alert-email", "show"): {
         "endpoint": "GET /api/v1/account/alert-email",
         "auth": "JWT",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery "
+        "failure; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.account.alert-email.v1",
     },
     ("account", "alert-email", "set"): {
         "endpoint": "PUT /api/v1/account/alert-email",
         "auth": "JWT; owner for mutations",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery "
+        "failure; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.account.alert-email.v1",
     },
     ("account", "alert-email", "clear"): {
         "endpoint": "DELETE /api/v1/account/alert-email",
         "auth": "JWT; owner for mutations",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery "
+        "failure; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.account.alert-email.v1",
     },
     ("channels",): {
@@ -155,37 +164,43 @@ HELP_CONTRACTS = {
     ("channels", "list"): {
         "endpoint": "GET /api/v1/account/notification-channels",
         "auth": "JWT",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.list.v1",
     },
     ("channels", "show"): {
         "endpoint": "GET /api/v1/account/notification-channels/{channel_id}",
         "auth": "JWT",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.v1",
     },
     ("channels", "create"): {
         "endpoint": "POST /api/v1/account/notification-channels",
         "auth": "JWT; owner for mutations",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.v1",
     },
     ("channels", "update"): {
         "endpoint": "GET then PUT /api/v1/account/notification-channels/{channel_id}",
         "auth": "JWT; owner for mutations",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.v1",
     },
     ("channels", "test"): {
         "endpoint": "POST /api/v1/account/notification-channels/{channel_id}/test",
         "auth": "JWT; owner for mutations",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.test.v1",
     },
     ("channels", "delete"): {
         "endpoint": "DELETE /api/v1/account/notification-channels/{channel_id}",
         "auth": "JWT; owner for mutations",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.delete.v1",
     },
     ("notifications",): {
@@ -197,19 +212,22 @@ HELP_CONTRACTS = {
     ("notifications", "show"): {
         "endpoint": "GET /api/v1/projects/{project}/notifications",
         "auth": "any",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.v1",
     },
     ("notifications", "set"): {
         "endpoint": "PUT /api/v1/projects/{project}/notifications",
         "auth": "any; full-scope key for writes",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.v1",
     },
     ("notifications", "test"): {
         "endpoint": "POST /api/v1/projects/{project}/notifications/test-{channel}",
         "auth": "any; email requires JWT",
-        "exits": "0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API or delivery failure; 2 "
+        "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.test.v1",
     },
     (): {
@@ -233,7 +251,8 @@ HELP_CONTRACTS = {
     ("budget", "check"): {
         "endpoint": "POST /api/v1/budgets/check",
         "auth": "key",
-        "exits": "0 allowed or fail-open; 1 generic/API; 2 usage; 3 auth; 4 budget denial",
+        "exits": "0 allowed or fail-open; 1 generic/API; 2 usage; 3 "
+        "auth; 4 budget denial",
         "schema": "solwyn.budget-check.v1",
     },
     ("budget", "confirm"): {
@@ -251,7 +270,8 @@ HELP_CONTRACTS = {
     ("budget", "status"): {
         "endpoint": "GET /api/v1/projects/{project}/budget",
         "auth": "any",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 4 utilization gate; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 4 "
+        "utilization gate; 5 not found",
         "schema": "solwyn.budget-status.v1",
     },
     ("config",): {
@@ -381,17 +401,16 @@ HELP_CONTRACTS = {
         "schema": "solwyn.providers.untracked.v1",
     },
     ("status",): {
-        "endpoint": (
-            "GET /api/v1/projects/{project}/budget and GET "
-            "/api/v1/projects/{project}/providers; optionally GET forecast "
-            "and provider failovers"
-        ),
+        "endpoint": "GET /api/v1/projects/{project}/budget and GET "
+        "/api/v1/projects/{project}/providers; optionally GET "
+        "forecast and provider failovers",
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.status.v1",
     },
     ("whoami",): {
-        "endpoint": "local key identity or GET /api/v1/account/me and GET /api/v1/projects",
+        "endpoint": "local key identity or GET /api/v1/account/me and GET "
+        "/api/v1/projects",
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.whoami.v1",
@@ -425,6 +444,37 @@ HELP_CONTRACTS = {
         "auth": "JWT",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-rotate.v1",
+    },
+    ("record",): {
+        "endpoint": "POST /api/v1/metadata/ingest",
+        "auth": "key",
+        "exits": "0 recorded or call-ID replay; 1 rejection/collision/API; 2 "
+        "usage; 3 auth",
+        "schema": "solwyn.record.v1",
+    },
+    ("tags",): {
+        "endpoint": "composite tag router",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("tags", "list"): {
+        "endpoint": "GET /api/v1/projects/{project}/tags",
+        "auth": "any",
+        "exits": "0 success; 1 API/upgrade; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.tags.v1",
+    },
+    ("tags", "values"): {
+        "endpoint": "GET /api/v1/projects/{project}/tags/values",
+        "auth": "any",
+        "exits": "0 success; 1 API/upgrade; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.tags.values.v1",
+    },
+    ("tags", "retire"): {
+        "endpoint": "DELETE /api/v1/account/tags",
+        "auth": "JWT admin/owner",
+        "exits": "0 retired; 1 API; 2 usage; 3 auth; 5 never registered",
+        "schema": "solwyn.tags.v1",
     },
 }
 
@@ -521,7 +571,8 @@ def test_mcp_help_names_the_exact_seven_tool_surface() -> None:
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules."
+        "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
+        "record_call, list_tags, list_tag_values."
     ) in rendered
 
 

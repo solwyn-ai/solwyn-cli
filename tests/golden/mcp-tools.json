@@ -844,7 +844,7 @@
   {
     "name": "budget_check",
     "title": null,
-    "description": "Reserve budget only immediately before the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
+    "description": "Reserve budget only immediately before the caller-made spend. Denials record attribution by default; no_record skips ingest. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
     "inputSchema": {
       "$defs": {
         "ProviderName": {
@@ -1029,6 +1029,40 @@
           "default": false,
           "title": "Is Estimated",
           "type": "boolean"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        },
+        "estimated_output_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Output Tokens"
+        },
+        "no_record": {
+          "default": false,
+          "title": "No Record",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1050,15 +1084,71 @@
           "title": "BudgetMode",
           "type": "string"
         },
-        "BudgetPeriod": {
-          "description": "Rolling window for budget accounting.",
-          "enum": [
-            "daily",
-            "weekly",
-            "monthly"
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
           ],
-          "title": "BudgetPeriod",
-          "type": "string"
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
         },
         "ProviderName": {
           "description": "Provider identifiers accepted by budget request endpoints.",
@@ -1085,6 +1175,54 @@
           ],
           "title": "ProviderName",
           "type": "string"
+        },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
         },
         "_BudgetCheckData": {
           "properties": {
@@ -1123,7 +1261,31 @@
             "denied_by_period": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/BudgetPeriod"
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Denied By Period"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recorded": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecordingResult"
                 },
                 {
                   "type": "null"
@@ -1259,7 +1421,7 @@
   {
     "name": "budget_confirm",
     "title": null,
-    "description": "Settle only a non-null reservation after the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
+    "description": "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
     "inputSchema": {
       "$defs": {
         "ProviderName": {
@@ -1310,8 +1472,10 @@
           "type": "string"
         },
         "call_id": {
+          "description": "Use a canonical lowercase UUID: uuidgen | tr A-F a-f",
           "maxLength": 36,
           "minLength": 1,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
           "title": "Call Id",
           "type": "string"
         },
@@ -1449,6 +1613,80 @@
           "default": false,
           "title": "Is Estimated",
           "type": "boolean"
+        },
+        "latency_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "status": {
+          "default": "success",
+          "enum": [
+            "success",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Id"
+        },
+        "parent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Run Id"
+        },
+        "run_name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Name"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        },
+        "no_record": {
+          "default": false,
+          "title": "No Record",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1462,6 +1700,120 @@
     },
     "outputSchema": {
       "$defs": {
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
+          ],
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
+        },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
+        },
         "_BudgetConfirmData": {
           "additionalProperties": false,
           "properties": {
@@ -1472,6 +1824,17 @@
             "call_id": {
               "title": "Call Id",
               "type": "string"
+            },
+            "recorded": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecordingResult"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           },
           "required": [
@@ -3813,6 +4176,1090 @@
         "ok"
       ],
       "title": "_BudgetRulesResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "record_call",
+    "title": null,
+    "description": "Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
+    "inputSchema": {
+      "$defs": {
+        "MediaUsage": {
+          "additionalProperties": false,
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
+          "properties": {
+            "image_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Image Count"
+            },
+            "generation_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Generation Count"
+            },
+            "video_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Video Seconds"
+            },
+            "audio_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Seconds"
+            },
+            "input_characters": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Characters"
+            },
+            "resolution": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Resolution"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Quality"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "MediaUsage",
+          "type": "object"
+        },
+        "Modality": {
+          "enum": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "title": "Modality",
+          "type": "string"
+        },
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        },
+        "ServiceTier": {
+          "description": "Provider service tiers accepted by budget confirmation.",
+          "enum": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "title": "ServiceTier",
+          "type": "string"
+        },
+        "TokenDetails": {
+          "additionalProperties": false,
+          "description": "Normalized provider token usage used to settle a reservation.",
+          "properties": {
+            "input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "cached_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cached Input Tokens",
+              "type": "integer"
+            },
+            "cache_creation_5m_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 5M Tokens",
+              "type": "integer"
+            },
+            "cache_creation_1h_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 1H Tokens",
+              "type": "integer"
+            },
+            "reasoning_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Reasoning Tokens",
+              "type": "integer"
+            },
+            "audio_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Input Tokens",
+              "type": "integer"
+            },
+            "audio_output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Output Tokens",
+              "type": "integer"
+            },
+            "image_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Input Tokens",
+              "type": "integer"
+            },
+            "image_output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Output Tokens",
+              "type": "integer"
+            },
+            "accepted_prediction_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Accepted Prediction Tokens",
+              "type": "integer"
+            },
+            "rejected_prediction_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Rejected Prediction Tokens",
+              "type": "integer"
+            },
+            "tool_use_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Tool Use Input Tokens",
+              "type": "integer"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "TokenDetails",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "model": {
+          "maxLength": 2048,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "call_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Use a canonical lowercase UUID: uuidgen | tr A-F a-f",
+          "title": "Call Id"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "token_details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenDetails"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "media_usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "latency_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "status": {
+          "default": "success",
+          "enum": [
+            "success",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "modality": {
+          "$ref": "#/$defs/Modality",
+          "default": "text"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Id"
+        },
+        "parent_agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Agent Run Id"
+        },
+        "agent_run_name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Name"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "required": [
+        "model",
+        "provider"
+      ],
+      "title": "record_callArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
+          ],
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
+        },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.record.v1",
+          "default": "solwyn.mcp.record.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordingResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_RecordResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_tags",
+    "title": null,
+    "description": "List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "list_tagsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "TagDiscoveryResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "items": {
+                "$ref": "#/$defs/TagKeySummary"
+              },
+              "title": "Keys",
+              "type": "array"
+            },
+            "usage": {
+              "$ref": "#/$defs/TagRegistryUsage"
+            },
+            "scope": {
+              "const": "account",
+              "default": "account",
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          "required": [
+            "keys",
+            "usage"
+          ],
+          "title": "TagDiscoveryResponse",
+          "type": "object"
+        },
+        "TagKeySummary": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "title": "Key",
+              "type": "string"
+            },
+            "values_count": {
+              "minimum": 0,
+              "title": "Values Count",
+              "type": "integer"
+            },
+            "first_seen_at": {
+              "format": "date-time",
+              "title": "First Seen At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            },
+            "similar": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Similar",
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "values_count",
+            "first_seen_at",
+            "last_seen_at"
+          ],
+          "title": "TagKeySummary",
+          "type": "object"
+        },
+        "TagRegistryUsage": {
+          "additionalProperties": false,
+          "properties": {
+            "keys_used": {
+              "maximum": 100,
+              "minimum": 0,
+              "title": "Keys Used",
+              "type": "integer"
+            },
+            "keys_cap": {
+              "const": 100,
+              "default": 100,
+              "title": "Keys Cap",
+              "type": "integer"
+            },
+            "values_cap_per_key": {
+              "const": 1000,
+              "default": 1000,
+              "title": "Values Cap Per Key",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys_used"
+          ],
+          "title": "TagRegistryUsage",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.tags.v1",
+          "default": "solwyn.mcp.tags.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TagDiscoveryResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_TagsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_tag_values",
+    "title": null,
+    "description": "Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "prefix": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prefix"
+        },
+        "limit": {
+          "default": 25,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "list_tag_valuesArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "TagValueSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "title": "Value",
+              "type": "string"
+            },
+            "first_seen_at": {
+              "format": "date-time",
+              "title": "First Seen At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "value",
+            "first_seen_at",
+            "last_seen_at"
+          ],
+          "title": "TagValueSummary",
+          "type": "object"
+        },
+        "TagValuesPage": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "title": "Key",
+              "type": "string"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/TagValueSummary"
+              },
+              "title": "Values",
+              "type": "array"
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Next Cursor"
+            },
+            "has_more": {
+              "title": "Has More",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "values",
+            "next_cursor",
+            "has_more"
+          ],
+          "title": "TagValuesPage",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.tags.values.v1",
+          "default": "solwyn.mcp.tags.values.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TagValuesPage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_TagValuesResult",
       "type": "object"
     },
     "icons": null,

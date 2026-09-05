@@ -1,0 +1,1 @@
+{"schema":"solwyn.record.v1","ingested":0,"rejected":[],"duplicates":[{"index":0,"reason":"legacy_key","call_id":"12345678-1234-1234-1234-123456789abc"}],"status":"failed","call_ids":["12345678-1234-1234-1234-123456789abc"]}

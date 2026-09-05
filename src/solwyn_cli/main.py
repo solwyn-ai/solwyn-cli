@@ -21,6 +21,8 @@ from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.providers import app as providers_app
+from solwyn_cli.commands.record import RECORD_HELP, record
+from solwyn_cli.commands.tags import app as tags_app
 from solwyn_cli.commands.status import STATUS_HELP, status
 from solwyn_cli.commands.webhooks import app as webhooks_app
 from solwyn_cli.commands.whoami import WHOAMI_HELP, whoami
@@ -52,6 +54,7 @@ app.add_typer(budget_app, name="budget")
 app.add_typer(account_app, name="account")
 app.add_typer(channels_app, name="channels")
 app.add_typer(notifications_app, name="notifications")
+app.add_typer(tags_app, name="tags")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
@@ -64,6 +67,7 @@ app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)
 app.command("mcp", epilog=MCP_HELP)(mcp)
+app.command("record", epilog=RECORD_HELP)(record)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 

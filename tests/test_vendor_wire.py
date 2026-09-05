@@ -52,6 +52,7 @@ from solwyn_cli._vendor.wire import (
             BudgetCheckRequest,
             {
                 "price_hints_version",
+                "tags",
                 "estimated_input_tokens",
                 "model",
                 "provider",
@@ -206,7 +207,7 @@ def test_budget_call_models_preserve_failover_token_and_tier_contract() -> None:
         model="test-model",
         provider="bedrock",
         is_provider_fallback=True,
-        call_id="call-id",
+        call_id="12345678-1234-1234-1234-123456789abc",
         token_details={
             "input_tokens": 20,
             "output_tokens": 5,

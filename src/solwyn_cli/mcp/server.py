@@ -1,5 +1,6 @@
 """FastMCP stdio server and the supported Solwyn tool surface."""
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -11,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from solwyn_cli import auth, runtime
 from solwyn_cli._vendor.wire import (
+    CALL_ID_PATTERN,
+    Modality,
     BudgetCheckRequest,
     BudgetConfirmRequest,
     MediaUsage,
@@ -27,10 +30,25 @@ from solwyn_cli.commands.budget import (
     BudgetConfirmData,
     BudgetStatusData,
     request_budget_check,
-    request_budget_confirm,
+    confirm_and_record,
+    confirm_event,
+    record_denial,
     request_budget_status,
 )
 from solwyn_cli.commands._cost_filters import CostQueryError
+from solwyn_cli.commands._record import (
+    CALL_ID_HINT,
+    RecordingResult,
+    build_event,
+    request_ingest,
+)
+from solwyn_cli.commands._tags import parse_tags, validate_tags
+from solwyn_cli.commands.tags import (
+    TagDiscoveryResponse,
+    TagValuesPage,
+    fetch_tags,
+    fetch_tag_values,
+)
 from solwyn_cli.commands.costs import (
     CostRange,
     CostsData,
@@ -60,6 +78,9 @@ TOOL_NAMES = (
     "list_projects",
     "get_cost_total",
     "list_budget_rules",
+    "record_call",
+    "list_tags",
+    "list_tag_values",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -157,6 +178,29 @@ class _ToolResult(BaseModel, Generic[DataT]):
         if self.ok != (self.data is not None and self.error is None):
             raise ValueError("Tool result must contain exactly one outcome")
         return self
+
+
+class _RecordResult(_ToolResult[RecordingResult]):
+    schema_name: Literal["solwyn.mcp.record.v1"] = Field(
+        default="solwyn.mcp.record.v1", alias="schema"
+    )
+
+
+class _TagsResult(_ToolResult[TagDiscoveryResponse]):
+    schema_name: Literal["solwyn.mcp.tags.v1"] = Field(
+        default="solwyn.mcp.tags.v1", alias="schema"
+    )
+
+
+class _TagValuesResult(_ToolResult[TagValuesPage]):
+    schema_name: Literal["solwyn.mcp.tags.values.v1"] = Field(
+        default="solwyn.mcp.tags.values.v1", alias="schema"
+    )
+
+
+def _tool_tags(tags: dict[str, str] | None) -> dict[str, str] | None:
+    # Explicit tool arguments override ambient defaults key by key.
+    return validate_tags({**(parse_tags() or {}), **(validate_tags(tags) or {})})
 
 
 class _BudgetStatusResult(_ToolResult[BudgetStatusData]):
@@ -276,9 +320,9 @@ def _budget_tool_descriptions() -> tuple[str, str, str]:
     shared_sharp_edges = " ".join((check, sdk, fail_open, unconfirmed))
     return (
         status,
-        "Reserve budget only immediately before the caller-made spend. "
+        "Reserve budget only immediately before the caller-made spend. Denials record attribution by default; no_record skips ingest. "
         f"{shared_sharp_edges}",
-        "Settle only a non-null reservation after the caller-made spend. "
+        "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. "
         f"{shared_sharp_edges}",
     )
 
@@ -472,6 +516,9 @@ def _budget_check_operation(
     resolution: str | None,
     quality: str | None,
     is_estimated: bool,
+    tags: dict[str, str] | None = None,
+    estimated_output_tokens: int | None = None,
+    no_record: bool = False,
 ) -> _BudgetCheckResult:
     if len(fallback_providers) != len(fallback_models):
         return _error(
@@ -513,9 +560,12 @@ def _budget_check_operation(
             estimated_media=estimated_media,
             fallback_providers=fallback_providers,
             fallback_models=fallback_models,
-            agent_run_id=agent_run_id,
+            agent_run_id=agent_run_id
+            if agent_run_id is not None
+            else os.environ.get("SOLWYN_AGENT_RUN_ID"),
+            tags=_tool_tags(tags),
         )
-    except ValidationError:
+    except (ValidationError, ValueError):
         return _error(
             _BudgetCheckResult,
             code="invalid_budget_check_request",
@@ -529,6 +579,13 @@ def _budget_check_operation(
             if auth_error is not None:
                 return auth_error
             data = request_budget_check(client=client, request=request)
+            data = record_denial(
+                client=client,
+                request=request,
+                data=data,
+                estimated_output_tokens=estimated_output_tokens,
+                no_record=no_record,
+            )
         return _success(_BudgetCheckResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
@@ -562,6 +619,13 @@ def _budget_confirm_operation(
     rejected_prediction_tokens: int,
     tool_use_input_tokens: int,
     is_estimated: bool,
+    latency_ms: float = 0,
+    status: str = "success",
+    agent_run_id: str | None = None,
+    parent_run_id: str | None = None,
+    run_name: str | None = None,
+    tags: dict[str, str] | None = None,
+    no_record: bool = False,
 ) -> _BudgetConfirmResult:
     try:
         request = BudgetConfirmRequest(
@@ -589,11 +653,23 @@ def _budget_confirm_operation(
                 is_estimated=is_estimated,
             ),
         )
-    except ValidationError:
+        event = confirm_event(
+            request=request,
+            latency_ms=latency_ms,
+            status=status,
+            agent_run_id=agent_run_id
+            if agent_run_id is not None
+            else os.environ.get("SOLWYN_AGENT_RUN_ID"),
+            parent_agent_run_id=parent_run_id,
+            agent_run_name=run_name,
+            tags=_tool_tags(tags),
+        )
+    except (ValidationError, ValueError):
         return _error(
             _BudgetConfirmResult,
             code="invalid_budget_confirm_request",
             message="The budget confirmation request is invalid.",
+            hint=CALL_ID_HINT,
         )
     try:
         with tool_call_client(launch_options) as (_, client):
@@ -602,7 +678,9 @@ def _budget_confirm_operation(
             )
             if auth_error is not None:
                 return auth_error
-            data = request_budget_confirm(client=client, request=request)
+            data = confirm_and_record(
+                client=client, request=request, event=event, no_record=no_record
+            )
         return _success(
             _BudgetConfirmResult,
             data,
@@ -724,8 +802,95 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
         )
 
 
+def _record_operation(
+    *, launch_options: McpLaunchOptions, inputs: dict[str, object]
+) -> _RecordResult:
+    try:
+        inputs["tags"] = _tool_tags(inputs.get("tags"))
+        if inputs.get("agent_run_id") is None:
+            inputs["agent_run_id"] = os.environ.get("SOLWYN_AGENT_RUN_ID")
+        event = build_event(
+            **{key: value for key, value in inputs.items() if value is not None}
+        )
+    except (ValueError, TypeError):
+        return _error(
+            _RecordResult,
+            code="invalid_record_request",
+            message="The recording request is invalid.",
+            hint=CALL_ID_HINT,
+        )
+    try:
+        with tool_call_client(launch_options) as (_, client):
+            auth_error = _require_project_key(
+                _RecordResult, client.current_credential, "recording"
+            )
+            if auth_error is not None:
+                return auth_error
+            data = request_ingest(client=client, events=[event])
+        return _success(_RecordResult, data)
+    except (ApiError, AuthError, ValueError, TypeError) as error:
+        result = _operation_error(
+            _RecordResult, error, invalid_response_code="invalid_ingest_response"
+        )
+        if result.error is not None:
+            retry_hint = (
+                f"Reuse call_id {event.call_id} when retrying this logical call."
+            )
+            result = result.model_copy(
+                update={
+                    "error": result.error.model_copy(
+                        update={
+                            "hint": f"{result.error.hint} {retry_hint}"
+                            if result.error.hint
+                            else retry_hint
+                        }
+                    )
+                }
+            )
+        return result
+
+
+def _tags_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    project_id: str | None,
+    key: str | None = None,
+    prefix: str | None = None,
+    limit: int = 25,
+    cursor: str | None = None,
+):
+    result_class = _TagsResult if key is None else _TagValuesResult
+    try:
+        if key is not None:
+            validate_tags({key: prefix or ""})
+    except ValueError:
+        return _error(
+            result_class, code="invalid_tag_query", message="Invalid tag key or prefix."
+        )
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            project = _project_id(command_runtime, project_id)
+            data = (
+                fetch_tags(client=client, project_id=project)
+                if key is None
+                else fetch_tag_values(
+                    client=client,
+                    project_id=project,
+                    key=key,
+                    prefix=prefix,
+                    limit=limit,
+                    cursor=cursor,
+                )
+            )
+        return _success(result_class, data)
+    except (ApiError, AuthError, ValueError, TypeError) as error:
+        return _operation_error(
+            result_class, error, invalid_response_code="invalid_tags_response"
+        )
+
+
 def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
-    """Build the stateless local MCP server and register exactly seven tools."""
+    """Build the stateless local MCP server and register the supported tools."""
     launch = launch_options or McpLaunchOptions()
     server = _ToolOnlyFastMCP(
         name="solwyn",
@@ -776,6 +941,11 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         resolution: Annotated[str, Field(max_length=32)] | None = None,
         quality: Annotated[str, Field(max_length=32)] | None = None,
         is_estimated: bool = False,
+        tags: dict[str, str] | None = None,
+        estimated_output_tokens: Annotated[
+            int | None, Field(ge=0, le=100_000_000)
+        ] = None,
+        no_record: bool = False,
     ) -> _BudgetCheckResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -795,6 +965,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 resolution=resolution,
                 quality=quality,
                 is_estimated=is_estimated,
+                tags=tags,
+                estimated_output_tokens=estimated_output_tokens,
+                no_record=no_record,
             )
         )
 
@@ -805,7 +978,15 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     )
     async def budget_confirm(
         reservation_id: Annotated[str, Field(min_length=1)],
-        call_id: Annotated[str, Field(min_length=1, max_length=36)],
+        call_id: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=36,
+                pattern=CALL_ID_PATTERN,
+                description=CALL_ID_HINT,
+            ),
+        ],
         model: Annotated[str, Field(min_length=1, max_length=2048)],
         provider: ProviderName,
         is_provider_fallback: bool = False,
@@ -827,6 +1008,13 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         rejected_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         tool_use_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         is_estimated: bool = False,
+        latency_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0,
+        status: Literal["success", "error"] = "success",
+        agent_run_id: BudgetAgentRunId | None = None,
+        parent_run_id: BudgetAgentRunId | None = None,
+        run_name: Annotated[str | None, Field(max_length=255)] = None,
+        tags: dict[str, str] | None = None,
+        no_record: bool = False,
     ) -> _BudgetConfirmResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -853,6 +1041,13 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 rejected_prediction_tokens=rejected_prediction_tokens,
                 tool_use_input_tokens=tool_use_input_tokens,
                 is_estimated=is_estimated,
+                latency_ms=latency_ms,
+                status=status,
+                agent_run_id=agent_run_id,
+                parent_run_id=parent_run_id,
+                run_name=run_name,
+                tags=tags,
+                no_record=no_record,
             )
         )
 
@@ -988,6 +1183,90 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     ) -> _BudgetRulesResult:
         return await anyio.to_thread.run_sync(
             partial(_budget_rules_operation, project_id, launch)
+        )
+
+    @server.tool(
+        name="record_call",
+        description="Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
+        structured_output=True,
+    )
+    async def record_call(
+        model: BudgetCheckModel,
+        provider: ProviderName,
+        call_id: Annotated[
+            str | None,
+            Field(pattern=CALL_ID_PATTERN, max_length=36, description=CALL_ID_HINT),
+        ] = None,
+        input_tokens: Annotated[int | None, Field(ge=0, le=100_000_000)] = None,
+        output_tokens: Annotated[int | None, Field(ge=0, le=100_000_000)] = None,
+        token_details: TokenDetails | None = None,
+        media_usage: MediaUsage | None = None,
+        latency_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0,
+        status: Literal["success", "error"] = "success",
+        modality: Modality = Modality.TEXT,
+        provider_region: Annotated[str | None, Field(max_length=32)] = None,
+        service_tier: ServiceTier | None = None,
+        agent_run_id: BudgetAgentRunId | None = None,
+        parent_agent_run_id: BudgetAgentRunId | None = None,
+        agent_run_name: Annotated[str | None, Field(max_length=255)] = None,
+        tags: dict[str, str] | None = None,
+    ) -> _RecordResult:
+        inputs = dict(
+            model=model,
+            provider=provider,
+            call_id=call_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            token_details=token_details,
+            media_usage=media_usage,
+            latency_ms=latency_ms,
+            status=status,
+            modality=modality,
+            provider_region=provider_region,
+            service_tier=service_tier,
+            agent_run_id=agent_run_id,
+            parent_agent_run_id=parent_agent_run_id,
+            agent_run_name=agent_run_name,
+            tags=tags,
+        )
+        return await anyio.to_thread.run_sync(
+            partial(_record_operation, launch_options=launch, inputs=inputs)
+        )
+
+    @server.tool(
+        name="list_tags",
+        description="List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
+        structured_output=True,
+    )
+    async def list_tags(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _TagsResult:
+        return await anyio.to_thread.run_sync(
+            partial(_tags_operation, launch_options=launch, project_id=project_id)
+        )
+
+    @server.tool(
+        name="list_tag_values",
+        description="Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
+        structured_output=True,
+    )
+    async def list_tag_values(
+        key: Annotated[str, Field(min_length=1, max_length=64)],
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        prefix: Annotated[str | None, Field(max_length=256)] = None,
+        limit: Annotated[int, Field(ge=1, le=100)] = 25,
+        cursor: str | None = None,
+    ) -> _TagValuesResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _tags_operation,
+                launch_options=launch,
+                project_id=project_id,
+                key=key,
+                prefix=prefix,
+                limit=limit,
+                cursor=cursor,
+            )
         )
 
     return server

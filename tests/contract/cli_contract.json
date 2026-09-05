@@ -275,6 +275,50 @@
           "type": "choice"
         },
         {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Verbatim key=value tag; repeatable. Flags override SOLWYN_TAGS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--estimated-output-tokens"
+          ],
+          "default": null,
+          "help": "Output upper bound for denial savings attribution.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "estimated_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--no-record"
+          ],
+          "default": false,
+          "help": "Skip the denial receipt.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_record",
+          "required": false,
+          "type": "boolean"
+        },
+        {
           "choices": [
             "openai",
             "anthropic",
@@ -535,6 +579,106 @@
           "name": "provider",
           "required": true,
           "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--latency-ms"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "latency_ms",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": "success",
+          "help": "success or error.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--parent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "parent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--run-name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Verbatim key=value; repeatable; overrides SOLWYN_TAGS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--no-record"
+          ],
+          "default": false,
+          "help": "Settle without recording attribution.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_record",
+          "required": false,
+          "type": "boolean"
         },
         {
           "cli_names": [
@@ -3680,6 +3824,570 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.record.v1",
+      "name": "record",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--call-id"
+          ],
+          "default": null,
+          "help": "Canonical lowercase UUID; generated if omitted.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "call_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--batch"
+          ],
+          "default": null,
+          "help": "JSON array file or - for stdin; chunks at 1000 events.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "batch",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--latency-ms"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "latency_ms",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": "success",
+          "help": "success or error.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--parent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "parent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--run-name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Verbatim key=value; repeatable; overrides SOLWYN_TAGS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "cli_names": [
+            "--modality"
+          ],
+          "default": "text",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--image-count"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "image_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--generation-count"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "generation_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--video-seconds"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "video_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--audio-seconds"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--input-characters"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "input_characters",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--resolution"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "resolution",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--quality"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "quality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--output-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cached-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cached_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cache-creation-5m-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cache_creation_5m_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cache-creation-1h-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cache_creation_1h_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--reasoning-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "reasoning_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--audio-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--audio-output-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--image-input-tokens"
+          ],
+          "default": 0,
+          "help": "Image input tokens, already counted within --input-tokens.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "image_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--image-output-tokens"
+          ],
+          "default": 0,
+          "help": "Image output tokens, already counted within --output-tokens.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "image_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--accepted-prediction-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "accepted_prediction_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--rejected-prediction-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "rejected_prediction_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--tool-use-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "tool_use_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--is-estimated"
+          ],
+          "default": false,
+          "help": "Mark the token breakdown as estimated rather than provider-reported.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "is_estimated",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "record"
+      ],
+      "summary": "Record one completed call, or a batch, without reserving budget."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.status.v1",
       "name": "status",
       "output_kind": "json-envelope",
@@ -3717,6 +4425,131 @@
         "status"
       ],
       "summary": "Show project budget and provider health."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "tags",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "tags"
+      ],
+      "summary": "Browse account-scoped tag keys and values; retire keys."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.tags.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "tags",
+        "list"
+      ],
+      "summary": "List active keys across the account, including similar verbatim spellings."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.tags.v1",
+      "name": "retire",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "tags",
+        "retire"
+      ],
+      "summary": "Retire a key while retaining historical values."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.tags.values.v1",
+      "name": "values",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--prefix"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "prefix",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": 25,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "tags",
+        "values"
+      ],
+      "summary": "Read a page of values for one verbatim key."
     },
     {
       "hidden": false,
@@ -3902,22 +4735,28 @@
       "keys": [
         "allowed",
         "budget_limit",
+        "call_id",
         "current_usage",
         "denied_by_period",
         "mode",
         "price_hints",
         "project_id",
+        "recorded",
         "remaining_budget",
         "reservation_id",
         "schema"
       ],
-      "optional_keys": [],
+      "optional_keys": [
+        "call_id",
+        "recorded"
+      ],
       "schema": "solwyn.budget-check.v1",
       "universal_error_envelope": false
     },
     {
       "keys": [
         "call_id",
+        "recorded",
         "reservation_id",
         "schema"
       ],
@@ -4289,6 +5128,19 @@
     },
     {
       "keys": [
+        "call_ids",
+        "duplicates",
+        "ingested",
+        "rejected",
+        "schema",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.record.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "budget",
         "failovers",
         "forecast",
@@ -4301,6 +5153,37 @@
         "forecast"
       ],
       "schema": "solwyn.status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "key",
+        "keys",
+        "retired",
+        "schema",
+        "scope",
+        "usage"
+      ],
+      "optional_keys": [
+        "key",
+        "keys",
+        "retired",
+        "scope",
+        "usage"
+      ],
+      "schema": "solwyn.tags.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "has_more",
+        "key",
+        "next_cursor",
+        "schema",
+        "values"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.tags.values.v1",
       "universal_error_envelope": false
     },
     {

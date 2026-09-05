@@ -11,12 +11,16 @@ from pydantic import (
     HttpUrl,
     SecretStr,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
 
 class _WireModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+CALL_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 
 
 class ProviderName(StrEnum):
@@ -255,6 +259,7 @@ class BudgetUpdateRequest(_WireModel):
 
 
 class BudgetCheckRequest(_WireModel):
+    tags: dict[str, str] | None = None
     price_hints_version: Literal["1"] | None = None
     estimated_input_tokens: Annotated[int, Field(ge=0)]
     model: Annotated[str, Field(max_length=2048)]
@@ -275,7 +280,7 @@ class BudgetConfirmRequest(_WireModel):
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
     is_provider_fallback: bool = False
-    call_id: Annotated[str, Field(max_length=36)]
+    call_id: Annotated[str, Field(max_length=36, pattern=CALL_ID_PATTERN)]
     token_details: TokenDetails
     provider_region: Annotated[str, Field(max_length=32)] | None = None
     service_tier: ServiceTier | None = None
@@ -292,3 +297,74 @@ class AlertPreviewItem(_WireModel):
 
 class ProjectAlertsPreviewRequest(_WireModel):
     alerts: Annotated[list[AlertPreviewItem], Field(max_length=50)]
+
+
+class CallStatus(StrEnum):
+    SUCCESS = "success"
+    ERROR = "error"
+    BUDGET_DENIED = "budget_denied"
+
+
+class DenySource(StrEnum):
+    SERVER = "server"
+    STICKY_REPLAY = "sticky_replay"
+    LOCAL_ENFORCEMENT = "local_enforcement"
+    LEASE_EXHAUSTED = "lease_exhausted"
+    LOCAL_VELOCITY = "local_velocity"
+    RUN_TERMINATED = "run_terminated"
+    AGGREGATE_REPLAY = "aggregate_replay"
+
+
+class Modality(StrEnum):
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    EMBEDDING = "embedding"
+
+
+class IngestMetadataEvent(_WireModel):
+    """Caller-owned usage only; costs are computed by Core."""
+
+    model: Annotated[str, Field(max_length=2048)]
+    provider: ProviderName
+    input_tokens: Annotated[int, Field(ge=0, le=100_000_000)]
+    output_tokens: Annotated[int, Field(ge=0, le=100_000_000)]
+    latency_ms: float
+    status: CallStatus
+    is_model_fallback: bool
+    call_id: Annotated[str, Field(max_length=36, pattern=CALL_ID_PATTERN)]
+    sdk_instance_id: str
+    timestamp: datetime
+    modality: Modality = Modality.TEXT
+    token_details: TokenDetails | None = None
+    media_usage: MediaUsage | None = None
+    service_tier: Annotated[str, Field(max_length=32)] | None = None
+    provider_region: Annotated[str, Field(max_length=32)] | None = None
+    agent_run_id: Annotated[str, Field(max_length=256)] | None = None
+    parent_agent_run_id: Annotated[str, Field(max_length=256)] | None = None
+    agent_run_name: Annotated[str, Field(max_length=255)] | None = None
+    tags: (
+        dict[Annotated[str, Field(strict=True)], Annotated[str, Field(strict=True)]]
+        | None
+    ) = None
+    deny_source: DenySource | None = None
+    deny_reason: Annotated[str, Field(max_length=64)] | None = None
+    denied_by_period: Annotated[str, Field(max_length=32)] | None = None
+    estimated_output_bound: Annotated[int, Field(ge=0, le=100_000_000)] | None = None
+    attempt_index: Annotated[int, Field(ge=0)] = 0
+    is_provider_fallback: bool = False
+
+    @field_validator("attempt_index")
+    @classmethod
+    def primary_attempt_only(cls, value: int) -> int:
+        if value != 0:
+            raise ValueError("CLI recording supports attempt_index=0 only.")
+        return value
+
+    @field_validator("is_provider_fallback")
+    @classmethod
+    def no_provider_routing(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("CLI recording does not implement provider routing.")
+        return value

@@ -75,6 +75,9 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     FakeClient.instances = []
     FakeClient.responses = []
     monkeypatch.setattr(budget_module, "SolwynClient", FakeClient, raising=False)
+    monkeypatch.setattr(
+        budget_module, "uuid4", lambda: "12345678-1234-1234-1234-123456789abc"
+    )
     yield
 
 
@@ -84,6 +87,8 @@ def _credential(source: str = "environment") -> auth.ProjectKeyCredential:
 
 def _queue(**overrides: object) -> None:
     FakeClient.responses = [httpx.Response(200, json={**ALLOW_RESPONSE, **overrides})]
+    if overrides.get("allowed") is False:
+        FakeClient.responses.append(httpx.Response(202, json={"ingested": 1}))
 
 
 def test_budget_group_registers_check_and_confirm_without_regressing_commands() -> None:
