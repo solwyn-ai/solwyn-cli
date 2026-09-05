@@ -8,12 +8,14 @@ from typing import Any
 
 import httpx
 import pytest
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import projects as projects_module
-from solwyn_cli.config import Config
+from solwyn_cli.config import Config, ConfigLoadError, ConfigWriteError
+from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
 
@@ -108,18 +110,580 @@ def _queue_projects(payload: object = PROJECTS_RESPONSE) -> None:
     FakeClient.responses = [httpx.Response(200, json=payload)]
 
 
-def test_projects_group_registers_create_list_and_show_only() -> None:
+def test_projects_group_registers_the_full_lifecycle_surface() -> None:
     root = runner.invoke(app, ["--help"])
     group = runner.invoke(app, ["projects", "--help"])
 
     assert root.exit_code == 0
     assert "projects" in root.stdout
     assert group.exit_code == 0
-    assert "create" in group.stdout
-    assert "list" in group.stdout
-    assert "show" in group.stdout
-    assert "keys" not in group.stdout
-    assert "delete" not in group.stdout
+    projects_command = get_command(app).commands["projects"]
+    assert set(projects_command.commands) == {
+        "create",
+        "list",
+        "show",
+        "rename",
+        "delete",
+    }
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_projects_rename_puts_once_and_matches_golden(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    credential = _jwt()
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    FakeClient.responses = [
+        httpx.Response(200, json={**PROJECTS_RESPONSE[0], "name": "Renamed project"}),
+        RuntimeError("must not retry"),
+    ]
+    options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(
+        app,
+        [
+            *options,
+            "projects",
+            "rename",
+            "proj/lifecycle",
+            "--name",
+            "  Renamed project  ",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].credential is credential
+    assert FakeClient.instances[0].requests == [
+        (
+            "PUT",
+            "/api/v1/projects/proj%2Flifecycle",
+            {"json": {"name": "Renamed project"}},
+        )
+    ]
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"projects-rename-{output_format}.{suffix}",
+    )
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 101])
+def test_projects_rename_rejects_invalid_names_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setattr(
+        projects_module,
+        "resolve_credential",
+        lambda: pytest.fail("must validate before auth"),
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "rename", "proj", "--name", name],
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_project_update_request"
+    assert FakeClient.instances == []
+
+
+def test_projects_rename_maps_no_fields_to_update_to_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        ApiError(
+            status_code=400,
+            code="http_error",
+            message="No fields to update",
+            hint=None,
+            detail="No fields to update",
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "rename", "proj", "--name", "Renamed"],
+    )
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["message"] == "No fields to update"
+
+
+@pytest.mark.parametrize(
+    "command", [["rename", "proj", "--name", "Renamed"], ["delete", "proj", "--yes"]]
+)
+@pytest.mark.parametrize("source", ["environment", "keyring"])
+def test_project_mutations_reject_project_keys_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    source: str,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False, raising=False)
+
+    result = runner.invoke(app, ["--json", "projects", *command])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert "solwyn login" in json.loads(result.stderr)["hint"]
+    assert FakeClient.instances == []
+
+
+def test_project_mutation_role_error_preserves_role_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        ApiError(
+            status_code=403,
+            code="permission_required",
+            message="Request failed with status 403.",
+            hint="Your role cannot perform this action; use solwyn whoami to inspect it.",
+            detail="permission_required",
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "rename", "proj", "--name", "Renamed"],
+    )
+
+    assert result.exit_code == 3
+    assert "whoami" in json.loads(result.stderr)["hint"]
+
+
+def test_projects_delete_requires_yes_before_auth_or_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        projects_module,
+        "resolve_credential",
+        lambda: pytest.fail("must require --yes before auth"),
+    )
+
+    result = runner.invoke(app, ["--json", "projects", "delete", "proj"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "confirmation_required"
+    assert FakeClient.instances == []
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_projects_delete_non_tty_deletes_once_clears_matching_default_and_matches_golden(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    credential = _jwt()
+    cleared: list[str] = []
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False, raising=False)
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda project_id: cleared.append(project_id) or True,
+        raising=False,
+    )
+    FakeClient.responses = [httpx.Response(204), RuntimeError("must not retry")]
+    options = ["--json"] if output_format == "json" else ["--no-color"]
+
+    result = runner.invoke(
+        app,
+        [*options, "projects", "delete", "proj/lifecycle", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests == [
+        (
+            "DELETE",
+            "/api/v1/projects/proj%2Flifecycle",
+            {},
+        )
+    ]
+    assert cleared == ["proj/lifecycle"]
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"projects-delete-{output_format}.{suffix}",
+    )
+    assert result.stderr == ""
+
+
+def test_projects_delete_uses_authenticated_transport_without_live_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(204)
+
+    transport = httpx.MockTransport(handle)
+
+    def client_factory(*, api_url: str, credential: object) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(projects_module, "SolwynClient", client_factory)
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(projects_module, "clear_default_project", lambda _id: False)
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj/transport", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert len(requests) == 1
+    assert requests[0].method == "DELETE"
+    assert requests[0].url.path == "/api/v1/projects/proj/transport"
+    assert requests[0].headers["Authorization"] == f"Bearer {ACCESS_TOKEN}"
+
+
+def _successful_lifecycle_response(
+    operation: str,
+    request: httpx.Request,
+) -> httpx.Response:
+    if operation == "rename":
+        return httpx.Response(
+            200,
+            json={**PROJECTS_RESPONSE[0], "name": "Renamed"},
+            request=request,
+        )
+    return httpx.Response(204, request=request)
+
+
+def _lifecycle_arguments(operation: str) -> list[str]:
+    if operation == "rename":
+        return ["rename", "proj_retry", "--name", "Renamed"]
+    return ["delete", "proj_retry", "--yes"]
+
+
+@pytest.mark.parametrize(
+    ("operation", "method"),
+    [("rename", "PUT"), ("delete", "DELETE")],
+)
+def test_project_lifecycle_retries_safe_429_rejection_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    method: str,
+) -> None:
+    requests: list[httpx.Request] = []
+    waits: list[float] = []
+    cleared: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                429,
+                headers={"Retry-After": "0"},
+                json={"detail": "Try again."},
+                request=request,
+            )
+        return _successful_lifecycle_response(operation, request)
+
+    transport = httpx.MockTransport(handle)
+
+    def client_factory(*, api_url: str, credential: object) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+            sleeper=waits.append,
+        )
+
+    monkeypatch.setattr(projects_module, "SolwynClient", client_factory)
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda project_id: cleared.append(project_id) or True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", *_lifecycle_arguments(operation)],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert [request.method for request in requests] == [method, method]
+    assert [request.headers["Authorization"] for request in requests] == [
+        f"Bearer {ACCESS_TOKEN}",
+        f"Bearer {ACCESS_TOKEN}",
+    ]
+    assert waits == [0.0]
+    assert cleared == (["proj_retry"] if operation == "delete" else [])
+
+
+@pytest.mark.parametrize(
+    ("operation", "method"),
+    [("rename", "PUT"), ("delete", "DELETE")],
+)
+def test_project_lifecycle_refreshes_expired_jwt_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    method: str,
+) -> None:
+    requests: list[httpx.Request] = []
+    cleared: list[str] = []
+    stored: list[tuple[str, str]] = []
+
+    def store(access_token: str, refresh_token: str) -> auth.JwtCredential:
+        stored.append((access_token, refresh_token))
+        return auth.JwtCredential(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+
+    monkeypatch.setattr(auth, "store_jwt_pair", store)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/v1/auth/refresh":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "rotated-projects-access",
+                    "refresh_token": "rotated-projects-refresh",
+                },
+                request=request,
+            )
+        if request.headers["Authorization"] == f"Bearer {ACCESS_TOKEN}":
+            return httpx.Response(
+                401,
+                json={"detail": "Expired access token."},
+                request=request,
+            )
+        return _successful_lifecycle_response(operation, request)
+
+    transport = httpx.MockTransport(handle)
+
+    def client_factory(*, api_url: str, credential: object) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(projects_module, "SolwynClient", client_factory)
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda project_id: cleared.append(project_id) or True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", *_lifecycle_arguments(operation)],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert [(request.method, request.url.path) for request in requests] == [
+        (method, "/api/v1/projects/proj_retry"),
+        ("POST", "/api/v1/auth/refresh"),
+        (method, "/api/v1/projects/proj_retry"),
+    ]
+    assert requests[2].headers["Authorization"] == "Bearer rotated-projects-access"
+    assert stored == [("rotated-projects-access", "rotated-projects-refresh")]
+    assert cleared == (["proj_retry"] if operation == "delete" else [])
+
+
+@pytest.mark.parametrize(
+    ("operation", "method"),
+    [("rename", "PUT"), ("delete", "DELETE")],
+)
+@pytest.mark.parametrize("failure", ["503", "connect_error"])
+def test_project_lifecycle_does_not_replay_ambiguous_write_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    method: str,
+    failure: str,
+) -> None:
+    requests: list[httpx.Request] = []
+    cleared: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if failure == "connect_error":
+            raise httpx.ConnectError("private transport detail", request=request)
+        return httpx.Response(
+            503,
+            json={"detail": "Service unavailable."},
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handle)
+
+    def client_factory(*, api_url: str, credential: object) -> RealSolwynClient:
+        return RealSolwynClient(
+            api_url=api_url,
+            credential=credential,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(projects_module, "SolwynClient", client_factory)
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda project_id: cleared.append(project_id) or True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", *_lifecycle_arguments(operation)],
+    )
+
+    assert result.exit_code == 1
+    assert [(request.method, request.url.path) for request in requests] == [
+        (method, "/api/v1/projects/proj_retry")
+    ]
+    assert cleared == []
+    if failure == "connect_error":
+        assert "private transport detail" not in result.stderr + repr(result.exception)
+
+
+def test_projects_delete_tty_fetches_and_requires_exact_project_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompts: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: True, raising=False)
+    monkeypatch.setattr(
+        projects_module.typer,
+        "prompt",
+        lambda label, **kwargs: prompts.append((label, kwargs)) or "Alpha",
+    )
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda _project_id: True,
+        raising=False,
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json={**PROJECTS_RESPONSE[0], "id": "proj/lifecycle"}),
+        httpx.Response(204),
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj/lifecycle", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj%2Flifecycle", {}),
+        (
+            "DELETE",
+            "/api/v1/projects/proj%2Flifecycle",
+            {},
+        ),
+    ]
+    assert prompts == [
+        (
+            "Type the project name 'Alpha' to confirm",
+            {"err": True, "hide_input": True},
+        )
+    ]
+
+
+def test_projects_delete_tty_name_mismatch_never_deletes_or_clears_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleared: list[str] = []
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: True, raising=False)
+    monkeypatch.setattr(
+        projects_module.typer,
+        "prompt",
+        lambda _label, **_kwargs: "wrong name",
+    )
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda project_id: cleared.append(project_id) or True,
+        raising=False,
+    )
+    FakeClient.responses = [httpx.Response(200, json=PROJECTS_RESPONSE[0])]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_alpha", "--yes"],
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "confirmation_failed"
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj_alpha", {})
+    ]
+    assert cleared == []
+
+
+def test_projects_delete_rejects_nonempty_204_and_keeps_local_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleared: list[str] = []
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False, raising=False)
+    monkeypatch.setattr(
+        projects_module,
+        "clear_default_project",
+        lambda project_id: cleared.append(project_id) or True,
+        raising=False,
+    )
+    FakeClient.responses = [httpx.Response(204, content=b"unexpected")]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_alpha", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["code"] == "invalid_projects_response"
+    assert cleared == []
+
+
+@pytest.mark.parametrize("error_type", [ConfigLoadError, ConfigWriteError])
+def test_projects_delete_reports_remote_success_when_local_config_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False)
+
+    def fail_to_clear(_project_id: str) -> bool:
+        raise error_type("private local detail")
+
+    monkeypatch.setattr(projects_module, "clear_default_project", fail_to_clear)
+    FakeClient.responses = [httpx.Response(204)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_alpha", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "project_deleted_config_update_failed"
+    assert "was archived" in error["message"]
+    assert "keys were revoked" in error["message"]
+    assert "private local detail" not in result.stderr + repr(result.exception)
 
 
 @pytest.mark.parametrize("output_format", ["table", "json"])

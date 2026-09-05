@@ -26,6 +26,12 @@ HELP_CONTRACTS = {
         "exits": "0 success; 2 usage",
         "schema": "none (plain text capability document)",
     },
+    ("audit",): {
+        "endpoint": "GET /api/v1/account/audit-events",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
+        "schema": "solwyn.audit.v1",
+    },
     ("budget",): {
         "endpoint": "composite router for budget subcommands",
         "auth": "varies by subcommand",
@@ -146,6 +152,12 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.projects-create.v1",
     },
+    ("projects", "delete"): {
+        "endpoint": "DELETE /api/v1/projects/{id}",
+        "auth": "JWT (owner or admin)",
+        "exits": "0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found",
+        "schema": "solwyn.projects-delete.v1 (CLI output after bodyless 204)",
+    },
     ("projects", "list"): {
         "endpoint": "GET /api/v1/projects",
         "auth": "JWT",
@@ -157,6 +169,12 @@ HELP_CONTRACTS = {
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.projects-show.v1",
+    },
+    ("projects", "rename"): {
+        "endpoint": "PUT /api/v1/projects/{id}",
+        "auth": "JWT (owner or admin)",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.projects-rename.v1",
     },
     ("status",): {
         "endpoint": "GET /api/v1/projects/{project}/budget and GET /api/v1/projects/{project}/providers",
@@ -243,6 +261,48 @@ def test_semantic_help_snapshots_cover_the_full_registered_tree() -> None:
 
 def test_top_level_help_routes_agents_to_the_capability_document() -> None:
     assert "Agents: run solwyn agent-context" in _normalized_help(())
+
+
+def test_audit_help_explains_exact_actions_and_rule_event_gap() -> None:
+    rendered = _normalized_help(("audit",))
+
+    assert "Actions are exact-match strings" in rendered
+    for action in (
+        "account.created",
+        "account.updated",
+        "team.member_removed",
+        "team.member_role_changed",
+        "team.invitation_created",
+        "team.invitation_revoked",
+        "project.created",
+        "project.updated",
+        "project.archived",
+        "budget.defaults_restored",
+        "budget.updated",
+        "api_key.rotated",
+        "api_key.deleted",
+        "agent_run.stopped",
+        "billing.plan_intent_deleted",
+        "billing.plan_changed",
+        "notification_channel.created",
+        "notification_channel.updated",
+        "notification_channel.deleted",
+        "account_phone.verified",
+        "account_phone.deleted",
+        "consent.sms_alerts_changed",
+        "upserted",
+    ):
+        assert action in rendered
+    assert "only budget.updated is in this trail" in rendered
+    assert "alerts list --rule-type" in rendered
+
+
+def test_project_delete_help_states_irreversibility_and_key_revocation() -> None:
+    rendered = _normalized_help(("projects", "delete"))
+
+    assert "Irreversible" in rendered
+    assert "revokes every project key in the same transaction" in rendered
+    assert "immediately becomes unavailable" in rendered
 
 
 def test_budget_help_preserves_guardrail_semantics() -> None:

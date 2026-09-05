@@ -8,7 +8,7 @@ from typing import Any, get_args
 
 import pytest
 
-from solwyn_cli.commands import budget, init, projects
+from solwyn_cli.commands import audit, budget, init, projects
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
@@ -199,6 +199,17 @@ RESPONSE_READS = {
         "unpriced_call_count",
         "local_call_count",
     ),
+    "AuditEventEntry": (
+        "id",
+        "account_id",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "detail",
+        "created_at",
+    ),
+    "AuditEventListResponse": ("events", "next_cursor", "has_more"),
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
@@ -212,6 +223,11 @@ OPERATION_RESPONSE_BINDINGS = {
         "ProjectCreateResponse",
     ),
     ("GET", "/api/v1/projects/{project_id}"): (
+        "200",
+        "object",
+        "ProjectResponse",
+    ),
+    ("PUT", "/api/v1/projects/{project_id}"): (
         "200",
         "object",
         "ProjectResponse",
@@ -241,6 +257,11 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "CostQueryResponse",
     ),
+    ("GET", "/api/v1/account/audit-events"): (
+        "200",
+        "object",
+        "AuditEventListResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/key"): (
         "200",
         "object",
@@ -253,6 +274,7 @@ OPERATION_RESPONSE_BINDINGS = {
     ),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
+    ("DELETE", "/api/v1/projects/{project_id}"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
 }
 _BUDGET_THRESHOLD_COMPONENTS = {
@@ -463,6 +485,20 @@ def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     )
 
 
+def assert_audit_nested_response_binding(snapshot: dict[str, Any]) -> None:
+    """Bind audit list entries to the strict event component the CLI parses."""
+    events = snapshot["components"]["schemas"]["AuditEventListResponse"]["properties"][
+        "events"
+    ]
+    items = events.get("items")
+    assert isinstance(items, dict), "AuditEventListResponse.events: items missing"
+    _assert_component_ref(
+        items,
+        expected_component="AuditEventEntry",
+        context="AuditEventListResponse.events",
+    )
+
+
 def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
     """Validate the explicit response-read registry against the snapshot."""
     schemas = snapshot["components"]["schemas"]
@@ -478,6 +514,7 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
                 component,
             )
     assert_budget_nested_response_bindings(snapshot)
+    assert_audit_nested_response_binding(snapshot)
 
 
 def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
@@ -555,6 +592,21 @@ def _snapshot() -> dict[str, Any]:
 
 def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
+
+
+def test_audit_response_models_remain_strict() -> None:
+    assert audit.AuditEventEntry.model_config["extra"] == "forbid"
+    assert audit.AuditEventListResponse.model_config["extra"] == "forbid"
+
+
+def test_audit_event_item_component_drift_trips_response_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    mutated["components"]["schemas"]["AuditEventListResponse"]["properties"]["events"][
+        "items"
+    ]["$ref"] = "#/components/schemas/UnrelatedResponse"
+
+    with pytest.raises(AssertionError, match="AuditEventListResponse.events"):
+        assert_response_reads_exist(mutated)
 
 
 def test_threshold_registries_match_the_rule_types_the_cli_actually_models() -> None:
