@@ -156,6 +156,18 @@ def test_error_repr_never_includes_preserved_raw_detail() -> None:
         ("This endpoint requires JWT authentication", "solwyn login"),
         ("owner_required", "whoami"),
         ({"code": "permission_required"}, "whoami"),
+        (
+            "Cannot access agent runs for a different project",
+            "project associated with this key",
+        ),
+        (
+            "Cannot access forecast for a different project",
+            "project associated with this key",
+        ),
+        (
+            "Cannot access a different project",
+            "project associated with this key",
+        ),
     ],
 )
 def test_403_shapes_have_actionable_hints(detail, fragment):
