@@ -806,6 +806,81 @@
     },
     {
       "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.audit.v1",
+      "name": "audit",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "Audit window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "range_",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--action"
+          ],
+          "default": null,
+          "help": "Exact audit action to match.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "action",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": "Opaque cursor from the preceding page.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": "Follow cursors until all remaining events are read.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "audit"
+      ],
+      "summary": "List account audit events newest first."
+    },
+    {
+      "hidden": false,
       "is_group": true,
       "json_schema": null,
       "name": "budget",
@@ -4661,6 +4736,48 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.projects-delete.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "project_id"
+          ],
+          "default": null,
+          "help": "Project identifier to archive.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the irreversible project deletion.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "projects",
+        "delete"
+      ],
+      "summary": "Irreversibly archive a project and revoke all of its keys."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.projects-list.v1",
       "name": "list",
       "output_kind": "json-envelope",
@@ -4670,6 +4787,48 @@
         "list"
       ],
       "summary": "List projects available to the logged-in user."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.projects-rename.v1",
+      "name": "rename",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "project_id"
+          ],
+          "default": null,
+          "help": "Project identifier to rename.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": "New project name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "projects",
+        "rename"
+      ],
+      "summary": "Rename a project as an account owner or admin."
     },
     {
       "hidden": false,
@@ -5961,6 +6120,17 @@
     },
     {
       "keys": [
+        "events",
+        "has_more",
+        "next_cursor",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.audit.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "allowed",
         "budget_limit",
         "call_id",
@@ -6421,11 +6591,36 @@
     },
     {
       "keys": [
+        "api_keys_revoked",
+        "archived",
+        "project_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.projects-delete.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "projects",
         "schema"
       ],
       "optional_keys": [],
       "schema": "solwyn.projects-list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget_limit",
+        "budget_mode",
+        "budget_period",
+        "created_at",
+        "id",
+        "name",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.projects-rename.v1",
       "universal_error_envelope": false
     },
     {

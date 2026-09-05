@@ -1,4 +1,4 @@
-"""OpenAPI drift guard for public request mirrors."""
+"""OpenAPI drift guard for the public request mirrors and query contracts."""
 
 import copy
 import json
@@ -29,6 +29,7 @@ from solwyn_cli._vendor.wire import (
     IngestMetadataEvent,
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
+    ProjectUpdateRequest,
     RefreshRequest,
     SnoozeRequest,
     ProjectAlertsPreviewRequest,
@@ -38,6 +39,7 @@ from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
 from solwyn_cli.commands.costs import CostRange
 from solwyn_cli.commands.providers import FailoverRange, UntrackedRange
+from solwyn_cli.commands.audit import AuditRange
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
@@ -56,6 +58,7 @@ REQUEST_MIRRORS = {
     ProjectCreateRequest: "ProjectCreateRequest",
     ProjectKeyRotateRequest: "ProjectKeyRotateRequest",
     WebhookCreateRequest: "WebhookCreateRequest",
+    ProjectUpdateRequest: "ProjectUpdateRequest",
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
@@ -522,6 +525,40 @@ def assert_forecast_and_provider_query_contracts(snapshot: dict[str, Any]) -> No
         _assert_string_parameter_domain(parameter, values=values, context=context)
 
 
+def assert_audit_query_contract(snapshot: dict[str, Any]) -> None:
+    """Guard the audit filter domains and fixed server pagination contract."""
+    path = "/api/v1/account/audit-events"
+    parameters = snapshot["paths"][path]["get"]["parameters"]
+    assert {parameter["name"] for parameter in parameters} == {
+        "range",
+        "cursor",
+        "action",
+    }
+    range_parameter = _operation_parameter(
+        snapshot,
+        path=path,
+        method="get",
+        location="query",
+        name="range",
+    )
+    assert range_parameter.get("required") is False
+    assert range_parameter["schema"].get("default") == "30d"
+    _assert_string_parameter_domain(
+        range_parameter,
+        values={member.value for member in AuditRange},
+        context=f"GET {path} query range",
+    )
+    action = _operation_parameter(
+        snapshot,
+        path=path,
+        method="get",
+        location="query",
+        name="action",
+    )["schema"]["anyOf"][0]
+    assert action.get("minLength") == 1
+    assert action.get("maxLength") == 100
+
+
 def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> None:
     """Bind the guardrail POST to its exact required request component."""
     path = "/api/v1/budgets/check"
@@ -598,6 +635,15 @@ def assert_webhook_create_operation_request_binding(
     for events in (local_properties["events"], remote_properties["events"]):
         assert "enum" not in events
         assert "pattern" not in events
+
+
+def assert_project_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
+    """Bind project rename to its exact required request component."""
+    path = "/api/v1/projects/{project_id}"
+    request_body = snapshot["paths"][path]["put"]["requestBody"]
+    assert request_body.get("required") is True
+    schema = request_body["content"]["application/json"]["schema"]
+    assert schema.get("$ref") == "#/components/schemas/ProjectUpdateRequest"
 
 
 def assert_budget_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
@@ -710,6 +756,14 @@ def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
 
 def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
+
+
+def test_project_update_operation_uses_the_registered_request_mirror() -> None:
+    assert_project_update_operation_request_binding(_snapshot())
+
+
+def test_audit_query_matches_the_fixed_page_contract() -> None:
+    assert_audit_query_contract(_snapshot())
 
 
 def test_unadopted_registry_names_only_fields_no_mirror_sends() -> None:

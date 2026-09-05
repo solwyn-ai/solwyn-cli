@@ -244,6 +244,10 @@ class ProjectCreateRequest(_WireModel):
     scope: ProjectKeyScope = ProjectKeyScope.FULL
 
 
+class ProjectUpdateRequest(_WireModel):
+    name: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+
+
 class ProjectKeyRotateRequest(_WireModel):
     grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
     # No default on the wire: a null scope asks the API to carry the replaced

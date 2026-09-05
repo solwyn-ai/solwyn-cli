@@ -190,6 +190,17 @@ def update_config_value(key: str, value: str) -> Config:
     return update_config_values({key: value})
 
 
+def clear_default_project(project_id: str) -> bool:
+    """Atomically clear ``default_project`` only when it matches one project."""
+    path = get_config_path()
+    with _config_lock(path):
+        current = load_config()
+        if current.default_project != project_id:
+            return False
+        save_config(current.model_copy(update={"default_project": None}))
+    return True
+
+
 def update_config_values(
     values: Mapping[str, object], *, omit_default_api_url: bool = False
 ) -> Config:
