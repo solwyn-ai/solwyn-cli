@@ -3601,6 +3601,129 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "webhooks",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "webhooks"
+      ],
+      "summary": "Manage project webhook targets."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-create.v1",
+      "name": "create",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--url"
+          ],
+          "default": null,
+          "help": "Destination URI; Core requires public HTTPS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "url",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--events"
+          ],
+          "default": "*",
+          "help": "Comma-separated event names, or * for all events.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "events",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "webhooks",
+        "create"
+      ],
+      "summary": "Create a webhook target and reveal its signing secret once."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-delete.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "webhook_id"
+          ],
+          "default": null,
+          "help": "Webhook target identifier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "webhook_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "webhooks",
+        "delete"
+      ],
+      "summary": "Deactivate a webhook target."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "webhooks",
+        "list"
+      ],
+      "summary": "List active webhook targets with masked secret prefixes."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-rotate.v1",
+      "name": "rotate",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "webhook_id"
+          ],
+          "default": null,
+          "help": "Webhook target identifier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "webhook_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "webhooks",
+        "rotate"
+      ],
+      "summary": "Rotate a target's signing secret and reveal the replacement once."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.whoami.v1",
       "name": "whoami",
@@ -4009,6 +4132,53 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "created_at",
+        "events",
+        "id",
+        "is_active",
+        "schema",
+        "secret_prefix",
+        "signing_secret",
+        "url"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-create.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "deleted",
+        "project_id",
+        "schema",
+        "webhook_id"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-delete.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "schema",
+        "webhooks"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "id",
+        "key_version",
+        "schema",
+        "secret_prefix",
+        "signing_secret"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-rotate.v1",
       "universal_error_envelope": false
     },
     {

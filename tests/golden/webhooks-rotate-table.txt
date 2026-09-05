@@ -1,0 +1,7 @@
+Field                Value
+ID                wh/alpha
+Key version              2
+Secret prefix  cdcdcdcd...
+╭──────────────── One-time webhook signing secret ─────────────────╮
+│ cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd │
+╰──────────────────────────────────────────────────────────────────╯

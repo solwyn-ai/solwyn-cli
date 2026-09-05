@@ -8,6 +8,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
     SecretStr,
     field_serializer,
     model_validator,
@@ -235,6 +236,13 @@ class ProjectKeyRotateRequest(_WireModel):
     # No default on the wire: a null scope asks the API to carry the replaced
     # key's scope over to the replacement.
     scope: ProjectKeyScope | None = None
+
+
+class WebhookCreateRequest(_WireModel):
+    """Webhook target registration body with an open event-name domain."""
+
+    url: HttpUrl
+    events: str = "*"
 
 
 class BudgetUpdateRequest(_WireModel):

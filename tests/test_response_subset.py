@@ -160,6 +160,29 @@ RESPONSE_READS = {
         "rotation_grace_until",
         "scope",
     ),
+    "WebhookResponse": (
+        "id",
+        "url",
+        "events",
+        "is_active",
+        "secret_prefix",
+        "created_at",
+    ),
+    "WebhookCreateResponse": (
+        "id",
+        "url",
+        "events",
+        "is_active",
+        "secret_prefix",
+        "created_at",
+        "signing_secret",
+    ),
+    "WebhookRotateResponse": (
+        "id",
+        "key_version",
+        "signing_secret",
+        "secret_prefix",
+    ),
     "BudgetStatusResponse": (
         "project_id",
         "budget_limit",
@@ -535,10 +558,29 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "ProjectKeyRotateResponse",
     ),
+    ("GET", "/api/v1/projects/{project_id}/webhooks"): (
+        "200",
+        "array",
+        "WebhookResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/webhooks"): (
+        "201",
+        "object",
+        "WebhookCreateResponse",
+    ),
+    (
+        "POST",
+        "/api/v1/projects/{project_id}/webhooks/{webhook_id}/rotate",
+    ): (
+        "200",
+        "object",
+        "WebhookRotateResponse",
+    ),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
     ("DELETE", "/api/v1/account/notification-channels/{channel_id}"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
+    ("DELETE", "/api/v1/projects/{project_id}/webhooks/{webhook_id}"): "204",
 }
 _BUDGET_THRESHOLD_COMPONENTS = {
     "budget_threshold": "ThresholdStateResponse",
