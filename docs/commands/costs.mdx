@@ -39,7 +39,8 @@ savings are omitted from CLI JSON, and an unavailable savings upper bound is `â€
 in the human summary, never zero.
 
 `costs events` emits `solwyn.costs.events.v1`, including `items`, `next_cursor`,
-`has_more`, and `window`. Rows preserve denied cost, denial source/reason, SDK
+`has_more`, and `window`. Table output prints a continuation notice and the next
+cursor on stderr when another page is available. Rows preserve denied cost, denial source/reason, SDK
 instance ID, and entitled tags. Events require Production except the onboarding
 probe (`--limit 1` without a cursor). Limits are 1â€“100. The event API omits
 `call_id`, provider fallback and failover reason; raw export provides the failover

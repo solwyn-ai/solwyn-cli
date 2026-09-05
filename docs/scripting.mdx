@@ -18,5 +18,7 @@ Write exports to a temporary file and rename only after exit 0 so a failed
 connection does not publish a partial file. Preserve CSV formula-safety prefixes.
 
 MCP `get_costs` accepts the same filters and `from_`/`to` bounds. `get_cost_total`
-returns uncapped totals and the effective window. Neither tool records spend or
+returns uncapped totals and the effective window. Locally invalid cost queries
+return `invalid_cost_query` with corrective guidance; malformed API responses
+remain `invalid_costs_response`. Neither tool records spend or
 mutates account settings. Use the tool's structured `ok` and `error` fields.

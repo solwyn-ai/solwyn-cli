@@ -1535,3 +1535,48 @@ def test_cost_tools_forward_complete_filters(monkeypatch, tool):
     assert query["provider_region"] == "region"
     assert not remaining
     assert clients[0].is_closed
+
+
+@pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"from_": "2026-08-01T00:00:00Z"},
+        {"tag": ["private-customer-marker=" + "x" * 257]},
+    ],
+)
+def test_invalid_local_cost_queries_have_safe_actionable_errors(
+    monkeypatch, tool, arguments
+):
+    requests, clients, remaining = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(_call_tool, tool, arguments)
+    error = result.structuredContent["error"]
+    assert result.structuredContent["ok"] is False
+    assert error["code"] == "invalid_cost_query"
+    assert error["message"] == "The cost query was invalid."
+    assert "from_" in error["hint"] and "to" in error["hint"]
+    assert "key=value" in error["hint"]
+    assert error["status_code"] is None
+    assert "private-customer-marker" not in str(result)
+    assert not requests and not remaining
+    assert all(client.is_closed for client in clients)
+
+
+@pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])
+def test_invalid_cost_responses_are_not_mislabeled_as_query_errors(monkeypatch, tool):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json={"invalid": "response"})],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(_call_tool, tool, {})
+    assert result.structuredContent["error"]["code"] == "invalid_costs_response"
+    assert len(requests) == 1

@@ -23,7 +23,7 @@ from solwyn_cli.commands._entitlement import get_capabilities
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData, write_byte_stream
+from solwyn_cli.output import OutputError, OutputFormat, TableData, write_byte_stream
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -300,6 +300,22 @@ def _run(
             ),
         )
     report_window(data.window)
+    if (
+        isinstance(data, CostEventsResponse)
+        and data.has_more
+        and runtime.output_format is OutputFormat.TABLE
+    ):
+        if data.next_cursor is not None:
+            typer.echo(
+                "More events are available. Next cursor (pass with --cursor): "
+                + json.dumps(data.next_cursor),
+                err=True,
+            )
+        else:
+            typer.echo(
+                "More events are available, but Core returned no continuation cursor.",
+                err=True,
+            )
     if isinstance(data, CostsData) and data.truncated:
         typer.echo("showing top 100 groups", err=True)
     if getattr(data, "savings", None) is not None:

@@ -592,6 +592,10 @@ def test_events_and_total_goldens(monkeypatch, command, payload, output_format):
     assert_matches_golden(
         result.stdout, GOLDEN_DIR / f"costs-{command}-{output_format}.{suffix}"
     )
+    if command == "events" and output_format == "table":
+        assert_matches_golden(
+            result.stderr, GOLDEN_DIR / "costs-events-continuation-stderr.txt"
+        )
 
 
 def test_all_filters_and_custom_window_reach_core(monkeypatch):
@@ -861,3 +865,36 @@ def test_entitlement_hints_keep_json_error_envelope_parseable(monkeypatch):
     )
     assert result.exit_code == 2
     assert "future_dimension" in json.loads(result.stderr)["hint"]
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+@pytest.mark.parametrize("has_more", [True, False])
+def test_events_continuation_notice_stays_on_table_stderr(
+    monkeypatch, output_format, has_more
+):
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential)
+    cursor = 'next-page-"quoted"' if has_more else None
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "items": [EVENT],
+                "next_cursor": cursor,
+                "has_more": has_more,
+                "window": WINDOW,
+            },
+        )
+    ]
+    result = runner.invoke(
+        app, ["--format", output_format, "-p", "proj_alpha", "costs", "events"]
+    )
+    assert result.exit_code == 0
+    assert "More events" not in result.stdout
+    if output_format == "table" and has_more:
+        assert "More events are available" in result.stderr
+        assert "--cursor" in result.stderr
+        assert json.dumps(cursor) in result.stderr
+    else:
+        assert result.stderr == ""
+    if output_format == "json":
+        assert json.loads(result.stdout)["next_cursor"] == cursor
