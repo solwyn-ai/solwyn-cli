@@ -14,6 +14,8 @@ from solwyn_cli.commands.attest import ATTEST_HELP, attest
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
+from solwyn_cli.commands.cost_analysis import register_cost_analysis_commands
+from solwyn_cli.commands.cost_pricing import register_cost_pricing_commands
 from solwyn_cli.commands.costs import app as costs_app
 from solwyn_cli.commands.forecast import FORECAST_HELP, forecast
 from solwyn_cli.commands.doctor import DOCTOR_HELP, doctor
@@ -66,6 +68,8 @@ app.add_typer(webhooks_app, name="webhooks")
 app.add_typer(runs_app, name="runs")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
 app.command("attest", epilog=ATTEST_HELP)(attest)
+register_cost_analysis_commands(costs_app)
+register_cost_pricing_commands(costs_app)
 app.add_typer(costs_app, name="costs")
 app.add_typer(providers_app, name="providers")
 app.command("forecast", epilog=FORECAST_HELP)(forecast)

@@ -20,6 +20,36 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "stream (SpendControlAttestation JSON or section,field,value CSV)",
     },
+    ("costs", "baseline"): {
+        "endpoint": "GET /api/v1/projects/{project}/spend-baseline",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.baseline.v1",
+    },
+    ("costs", "unit-economics"): {
+        "endpoint": "GET /api/v1/projects/{project}/unit-economics",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.unit-economics.v1",
+    },
+    ("costs", "drift"): {
+        "endpoint": "GET /api/v1/projects/{project}/costs/drift",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.drift.v1",
+    },
+    ("costs", "priced-models"): {
+        "endpoint": "GET /api/v1/projects/{project}/costs/priced-models",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.priced-models.v1",
+    },
+    ("costs", "simulate"): {
+        "endpoint": "POST /api/v1/projects/{project}/costs/simulate",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.simulation.v1",
+    },
     ("costs", "events"): {
         "endpoint": "GET /api/v1/projects/{project}/costs/events",
         "auth": "any",

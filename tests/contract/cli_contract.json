@@ -2570,6 +2570,92 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.costs.baseline.v1",
+      "name": "baseline",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--days"
+          ],
+          "default": 7,
+          "help": "Lookback days for the hourly baseline.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 30,
+          "min": 3,
+          "multiple": false,
+          "name": "days",
+          "required": false,
+          "type": "integer range"
+        }
+      ],
+      "path": [
+        "costs",
+        "baseline"
+      ],
+      "summary": "Show the hourly-refreshed daily spend baseline."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.drift.v1",
+      "name": "drift",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset analytics window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "drift"
+      ],
+      "summary": "Compare stored actual spend with pre-flight estimates."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.costs.events.v1",
       "name": "events",
       "output_kind": "json-envelope",
@@ -3052,6 +3138,161 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.costs.priced-models.v1",
+      "name": "priced-models",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "costs",
+        "priced-models"
+      ],
+      "summary": "List exact models available to the current pricing catalog."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.simulation.v1",
+      "name": "simulate",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Exact model identifier from priced-models.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--region"
+          ],
+          "default": null,
+          "help": "Required with --service-tier for Bedrock.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Required with --region for Bedrock.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset analytics window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "simulate"
+      ],
+      "summary": "Replay historical usage against one current priced target."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.costs.total.v1",
       "name": "total",
       "output_kind": "json-envelope",
@@ -3260,6 +3501,68 @@
         "total"
       ],
       "summary": "Show uncapped project cost totals."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.unit-economics.v1",
+      "name": "unit-economics",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "7d, 30d, or 90d.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--vs-prev",
+            "--no-vs-prev"
+          ],
+          "default": true,
+          "help": "Compare with the preceding same-length window.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "vs_prev",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--cause"
+          ],
+          "default": false,
+          "help": "Include server-inferred cost drivers.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "cause",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "costs",
+        "unit-economics"
+      ],
+      "summary": "Show unit-cost metrics and optional suspected causes."
     },
     {
       "hidden": false,
@@ -5214,6 +5517,38 @@
     },
     {
       "keys": [
+        "armed",
+        "days_with_data",
+        "lookback_days",
+        "mean_daily_spend",
+        "project_id",
+        "schema",
+        "stdev_daily_spend"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.baseline.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "actual_total",
+        "caveats",
+        "difference",
+        "estimate_total",
+        "groups",
+        "included_event_count",
+        "missing_estimate_count",
+        "project_id",
+        "range",
+        "schema",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.drift.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "has_more",
         "items",
         "next_cursor",
@@ -5222,6 +5557,39 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.costs.events.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "models",
+        "pricing_version",
+        "project_id",
+        "provenance",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.priced-models.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "baseline_actual_cost",
+        "baseline_event_count",
+        "caveats",
+        "delta_cost",
+        "excluded",
+        "excluded_event_count",
+        "included_event_count",
+        "project_id",
+        "range",
+        "scanned_event_count",
+        "schema",
+        "simulated_cost",
+        "target",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.simulation.v1",
       "universal_error_envelope": false
     },
     {
@@ -5239,6 +5607,24 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.costs.total.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "avg_prompt_tokens",
+        "cost_per_agent_run",
+        "cost_per_request",
+        "prev_window_end",
+        "prev_window_start",
+        "range",
+        "schema",
+        "suspected_cause",
+        "tokens_per_dollar",
+        "window_end",
+        "window_start"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.unit-economics.v1",
       "universal_error_envelope": false
     },
     {
