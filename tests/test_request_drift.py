@@ -10,6 +10,9 @@ from typing import Any
 import pytest
 
 from solwyn_cli._vendor.wire import (
+    AccountAlertUpdateRequest,
+    AccountAlertPreviewRequest,
+    AccountAlertSnoozeRequest,
     BudgetCheckRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
@@ -27,6 +30,9 @@ from solwyn_cli.commands.costs import CostRange
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 REQUEST_MIRRORS = {
+    AccountAlertUpdateRequest: "AccountAlertUpdateRequest",
+    AccountAlertPreviewRequest: "AccountAlertPreviewRequest",
+    AccountAlertSnoozeRequest: "AccountAlertSnoozeRequest",
     LoginRequest: "LoginRequest",
     RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",

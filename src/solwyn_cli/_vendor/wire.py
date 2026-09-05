@@ -284,3 +284,20 @@ class AlertPreviewItem(_WireModel):
 
 class ProjectAlertsPreviewRequest(_WireModel):
     alerts: Annotated[list[AlertPreviewItem], Field(max_length=50)]
+
+
+class AccountAlertUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    spend_threshold_usd: float = Field(gt=0)
+    enabled: bool | None = None
+    channel_ids: list[str] = Field(default_factory=list)
+
+
+class AccountAlertPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    channel_ids: list[str] = Field(default_factory=list)
+
+
+class AccountAlertSnoozeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    snoozed_until: datetime

@@ -14,6 +14,58 @@ from solwyn_cli.commands import budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "AlertEventEntry": (
+        "id",
+        "project_id",
+        "account_id",
+        "scope",
+        "rule_key",
+        "emitted_at",
+        "event_type",
+        "rule_type",
+        "value_at_event",
+        "threshold_at_event",
+        "period_key",
+        "linked_event_ids",
+        "metadata_json",
+        "delivery",
+    ),
+    "AlertDeliveryStatus": (
+        "status",
+        "attempt_count",
+        "next_attempt_at",
+        "dead_lettered_at",
+        "legs",
+    ),
+    "AlertDeliveryLegEntry": (
+        "leg_key",
+        "channel_type",
+        "channel_name",
+        "status",
+        "attempt_count",
+        "last_attempted_at",
+        "delivered_at",
+        "error",
+    ),
+    "AlertEventListResponse": ("events", "next_cursor", "window"),
+    "AlertEventWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AccountAlertResponse": (
+        "account_id",
+        "spend_threshold_usd",
+        "enabled",
+        "channel_ids",
+        "snoozed_until",
+        "routing",
+        "created_at",
+        "updated_at",
+    ),
+    "AccountAlertSnoozeResponse": ("snoozed_until",),
     "SubscriptionStatusResponse": (
         "tier",
         "billing_interval",
@@ -332,6 +384,29 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/api/v1/projects/{project_id}/alert-events"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alert-events"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alerts"): ("200", "object", "AccountAlertResponse"),
+    ("PUT", "/api/v1/account/alerts"): ("200", "object", "AccountAlertResponse"),
+    ("POST", "/api/v1/account/alerts/preview"): ("200", "object", "AlertRouting"),
+    ("POST", "/api/v1/account/alerts/snooze"): (
+        "200",
+        "object",
+        "AccountAlertSnoozeResponse",
+    ),
+    ("POST", "/api/v1/account/alerts/unsnooze"): (
+        "200",
+        "object",
+        "AccountAlertSnoozeResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/costs/events"): (
         "200",
         "object",
