@@ -192,6 +192,99 @@
     },
     {
       "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "attest",
+      "output_kind": "stream",
+      "params": [
+        {
+          "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": "Export account-wide evidence (requires JWT).",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "Preset window; custom --from/--to replace it.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "json",
+            "csv"
+          ],
+          "cli_names": [
+            "--format"
+          ],
+          "default": "json",
+          "help": "Export format: json or csv.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "export_format",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "attest"
+      ],
+      "summary": "Stream a project or account spend-control attestation to stdout."
+    },
+    {
+      "hidden": false,
       "is_group": true,
       "json_schema": null,
       "name": "budget",

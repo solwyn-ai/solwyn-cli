@@ -10,6 +10,7 @@ from solwyn_cli.commands.account import app as account_app
 from solwyn_cli.commands.channels import app as channels_app
 from solwyn_cli.commands.notifications import app as notifications_app
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
+from solwyn_cli.commands.attest import ATTEST_HELP, attest
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
@@ -64,6 +65,7 @@ app.add_typer(projects_app, name="projects")
 app.add_typer(webhooks_app, name="webhooks")
 app.add_typer(runs_app, name="runs")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
+app.command("attest", epilog=ATTEST_HELP)(attest)
 app.add_typer(costs_app, name="costs")
 app.add_typer(providers_app, name="providers")
 app.command("forecast", epilog=FORECAST_HELP)(forecast)

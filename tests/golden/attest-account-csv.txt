@@ -1,0 +1,8 @@
+section,field,value
+report,schema_version,1
+report,generated_at,2026-08-31T00:00:00Z
+scope,type,account
+scope,account_id,acct_alpha
+scope,project_id,
+spend_summary,real_spend_usd,3.75
+spend_summary,real_call_count,9

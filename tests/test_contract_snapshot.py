@@ -111,3 +111,12 @@ def test_underscore_rule_action_schema_is_declared_and_captured() -> None:
     assert "solwyn.budget.rule_action.v1" in declared_schema_tokens()
     schemas = {entry["schema"] for entry in build_cli_contract()["json_schemas"]}
     assert "solwyn.budget.rule_action.v1" in schemas
+
+
+def test_attestation_declares_stream_output_kind() -> None:
+    contract = build_cli_contract()
+    attestation = next(
+        command for command in contract["commands"] if command["path"] == ["attest"]
+    )
+    assert attestation["output_kind"] == "stream"
+    assert attestation["json_schema"] is None
