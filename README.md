@@ -1,6 +1,6 @@
 # Solwyn CLI
 
-Work with Solwyn from the command line: enforce LLM spend guardrails on calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and recover from leaked or expired project keys — from your terminal, your scripts, or your coding agent.
+Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and recover from leaked or expired project keys — from your terminal, your scripts, or your coding agent.
 
 > **Status:** pre-release. This repository is private while the first release is prepared, and the package is not yet published to PyPI.
 
@@ -32,13 +32,14 @@ solwyn status         # project budget and provider health at a glance
 | `login` / `logout` / `whoami` | Manage credentials and show the current identity and project context. |
 | `init` | Configure Solwyn safely for the current repository. |
 | `status` | Show project budget and provider health. |
-| `costs` | Show aggregate project costs (`--range 7d\|30d\|90d\|365d`, `--group-by day\|model\|provider`). |
+| `costs` | Show project costs across server-advertised dimensions, including agent runs and tags. |
 | `record` | Attribute one completed call, or a JSON batch, without a reservation. |
 | `tags list`, `tags values` | Discover account-scoped keys and values (Team+). |
 | `tags retire` | Retire a registered account tag key (JWT admin/owner). |
 | `budget status` | Read current budget status without authorizing spend. |
 | `budget check` / `budget confirm` | Pre-flight guardrail loop for un-instrumented provider calls (below). |
 | `budget set` | Update selected budget settings while preserving all other configuration. |
+| `runs list` / `show` / `stop` | Inspect agent runs and stop their future checks and lease renewals. |
 | `projects create` / `list` / `show` | Manage projects; `create --scope` mints the first key with an explicit scope. |
 | `keys show` / `rotate` / `revoke` | Inspect key metadata (including its scope), rotate with `--scope` to change it, or hard-revoke. |
 | `mcp` | Serve Solwyn tools to agents over local MCP stdio. |
@@ -49,7 +50,7 @@ Every command's `--help` states its exit codes, authentication requirements, and
 
 ## Budget guardrails for un-instrumented calls
 
-Calls made through the Solwyn SDK are enforced automatically. For everything else — a `curl`, another language, a one-off script — the CLI provides the same guardrail as an explicit two-step loop:
+Calls made through the Solwyn SDK are enforced and attributed automatically. For everything else — a `curl`, another language, a one-off script — the CLI provides an explicit two-step loop that covers enforcement and attribution:
 
 ```console
 # 1. Reserve budget immediately before the call. A denied check exits with
@@ -63,6 +64,8 @@ solwyn budget confirm --call-id 12345678-1234-1234-1234-123456789abc --provider 
   --reservation-id "$RESERVATION" --input-tokens 1180 --output-tokens 640
 ```
 
+The CLI's caller-owned workflow maintains parity with Solwyn Python SDK 0.6.0 semantics and covers enforcement and attribution. Confirmation records attribution after settlement by default, using the same canonical call ID; add `--no-record` only when attribution is intentionally handled elsewhere.
+
 The loop covers more than text tokens:
 
 - **Media calls** — pass the billed quantities to `budget check` (`--image-count`, `--video-seconds`, `--audio-seconds`, `--input-characters`, `--generation-count`, `--resolution`, `--quality`) so unit-priced image, video, audio, and speech calls are priced and deniable before they run.
@@ -74,7 +77,7 @@ Use `budget status` to poll; `check` is for the moment immediately before spend.
 
 ## For coding agents
 
-`solwyn mcp` serves read, guardrail, and attribution tools over stdio — `budget_status`, `budget_check`, `budget_confirm`, `get_project_status`, `get_costs`, `list_projects`, `record_call`, `list_tags`, `list_tag_values` — resolving configuration and credentials fresh on every call. `solwyn agent-context` prints a compact capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
+`solwyn mcp` serves read, guardrail, and attribution tools over stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
 ## Scripting
 
