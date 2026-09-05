@@ -3,6 +3,7 @@
 import copy
 from contextlib import contextmanager
 import json
+import shlex
 from pathlib import Path
 import httpx
 import pytest
@@ -442,3 +443,20 @@ def test_mutations_only_retry_definite_rejections(monkeypatch, status):
     result = invoke(["account", "set", "--spend", "10"])
     assert len(requests) == (2 if status in {401, 429} else 1)
     assert result.exit_code == (0 if status in {401, 429} else 1), result.output
+
+
+def test_documented_filtered_json_invocation():
+    command = next(
+        line
+        for line in Path("docs/commands/alerts.mdx").read_text().splitlines()
+        if line.startswith("solwyn ") and "--failed-only --all" in line
+    )
+    FakeClient.responses = [page()]
+    result = runner.invoke(app, ["--project", "proj_alpha", *shlex.split(command)[1:]])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["events"][0]["id"] == "event-one"
+    assert FakeClient.instances[0].requests[0][2]["params"] == {
+        "range": "30d",
+        "rule_type": "scoped_budget",
+        "scope": "tag",
+    }

@@ -4,7 +4,7 @@ Inspect alert history, per-channel delivery receipts, and account spend alert co
 
 ```sh
 solwyn alerts list --range 7d
-solwyn alerts list --rule-type scoped_budget --scope tag --failed-only --all --json
+solwyn --json alerts list --rule-type scoped_budget --scope tag --failed-only --all
 solwyn alerts list --cursor CURSOR
 solwyn alerts show EVENT_ID --range 90d
 solwyn alerts list --account --from 2026-09-01T00:00:00Z --to 2026-09-05T00:00:00Z

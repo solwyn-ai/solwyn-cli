@@ -514,6 +514,7 @@ OPERATION_RESPONSE_BINDINGS = {
     ),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
+    ("DELETE", "/api/v1/account/alerts"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
 }
 _BUDGET_THRESHOLD_COMPONENTS = {
@@ -874,12 +875,13 @@ def test_every_consumed_no_content_operation_is_bodyless() -> None:
     assert_no_content_operation_bindings(_snapshot())
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/projects/{project_id}/key/{key_id}", "/api/v1/account/alerts"]
+)
 @pytest.mark.parametrize("mutation", ["status", "body", "alternate"])
-def test_project_key_revoke_response_drift_trips_guard(mutation: str) -> None:
+def test_no_content_response_drift_trips_guard(path: str, mutation: str) -> None:
     mutated = copy.deepcopy(_snapshot())
-    responses = mutated["paths"]["/api/v1/projects/{project_id}/key/{key_id}"][
-        "delete"
-    ]["responses"]
+    responses = mutated["paths"][path]["delete"]["responses"]
     if mutation == "status":
         responses["200"] = responses.pop("204")
     elif mutation == "body":
