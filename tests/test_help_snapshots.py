@@ -14,6 +14,24 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("costs", "events"): {
+        "endpoint": "GET /api/v1/projects/{project}/costs/events",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.events.v1",
+    },
+    ("costs", "total"): {
+        "endpoint": "GET /api/v1/projects/{project}/costs/total",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.costs.total.v1",
+    },
+    ("costs", "export"): {
+        "endpoint": "GET /api/v1/projects/{project}/costs/export",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "stream (CSV or NDJSON)",
+    },
     (): {
         "endpoint": "composite command router",
         "auth": "varies by command",
@@ -264,7 +282,7 @@ def test_mcp_help_names_the_exact_six_tool_surface() -> None:
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_costs, list_projects."
+        "get_costs, list_projects, get_cost_total."
     ) in rendered
 
 

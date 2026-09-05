@@ -20,7 +20,7 @@ from solwyn_cli._vendor.wire import (
 )
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
-from solwyn_cli.commands.costs import CostGrouping, CostRange
+from solwyn_cli.commands.costs import CostRange
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
@@ -423,7 +423,7 @@ def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
     path = "/api/v1/projects/{project_id}/costs"
     contracts = {
         "range": ({member.value for member in CostRange}, "7d"),
-        "group_by": ({member.value for member in CostGrouping}, "model"),
+        "group_by": ({"model"}, "model"),
     }
     for name, (values, default) in contracts.items():
         parameter = _operation_parameter(
@@ -773,7 +773,16 @@ def test_budget_confirm_request_and_operation_match_snapshot() -> None:
 
 def test_costs_cli_domains_are_frozen() -> None:
     assert {member.value for member in CostRange} == {"7d", "30d", "90d", "365d"}
-    assert {member.value for member in CostGrouping} == {"day", "model", "provider"}
+    parameter = _operation_parameter(
+        _snapshot(),
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="group_by",
+    )
+    assert parameter["schema"]["type"] == "string"
+    assert "enum" not in parameter["schema"]
+    assert "pattern" not in parameter["schema"]
 
 
 @pytest.mark.parametrize(

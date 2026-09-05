@@ -124,6 +124,8 @@ def _output_kind(schema_line: str | None, schema_token: str | None) -> str | Non
     if schema_line is None:
         return None
     lowered = schema_line.lower()
+    if lowered.startswith("stream"):
+        return "stream"
     if "mcp" in lowered:
         return "mcp-stdio"
     if lowered.startswith("varies"):

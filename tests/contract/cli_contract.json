@@ -940,55 +940,922 @@
     },
     {
       "hidden": false,
-      "is_group": false,
+      "is_group": true,
       "json_schema": "solwyn.costs.v1",
       "name": "costs",
       "output_kind": "json-envelope",
       "params": [
         {
-          "choices": [
-            "7d",
-            "30d",
-            "90d",
-            "365d"
-          ],
-          "cli_names": [
-            "--range"
-          ],
-          "default": "7d",
-          "help": "Aggregation range.",
-          "hidden": false,
-          "is_flag": false,
-          "kind": "option",
-          "multiple": false,
-          "name": "time_range",
-          "required": false,
-          "type": "choice"
-        },
-        {
-          "choices": [
-            "day",
-            "model",
-            "provider"
-          ],
           "cli_names": [
             "--group-by"
           ],
           "default": "model",
-          "help": "Aggregation dimension.",
+          "help": "Dimension from billing capabilities, or tag:<key> (Team+). Omit for raw export.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
           "multiple": false,
           "name": "group_by",
           "required": false,
-          "type": "choice"
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
         }
       ],
       "path": [
         "costs"
       ],
-      "summary": "Show aggregate project costs."
+      "summary": "Show aggregate project costs; use subcommands for events, totals, and export."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.events.v1",
+      "name": "events",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": 25,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "events"
+      ],
+      "summary": "Show paginated events (Production+; limit 1 without cursor is an onboarding probe). Event rows omit call_id, provider fallback and failover reason; use raw export for failover detail."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "export",
+      "output_kind": "stream",
+      "params": [
+        {
+          "cli_names": [
+            "--group-by"
+          ],
+          "default": null,
+          "help": "Dimension from billing capabilities, or tag:<key> (Team+). Omit for raw export.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "group_by",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--format"
+          ],
+          "default": "csv",
+          "help": "csv or json (newline-delimited JSON / NDJSON).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "export_format",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "export"
+      ],
+      "summary": "Stream CSV or NDJSON bytes to stdout. Raw export requires Team; aggregated export requires Production. Window and truncation headers go to stderr."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.total.v1",
+      "name": "total",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "total"
+      ],
+      "summary": "Show uncapped project cost totals."
     },
     {
       "hidden": false,
@@ -1441,12 +2308,42 @@
     },
     {
       "keys": [
+        "has_more",
+        "items",
+        "next_cursor",
+        "schema",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.events.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "call_count",
+        "local_call_count",
+        "project_id",
+        "range",
+        "schema",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "unpriced_call_count",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.total.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "group_by",
         "groups",
         "project_id",
         "range",
         "schema",
-        "truncated"
+        "truncated",
+        "window"
       ],
       "optional_keys": [],
       "schema": "solwyn.costs.v1",

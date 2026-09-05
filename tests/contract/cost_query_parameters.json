@@ -1,0 +1,1045 @@
+{
+  "": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "default": "7d"
+      }
+    },
+    "model": {
+      "name": "model",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider": {
+      "name": "provider",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "modality": {
+      "name": "modality",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run_id": {
+      "name": "agent_run_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36,
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run": {
+      "name": "agent_run",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "status": {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "success",
+              "error",
+              "budget_denied"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "service_tier": {
+      "name": "service_tier",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "enum": [
+              "auto",
+              "default",
+              "flex",
+              "scale",
+              "priority",
+              "standard",
+              "optimized"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider_region": {
+      "name": "provider_region",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_model_fallback": {
+      "name": "is_model_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_provider_fallback": {
+      "name": "is_provider_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "failover_reason": {
+      "name": "failover_reason",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "circuit_open",
+              "primary_error",
+              "model_fallback",
+              "cost_routed"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "group_by": {
+      "name": "group_by",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "default": "model"
+      }
+    },
+    "tag.<key>": {
+      "name": "tag.<key>",
+      "in": "query",
+      "required": false,
+      "example": "production",
+      "schema": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "x-solwyn-dynamic-query-prefix": "tag."
+    }
+  },
+  "/events": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "default": "7d"
+      }
+    },
+    "limit": {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "type": "integer",
+        "maximum": 100,
+        "minimum": 1,
+        "default": 25
+      }
+    },
+    "cursor": {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "model": {
+      "name": "model",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider": {
+      "name": "provider",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "modality": {
+      "name": "modality",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run_id": {
+      "name": "agent_run_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36,
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run": {
+      "name": "agent_run",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "status": {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "success",
+              "error",
+              "budget_denied"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "service_tier": {
+      "name": "service_tier",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "enum": [
+              "auto",
+              "default",
+              "flex",
+              "scale",
+              "priority",
+              "standard",
+              "optimized"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider_region": {
+      "name": "provider_region",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_model_fallback": {
+      "name": "is_model_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_provider_fallback": {
+      "name": "is_provider_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "failover_reason": {
+      "name": "failover_reason",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "circuit_open",
+              "primary_error",
+              "model_fallback",
+              "cost_routed"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "tag.<key>": {
+      "name": "tag.<key>",
+      "in": "query",
+      "required": false,
+      "example": "production",
+      "schema": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "x-solwyn-dynamic-query-prefix": "tag."
+    }
+  },
+  "/total": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "default": "7d"
+      }
+    },
+    "model": {
+      "name": "model",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider": {
+      "name": "provider",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "modality": {
+      "name": "modality",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run_id": {
+      "name": "agent_run_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36,
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run": {
+      "name": "agent_run",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "status": {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "success",
+              "error",
+              "budget_denied"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "service_tier": {
+      "name": "service_tier",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "enum": [
+              "auto",
+              "default",
+              "flex",
+              "scale",
+              "priority",
+              "standard",
+              "optimized"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider_region": {
+      "name": "provider_region",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_model_fallback": {
+      "name": "is_model_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_provider_fallback": {
+      "name": "is_provider_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "failover_reason": {
+      "name": "failover_reason",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "circuit_open",
+              "primary_error",
+              "model_fallback",
+              "cost_routed"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "tag.<key>": {
+      "name": "tag.<key>",
+      "in": "query",
+      "required": false,
+      "example": "production",
+      "schema": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "x-solwyn-dynamic-query-prefix": "tag."
+    }
+  },
+  "/export": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "default": "30d"
+      }
+    },
+    "model": {
+      "name": "model",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider": {
+      "name": "provider",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "modality": {
+      "name": "modality",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run_id": {
+      "name": "agent_run_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36,
+            "pattern": "^run_[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "agent_run": {
+      "name": "agent_run",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "status": {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "success",
+              "error",
+              "budget_denied"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "service_tier": {
+      "name": "service_tier",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "enum": [
+              "auto",
+              "default",
+              "flex",
+              "scale",
+              "priority",
+              "standard",
+              "optimized"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "provider_region": {
+      "name": "provider_region",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_model_fallback": {
+      "name": "is_model_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "is_provider_fallback": {
+      "name": "is_provider_fallback",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "failover_reason": {
+      "name": "failover_reason",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "circuit_open",
+              "primary_error",
+              "model_fallback",
+              "cost_routed"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "format": {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "csv",
+          "json"
+        ],
+        "type": "string",
+        "default": "csv"
+      }
+    },
+    "group_by": {
+      "name": "group_by",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "tag.<key>": {
+      "name": "tag.<key>",
+      "in": "query",
+      "required": false,
+      "example": "production",
+      "schema": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "x-solwyn-dynamic-query-prefix": "tag."
+    }
+  }
+}

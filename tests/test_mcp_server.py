@@ -41,6 +41,7 @@ _TOOL_NAMES = [
     "get_project_status",
     "get_costs",
     "list_projects",
+    "get_cost_total",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
