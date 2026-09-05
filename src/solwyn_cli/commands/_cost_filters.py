@@ -4,6 +4,10 @@ import re
 from datetime import datetime
 
 
+class CostQueryError(ValueError):
+    """A local query error, distinct from a malformed API response."""
+
+
 def window_params(
     *, time_range: str = "7d", from_: str | None = None, to: str | None = None
 ) -> dict[str, str]:
@@ -11,17 +15,17 @@ def window_params(
     if from_ is None and to is None:
         return {"range": time_range}
     if from_ is None or to is None:
-        raise ValueError("--from and --to must be provided together.")
+        raise CostQueryError("--from and --to must be provided together.")
     try:
         start, end = datetime.fromisoformat(from_), datetime.fromisoformat(to)
     except ValueError:
-        raise ValueError(
+        raise CostQueryError(
             "--from and --to must be ISO timestamps with a timezone."
         ) from None
     if start.utcoffset() is None or end.utcoffset() is None:
-        raise ValueError("--from and --to must include a timezone.")
+        raise CostQueryError("--from and --to must include a timezone.")
     if end <= start:
-        raise ValueError("--to must be later than --from.")
+        raise CostQueryError("--to must be later than --from.")
     return {"from": from_, "to": to}
 
 
@@ -30,7 +34,9 @@ def validate_group_by(group_by: str | None) -> None:
     if group_by is not None and group_by.startswith("tag:"):
         key = group_by[4:]
         if not 1 <= len(key) <= 64 or "\0" in key:
-            raise ValueError("Tag group keys must contain 1–64 characters and no NUL.")
+            raise CostQueryError(
+                "Tag group keys must contain 1–64 characters and no NUL."
+            )
 
 
 def cost_params(
@@ -69,7 +75,7 @@ def cost_params(
             params[name] = value
     if agent_run is not None:
         if len(agent_run) > 256:
-            raise ValueError("--agent-run must contain at most 256 characters.")
+            raise CostQueryError("--agent-run must contain at most 256 characters.")
         params[
             "agent_run_id"
             if re.fullmatch(r"run_[0-9a-f]{32}", agent_run)
@@ -78,10 +84,10 @@ def cost_params(
     for item in tag or []:
         key, sep, value = item.partition("=")
         if not sep or not 1 <= len(key) <= 64 or len(value) > 256 or "\0" in item:
-            raise ValueError(
+            raise CostQueryError(
                 "--tag requires key=value, key 1–64, value at most 256, and no NUL."
             )
         if f"tag.{key}" in params:
-            raise ValueError("Duplicate tag filter keys are not allowed.")
+            raise CostQueryError("Duplicate tag filter keys are not allowed.")
         params[f"tag.{key}"] = value
     return params

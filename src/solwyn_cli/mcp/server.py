@@ -29,6 +29,7 @@ from solwyn_cli.commands.budget import (
     request_budget_confirm,
     request_budget_status,
 )
+from solwyn_cli.commands._cost_filters import CostQueryError
 from solwyn_cli.commands.costs import (
     CostRange,
     CostsData,
@@ -300,6 +301,18 @@ def _operation_error(
     *,
     invalid_response_code: str,
 ) -> ResultT:
+    if isinstance(error, CostQueryError):
+        return _error(
+            result_type,
+            code="invalid_cost_query",
+            message="The cost query was invalid.",
+            hint=(
+                "Provide paired timezone-aware from_/to bounds with to later than from_; "
+                "use unique key=value tags with keys of 1–64 characters, values of at "
+                "most 256 characters and no NUL. Keep agent_run at most 256 characters; "
+                "tag:<key> uses the same key bounds."
+            ),
+        )
     if isinstance(error, ApiError):
         code = _normalized_remote_error_code(error)
         return _error(
