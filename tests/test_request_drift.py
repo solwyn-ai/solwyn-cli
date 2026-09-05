@@ -17,6 +17,7 @@ from solwyn_cli._vendor.wire import (
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
     RefreshRequest,
+    WebhookCreateRequest,
 )
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
@@ -29,6 +30,7 @@ REQUEST_MIRRORS = {
     RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
     ProjectKeyRotateRequest: "ProjectKeyRotateRequest",
+    WebhookCreateRequest: "WebhookCreateRequest",
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
@@ -43,6 +45,7 @@ DECLARED_DEFAULT_FIELDS = {
         "scope",
     ),
     "ProjectKeyRotateRequest": ("grace_seconds",),
+    "WebhookCreateRequest": ("events",),
 }
 # Optional request fields the API accepts that the CLI deliberately does not
 # send. Every entry is proven to exist and to be optional in the snapshot before
@@ -497,6 +500,28 @@ def assert_project_key_rotate_operation_request_binding(
     assert local.get("maximum") == remote.get("maximum") == 604800
 
 
+def assert_webhook_create_operation_request_binding(
+    snapshot: dict[str, Any],
+) -> None:
+    """Bind webhook creation to the exact open-ended request component."""
+    path = "/api/v1/projects/{project_id}/webhooks"
+    request_body = snapshot["paths"][path]["post"]["requestBody"]
+    assert request_body.get("required") is True
+    schema = request_body["content"]["application/json"]["schema"]
+    assert schema.get("$ref") == "#/components/schemas/WebhookCreateRequest"
+
+    local_properties = WebhookCreateRequest.model_json_schema()["properties"]
+    remote_properties = _schema(snapshot, "WebhookCreateRequest")["properties"]
+    local_url = local_properties["url"]
+    remote_url = remote_properties["url"]
+    assert local_url.get("format") == remote_url.get("format") == "uri"
+    assert local_url.get("minLength") == remote_url.get("minLength") == 1
+    assert local_url.get("maxLength") == remote_url.get("maxLength") == 2083
+    for events in (local_properties["events"], remote_properties["events"]):
+        assert "enum" not in events
+        assert "pattern" not in events
+
+
 def assert_budget_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
     """Bind budget mutation PUT to its exact required request component."""
     path = "/api/v1/projects/{project_id}/budget"
@@ -737,6 +762,35 @@ def test_project_create_operation_uses_required_request_component() -> None:
 
 def test_project_key_rotate_request_and_operation_match_snapshot() -> None:
     assert_project_key_rotate_operation_request_binding(_snapshot())
+
+
+def test_webhook_create_request_and_operation_match_snapshot() -> None:
+    snapshot = _snapshot()
+
+    assert_request_mirrors_match(snapshot)
+    assert_webhook_create_operation_request_binding(snapshot)
+
+
+@pytest.mark.parametrize("mutation", ["field", "default", "format", "binding"])
+def test_webhook_create_request_drift_trips_guard(mutation: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schema = mutated["components"]["schemas"]["WebhookCreateRequest"]
+    if mutation == "field":
+        schema["properties"]["event_types"] = schema["properties"].pop("events")
+    elif mutation == "default":
+        schema["properties"]["events"]["default"] = "budget_threshold"
+    elif mutation == "format":
+        schema["properties"]["url"]["format"] = "url"
+    else:
+        mutated["paths"]["/api/v1/projects/{project_id}/webhooks"]["post"][
+            "requestBody"
+        ]["content"]["application/json"]["schema"][
+            "$ref"
+        ] = "#/components/schemas/ProjectCreateRequest"
+
+    with pytest.raises(AssertionError):
+        assert_request_mirrors_match(mutated)
+        assert_webhook_create_operation_request_binding(mutated)
 
 
 @pytest.mark.parametrize("mutation", ["field", "default", "bounds", "binding"])

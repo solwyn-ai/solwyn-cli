@@ -170,6 +170,36 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.whoami.v1",
     },
+    ("webhooks",): {
+        "endpoint": "composite router for webhook target subcommands",
+        "auth": "JWT",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("webhooks", "create"): {
+        "endpoint": "POST /api/v1/projects/{project}/webhooks",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.webhooks-create.v1",
+    },
+    ("webhooks", "delete"): {
+        "endpoint": "DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
+    },
+    ("webhooks", "list"): {
+        "endpoint": "GET /api/v1/projects/{project}/webhooks",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.webhooks-list.v1",
+    },
+    ("webhooks", "rotate"): {
+        "endpoint": "POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.webhooks-rotate.v1",
+    },
 }
 
 _INIT_REMOTE_OPERATIONS = (
@@ -282,6 +312,24 @@ def test_auth_and_key_help_is_secret_safe() -> None:
     assert "Read project keys only from a hidden prompt or stdin" in login_help
     assert "never reveals existing key material" in keys_help
     assert "replacement key is shown exactly once" in keys_help
+
+
+def test_webhooks_help_pins_secret_and_delivery_contract() -> None:
+    rendered = " ".join(
+        _normalized_help(path)
+        for path in (
+            ("webhooks",),
+            ("webhooks", "list"),
+            ("webhooks", "create"),
+            ("webhooks", "rotate"),
+        )
+    )
+
+    assert "signing secret is shown exactly once" in rendered
+    assert "If the signing secret is lost, rotate the webhook" in rendered
+    assert "X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>" in rendered
+    assert "Idempotency-Key" in rendered
+    assert "No timestamp header or replay window is defined" in rendered
 
 
 def test_init_help_names_each_remote_and_local_operation() -> None:

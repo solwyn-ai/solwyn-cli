@@ -16,6 +16,7 @@ from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.status import STATUS_HELP, status
+from solwyn_cli.commands.webhooks import app as webhooks_app
 from solwyn_cli.commands.whoami import WHOAMI_HELP, whoami
 from solwyn_cli.config import ConfigLoadError
 from solwyn_cli.help import help_contract
@@ -44,6 +45,7 @@ app.add_typer(budget_app, name="budget")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
+app.add_typer(webhooks_app, name="webhooks")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
 app.command("costs", epilog=COSTS_HELP)(costs)
 app.command("init", epilog=INIT_HELP)(init)

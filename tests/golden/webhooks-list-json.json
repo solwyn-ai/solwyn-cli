@@ -1,0 +1,1 @@
+{"schema":"solwyn.webhooks-list.v1","webhooks":[{"id":"wh/alpha","url":"https://hooks.example.com/solwyn","events":"budget_threshold,future.delivery_ready","is_active":true,"secret_prefix":"a1b2c3d4...","created_at":"2026-08-31T14:30:00Z"}]}
