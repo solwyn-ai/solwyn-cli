@@ -2894,5 +2894,725 @@
     "annotations": null,
     "_meta": null,
     "execution": null
+  },
+  {
+    "name": "list_budget_rules",
+    "title": null,
+    "description": "Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "list_budget_rulesArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "BudgetMode": {
+          "description": "Budget enforcement mode.",
+          "enum": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "title": "BudgetMode",
+          "type": "string"
+        },
+        "BudgetRulesData": {
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "rules": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "budget_threshold": "#/$defs/_BudgetThresholdState",
+                    "daily_anomaly": "#/$defs/_DailyAnomalyState",
+                    "forecast_overrun": "#/$defs/_ForecastOverrunState",
+                    "runaway_run": "#/$defs/_RunawayRunState",
+                    "scoped_budget": "#/$defs/_ScopedBudgetState",
+                    "unit_cost_anomaly": "#/$defs/_UnitCostAnomalyState"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/_BudgetThresholdState"
+                  },
+                  {
+                    "$ref": "#/$defs/_ForecastOverrunState"
+                  },
+                  {
+                    "$ref": "#/$defs/_RunawayRunState"
+                  },
+                  {
+                    "$ref": "#/$defs/_DailyAnomalyState"
+                  },
+                  {
+                    "$ref": "#/$defs/_UnitCostAnomalyState"
+                  },
+                  {
+                    "$ref": "#/$defs/_ScopedBudgetState"
+                  }
+                ]
+              },
+              "title": "Rules",
+              "type": "array"
+            }
+          },
+          "required": [
+            "project_id",
+            "rules"
+          ],
+          "title": "BudgetRulesData",
+          "type": "object"
+        },
+        "_AlertRouting": {
+          "additionalProperties": false,
+          "properties": {
+            "will_send": {
+              "title": "Will Send",
+              "type": "boolean"
+            },
+            "email": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Email"
+            },
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/_RoutingChannel"
+              },
+              "title": "Channels",
+              "type": "array"
+            },
+            "source": {
+              "enum": [
+                "override",
+                "project_default",
+                "account_default"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "muted": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RoutingMuted"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "will_send",
+            "source"
+          ],
+          "title": "_AlertRouting",
+          "type": "object"
+        },
+        "_BudgetThresholdState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "budget_threshold",
+              "title": "Type",
+              "type": "string"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Percent",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "percent"
+          ],
+          "title": "_BudgetThresholdState",
+          "type": "object"
+        },
+        "_DailyAnomalyState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "daily_anomaly",
+              "title": "Type",
+              "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "multiplier"
+          ],
+          "title": "_DailyAnomalyState",
+          "type": "object"
+        },
+        "_ForecastOverrunState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "forecast_overrun",
+              "title": "Type",
+              "type": "string"
+            },
+            "spend_threshold_usd": {
+              "exclusiveMinimum": 0,
+              "title": "Spend Threshold Usd",
+              "type": "number"
+            },
+            "period": {
+              "const": "month",
+              "default": "month",
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "spend_threshold_usd"
+          ],
+          "title": "_ForecastOverrunState",
+          "type": "object"
+        },
+        "_RoutingChannel": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "title": "_RoutingChannel",
+          "type": "object"
+        },
+        "_RoutingMuted": {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "severity_floor",
+                "event_filter",
+                "email_off"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "severity_floor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Severity Floor"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "title": "_RoutingMuted",
+          "type": "object"
+        },
+        "_RunawayRunState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode",
+              "default": "alert_only"
+            },
+            "type": {
+              "const": "runaway_run",
+              "title": "Type",
+              "type": "string"
+            },
+            "spend_threshold_usd": {
+              "exclusiveMinimum": 0,
+              "maximum": 1999999.99,
+              "title": "Spend Threshold Usd",
+              "type": "number"
+            },
+            "call_threshold": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Threshold"
+            },
+            "window_minutes": {
+              "anyOf": [
+                {
+                  "maximum": 1440,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window Minutes"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "spend_threshold_usd"
+          ],
+          "title": "_RunawayRunState",
+          "type": "object"
+        },
+        "_ScopedBudgetState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "scoped_budget",
+              "title": "Type",
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "model",
+                "provider",
+                "agent_run",
+                "tag"
+              ],
+              "title": "Scope",
+              "type": "string"
+            },
+            "match_value": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Match Value"
+            },
+            "current_usage": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Usage"
+            },
+            "match": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Match",
+              "type": "string"
+            },
+            "limit": {
+              "exclusiveMinimum": 0,
+              "maximum": 999999.999999,
+              "title": "Limit",
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "scope",
+            "current_usage",
+            "match",
+            "limit",
+            "mode"
+          ],
+          "title": "_ScopedBudgetState",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        },
+        "_UnitCostAnomalyState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "unit_cost_anomaly",
+              "title": "Type",
+              "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "multiplier"
+          ],
+          "title": "_UnitCostAnomalyState",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.budget.rules.v1",
+          "default": "solwyn.budget.rules.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetRulesData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_BudgetRulesResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   }
 ]

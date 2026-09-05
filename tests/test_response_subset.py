@@ -62,6 +62,11 @@ RESPONSE_READS = {
     "EnforcementCapabilities": ("checks_per_minute",),
     "InvoiceSummary": ("hosted_url", "amount_due_cents", "period_end", "status"),
     "PendingPlan": ("tier", "billing_interval"),
+    "RuleActionResponse": ("rule_key", "paused", "deleted"),
+    "SnoozeResponse": ("snoozed_until",),
+    "AlertsPreviewResponse": ("results",),
+    "BudgetRestoreDefaultsResponse": ("project_id", "thresholds"),
+    "BudgetThresholdEntry": ("percent", "channel_ids", "snoozed_until"),
     "TokenResponse": ("access_token", "refresh_token", "token_type"),
     "Error402Response": (
         "detail.code",
@@ -338,6 +343,51 @@ OPERATION_RESPONSE_BINDINGS = {
         "CostTotalResponse",
     ),
     ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
+    ("DELETE", "/api/v1/projects/{project_id}/budget/rule/{rule_key}"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/pause"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/resume"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/snooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/threshold/{percent}/snooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/alerts/preview"): (
+        "200",
+        "object",
+        "AlertsPreviewResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/restore-defaults"): (
+        "200",
+        "object",
+        "BudgetRestoreDefaultsResponse",
+    ),
     ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
     ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
     ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),

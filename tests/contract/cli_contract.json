@@ -751,6 +751,662 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "restore-defaults",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "restore-defaults"
+      ],
+      "summary": "Restore threshold defaults, then read all retained rules."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "rule",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "rule"
+      ],
+      "summary": "Manage individual budget rules."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "add",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "budget_threshold",
+            "runaway_run",
+            "scoped_budget",
+            "forecast_overrun",
+            "daily_anomaly",
+            "unit_cost_anomaly"
+          ],
+          "cli_names": [
+            "--type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "kind",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "percent",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--spend"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "spend",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--calls"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "calls",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--window"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "window",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "model",
+            "provider",
+            "agent_run",
+            "tag"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--match"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "match",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--value"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "value",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--multiplier"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "multiplier",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--lookback"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "lookback",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channels",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "add"
+      ],
+      "summary": "Append a rule, preserving the complete project configuration."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "pause",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "pause"
+      ],
+      "summary": "Pause notifications and release rule enforcement."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_preview.v1",
+      "name": "preview",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channels",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "budget_threshold",
+            "runaway_run",
+            "scoped_budget",
+            "forecast_overrun",
+            "daily_anomaly",
+            "unit_cost_anomaly"
+          ],
+          "cli_names": [
+            "--type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "kind",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "percent",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--spend"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "spend",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--calls"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "calls",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--window"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "window",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "model",
+            "provider",
+            "agent_run",
+            "tag"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--match"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "match",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--value"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "value",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--multiplier"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "multiplier",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--lookback"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "lookback",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "preview"
+      ],
+      "summary": "Preview saved or draft rule routing without mutating configuration."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "remove",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "remove"
+      ],
+      "summary": "Remove a rule."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "resume",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "resume"
+      ],
+      "summary": "Resume notifications and rule enforcement."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "snooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--until"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "until",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "snooze"
+      ],
+      "summary": "Snooze notifications; hard-deny enforcement remains active."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "unsnooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "unsnooze"
+      ],
+      "summary": "Clear a rule's notification snooze."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "rules",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "rules"
+      ],
+      "summary": "Inspect budget rules."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "rules",
+        "list"
+      ],
+      "summary": "List conditions, routing, and separate paused and snoozed states."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.budget-set.v1",
       "name": "set",
       "output_kind": "json-envelope",
@@ -842,6 +1498,95 @@
         "status"
       ],
       "summary": "Read current project budget status without authorizing spend."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "threshold",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "threshold"
+      ],
+      "summary": "Snooze threshold notifications by percentage."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "snooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "percent",
+          "required": true,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--until"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "until",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "threshold",
+        "snooze"
+      ],
+      "summary": "Snooze a budget threshold's notifications."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "unsnooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "percent",
+          "required": true,
+          "type": "integer range"
+        }
+      ],
+      "path": [
+        "budget",
+        "threshold",
+        "unsnooze"
+      ],
+      "summary": "Clear a threshold's notification snooze."
     },
     {
       "hidden": false,
@@ -1877,6 +2622,20 @@
           "name": "agents",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--run-cap"
+          ],
+          "default": null,
+          "help": "Create a wildcard per-run hard cap after project creation; caps every run at min(caps). ",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_cap",
+          "required": false,
+          "type": "float"
         }
       ],
       "path": [
@@ -2304,6 +3063,42 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.budget-status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "deleted",
+        "paused",
+        "rule_key",
+        "schema",
+        "snoozed_until"
+      ],
+      "optional_keys": [
+        "deleted",
+        "paused",
+        "rule_key",
+        "snoozed_until"
+      ],
+      "schema": "solwyn.budget.rule_action.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "results",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget.rule_preview.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "project_id",
+        "rules",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget.rules.v1",
       "universal_error_envelope": false
     },
     {

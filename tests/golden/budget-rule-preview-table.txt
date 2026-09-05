@@ -1,0 +1,2 @@
+Rule key   Will send  Email  Channels  Source           Muted reason
+budget:80  false      —      —         project_default  email_off   

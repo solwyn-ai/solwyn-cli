@@ -117,3 +117,64 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 ## License
 
 Licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
+### Budget rules and per-run caps
+
+List rule conditions, routing, and separate pause/snooze state:
+
+```sh
+solwyn --project proj_example budget rules list
+solwyn --json --project proj_example budget rules list
+```
+
+Rule mutations require a user login with owner/admin permissions. Each rule may
+reference notification channels with repeatable `--channel ID` options:
+
+```sh
+solwyn budget rule add --type budget_threshold --percent 80
+solwyn budget rule add --type runaway_run --spend 5 --mode hard_deny
+solwyn budget rule add --type scoped_budget --scope tag --match env --value prod --limit 25 --mode hard_deny
+solwyn budget rule add --type forecast_overrun --spend 200
+solwyn budget rule add --type daily_anomaly --multiplier 2 --lookback 7
+solwyn budget rule add --type unit_cost_anomaly --multiplier 3
+```
+
+Runaway `--calls N` and `--window MIN` must be supplied together. Scoped caps also
+accept `--scope model|provider|agent_run`; `--value` is valid only for tag scope.
+The rule count limit includes all six types. Adding a rule preserves the complete
+budget configuration and re-reads it before writing. Core has no concurrency token,
+so this detects changes before the final write but cannot eliminate the remaining
+race. A 503 after a write triggers a read to confirm the complete configuration;
+an unconfirmed outcome requires reviewing the budget before retrying.
+
+```sh
+solwyn budget rule pause RULE_KEY
+solwyn budget rule resume RULE_KEY
+solwyn budget rule snooze RULE_KEY --until +2h
+solwyn budget rule unsnooze RULE_KEY
+solwyn budget rule remove RULE_KEY
+solwyn budget threshold snooze 80 --until 2026-12-01T12:00:00Z
+solwyn budget threshold unsnooze 80
+solwyn budget restore-defaults
+```
+
+Snooze accepts timezone-aware ISO datetimes or `+30m`, `+2h`, and `+1d` durations,
+which the CLI converts to absolute timestamps. **A snoozed hard-deny rule still
+denies; pause releases enforcement.** Rule keys are content-addressed: editing
+keyed condition fields changes the key. Restore-defaults preserves non-threshold
+rules, and the CLI re-reads and prints the full rule state afterward.
+
+Preview routing with a project key or user login, including an unsaved condition:
+
+```sh
+solwyn budget rule preview
+solwyn budget rule preview RULE_KEY --channel CHANNEL_ID
+solwyn budget rule preview --type runaway_run --spend 5 --mode hard_deny
+```
+
+During interactive project creation, `solwyn init --run-cap 5` adds a wildcard
+`runaway_run` rule with `hard_deny` immediately after creation. It caps every run at
+`min(caps)` when run identity is supplied; scoped run caps and wildcard caps share
+the strictest limit. For an existing project, use `budget rule add` instead.
+The default MCP surface includes the pure-read `list_budget_rules` tool; rule
+mutations remain CLI operations.

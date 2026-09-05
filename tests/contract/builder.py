@@ -67,7 +67,7 @@ EXIT_CODE_MEANINGS: dict[ExitCode, str] = {
     ),
 }
 
-_SCHEMA_TOKEN = re.compile(r"solwyn\.[a-z0-9.-]+\.v1")
+_SCHEMA_TOKEN = re.compile(r"solwyn\.[a-z0-9._-]+\.v1")
 _JSON_SCHEMA_LINE = re.compile(r"JSON schema:\s*(.+)")
 
 
