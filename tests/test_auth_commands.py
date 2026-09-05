@@ -562,6 +562,18 @@ def test_whoami_jwt_fetches_and_validates_identity_and_projects(
         ),
         httpx.Response(
             200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "team",
+                "alert_email_override": None,
+                "seat_limit": 5,
+                "seats_used": 3,
+                "your_role": "admin",
+            },
+        ),
+        httpx.Response(
+            200,
             json=[
                 {
                     "id": "proj_alpha",
@@ -590,6 +602,7 @@ def test_whoami_jwt_fetches_and_validates_identity_and_projects(
     assert client.credential is credential
     assert [(method, path) for method, path, _ in client.requests] == [
         ("GET", "/api/v1/account/me"),
+        ("GET", "/api/v1/accounts/me"),
         ("GET", "/api/v1/projects"),
     ]
     assert_matches_golden(result.stdout, GOLDEN_DIR / "whoami-jwt.json")
@@ -638,6 +651,18 @@ def test_whoami_jwt_table_matches_golden(
                 "display_name": "Person Example",
                 "subscription_tier": "team",
                 "alert_email_override": None,
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "team",
+                "alert_email_override": None,
+                "seat_limit": 5,
+                "seats_used": 3,
+                "your_role": "admin",
             },
         ),
         httpx.Response(
@@ -699,6 +724,18 @@ def test_whoami_production_tier(output_format, monkeypatch):
                 "email": "person@example.com",
                 "display_name": "Person Example",
                 "subscription_tier": "production",
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "production",
+                "alert_email_override": None,
+                "seat_limit": 2,
+                "seats_used": 1,
+                "your_role": "owner",
             },
         ),
         httpx.Response(200, json=[]),

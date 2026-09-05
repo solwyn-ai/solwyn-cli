@@ -10,9 +10,11 @@ from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import COSTS_HELP, costs
+from solwyn_cli.commands.doctor import DOCTOR_HELP, doctor
 from solwyn_cli.commands.init import INIT_HELP, init
 from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
 from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
+from solwyn_cli.commands.plan import PLAN_HELP, plan
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.status import STATUS_HELP, status
@@ -46,10 +48,12 @@ app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
 app.command("costs", epilog=COSTS_HELP)(costs)
+app.command("doctor", epilog=DOCTOR_HELP)(doctor)
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)
 app.command("mcp", epilog=MCP_HELP)(mcp)
+app.command("plan", epilog=PLAN_HELP)(plan)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 
@@ -109,6 +113,7 @@ def main(
             output_format=output_format,
             json_flag=json_output,
             no_color=no_color,
+            allow_config_error=context.invoked_subcommand == "doctor",
         )
     except OutputUsageError:
         raise typer.BadParameter(

@@ -993,6 +993,18 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.doctor.v1",
+      "name": "doctor",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "doctor"
+      ],
+      "summary": "Check local configuration, dependencies, credentials, and API metadata."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.init.v1",
       "name": "init",
       "output_kind": "json-envelope",
@@ -1166,6 +1178,18 @@
         "mcp"
       ],
       "summary": "Serve Solwyn tools over local MCP stdio."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.v1",
+      "name": "plan",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "plan"
+      ],
+      "summary": "Show the current plan, limits, and capabilities."
     },
     {
       "hidden": false,
@@ -1454,6 +1478,20 @@
     },
     {
       "keys": [
+        "authenticated_probe",
+        "config",
+        "keychain",
+        "readiness",
+        "schema",
+        "snapshot",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.doctor.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "code",
         "detail",
         "hint",
@@ -1538,6 +1576,20 @@
     },
     {
       "keys": [
+        "billing_interval",
+        "capabilities",
+        "cta_path",
+        "limits",
+        "schema",
+        "status",
+        "tier"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "budget_limit",
         "budget_mode",
         "budget_period",
@@ -1593,13 +1645,17 @@
     },
     {
       "keys": [
+        "account_id",
         "auth_source",
         "auth_type",
         "configured_project",
         "hint",
         "projects",
         "schema",
-        "user"
+        "seat_limit",
+        "seats_used",
+        "user",
+        "your_role"
       ],
       "optional_keys": [],
       "schema": "solwyn.whoami.v1",

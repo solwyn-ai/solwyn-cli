@@ -108,6 +108,44 @@ def test_unauthenticated_request_retries_429_once_then_raises_structured_error()
     assert exc_info.value.code == "rate_limited"
 
 
+def test_unauthenticated_request_rejects_503_unless_explicitly_accepted() -> None:
+    body = {"status": "degraded", "service": "solwyn-api", "checks": []}
+    transport = httpx.MockTransport(lambda request: httpx.Response(503, json=body))
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=None,
+        transport=transport,
+    ) as client:
+        with pytest.raises(ApiError) as exc_info:
+            client.request_unauthenticated("GET", "/health/ready")
+
+    assert exc_info.value.status_code == 503
+
+
+def test_unauthenticated_request_returns_explicitly_accepted_503_body() -> None:
+    body = {
+        "status": "degraded",
+        "service": "solwyn-api",
+        "checks": [{"name": "database", "status": "degraded"}],
+    }
+    transport = httpx.MockTransport(lambda request: httpx.Response(503, json=body))
+
+    with SolwynClient(
+        api_url=API_URL,
+        credential=None,
+        transport=transport,
+    ) as client:
+        response = client.request_unauthenticated(
+            "GET",
+            "/health/ready",
+            accepted_statuses=frozenset({503}),
+        )
+
+    assert response.status_code == 503
+    assert response.json() == body
+
+
 def test_context_manager_and_explicit_close_close_the_underlying_client() -> None:
     client = SolwynClient(
         api_url=API_URL,

@@ -14,6 +14,18 @@ from solwyn_cli.commands import budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "AccountSelfResponse": (
+        "id",
+        "display_name",
+        "subscription_tier",
+        "alert_email_override",
+        "seat_limit",
+        "seats_used",
+        "your_role",
+    ),
+    "HealthResponse": ("status", "service"),
+    "ReadinessCheck": ("name", "status", "detail"),
+    "ReadinessResponse": ("status", "service", "checks"),
     "SubscriptionStatusResponse": (
         "tier",
         "billing_interval",
@@ -250,6 +262,9 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/health"): ("200", "object", "HealthResponse"),
+    ("GET", "/health/ready"): ("200", "object", "ReadinessResponse"),
+    ("GET", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
     ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
     ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
@@ -300,6 +315,9 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "ProjectKeyRotateResponse",
     ),
+}
+INFORMATIVE_OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/health/ready"): ("503", "object", "ReadinessResponse"),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
@@ -532,11 +550,11 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
 def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
     """Validate every consumed success operation against its response component."""
     paths = snapshot["paths"]
-    for (method, path), (
-        status,
-        shape,
-        component,
-    ) in OPERATION_RESPONSE_BINDINGS.items():
+    bindings = [
+        *OPERATION_RESPONSE_BINDINGS.items(),
+        *INFORMATIVE_OPERATION_RESPONSE_BINDINGS.items(),
+    ]
+    for (method, path), (status, shape, component) in bindings:
         assert path in paths, f"{method} {path}: path is missing for {component}"
         method_key = method.lower()
         assert method_key in paths[path], (
@@ -656,6 +674,21 @@ def test_init_reuses_guarded_project_login_and_budget_response_operations() -> N
 
 def test_every_consumed_success_operation_returns_its_response_component() -> None:
     assert_operation_response_bindings(_snapshot())
+
+
+def test_readiness_503_remains_an_informative_typed_response() -> None:
+    assert INFORMATIVE_OPERATION_RESPONSE_BINDINGS[("GET", "/health/ready")] == (
+        "503",
+        "object",
+        "ReadinessResponse",
+    )
+    mutated = copy.deepcopy(_snapshot())
+    mutated["paths"]["/health/ready"]["get"]["responses"]["503"]["content"][
+        "application/json"
+    ]["schema"]["$ref"] = "#/components/schemas/UnrelatedResponse"
+
+    with pytest.raises(AssertionError, match=r"GET /health/ready.*ReadinessResponse"):
+        assert_operation_response_bindings(mutated)
 
 
 def test_every_consumed_no_content_operation_is_bodyless() -> None:

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 import typer
 from pydantic import BaseModel, ConfigDict
 
-from solwyn_cli.config import Config, load_config
+from solwyn_cli.config import Config, ConfigLoadError, load_config
 from solwyn_cli.output import OutputEngine, OutputFormat, resolve_output_format
 
 
@@ -30,11 +30,17 @@ def resolve_command_context(
     output_format: str | None,
     json_flag: bool,
     no_color: bool,
+    allow_config_error: bool = False,
     environ: Mapping[str, str] | None = None,
 ) -> CommandContext:
     """Resolve CLI, environment, config, and default precedence."""
     environment = os.environ if environ is None else environ
-    config = load_config()
+    try:
+        config = load_config()
+    except ConfigLoadError:
+        if not allow_config_error:
+            raise
+        config = Config()
     resolved_api_url = api_url or environment.get("SOLWYN_API_URL") or config.api_url
     validated_url = Config(api_url=resolved_api_url).api_url
     return CommandContext(
