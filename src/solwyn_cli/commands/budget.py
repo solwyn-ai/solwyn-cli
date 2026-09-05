@@ -273,6 +273,11 @@ class _BudgetCheckData(BaseModel):
     )
     project_id: str
     price_hints: dict[ProviderName, FiniteFloat] | None = None
+    run_control: "_RunControlDirective | None" = None
+    reason: Literal["run_terminated"] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
     @model_validator(mode="after")
     def validate_guardrail_outcome(self) -> "_BudgetCheckData":
@@ -283,7 +288,20 @@ class _BudgetCheckData(BaseModel):
             raise ValueError("Only hard-deny mode can deny a check")
         if self.allowed and self.denied_by_period is not None:
             raise ValueError("Allowed checks cannot carry a denial period")
+        if self.run_control is not None and (
+            self.allowed or self.denied_by_period != "run_stopped"
+        ):
+            raise ValueError("Run-control directives require a stopped-run denial")
         return self
+
+
+class _RunControlDirective(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    version: Literal["1"]
+    action: Literal["terminate"]
+    agent_run_id: Annotated[str, Field(max_length=256)]
+    reason: Literal["manual_kill"]
 
 
 class _BudgetConfirmData(BaseModel):
@@ -312,7 +330,17 @@ def request_budget_check(
         # that do not opt in keep posting the exact body they post today.
         json=request.model_dump(mode="json", exclude_none=True),
     )
-    return _BudgetCheckData.model_validate(response.json())
+    data = _BudgetCheckData.model_validate(response.json())
+    if request.run_directive_version is not None:
+        if data.denied_by_period == "run_stopped":
+            if data.run_control is None:
+                raise ValueError("Stopped-run denial omitted the requested directive")
+            if data.run_control.agent_run_id != request.agent_run_id:
+                raise ValueError("Run-control directive did not echo the requested run")
+            data = data.model_copy(update={"reason": "run_terminated"})
+        elif data.run_control is not None:
+            raise ValueError("Unexpected run-control directive")
+    return data
 
 
 def request_budget_confirm(
@@ -467,6 +495,16 @@ def _check_table(data: _BudgetCheckData) -> TableData:
             (
                 "Denied by period",
                 data.denied_by_period or "-",
+            ),
+            *(
+                (
+                    (
+                        "Reason",
+                        "run stopped by an operator — do not retry under a new run id",
+                    ),
+                )
+                if data.reason == "run_terminated"
+                else ()
             ),
         ),
         right_align=("Value",),
@@ -799,6 +837,7 @@ def check(
         )
         request = BudgetCheckRequest(
             price_hints_version="1",
+            run_directive_version="1" if agent_run_id is not None else None,
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,

@@ -1,1 +1,1 @@
-{"schema":"solwyn.budget-check.v1","allowed":true,"remaining_budget":81.25,"reservation_id":null,"mode":"hard_deny","budget_limit":100.0,"current_usage":18.75,"denied_by_period":null,"project_id":"proj_from_key","price_hints":{"openai":1.0,"anthropic":1.15}}
+{"schema":"solwyn.budget-check.v1","allowed":true,"remaining_budget":81.25,"reservation_id":null,"mode":"hard_deny","budget_limit":100.0,"current_usage":18.75,"denied_by_period":null,"project_id":"proj_from_key","price_hints":{"openai":1.0,"anthropic":1.15},"run_control":null}

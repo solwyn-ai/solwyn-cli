@@ -53,6 +53,7 @@ from solwyn_cli._vendor.wire import (
             {
                 "price_hints_version",
                 "tags",
+                "run_directive_version",
                 "estimated_input_tokens",
                 "model",
                 "provider",

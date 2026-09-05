@@ -25,6 +25,7 @@ from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.providers import app as providers_app
 from solwyn_cli.commands.record import RECORD_HELP, record
 from solwyn_cli.commands.tags import app as tags_app
+from solwyn_cli.commands.runs import app as runs_app
 from solwyn_cli.commands.status import STATUS_HELP, status
 from solwyn_cli.commands.webhooks import app as webhooks_app
 from solwyn_cli.commands.whoami import WHOAMI_HELP, whoami
@@ -61,6 +62,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
 app.add_typer(webhooks_app, name="webhooks")
+app.add_typer(runs_app, name="runs")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
 app.add_typer(costs_app, name="costs")
 app.add_typer(providers_app, name="providers")

@@ -4411,6 +4411,213 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "runs",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "runs"
+      ],
+      "summary": "Inspect and control project agent runs."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.runs.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Listing window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Lower-inclusive RFC 3339 custom bound.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Upper-exclusive RFC 3339 custom bound.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--q"
+          ],
+          "default": null,
+          "help": "Case-insensitive literal name substring.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "query",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--parent"
+          ],
+          "default": null,
+          "help": "Raw or storage parent run ID.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "parent",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "last_seen_at",
+            "total_cost",
+            "total_calls"
+          ],
+          "cli_names": [
+            "--sort"
+          ],
+          "default": "last_seen_at",
+          "help": "Descending sort key.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "sort",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": 25,
+          "help": "Runs per page.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": "Opaque next-page cursor.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "runs",
+        "list"
+      ],
+      "summary": "List recent project agent runs."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.runs.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "run"
+          ],
+          "default": null,
+          "help": "Storage ID or exact run name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "runs",
+        "show"
+      ],
+      "summary": "Show one project agent run."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.runs.stop.v1",
+      "name": "stop",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "run"
+          ],
+          "default": null,
+          "help": "Storage ID or exact run name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "runs",
+        "stop"
+      ],
+      "summary": "Stop future work for one project agent run."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.status.v1",
       "name": "status",
@@ -4765,13 +4972,16 @@
         "mode",
         "price_hints",
         "project_id",
+        "reason",
         "recorded",
         "remaining_budget",
         "reservation_id",
+        "run_control",
         "schema"
       ],
       "optional_keys": [
         "call_id",
+        "reason",
         "recorded"
       ],
       "schema": "solwyn.budget-check.v1",
@@ -5189,6 +5399,68 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.record.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "already_stopped",
+        "enforcement_deadline",
+        "leases_revoked",
+        "project_id",
+        "run_id",
+        "run_name",
+        "schema",
+        "stopped_at"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.runs.stop.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "has_more",
+        "id",
+        "last_seen_at",
+        "name",
+        "next_cursor",
+        "parent_run_id",
+        "project_id",
+        "runs",
+        "schema",
+        "started_at",
+        "stoppable",
+        "stopped_at",
+        "stopped_by_user_id",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "window"
+      ],
+      "optional_keys": [
+        "has_more",
+        "id",
+        "last_seen_at",
+        "name",
+        "next_cursor",
+        "parent_run_id",
+        "project_id",
+        "runs",
+        "started_at",
+        "stoppable",
+        "stopped_at",
+        "stopped_by_user_id",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "window"
+      ],
+      "schema": "solwyn.runs.v1",
       "universal_error_envelope": false
     },
     {

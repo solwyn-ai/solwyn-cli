@@ -1314,6 +1314,30 @@
               ],
               "default": null,
               "title": "Price Hints"
+            },
+            "run_control": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RunControlDirective"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "const": "run_terminated",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
             }
           },
           "required": [
@@ -1325,6 +1349,39 @@
             "project_id"
           ],
           "title": "_BudgetCheckData",
+          "type": "object"
+        },
+        "_RunControlDirective": {
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": "1",
+              "title": "Version",
+              "type": "string"
+            },
+            "action": {
+              "const": "terminate",
+              "title": "Action",
+              "type": "string"
+            },
+            "agent_run_id": {
+              "maxLength": 256,
+              "title": "Agent Run Id",
+              "type": "string"
+            },
+            "reason": {
+              "const": "manual_kill",
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "action",
+            "agent_run_id",
+            "reason"
+          ],
+          "title": "_RunControlDirective",
           "type": "object"
         },
         "_ToolError": {
@@ -5260,6 +5317,662 @@
         "ok"
       ],
       "title": "_TagValuesResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_agent_runs",
+    "title": null,
+    "description": "List project agent runs. Costs are lifetime totals; the window only selects which runs qualify. Accepts a project key or login.",
+    "inputSchema": {
+      "$defs": {
+        "RunRange": {
+          "description": "Preset agent-run listing windows.",
+          "enum": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "title": "RunRange",
+          "type": "string"
+        },
+        "RunSort": {
+          "description": "Server-supported descending run sort keys.",
+          "enum": [
+            "last_seen_at",
+            "total_cost",
+            "total_calls"
+          ],
+          "title": "RunSort",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "time_range": {
+          "$ref": "#/$defs/RunRange",
+          "default": "7d"
+        },
+        "from_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Time"
+        },
+        "to_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Time"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent"
+        },
+        "sort": {
+          "$ref": "#/$defs/RunSort",
+          "default": "last_seen_at"
+        },
+        "limit": {
+          "default": 25,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "list_agent_runsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "_AgentRunEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^run_[0-9a-f]{32}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "parent_run_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Run Id"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_denied_cost": {
+              "title": "Total Denied Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "velocity_flags": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Velocity Flags"
+            },
+            "stopped_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped At"
+            },
+            "stopped_by_user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped By User Id"
+            },
+            "stoppable": {
+              "title": "Stoppable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "parent_run_id",
+            "project_id",
+            "started_at",
+            "last_seen_at",
+            "total_calls",
+            "total_cost",
+            "total_denied_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "velocity_flags",
+            "stopped_at",
+            "stopped_by_user_id",
+            "stoppable"
+          ],
+          "title": "_AgentRunEntry",
+          "type": "object"
+        },
+        "_AgentRunListData": {
+          "additionalProperties": false,
+          "properties": {
+            "runs": {
+              "items": {
+                "$ref": "#/$defs/_AgentRunEntry"
+              },
+              "title": "Runs",
+              "type": "array"
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Next Cursor"
+            },
+            "has_more": {
+              "title": "Has More",
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/$defs/_CostWindow"
+            }
+          },
+          "required": [
+            "runs",
+            "next_cursor",
+            "has_more",
+            "window"
+          ],
+          "title": "_AgentRunListData",
+          "type": "object"
+        },
+        "_CostWindow": {
+          "additionalProperties": false,
+          "properties": {
+            "requested_from": {
+              "format": "date-time",
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "format": "date-time",
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "format": "date-time",
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "format": "date-time",
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "_CostWindow",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.agent-runs.v1",
+          "default": "solwyn.mcp.agent-runs.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_AgentRunListData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_AgentRunsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_agent_run",
+    "title": null,
+    "description": "Read one agent run by storage ID or exact raw run name. Accepts a project key or login.",
+    "inputSchema": {
+      "properties": {
+        "run": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Run",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "title": "get_agent_run_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "_AgentRunEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^run_[0-9a-f]{32}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "parent_run_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Run Id"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_denied_cost": {
+              "title": "Total Denied Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "velocity_flags": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Velocity Flags"
+            },
+            "stopped_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped At"
+            },
+            "stopped_by_user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped By User Id"
+            },
+            "stoppable": {
+              "title": "Stoppable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "parent_run_id",
+            "project_id",
+            "started_at",
+            "last_seen_at",
+            "total_calls",
+            "total_cost",
+            "total_denied_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "velocity_flags",
+            "stopped_at",
+            "stopped_by_user_id",
+            "stoppable"
+          ],
+          "title": "_AgentRunEntry",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.agent-run.v1",
+          "default": "solwyn.mcp.agent-run.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_AgentRunEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_AgentRunResult",
       "type": "object"
     },
     "icons": null,

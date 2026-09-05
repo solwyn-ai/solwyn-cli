@@ -412,6 +412,30 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.providers.untracked.v1",
     },
+    ("runs",): {
+        "endpoint": "composite router for agent-run subcommands",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("runs", "list"): {
+        "endpoint": "GET /api/v1/projects/{project}/agent-runs",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.runs.v1",
+    },
+    ("runs", "show"): {
+        "endpoint": "GET /api/v1/projects/{project}/agent-runs then GET /api/v1/projects/{project}/agent-runs/{run_id}",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.runs.v1",
+    },
+    ("runs", "stop"): {
+        "endpoint": "optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop",
+        "auth": "JWT + budget.write",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.runs.stop.v1",
+    },
     ("status",): {
         "endpoint": "GET /api/v1/projects/{project}/budget and GET "
         "/api/v1/projects/{project}/providers; optionally GET "
@@ -580,13 +604,13 @@ def test_budget_help_preserves_guardrail_semantics() -> None:
     assert "Poll with status, never check" in status_help
 
 
-def test_mcp_help_names_the_exact_seven_tool_surface() -> None:
+def test_mcp_help_names_the_exact_tool_surface() -> None:
     rendered = _normalized_help(("mcp",))
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
         "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
-        "record_call, list_tags, list_tag_values."
+        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run."
     ) in rendered
 
 
