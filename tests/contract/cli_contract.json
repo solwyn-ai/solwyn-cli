@@ -222,7 +222,7 @@
           "min": 0,
           "multiple": false,
           "name": "estimated_input_tokens",
-          "required": true,
+          "required": false,
           "type": "integer range"
         },
         {
@@ -236,7 +236,7 @@
           "kind": "option",
           "multiple": false,
           "name": "model",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -271,7 +271,7 @@
           "kind": "option",
           "multiple": false,
           "name": "provider",
-          "required": true,
+          "required": false,
           "type": "choice"
         },
         {
@@ -502,6 +502,20 @@
           "name": "is_estimated",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--batch"
+          ],
+          "default": null,
+          "help": "JSON array of check bodies from FILE or - for stdin; chunked at 32.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "batch",
+          "required": false,
+          "type": "text"
         }
       ],
       "path": [

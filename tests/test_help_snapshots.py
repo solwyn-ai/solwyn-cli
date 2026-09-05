@@ -249,11 +249,10 @@ HELP_CONTRACTS = {
         "schema": "varies by subcommand",
     },
     ("budget", "check"): {
-        "endpoint": "POST /api/v1/budgets/check",
+        "endpoint": "POST /api/v1/budgets/check; POST /api/v1/budgets/check/batch (--batch)",
         "auth": "key",
-        "exits": "0 allowed or fail-open; 1 generic/API; 2 usage; 3 "
-        "auth; 4 budget denial",
-        "schema": "solwyn.budget-check.v1",
+        "exits": "0 allowed or fail-open; 1 generic/API or item error; 2 usage; 3 auth; 4 budget denial; 5 not found",
+        "schema": "solwyn.budget-check.v1; solwyn.budget.check.batch.v1 (--batch)",
     },
     ("budget", "confirm"): {
         "endpoint": "POST /api/v1/budgets/confirm",
@@ -610,7 +609,7 @@ def test_mcp_help_names_the_exact_tool_surface() -> None:
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
         "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
-        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run."
+        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, budget_check_batch."
     ) in rendered
 
 

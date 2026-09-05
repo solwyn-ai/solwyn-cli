@@ -308,6 +308,8 @@ RESPONSE_READS = {
     # failover_directive is deliberately unread — declined: it is only attached
     # when a request opts in via failover_directive_version, which the CLI does
     # not send (see the request-side registry in test_request_drift.py).
+    "BudgetCheckBatchResponse": ("results",),
+    "BudgetCheckBatchItem": ("result", "error_code", "error_message"),
     "BudgetCheckResponse": (
         "allowed",
         "remaining_budget",
@@ -641,6 +643,11 @@ OPERATION_RESPONSE_BINDINGS = {
         "200",
         "object",
         "BudgetStatusResponse",
+    ),
+    ("POST", "/api/v1/budgets/check/batch"): (
+        "200",
+        "object",
+        "BudgetCheckBatchResponse",
     ),
     ("POST", "/api/v1/budgets/check"): (
         "200",

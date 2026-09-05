@@ -140,6 +140,35 @@ and enforcement work on every tier; discovery is account-scoped and requires Tea
 `tags values KEY --prefix Q` pages through values; retiring a key frees an active
 key slot, and later successful ingest may reactivate it.
 
+## Batch budget checks
+
+`solwyn budget check --batch checks.json --json` reads a nonempty JSON array of
+check bodies; use `--batch -` for stdin. For example:
+
+```json
+[{"model":"gpt-4o","provider":"openai","estimated_input_tokens":1200,"agent_run_id":"job-42","tags":{"environment":"prod"}}]
+```
+
+All bodies validate before submission. Requests contain at most 32 checks, preserve
+input order, and count every item against `checks_per_minute`. Each allowed item
+normally holds its own reservation: confirm it after its provider call. A fail-open
+item has a null reservation and must not be confirmed. Do not poll or repeat checks
+to refresh reservations. Denied items record one receipt each unless `--no-record`
+is set, sharing a fresh invocation ID. `--estimated-output-tokens` applies the same
+savings upper bound to every denial. Put all other per-check options in the JSON;
+missing tags and run IDs inherit `SOLWYN_TAGS` and `SOLWYN_AGENT_RUN_ID`. Explicit
+nulls suppress these defaults. A run ID opts into termination directives.
+
+The `solwyn.budget.check.batch.v1` payload has index-aligned `results`: each contains
+either a nullable `result`, or `error_code` and `error_message`. Unknown models are
+per-item errors. All allowed exits 0, any denial exits 4, and errors without a denial
+exit 1. A request-level 404 or 503 fails the chunk. If an earlier chunk completed,
+its results and reservation IDs remain in output, alongside `failed_chunk_start`
+and `total_checks`; later chunks were not submitted. Reservation state inside a
+503-failed chunk is unknown. Do not replay completed checks or assume rollback.
+The matching MCP tool is `budget_check_batch`, including the same validation,
+chunking, recording and partial-failure behavior.
+
 ## Trust posture
 
 Solwyn CLI:

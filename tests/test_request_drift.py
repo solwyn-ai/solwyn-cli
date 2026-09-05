@@ -19,6 +19,7 @@ from solwyn_cli._vendor.notification_wire import (
 )
 from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
+    BudgetCheckBatchRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
     LoginRequest,
@@ -55,6 +56,7 @@ REQUEST_MIRRORS = {
     SnoozeRequest: "SnoozeRequest",
     ProjectAlertsPreviewRequest: "ProjectAlertsPreviewRequest",
     IngestMetadataEvent: "IngestMetadataEvent",
+    BudgetCheckBatchRequest: "BudgetCheckBatchRequest",
 }
 DECLARED_DEFAULT_FIELDS = {
     "ProjectCreateRequest": (
@@ -1476,3 +1478,13 @@ def test_reservation_funding_specialization_still_guards_core_shape(mutation):
         confirm["properties"].pop("reservation_id")
     with pytest.raises(AssertionError, match="BudgetConfirmRequest.reservation_id"):
         assert_request_mirrors_match(snapshot)
+
+
+def test_budget_batch_request_operation_and_limits():
+    snapshot = _snapshot()
+    body = snapshot["paths"]["/api/v1/budgets/check/batch"]["post"]["requestBody"]
+    assert body["required"] is True
+    assert body["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BudgetCheckBatchRequest"
+    }
+    assert REQUEST_MIRRORS[BudgetCheckBatchRequest] == "BudgetCheckBatchRequest"

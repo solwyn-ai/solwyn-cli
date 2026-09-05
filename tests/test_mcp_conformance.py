@@ -37,6 +37,7 @@ TOOL_NAMES = [
     "list_tag_values",
     "list_agent_runs",
     "get_agent_run",
+    "budget_check_batch",
 ]
 
 BUDGET_RESPONSE = {
@@ -626,6 +627,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "cursor",
                 },
                 {"run", "project_id"},
+                {"checks", "no_record", "estimated_output_tokens"},
             ]
 
             calls = [
