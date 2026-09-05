@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import providers as providers_module
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import ApiError, error_from_response
 from solwyn_cli.main import app
 
 
@@ -380,3 +380,38 @@ def test_provider_failovers_fails_closed_on_extended_response(
     assert result.exit_code == 1
     assert json.loads(result.stderr)["code"] == "invalid_provider_failovers_response"
     assert result.stdout == ""
+
+
+def test_provider_cross_project_key_403_has_an_actionable_project_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = _key()
+    monkeypatch.setattr(
+        providers_module, "resolve_credential", lambda: credential, raising=False
+    )
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(
+                403,
+                json={"detail": "Cannot access a different project"},
+            )
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "-p", "proj_other", "providers", "failovers"],
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "http_error"
+    assert error["message"] == "Cannot access a different project"
+    assert error["detail"] == "Cannot access a different project"
+    assert error["hint"] == (
+        "Select the project associated with this key, or configure a key "
+        "for the selected project."
+    )
+    assert VALID_KEY not in result.stderr + repr(result.exception)

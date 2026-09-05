@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import forecast as forecast_module
+from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
 
 
@@ -172,3 +173,35 @@ def test_forecast_invalid_or_extended_payload_fails_closed_without_secrets(
     rendered = result.stderr + repr(result.exception)
     assert ACCESS_TOKEN not in rendered
     assert REFRESH_TOKEN not in rendered
+
+
+def test_forecast_cross_project_key_403_has_an_actionable_project_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    monkeypatch.setattr(
+        forecast_module, "resolve_credential", lambda: credential, raising=False
+    )
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(
+                403,
+                json={"detail": "Cannot access forecast for a different project"},
+            )
+        )
+    ]
+
+    result = runner.invoke(app, ["--json", "-p", "proj_other", "forecast"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["schema"] == "solwyn.error.v1"
+    assert error["code"] == "http_error"
+    assert error["message"] == "Cannot access forecast for a different project"
+    assert error["detail"] == "Cannot access forecast for a different project"
+    assert error["hint"] == (
+        "Select the project associated with this key, or configure a key "
+        "for the selected project."
+    )
+    assert VALID_KEY not in result.stderr + repr(result.exception)
