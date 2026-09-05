@@ -98,6 +98,88 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "account",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "account"
+      ],
+      "summary": "Manage account settings."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "alert-email",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "account",
+        "alert-email"
+      ],
+      "summary": "Manage the account-wide alert-email override."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.alert-email.v1",
+      "name": "clear",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "alert-email",
+        "clear"
+      ],
+      "summary": "Remove the override and use the login email again (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.alert-email.v1",
+      "name": "set",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "email"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "email",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "account",
+        "alert-email",
+        "set"
+      ],
+      "summary": "Set the account-wide alert destination (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.alert-email.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "alert-email",
+        "show"
+      ],
+      "summary": "Show the override and effective alert destination."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": null,
       "name": "agent-context",
@@ -1592,6 +1674,346 @@
       "hidden": false,
       "is_group": true,
       "json_schema": null,
+      "name": "channels",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "channels"
+      ],
+      "summary": "Manage reusable account notification channels."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.v1",
+      "name": "create",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "slack",
+            "pagerduty",
+            "teams",
+            "discord",
+            "telegram"
+          ],
+          "cli_names": [
+            "--type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_type",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--secret-stdin"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--config-stdin"
+          ],
+          "default": false,
+          "help": "Read the type-specific config JSON object from stdin, including any optional secrets.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "config_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--secret-field"
+          ],
+          "default": null,
+          "help": "Secret field name only; defaults to the type's primary secret.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_field",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": "Slack destination ID for bot-token mode.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--chat-id"
+          ],
+          "default": null,
+          "help": "Telegram destination ID.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "chat_id",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "create"
+      ],
+      "summary": "Create an owner-managed channel using stdin or environment credentials."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.delete.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "delete"
+      ],
+      "summary": "Delete a channel and remove its project and rule routing references."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "channels",
+        "list"
+      ],
+      "summary": "List account channels with masked credentials."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "show"
+      ],
+      "summary": "Show a channel; secret fields retain only their final four characters."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.test.v1",
+      "name": "test",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "test"
+      ],
+      "summary": "Send a test through a stored channel (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.v1",
+      "name": "update",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--secret-stdin"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--config-stdin"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "config_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--secret-field"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_field",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--chat-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "chat_id",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "update"
+      ],
+      "summary": "Update selected fields; Core retains masked secret values on write-back."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
       "name": "config",
       "output_kind": "plain-text",
       "params": [],
@@ -2797,6 +3219,229 @@
       "hidden": false,
       "is_group": true,
       "json_schema": null,
+      "name": "notifications",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "notifications"
+      ],
+      "summary": "Manage project notification routing."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.notifications.v1",
+      "name": "set",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": "Channel ID; repeat to replace the reference list.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--clear-channels"
+          ],
+          "default": false,
+          "help": "Remove every channel reference.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "clear_channels",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "choices": [
+            "info",
+            "low",
+            "warning",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "cli_names": [
+            "--severity"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "severity",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--event"
+          ],
+          "default": null,
+          "help": "Event type; repeat. Core accepts future event names.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "event",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all-events"
+          ],
+          "default": false,
+          "help": "Allow all event types.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_events",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--email",
+            "--no-email"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "email",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--sms",
+            "--no-sms"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "sms",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--reset-email"
+          ],
+          "default": false,
+          "help": "Reset email to its enabled default.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "reset_email",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--reset-sms"
+          ],
+          "default": false,
+          "help": "Reset SMS to its disabled default.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "reset_sms",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "notifications",
+        "set"
+      ],
+      "summary": "Change only the notification settings explicitly selected."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.notifications.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "notifications",
+        "show"
+      ],
+      "summary": "Show routing, delivery preferences and tier capabilities."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.notifications.test.v1",
+      "name": "test",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "slack",
+            "pagerduty",
+            "sms",
+            "email"
+          ],
+          "cli_names": [
+            "channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--secret-stdin"
+          ],
+          "default": false,
+          "help": "Read Slack webhook URL or PagerDuty routing key from stdin.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_stdin",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "notifications",
+        "test"
+      ],
+      "summary": "Test delivery or SMS eligibility; failure exits 1, including HTTP 200 failures."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
       "name": "projects",
       "output_kind": "varies-by-subcommand",
       "params": [],
@@ -3003,6 +3648,16 @@
   "json_schemas": [
     {
       "keys": [
+        "effective_email",
+        "override",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.account.alert-email.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "allowed",
         "budget_limit",
         "current_usage",
@@ -3099,6 +3754,54 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.budget.rules.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "deleted",
+        "id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.delete.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "channels",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "message",
+        "schema",
+        "success"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.test.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "channel_type",
+        "created_at",
+        "discord_config",
+        "id",
+        "name",
+        "pagerduty_config",
+        "schema",
+        "slack_config",
+        "teams_config",
+        "telegram_config",
+        "updated_at"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.v1",
       "universal_error_envelope": false
     },
     {
@@ -3226,6 +3929,31 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.logout.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "message",
+        "schema",
+        "success"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.notifications.test.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "capabilities",
+        "channel_ids",
+        "channels",
+        "email",
+        "enabled_event_types",
+        "schema",
+        "severity_threshold",
+        "sms_config"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.notifications.v1",
       "universal_error_envelope": false
     },
     {

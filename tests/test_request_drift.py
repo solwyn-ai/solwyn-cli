@@ -9,6 +9,14 @@ from typing import Any
 
 import pytest
 
+from solwyn_cli._vendor.notification_wire import (
+    NotificationConfigUpdate,
+    NotificationChannelCreate,
+    NotificationChannelUpdate,
+    AlertEmailUpdate,
+    SlackTestRequest,
+    PagerDutyTestRequest,
+)
 from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
     BudgetConfirmRequest,
@@ -27,6 +35,12 @@ from solwyn_cli.commands.costs import CostRange
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 REQUEST_MIRRORS = {
+    NotificationConfigUpdate: "NotificationConfigUpdate",
+    NotificationChannelCreate: "NotificationChannelCreate",
+    NotificationChannelUpdate: "NotificationChannelUpdate",
+    AlertEmailUpdate: "AlertEmailUpdate",
+    SlackTestRequest: "SlackTestRequest",
+    PagerDutyTestRequest: "PagerDutyTestRequest",
     LoginRequest: "LoginRequest",
     RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
