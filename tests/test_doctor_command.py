@@ -255,6 +255,91 @@ def test_doctor_reports_malformed_config_instead_of_failing_in_root_callback(
     assert "unterminated-sensitive-value" not in rendered
 
 
+def test_doctor_malformed_config_never_sends_stored_credential_to_fallback_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
+    monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
+    credential = auth.JwtCredential(
+        access_token="access-secret", refresh_token="refresh-secret"
+    )
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    FakeClient.responses = [_ready_response()]
+
+    result = runner.invoke(
+        app,
+        ["--json", "doctor"],
+        env={"SOLWYN_API_URL": ""},
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr == ""
+    payload = json.loads(result.stdout)
+    assert payload["config"]["status"] == "error"
+    assert payload["authenticated_probe"] == {
+        "status": "skipped",
+        "credential_type": "jwt",
+        "endpoint": None,
+        "detail": (
+            "Authenticated probe skipped because the API endpoint could not be "
+            "loaded; provide --api-url or SOLWYN_API_URL."
+        ),
+    }
+    client = FakeClient.instances[0]
+    assert client.credential is None
+    assert [request[1] for request in client.requests] == ["/health/ready"]
+    assert "access-secret" not in result.stdout + result.stderr
+    assert "refresh-secret" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("global_args", "environment", "expected_url"),
+    [
+        (["--api-url", "https://explicit.example"], {}, "https://explicit.example"),
+        (
+            [],
+            {"SOLWYN_API_URL": "https://environment.example"},
+            "https://environment.example",
+        ),
+    ],
+)
+def test_doctor_malformed_config_uses_validated_override_for_authenticated_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    global_args: list[str],
+    environment: dict[str, str],
+    expected_url: str,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
+    monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
+    credential = auth.JwtCredential(
+        access_token="access-secret", refresh_token="refresh-secret"
+    )
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    FakeClient.responses = [
+        _ready_response(),
+        httpx.Response(200, json={"user_id": "user_123"}),
+    ]
+
+    result = runner.invoke(app, [*global_args, "--json", "doctor"], env=environment)
+
+    assert result.exit_code == 1
+    assert result.stderr == ""
+    payload = json.loads(result.stdout)
+    assert payload["config"]["status"] == "error"
+    assert payload["authenticated_probe"]["status"] == "ok"
+    client = FakeClient.instances[0]
+    assert client.api_url == expected_url
+    assert client.credential is credential
+    assert [request[1] for request in client.requests] == [
+        "/health/ready",
+        "/api/v1/account/me",
+    ]
+
+
 def test_snapshot_diagnostic_marks_old_or_unpinned_snapshot_degraded() -> None:
     result = doctor_module._snapshot_diagnostic(
         {

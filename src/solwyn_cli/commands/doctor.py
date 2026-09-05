@@ -242,7 +242,23 @@ def _authenticated_probe(
     credential: ResolvedCredential | None,
     credential_error: str | None,
     project_id: str | None,
+    endpoint_available: bool,
 ) -> _AuthenticatedProbe:
+    if not endpoint_available:
+        credential_type: Literal["jwt", "project_key"] | None = None
+        if isinstance(credential, JwtCredential):
+            credential_type = "jwt"
+        elif isinstance(credential, ProjectKeyCredential):
+            credential_type = "project_key"
+        return _AuthenticatedProbe(
+            status="skipped",
+            credential_type=credential_type,
+            endpoint=None,
+            detail=(
+                "Authenticated probe skipped because the API endpoint could not be "
+                "loaded; provide --api-url or SOLWYN_API_URL."
+            ),
+        )
     if credential_error is not None:
         return _AuthenticatedProbe(
             status="degraded",
@@ -416,9 +432,10 @@ def doctor(context: typer.Context) -> None:
         credential = None
         credential_error = str(error)
 
+    endpoint_available = runtime.api_url_source != "fallback"
     with SolwynClient(
         api_url=runtime.api_url,
-        credential=credential,
+        credential=credential if endpoint_available else None,
     ) as client:
         readiness = _readiness_diagnostic(client)
         authenticated_probe = _authenticated_probe(
@@ -426,6 +443,7 @@ def doctor(context: typer.Context) -> None:
             credential=credential,
             credential_error=credential_error,
             project_id=runtime.project,
+            endpoint_available=endpoint_available,
         )
     snapshot = _snapshot_or_degraded()
     status: Literal["ok", "degraded"] = (
