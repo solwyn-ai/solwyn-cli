@@ -94,7 +94,10 @@ def invoke(args, *, input=None, json_output=True):
         (["notifications", "set", "--no-email"], CONFIG, "notifications-set"),
         (
             ["notifications", "test", "sms"],
-            {"success": True, "message": "Test SMS sent"},
+            {
+                "success": True,
+                "message": "SMS eligibility confirmed (no message sent).",
+            },
             "notifications-test",
         ),
         (["channels", "list"], [CHANNEL], "channels-list"),
@@ -171,8 +174,6 @@ def test_config_partial_update(api, flags, expected):
     assert result.exit_code == 0, result.output
     assert calls[0][:2] == ("PUT", BASE)
     assert calls[0][2]["json"] == expected
-    assert calls[0][2]["retry_auth"] is False
-    assert calls[0][2]["retry_rate_limit"] is False
 
 
 @pytest.mark.parametrize(
@@ -251,18 +252,15 @@ def test_invalid_channel_configuration_no_http(api, args, input):
     assert calls == []
 
 
-def test_update_masked_secret_and_clear_config(api):
+def test_update_masked_secret(api):
     _, calls, responses = api
-    responses.extend([httpx.Response(200, json=CHANNEL)] * 4)
+    responses.extend([httpx.Response(200, json=CHANNEL)] * 2)
     result = invoke(
         ["channels", "update", "id/one", "--secret-stdin"], input="****abcd\n"
     )
     assert result.exit_code == 0, result.output
     assert calls[0][:2] == ("GET", CHANNELS + "/id%2Fone")
     assert calls[1][2]["json"] == {"slack_config": {"webhook_url": "****abcd"}}
-    result = invoke(["channels", "update", "id/one", "--clear-config"])
-    assert result.exit_code == 0, result.output
-    assert calls[3][2]["json"] == {"slack_config": None}
 
 
 @pytest.mark.parametrize("channel", ["slack", "pagerduty", "sms", "email"])
@@ -539,10 +537,10 @@ def test_email_delivery_success_preserves_actual_wire_shape(api):
     assert json.loads(result.stdout)["delivered"] is True
 
 
-def test_delete_requires_204_without_replay(api):
+def test_delete_requires_204_without_replaying_unexpected_success(api):
     _, calls, responses = api
     responses.append(httpx.Response(200, json={}))
     result = invoke(["channels", "delete", "ch_one"])
     assert result.exit_code == 1
     assert len(calls) == 1
-    assert calls[0][2] == {"retry_auth": False, "retry_rate_limit": False}
+    assert calls[0][2] == {}

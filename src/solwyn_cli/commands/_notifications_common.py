@@ -223,8 +223,8 @@ def request(
                 options["json"]["enabled_event_types"] = sorted(
                     options["json"]["enabled_event_types"]
                 )
-        if method != "GET":
-            options.update(retry_auth=False, retry_rate_limit=False)
+        # Preserve the client's bounded 429 and JWT-refresh defaults. Core
+        # rejects these requests before entering the mutation/delivery handler.
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential
         ) as client:

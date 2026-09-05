@@ -245,7 +245,7 @@ def create(
         "solwyn.channels.v1",
         guidance=(
             SECRET_HELP,
-            "Omitted values stay unchanged. Masked secrets retain stored credentials. --clear-config sends null; JSON null clears individual config fields. Type is immutable.",
+            "Omitted values stay unchanged. Masked secrets retain stored credentials. JSON null clears individual config fields only if the channel remains usable. Type is immutable.",
         ),
     ),
 )
@@ -258,13 +258,6 @@ def update(
     secret_field: Annotated[str | None, typer.Option("--secret-field")] = None,
     channel: Annotated[str | None, typer.Option("--channel")] = None,
     chat_id: Annotated[str | None, typer.Option("--chat-id")] = None,
-    clear_config: Annotated[
-        bool,
-        typer.Option(
-            "--clear-config",
-            help="Clear this channel type's stored credentials and destination.",
-        ),
-    ] = False,
 ) -> None:
     """Update selected fields; Core retains masked secret values on write-back."""
     configuring = (
@@ -275,38 +268,25 @@ def update(
         or chat_id is not None
         or os.environ.get("SOLWYN_CHANNEL_SECRET") is not None
     )
-    if clear_config and configuring:
-        usage(
-            context,
-            "--clear-config cannot be combined with configuration inputs; unset SOLWYN_CHANNEL_SECRET.",
-        )
     if name is not None and not name.strip():
         usage(context, "Channel name must not be blank.")
-    if name is None and not configuring and not clear_config:
+    if name is None and not configuring:
         usage(context, "Choose at least one field to update.")
     values = {"name": name} if name is not None else {}
     secrets = ()
-    if configuring or clear_config:
+    if configuring:
         current = request(context, "GET", path(channel_id), NotificationChannelResponse)
-        if clear_config:
-            if current.channel_type not in CONFIG_FIELDS:
-                usage(
-                    context,
-                    "This channel type is not supported for configuration updates.",
-                )
-            values[f"{current.channel_type}_config"] = None
-        else:
-            config, secrets = config_input(
-                context,
-                kind=current.channel_type,
-                secret_stdin=secret_stdin,
-                config_stdin=config_stdin,
-                secret_field=secret_field,
-                channel=channel,
-                chat_id=chat_id,
-                create=False,
-            )
-            values[f"{current.channel_type}_config"] = config
+        config, secrets = config_input(
+            context,
+            kind=current.channel_type,
+            secret_stdin=secret_stdin,
+            config_stdin=config_stdin,
+            secret_field=secret_field,
+            channel=channel,
+            chat_id=chat_id,
+            create=False,
+        )
+        values[f"{current.channel_type}_config"] = config
     try:
         body = NotificationChannelUpdate.model_validate(values)
     except ValidationError:

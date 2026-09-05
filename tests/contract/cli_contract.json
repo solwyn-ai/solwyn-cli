@@ -1257,20 +1257,6 @@
           "name": "chat_id",
           "required": false,
           "type": "text"
-        },
-        {
-          "cli_names": [
-            "--clear-config"
-          ],
-          "default": false,
-          "help": "Clear this channel type's stored credentials and destination.",
-          "hidden": false,
-          "is_flag": true,
-          "kind": "option",
-          "multiple": false,
-          "name": "clear_config",
-          "required": false,
-          "type": "boolean"
         }
       ],
       "path": [
@@ -1824,7 +1810,7 @@
         "notifications",
         "test"
       ],
-      "summary": "Send a test; delivery failure exits 1, including HTTP 200 failures."
+      "summary": "Test delivery or SMS eligibility; failure exits 1, including HTTP 200 failures."
     },
     {
       "hidden": false,
