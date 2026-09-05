@@ -1,10 +1,8 @@
 [
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "budget_status",
+    "title": null,
     "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "project_id": {
@@ -24,7 +22,6 @@
       "title": "budget_statusArguments",
       "type": "object"
     },
-    "name": "budget_status",
     "outputSchema": {
       "$defs": {
         "BudgetMode": {
@@ -49,12 +46,9 @@
         "_AlertRouting": {
           "additionalProperties": false,
           "properties": {
-            "channels": {
-              "items": {
-                "$ref": "#/$defs/_RoutingChannel"
-              },
-              "title": "Channels",
-              "type": "array"
+            "will_send": {
+              "title": "Will Send",
+              "type": "boolean"
             },
             "email": {
               "anyOf": [
@@ -68,16 +62,12 @@
               "default": null,
               "title": "Email"
             },
-            "muted": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/_RoutingMuted"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/_RoutingChannel"
+              },
+              "title": "Channels",
+              "type": "array"
             },
             "source": {
               "enum": [
@@ -88,9 +78,16 @@
               "title": "Source",
               "type": "string"
             },
-            "will_send": {
-              "title": "Will Send",
-              "type": "boolean"
+            "muted": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RoutingMuted"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           },
           "required": [
@@ -117,13 +114,13 @@
               "title": "Allowed Periods",
               "type": "array"
             },
-            "max_thresholds": {
-              "title": "Max Thresholds",
-              "type": "integer"
-            },
             "sub_period_enabled": {
               "title": "Sub Period Enabled",
               "type": "boolean"
+            },
+            "max_thresholds": {
+              "title": "Max Thresholds",
+              "type": "integer"
             }
           },
           "required": [
@@ -138,8 +135,24 @@
         "_BudgetStatusData": {
           "additionalProperties": false,
           "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
             "budget_limit": {
               "title": "Budget Limit",
+              "type": "number"
+            },
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "utilization_pct": {
+              "title": "Utilization Pct",
               "type": "number"
             },
             "budget_mode": {
@@ -148,47 +161,9 @@
             "budget_period": {
               "$ref": "#/$defs/BudgetPeriod"
             },
-            "constraints": {
-              "$ref": "#/$defs/_BudgetConstraints"
-            },
-            "current_usage": {
-              "title": "Current Usage",
-              "type": "number"
-            },
             "period_date": {
               "title": "Period Date",
               "type": "string"
-            },
-            "project_id": {
-              "title": "Project Id",
-              "type": "string"
-            },
-            "remaining_budget": {
-              "title": "Remaining Budget",
-              "type": "number"
-            },
-            "sub_limit": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Sub Limit"
-            },
-            "sub_period": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/BudgetPeriod"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
             },
             "thresholds": {
               "items": {
@@ -227,9 +202,47 @@
               "title": "Thresholds",
               "type": "array"
             },
-            "utilization_pct": {
-              "title": "Utilization Pct",
+            "sub_period": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BudgetPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "sub_limit": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sub Limit"
+            },
+            "constraints": {
+              "$ref": "#/$defs/_BudgetConstraints"
+            },
+            "outage_overspend_ceiling_usd": {
+              "title": "Outage Overspend Ceiling Usd",
               "type": "number"
+            },
+            "lease_float_usd": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lease Float Usd"
             }
           },
           "required": [
@@ -242,7 +255,8 @@
             "budget_period",
             "period_date",
             "thresholds",
-            "constraints"
+            "constraints",
+            "outage_overspend_ceiling_usd"
           ],
           "title": "_BudgetStatusData",
           "type": "object"
@@ -250,6 +264,10 @@
         "_BudgetThresholdState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -257,23 +275,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
-            "percent": {
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Percent",
-              "type": "integer"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -288,10 +291,21 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "budget_threshold",
               "title": "Type",
               "type": "string"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Percent",
+              "type": "integer"
             }
           },
           "required": [
@@ -307,6 +321,10 @@
         "_DailyAnomalyState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -314,30 +332,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "lookback_days": {
-              "default": 7,
-              "maximum": 30,
-              "minimum": 3,
-              "title": "Lookback Days",
-              "type": "integer"
-            },
-            "multiplier": {
-              "exclusiveMinimum": 1,
-              "maximum": 100,
-              "title": "Multiplier",
-              "type": "number"
-            },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -352,10 +348,28 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "daily_anomaly",
               "title": "Type",
               "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
             }
           },
           "required": [
@@ -371,6 +385,10 @@
         "_ForecastOverrunState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -378,23 +396,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
-            "period": {
-              "const": "month",
-              "default": "month",
-              "title": "Period",
-              "type": "string"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -409,14 +412,25 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "forecast_overrun",
+              "title": "Type",
+              "type": "string"
+            },
             "spend_threshold_usd": {
               "exclusiveMinimum": 0,
               "title": "Spend Threshold Usd",
               "type": "number"
             },
-            "type": {
-              "const": "forecast_overrun",
-              "title": "Type",
+            "period": {
+              "const": "month",
+              "default": "month",
+              "title": "Period",
               "type": "string"
             }
           },
@@ -483,18 +497,9 @@
         "_RunawayRunState": {
           "additionalProperties": false,
           "properties": {
-            "call_threshold": {
-              "anyOf": [
-                {
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Call Threshold"
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
             },
             "channel_ids": {
               "items": {
@@ -503,17 +508,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -528,16 +524,38 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode",
+              "default": "alert_only"
+            },
+            "type": {
+              "const": "runaway_run",
+              "title": "Type",
+              "type": "string"
+            },
             "spend_threshold_usd": {
               "exclusiveMinimum": 0,
               "maximum": 1999999.99,
               "title": "Spend Threshold Usd",
               "type": "number"
             },
-            "type": {
-              "const": "runaway_run",
-              "title": "Type",
-              "type": "string"
+            "call_threshold": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Threshold"
             },
             "window_minutes": {
               "anyOf": [
@@ -567,6 +585,10 @@
         "_ScopedBudgetState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -574,41 +596,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "limit": {
-              "exclusiveMinimum": 0,
-              "maximum": 999999.999999,
-              "title": "Limit",
-              "type": "number"
-            },
-            "match": {
-              "maxLength": 2048,
-              "minLength": 1,
-              "title": "Match",
-              "type": "string"
-            },
-            "mode": {
-              "$ref": "#/$defs/BudgetMode"
-            },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
-            },
-            "scope": {
-              "enum": [
-                "model",
-                "provider",
-                "agent_run"
-              ],
-              "title": "Scope",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -623,10 +612,64 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "scoped_budget",
               "title": "Type",
               "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "model",
+                "provider",
+                "agent_run",
+                "tag"
+              ],
+              "title": "Scope",
+              "type": "string"
+            },
+            "match_value": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Match Value"
+            },
+            "current_usage": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Usage"
+            },
+            "match": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Match",
+              "type": "string"
+            },
+            "limit": {
+              "exclusiveMinimum": 0,
+              "maximum": 999999.999999,
+              "title": "Limit",
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
             }
           },
           "required": [
@@ -635,6 +678,7 @@
             "routing",
             "type",
             "scope",
+            "current_usage",
             "match",
             "limit",
             "mode"
@@ -650,6 +694,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -661,10 +709,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -689,6 +733,10 @@
         "_UnitCostAnomalyState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -696,30 +744,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "lookback_days": {
-              "default": 7,
-              "maximum": 30,
-              "minimum": 3,
-              "title": "Lookback Days",
-              "type": "integer"
-            },
-            "multiplier": {
-              "exclusiveMinimum": 1,
-              "maximum": 100,
-              "title": "Multiplier",
-              "type": "number"
-            },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -734,10 +760,28 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "unit_cost_anomaly",
               "title": "Type",
               "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
             }
           },
           "required": [
@@ -753,6 +797,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.budget-status.v1",
+          "default": "solwyn.mcp.budget-status.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -774,16 +828,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.budget-status.v1",
-          "default": "solwyn.mcp.budget-status.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -792,14 +836,15 @@
       "title": "_BudgetStatusResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "budget_check",
+    "title": null,
     "description": "Reserve budget only immediately before the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "$defs": {
         "ProviderName": {
@@ -830,36 +875,34 @@
         }
       },
       "properties": {
-        "agent_run_id": {
-          "anyOf": [
-            {
-              "maxLength": 256,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Agent Run Id"
-        },
-        "audio_seconds": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Audio Seconds"
-        },
         "estimated_input_tokens": {
           "minimum": 0,
           "title": "Estimated Input Tokens",
           "type": "integer"
+        },
+        "model": {
+          "maxLength": 2048,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "fallback_providers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProviderName"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Providers"
         },
         "fallback_models": {
           "anyOf": [
@@ -878,34 +921,18 @@
           "default": null,
           "title": "Fallback Models"
         },
-        "fallback_providers": {
+        "agent_run_id": {
           "anyOf": [
             {
-              "items": {
-                "$ref": "#/$defs/ProviderName"
-              },
-              "maxItems": 8,
-              "type": "array"
+              "maxLength": 256,
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Fallback Providers"
-        },
-        "generation_count": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Generation Count"
+          "title": "Agent Run Id"
         },
         "image_count": {
           "anyOf": [
@@ -920,6 +947,45 @@
           "default": null,
           "title": "Image Count"
         },
+        "generation_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation Count"
+        },
+        "video_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Seconds"
+        },
+        "audio_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Seconds"
+        },
         "input_characters": {
           "anyOf": [
             {
@@ -932,32 +998,6 @@
           ],
           "default": null,
           "title": "Input Characters"
-        },
-        "is_estimated": {
-          "default": false,
-          "title": "Is Estimated",
-          "type": "boolean"
-        },
-        "model": {
-          "maxLength": 2048,
-          "title": "Model",
-          "type": "string"
-        },
-        "provider": {
-          "$ref": "#/$defs/ProviderName"
-        },
-        "quality": {
-          "anyOf": [
-            {
-              "maxLength": 32,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Quality"
         },
         "resolution": {
           "anyOf": [
@@ -972,18 +1012,23 @@
           "default": null,
           "title": "Resolution"
         },
-        "video_seconds": {
+        "quality": {
           "anyOf": [
             {
-              "minimum": 0,
-              "type": "number"
+              "maxLength": 32,
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Video Seconds"
+          "title": "Quality"
+        },
+        "is_estimated": {
+          "default": false,
+          "title": "Is Estimated",
+          "type": "boolean"
         }
       },
       "required": [
@@ -994,7 +1039,6 @@
       "title": "budget_checkArguments",
       "type": "object"
     },
-    "name": "budget_check",
     "outputSchema": {
       "$defs": {
         "BudgetMode": {
@@ -1048,6 +1092,26 @@
               "title": "Allowed",
               "type": "boolean"
             },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
+            },
             "budget_limit": {
               "title": "Budget Limit",
               "type": "number"
@@ -1067,8 +1131,9 @@
               ],
               "default": null
             },
-            "mode": {
-              "$ref": "#/$defs/BudgetMode"
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
             },
             "price_hints": {
               "anyOf": [
@@ -1087,27 +1152,6 @@
               ],
               "default": null,
               "title": "Price Hints"
-            },
-            "project_id": {
-              "title": "Project Id",
-              "type": "string"
-            },
-            "remaining_budget": {
-              "title": "Remaining Budget",
-              "type": "number"
-            },
-            "reservation_id": {
-              "anyOf": [
-                {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Reservation Id"
             }
           },
           "required": [
@@ -1129,6 +1173,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -1140,10 +1188,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1168,6 +1212,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.budget-check.v1",
+          "default": "solwyn.mcp.budget-check.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -1189,16 +1243,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.budget-check.v1",
-          "default": "solwyn.mcp.budget-check.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -1207,14 +1251,15 @@
       "title": "_BudgetCheckResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "budget_confirm",
+    "title": null,
     "description": "Settle only a non-null reservation after the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "$defs": {
         "ProviderName": {
@@ -1259,11 +1304,96 @@
         }
       },
       "properties": {
-        "accepted_prediction_tokens": {
+        "reservation_id": {
+          "minLength": 1,
+          "title": "Reservation Id",
+          "type": "string"
+        },
+        "call_id": {
+          "maxLength": 36,
+          "minLength": 1,
+          "title": "Call Id",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "is_provider_fallback": {
+          "default": false,
+          "title": "Is Provider Fallback",
+          "type": "boolean"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input_tokens": {
           "default": 0,
           "maximum": 100000000,
           "minimum": 0,
-          "title": "Accepted Prediction Tokens",
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "cached_input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cached Input Tokens",
+          "type": "integer"
+        },
+        "cache_creation_5m_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cache Creation 5M Tokens",
+          "type": "integer"
+        },
+        "cache_creation_1h_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cache Creation 1H Tokens",
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Reasoning Tokens",
           "type": "integer"
         },
         "audio_input_tokens": {
@@ -1280,33 +1410,6 @@
           "title": "Audio Output Tokens",
           "type": "integer"
         },
-        "cache_creation_1h_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Cache Creation 1H Tokens",
-          "type": "integer"
-        },
-        "cache_creation_5m_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Cache Creation 5M Tokens",
-          "type": "integer"
-        },
-        "cached_input_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Cached Input Tokens",
-          "type": "integer"
-        },
-        "call_id": {
-          "maxLength": 36,
-          "minLength": 1,
-          "title": "Call Id",
-          "type": "string"
-        },
         "image_input_tokens": {
           "default": 0,
           "maximum": 100000000,
@@ -1321,58 +1424,11 @@
           "title": "Image Output Tokens",
           "type": "integer"
         },
-        "input_tokens": {
+        "accepted_prediction_tokens": {
           "default": 0,
           "maximum": 100000000,
           "minimum": 0,
-          "title": "Input Tokens",
-          "type": "integer"
-        },
-        "is_estimated": {
-          "default": false,
-          "title": "Is Estimated",
-          "type": "boolean"
-        },
-        "is_provider_fallback": {
-          "default": false,
-          "title": "Is Provider Fallback",
-          "type": "boolean"
-        },
-        "model": {
-          "maxLength": 2048,
-          "minLength": 1,
-          "title": "Model",
-          "type": "string"
-        },
-        "output_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Output Tokens",
-          "type": "integer"
-        },
-        "provider": {
-          "$ref": "#/$defs/ProviderName"
-        },
-        "provider_region": {
-          "anyOf": [
-            {
-              "maxLength": 32,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Provider Region"
-        },
-        "reasoning_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Reasoning Tokens",
+          "title": "Accepted Prediction Tokens",
           "type": "integer"
         },
         "rejected_prediction_tokens": {
@@ -1382,28 +1438,17 @@
           "title": "Rejected Prediction Tokens",
           "type": "integer"
         },
-        "reservation_id": {
-          "minLength": 1,
-          "title": "Reservation Id",
-          "type": "string"
-        },
-        "service_tier": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ServiceTier"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "tool_use_input_tokens": {
           "default": 0,
           "maximum": 100000000,
           "minimum": 0,
           "title": "Tool Use Input Tokens",
           "type": "integer"
+        },
+        "is_estimated": {
+          "default": false,
+          "title": "Is Estimated",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1415,18 +1460,17 @@
       "title": "budget_confirmArguments",
       "type": "object"
     },
-    "name": "budget_confirm",
     "outputSchema": {
       "$defs": {
         "_BudgetConfirmData": {
           "additionalProperties": false,
           "properties": {
-            "call_id": {
-              "title": "Call Id",
-              "type": "string"
-            },
             "reservation_id": {
               "title": "Reservation Id",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
               "type": "string"
             }
           },
@@ -1445,6 +1489,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -1456,10 +1504,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1484,6 +1528,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.budget-confirm.v1",
+          "default": "solwyn.mcp.budget-confirm.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -1505,16 +1559,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.budget-confirm.v1",
-          "default": "solwyn.mcp.budget-confirm.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -1523,14 +1567,15 @@
       "title": "_BudgetConfirmResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "get_project_status",
+    "title": null,
     "description": "Read the configured project's budget and provider health without authorizing spend.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "project_id": {
@@ -1550,7 +1595,6 @@
       "title": "get_project_statusArguments",
       "type": "object"
     },
-    "name": "get_project_status",
     "outputSchema": {
       "$defs": {
         "_BudgetSummary": {
@@ -1559,13 +1603,13 @@
               "title": "Budget Limit",
               "type": "number"
             },
-            "budget_mode": {
-              "enum": [
-                "alert_only",
-                "hard_deny"
-              ],
-              "title": "Budget Mode",
-              "type": "string"
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
             },
             "budget_period": {
               "enum": [
@@ -1576,17 +1620,17 @@
               "title": "Budget Period",
               "type": "string"
             },
-            "current_usage": {
-              "title": "Current Usage",
-              "type": "number"
+            "budget_mode": {
+              "enum": [
+                "alert_only",
+                "hard_deny"
+              ],
+              "title": "Budget Mode",
+              "type": "string"
             },
             "period_date": {
               "title": "Period Date",
               "type": "string"
-            },
-            "remaining_budget": {
-              "title": "Remaining Budget",
-              "type": "number"
             },
             "utilization_pct": {
               "title": "Utilization Pct",
@@ -1607,13 +1651,17 @@
         },
         "_ProviderHealth": {
           "properties": {
-            "avg_latency_ms": {
-              "title": "Avg Latency Ms",
-              "type": "number"
-            },
-            "circuit_state": {
-              "title": "Circuit State",
+            "provider": {
+              "title": "Provider",
               "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "success_count": {
+              "title": "Success Count",
+              "type": "integer"
             },
             "error_count": {
               "title": "Error Count",
@@ -1623,21 +1671,17 @@
               "title": "Failover Count",
               "type": "integer"
             },
-            "provider": {
-              "title": "Provider",
-              "type": "string"
-            },
-            "success_count": {
-              "title": "Success Count",
-              "type": "integer"
-            },
             "success_rate": {
               "title": "Success Rate",
               "type": "number"
             },
-            "total_calls": {
-              "title": "Total Calls",
-              "type": "integer"
+            "avg_latency_ms": {
+              "title": "Avg Latency Ms",
+              "type": "number"
+            },
+            "circuit_state": {
+              "title": "Circuit State",
+              "type": "string"
             }
           },
           "required": [
@@ -1656,12 +1700,12 @@
         "_StatusData": {
           "additionalProperties": false,
           "properties": {
-            "budget": {
-              "$ref": "#/$defs/_BudgetSummary"
-            },
             "project_id": {
               "title": "Project Id",
               "type": "string"
+            },
+            "budget": {
+              "$ref": "#/$defs/_BudgetSummary"
             },
             "providers": {
               "items": {
@@ -1687,6 +1731,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -1698,10 +1746,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1726,6 +1770,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.project-status.v1",
+          "default": "solwyn.mcp.project-status.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -1747,16 +1801,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.project-status.v1",
-          "default": "solwyn.mcp.project-status.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -1765,14 +1809,15 @@
       "title": "_ProjectStatusResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "get_costs",
+    "title": null,
     "description": "Read aggregated project costs for one frozen time range and grouping.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "$defs": {
         "CostGrouping": {
@@ -1798,10 +1843,6 @@
         }
       },
       "properties": {
-        "group_by": {
-          "$ref": "#/$defs/CostGrouping",
-          "default": "model"
-        },
         "project_id": {
           "anyOf": [
             {
@@ -1818,28 +1859,34 @@
         "time_range": {
           "$ref": "#/$defs/CostRange",
           "default": "7d"
+        },
+        "group_by": {
+          "$ref": "#/$defs/CostGrouping",
+          "default": "model"
         }
       },
       "title": "get_costsArguments",
       "type": "object"
     },
-    "name": "get_costs",
     "outputSchema": {
       "$defs": {
         "_CostGroup": {
           "properties": {
-            "call_count": {
-              "title": "Call Count",
-              "type": "integer"
-            },
             "group_key": {
               "title": "Group Key",
               "type": "string"
             },
-            "local_call_count": {
-              "default": 0,
-              "title": "Local Call Count",
-              "type": "integer"
+            "agent_run_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Run Name"
             },
             "provider": {
               "anyOf": [
@@ -1865,9 +1912,18 @@
               "title": "Total Output Tokens",
               "type": "integer"
             },
+            "call_count": {
+              "title": "Call Count",
+              "type": "integer"
+            },
             "unpriced_call_count": {
               "default": 0,
               "title": "Unpriced Call Count",
+              "type": "integer"
+            },
+            "local_call_count": {
+              "default": 0,
+              "title": "Local Call Count",
               "type": "integer"
             }
           },
@@ -1883,6 +1939,20 @@
         },
         "_CostsData": {
           "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "range": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "365d"
+              ],
+              "title": "Range",
+              "type": "string"
+            },
             "group_by": {
               "enum": [
                 "day",
@@ -1899,19 +1969,10 @@
               "title": "Groups",
               "type": "array"
             },
-            "project_id": {
-              "title": "Project Id",
-              "type": "string"
-            },
-            "range": {
-              "enum": [
-                "7d",
-                "30d",
-                "90d",
-                "365d"
-              ],
-              "title": "Range",
-              "type": "string"
+            "truncated": {
+              "default": false,
+              "title": "Truncated",
+              "type": "boolean"
             }
           },
           "required": [
@@ -1931,6 +1992,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -1942,10 +2007,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1970,6 +2031,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.costs.v1",
+          "default": "solwyn.mcp.costs.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -1991,16 +2062,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.costs.v1",
-          "default": "solwyn.mcp.costs.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -2009,47 +2070,47 @@
       "title": "_CostsResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "list_projects",
+    "title": null,
     "description": "List projects visible to the logged-in user. Requires login/JWT authentication.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {},
       "title": "list_projectsArguments",
       "type": "object"
     },
-    "name": "list_projects",
     "outputSchema": {
       "$defs": {
         "_Project": {
           "properties": {
-            "budget_limit": {
-              "title": "Budget Limit",
-              "type": "number"
-            },
-            "budget_mode": {
-              "title": "Budget Mode",
-              "type": "string"
-            },
-            "budget_period": {
-              "title": "Budget Period",
-              "type": "string"
-            },
-            "created_at": {
-              "format": "date-time",
-              "title": "Created At",
-              "type": "string"
-            },
             "id": {
               "title": "Id",
               "type": "string"
             },
             "name": {
               "title": "Name",
+              "type": "string"
+            },
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "budget_period": {
+              "title": "Budget Period",
+              "type": "string"
+            },
+            "budget_mode": {
+              "title": "Budget Mode",
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
               "type": "string"
             }
           },
@@ -2089,6 +2150,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -2100,10 +2165,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -2128,6 +2189,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.projects.v1",
+          "default": "solwyn.mcp.projects.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -2149,16 +2220,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.projects.v1",
-          "default": "solwyn.mcp.projects.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -2167,6 +2228,9 @@
       "title": "_ProjectsResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   }
 ]

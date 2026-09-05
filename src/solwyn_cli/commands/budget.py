@@ -127,6 +127,7 @@ class _ForecastOverrunState(_ThresholdStateBase):
 
 
 class _RunawayRunState(_ThresholdStateBase):
+    mode: BudgetMode = BudgetMode.ALERT_ONLY
     type: Literal["runaway_run"]
     spend_threshold_usd: Annotated[FiniteFloat, Field(gt=0, le=1999999.99)]
     call_threshold: Annotated[int, Field(ge=1)] | None = None
@@ -147,7 +148,9 @@ class _UnitCostAnomalyState(_ThresholdStateBase):
 
 class _ScopedBudgetState(_ThresholdStateBase):
     type: Literal["scoped_budget"]
-    scope: Literal["model", "provider", "agent_run"]
+    scope: Literal["model", "provider", "agent_run", "tag"]
+    match_value: Annotated[str, Field(max_length=256)] | None = None
+    current_usage: FiniteFloat | None
     match: Annotated[str, Field(min_length=1, max_length=2048)]
     limit: Annotated[FiniteFloat, Field(gt=0, le=999999.999999)]
     mode: BudgetMode
@@ -188,6 +191,8 @@ class _BudgetStatusData(BaseModel):
     sub_period: BudgetPeriod | None = None
     sub_limit: FiniteFloat | None = None
     constraints: _BudgetConstraints
+    outage_overspend_ceiling_usd: FiniteFloat
+    lease_float_usd: FiniteFloat | None = None
 
 
 BudgetStatusData = _BudgetStatusData
@@ -212,6 +217,9 @@ def request_budget_status(*, client: SolwynClient, project_id: str) -> BudgetSta
 
 
 class _BudgetStatusOutput(BaseModel):
+    outage_overspend_ceiling_usd: FiniteFloat
+    lease_float_usd: FiniteFloat | None = None
+    thresholds: list[_ThresholdState]
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     project_id: str
@@ -323,23 +331,44 @@ def _table(data: _BudgetStatusOutput) -> TableData:
             ("Budget period", data.budget_period),
             ("Budget mode", data.budget_mode),
             ("Utilization", f"{data.utilization_pct:.2f}%"),
+            ("Outage overspend ceiling", f"{data.outage_overspend_ceiling_usd:.2f}"),
+            (
+                "Lease float (included in usage)",
+                f"{data.lease_float_usd:.2f}"
+                if data.lease_float_usd is not None
+                else "—",
+            ),
+            *tuple(_rule_rows(data.thresholds)),
         ),
         right_align=("Value",),
     )
 
 
-def _check_table(data: _BudgetCheckData) -> TableData:
-    price_hints = (
-        ", ".join(
-            f"{provider.value}={price:.6g}"
-            for provider, price in sorted(
-                data.price_hints.items(), key=lambda item: item[0].value
+def _rule_rows(thresholds: list[_ThresholdState]) -> list[tuple[str, str]]:
+    rows = []
+    for rule in thresholds:
+        if isinstance(rule, _ScopedBudgetState):
+            selector = (
+                f"{rule.match}={rule.match_value}"
+                if rule.scope == "tag"
+                else rule.match
             )
-        )
-        if data.price_hints
-        else "-"
-    )
-    return TableData(
+            usage = "—" if rule.current_usage is None else f"{rule.current_usage:.2f}"
+            rows.append(
+                (
+                    f"Scoped {rule.scope}: {selector}",
+                    f"{usage} / {rule.limit:.2f} ({rule.mode.value})",
+                )
+            )
+        elif isinstance(rule, _RunawayRunState):
+            rows.append(
+                ("Runaway run", f"{rule.spend_threshold_usd:.2f} ({rule.mode.value})")
+            )
+    return rows
+
+
+def _check_table(data: _BudgetCheckData) -> TableData:
+    table = TableData(
         columns=("Field", "Value"),
         rows=(
             ("Allowed", "yes" if data.allowed else "no"),
@@ -353,10 +382,25 @@ def _check_table(data: _BudgetCheckData) -> TableData:
                 "Denied by period",
                 data.denied_by_period.value if data.denied_by_period else "-",
             ),
-            ("Price hints", price_hints),
         ),
         right_align=("Value",),
     )
+
+    if data.price_hints:
+        return TableData(
+            columns=(*table.columns, "rel. price"),
+            rows=(
+                *tuple((*row, "-") for row in table.rows),
+                *tuple(
+                    ("Provider", provider.value, f"{price:.6g}")
+                    for provider, price in sorted(
+                        data.price_hints.items(), key=lambda item: item[0].value
+                    )
+                ),
+            ),
+            right_align=(*table.right_align, "rel. price"),
+        )
+    return table
 
 
 def _confirm_table(data: _BudgetConfirmData) -> TableData:
@@ -375,7 +419,7 @@ def _threshold_configs(data: _BudgetStatusData) -> list[dict[str, object]]:
     return [
         threshold.model_dump(
             mode="json",
-            exclude={"rule_key", "routing"},
+            exclude={"rule_key", "routing", "current_usage"},
         )
         for threshold in data.thresholds
     ]
@@ -586,6 +630,7 @@ def check(
             else None
         )
         request = BudgetCheckRequest(
+            price_hints_version="1",
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,
@@ -1127,6 +1172,9 @@ def status(
         )
 
     rendered = _BudgetStatusOutput(
+        outage_overspend_ceiling_usd=data.outage_overspend_ceiling_usd,
+        lease_float_usd=data.lease_float_usd,
+        thresholds=data.thresholds,
         project_id=data.project_id,
         budget_limit=data.budget_limit,
         current_usage=data.current_usage,

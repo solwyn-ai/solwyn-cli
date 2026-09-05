@@ -34,7 +34,7 @@ class _Identity(BaseModel):
     user_id: str
     email: str
     display_name: str
-    subscription_tier: Literal["free", "founder", "team", "scale"]
+    subscription_tier: Literal["free", "production", "team", "scale"]
 
 
 class _Project(BaseModel):

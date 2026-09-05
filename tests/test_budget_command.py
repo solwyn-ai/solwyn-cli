@@ -30,6 +30,7 @@ BUDGET_RESPONSE = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 75.0,
     "thresholds": [],
     "constraints": {
@@ -69,6 +70,7 @@ EVERY_RULE_TYPE_THRESHOLDS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "rule_key": "runaway:50",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
@@ -100,6 +102,8 @@ EVERY_RULE_TYPE_THRESHOLDS = [
     },
     {
         "type": "scoped_budget",
+        "current_usage": None,
+        "match_value": None,
         "rule_key": "scoped:model:gpt-4o",
         "scope": "model",
         "match": "gpt-4o",
@@ -509,3 +513,45 @@ def test_budget_goldens_never_contain_synthetic_credentials() -> None:
         rendered = golden.read_text(encoding="utf-8")
         for secret in (VALID_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
             assert secret not in rendered
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_current_rules_render_and_round_trip(output_format, monkeypatch):
+    monkeypatch.setattr(
+        budget_module,
+        "resolve_credential",
+        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        raising=False,
+    )
+    response = {
+        **BUDGET_RESPONSE,
+        "outage_overspend_ceiling_usd": 12.5,
+        "lease_float_usd": None,
+        "thresholds": [
+            {**EVERY_RULE_TYPE_THRESHOLDS[2], "mode": "hard_deny"},
+            {
+                **EVERY_RULE_TYPE_THRESHOLDS[-1],
+                "scope": "tag",
+                "match": "team",
+                "match_value": "research",
+                "current_usage": None,
+            },
+        ],
+    }
+    FakeClient.responses = [httpx.Response(200, json=response)]
+    result = runner.invoke(
+        app,
+        [
+            "--project",
+            "proj_alpha",
+            *(["--json"] if output_format == "json" else []),
+            "budget",
+            "status",
+        ],
+    )
+    assert result.exit_code == 0
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR
+        / f"budget-status-rules-{output_format}.{'json' if output_format == 'json' else 'txt'}",
+    )

@@ -153,6 +153,7 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
                 "budget_mode": "hard_deny",
                 "budget_period": "monthly",
                 "period_date": "2026-07",
+                "outage_overspend_ceiling_usd": 0.0,
                 "thresholds": [],
                 "sub_period": None,
                 "sub_limit": None,

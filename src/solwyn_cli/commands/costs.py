@@ -46,6 +46,7 @@ class _CostGroup(BaseModel):
     model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
     group_key: str
+    agent_run_name: str | None = None
     provider: str | None = None
     total_cost: float
     total_input_tokens: int
@@ -62,6 +63,7 @@ class _CostsData(BaseModel):
     range: Literal["7d", "30d", "90d", "365d"]
     group_by: Literal["day", "model", "provider"]
     groups: list[_CostGroup]
+    truncated: bool = False
 
 
 CostsData = _CostsData
@@ -179,6 +181,8 @@ def costs(
             ),
         )
 
+    if data.truncated:
+        typer.echo("showing top 100 groups", err=True)
     output_engine(context).write_success(
         schema="solwyn.costs.v1",
         data=data,

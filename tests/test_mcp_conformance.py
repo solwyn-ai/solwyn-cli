@@ -40,6 +40,7 @@ BUDGET_RESPONSE = {
     "budget_mode": "hard_deny",
     "budget_period": "monthly",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "thresholds": [],
     "sub_period": None,
     "sub_limit": None,
@@ -82,6 +83,7 @@ EVERY_RULE_TYPE_THRESHOLDS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "rule_key": "runaway:50",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
@@ -113,6 +115,8 @@ EVERY_RULE_TYPE_THRESHOLDS = [
     },
     {
         "type": "scoped_budget",
+        "current_usage": None,
+        "match_value": None,
         "rule_key": "scoped:model:gpt-4o",
         "scope": "model",
         "match": "gpt-4o",
@@ -154,6 +158,7 @@ COSTS_RESPONSE = {
     "groups": [
         {
             "group_key": "openai",
+            "agent_run_name": None,
             "provider": "openai",
             "total_cost": 1.25,
             "total_input_tokens": 100,
@@ -541,6 +546,7 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
             "/api/v1/budgets/check",
             {},
             {
+                "price_hints_version": "1",
                 "estimated_input_tokens": 1200,
                 "model": "gpt-5",
                 "provider": "openai",
@@ -870,6 +876,7 @@ def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
             "/api/v1/budgets/check",
             {},
             {
+                "price_hints_version": "1",
                 "estimated_input_tokens": 1,
                 "model": "m",
                 "provider": "openai",
@@ -1295,6 +1302,7 @@ def test_budget_check_honors_exactly_one_429_retry(
         "/api/v1/budgets/check",
         {},
         {
+            "price_hints_version": "1",
             "estimated_input_tokens": 1,
             "model": "m",
             "provider": "openai",

@@ -44,6 +44,7 @@ BUDGET = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 25.0,
     "thresholds": [],
     "constraints": {

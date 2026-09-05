@@ -1,8 +1,10 @@
-Field                  Value
-Project           proj_alpha
-Budget limit          100.00
-Current usage          75.00
-Remaining budget       25.00
-Budget period        monthly
-Budget mode        hard_deny
-Utilization           75.00%
+Field                                 Value
+Project                          proj_alpha
+Budget limit                         100.00
+Current usage                         75.00
+Remaining budget                      25.00
+Budget period                       monthly
+Budget mode                       hard_deny
+Utilization                          75.00%
+Outage overspend ceiling               0.00
+Lease float (included in usage)           —

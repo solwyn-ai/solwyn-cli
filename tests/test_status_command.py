@@ -32,6 +32,7 @@ BUDGET_RESPONSE = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 37.5,
     "thresholds": [],
     "sub_period": None,

@@ -449,6 +449,7 @@ def _budget_check_operation(
             else None
         )
         request = BudgetCheckRequest(
+            price_hints_version="1",
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,

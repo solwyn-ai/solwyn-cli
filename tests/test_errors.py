@@ -147,3 +147,37 @@ def test_error_repr_never_includes_preserved_raw_detail() -> None:
     assert error.detail is detail
     assert "provider-secret" not in str(error)
     assert "provider-secret" not in repr(error)
+
+
+@pytest.mark.parametrize(
+    "detail, fragment",
+    [
+        ({"code": "read_only_key", "message": "Read-only key"}, "full-scope"),
+        ("This endpoint requires JWT authentication", "solwyn login"),
+        ("owner_required", "whoami"),
+        ({"code": "permission_required"}, "whoami"),
+    ],
+)
+def test_403_shapes_have_actionable_hints(detail, fragment):
+    error = error_from_response(_response(403, {"detail": detail}))
+    assert error.hint is not None
+    assert fragment in error.hint
+
+
+def test_402_allowed_values_are_preserved_in_hint():
+    error = error_from_response(
+        _response(
+            402,
+            {
+                "detail": {
+                    "code": "upgrade_required",
+                    "message": "Range unavailable",
+                    "allowed_values": ["7d", "30d"],
+                    "cta_path": "/billing",
+                }
+            },
+        )
+    )
+    assert error.message == "Range unavailable"
+    assert "7d, 30d" in error.hint
+    assert "/billing" in error.hint

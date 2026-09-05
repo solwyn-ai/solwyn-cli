@@ -1,1 +1,1 @@
-{"schema":"solwyn.budget-status.v1","project_id":"proj_alpha","budget_limit":100.0,"current_usage":75.0,"remaining_budget":25.0,"utilization_pct":75.0,"budget_mode":"hard_deny","budget_period":"monthly"}
+{"schema":"solwyn.budget-status.v1","outage_overspend_ceiling_usd":0.0,"lease_float_usd":null,"thresholds":[],"project_id":"proj_alpha","budget_limit":100.0,"current_usage":75.0,"remaining_budget":25.0,"utilization_pct":75.0,"budget_mode":"hard_deny","budget_period":"monthly"}

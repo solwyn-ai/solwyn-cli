@@ -20,7 +20,7 @@ RESPONSE_READS = {
         "detail.message",
         "detail.cta_path",
     ),
-    "UpgradeRequiredDetail": ("code", "message", "cta_path"),
+    "UpgradeRequiredDetail": ("code", "message", "cta_path", "allowed_values"),
     "QuotaExceededDetail": ("code", "message", "cta_path"),
     "ProjectLimitReachedDetail": ("code", "message", "cta_path"),
     # Generic HTTP error parsing consumes detail; retry timing uses the header.
@@ -80,6 +80,8 @@ RESPONSE_READS = {
         "sub_period",
         "sub_limit",
         "constraints",
+        "outage_overspend_ceiling_usd",
+        "lease_float_usd",
     ),
     "ThresholdStateResponse": (
         "type",
@@ -101,6 +103,7 @@ RESPONSE_READS = {
         "paused",
     ),
     "RunawayRunStateResponse": (
+        "mode",
         "type",
         "rule_key",
         "spend_threshold_usd",
@@ -132,6 +135,8 @@ RESPONSE_READS = {
         "paused",
     ),
     "ScopedBudgetStateResponse": (
+        "match_value",
+        "current_usage",
         "type",
         "rule_key",
         "scope",
@@ -182,8 +187,9 @@ RESPONSE_READS = {
         "avg_latency_ms",
         "circuit_state",
     ),
-    "CostQueryResponse": ("project_id", "range", "group_by", "groups"),
+    "CostQueryResponse": ("project_id", "range", "group_by", "groups", "truncated"),
     "CostGroup": (
+        "agent_run_name",
         "group_key",
         "provider",
         "total_cost",
