@@ -361,6 +361,129 @@ def test_unit_economics_omits_null_optional_rows_without_rendering_zero() -> Non
     assert "—" in result.stdout
 
 
+def test_simulation_table_explains_unequal_baseline_and_repricing_populations() -> None:
+    payload = {
+        **SIMULATION,
+        "baseline_actual_cost": 100.0,
+        "simulated_cost": 1.0,
+        "delta_cost": -99.0,
+        "scanned_event_count": 2,
+        "baseline_event_count": 2,
+        "included_event_count": 1,
+        "excluded_event_count": 1,
+        "excluded": {
+            "unpriced": 0,
+            "local": 0,
+            "modality_mismatch": 1,
+            "missing_breakdown": 0,
+        },
+    }
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+
+    result = runner.invoke(
+        app,
+        [
+            "--no-color",
+            "--project",
+            "proj_alpha",
+            "costs",
+            "simulate",
+            "--provider",
+            "bedrock",
+            "--model",
+            "amazon.nova-pro-v1:0",
+            "--region",
+            "us-east-1",
+            "--service-tier",
+            "standard",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    table_rows = [line.split() for line in result.stdout.splitlines()]
+    for row in (
+        ["Scanned", "events", "2"],
+        ["Baseline", "events", "2"],
+        ["Repriced", "events", "1"],
+        ["Excluded", "events", "1"],
+    ):
+        assert row in table_rows
+    assert "Delta (repriced - baseline)" in result.stdout
+    assert (
+        "baseline uses stored actual cost for 2 priced served events; "
+        "current-rate repricing includes 1 compatible event"
+    ) in result.stderr
+    assert (
+        "1 modality-mismatch/missing-breakdown event remains in the baseline "
+        "but is excluded from repricing"
+    ) in result.stderr
+    assert "0 unpriced/local events are excluded from both costs" in result.stderr
+    assert (
+        "2026-08-06 current-rate snapshot; tokenizer equivalence is approximate"
+        in result.stderr
+    )
+    assert "Unequal event sets:" in result.stderr
+
+
+def test_simulation_table_marks_equal_baseline_and_repricing_populations() -> None:
+    payload = {
+        **SIMULATION,
+        "baseline_actual_cost": 100.0,
+        "simulated_cost": 80.0,
+        "delta_cost": -20.0,
+        "scanned_event_count": 2,
+        "baseline_event_count": 2,
+        "included_event_count": 2,
+        "excluded_event_count": 0,
+        "excluded": {
+            "unpriced": 0,
+            "local": 0,
+            "modality_mismatch": 0,
+            "missing_breakdown": 0,
+        },
+    }
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+
+    result = runner.invoke(
+        app,
+        [
+            "--no-color",
+            "--project",
+            "proj_alpha",
+            "costs",
+            "simulate",
+            "--provider",
+            "bedrock",
+            "--model",
+            "amazon.nova-pro-v1:0",
+            "--region",
+            "us-east-1",
+            "--service-tier",
+            "standard",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    table_rows = [line.split() for line in result.stdout.splitlines()]
+    assert ["Scanned", "events", "2"] in table_rows
+    assert ["Baseline", "events", "2"] in table_rows
+    assert ["Repriced", "events", "2"] in table_rows
+    assert "Unequal event sets:" not in result.stderr
+
+
+def test_drift_human_output_explains_estimate_heuristic_and_coverage() -> None:
+    FakeClient.responses = [httpx.Response(200, json=DRIFT)]
+
+    result = runner.invoke(
+        app,
+        ["--no-color", "--project", "proj_alpha", "costs", "drift"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "server-side input tokens equal output tokens" in result.stderr
+    assert "80 estimates included; 3 events missing estimates" in result.stderr
+
+
 @pytest.mark.parametrize("days", [2, 31])
 def test_baseline_rejects_days_outside_core_bounds_without_http(days: int) -> None:
     result = runner.invoke(

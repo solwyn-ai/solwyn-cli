@@ -19,8 +19,9 @@ solwyn --project proj_example costs priced-models
 solwyn --project proj_example costs simulate --provider openai --model gpt-5 --range 30d
 ```
 
-All reads accept `--model`, `--provider`, `--modality`, `--status`, `--service-tier`,
-`--provider-region`, `--agent-run`, `--failover-reason`,
+Aggregate costs, `costs events`, `costs total`, and `costs export` accept `--model`,
+`--provider`, `--modality`, `--status`, `--service-tier`, `--provider-region`,
+`--agent-run`, `--failover-reason`,
 `--model-fallback/--no-model-fallback`, `--provider-fallback/--no-provider-fallback`,
 and repeatable `--tag key=value`. Tag filters split at the first `=` and preserve
 spaces and empty values; duplicate keys are rejected. Tag keys contain 1–64
@@ -29,12 +30,13 @@ characters, values at most 256, and neither may contain NUL.
 `--agent-run` accepts either the raw run identifier or the stored
 `run_<32 lowercase hex>` identifier and sends only the matching Core parameter.
 
-`--range` defaults to `7d`; export defaults to `30d`. Paired timezone-aware
-`--from` and `--to` replace the preset. The end is exclusive. The CLI reads billing
-capabilities once per invocation to check the requested range and dimension and
-show current plan choices. Core decides whether an unavailable choice is invalid
-or needs an upgrade. If capability discovery fails, the cost request still runs.
-No plan-specific grouping list is embedded in the CLI.
+Aggregate costs, `costs events`, and `costs total` default to `--range 7d`;
+`costs export` defaults to `30d`. Paired timezone-aware `--from` and `--to` replace
+the preset. The end is exclusive. For these reads, the CLI checks billing
+capabilities once per invocation to validate the requested range and dimension
+and show current plan choices. Core decides whether an unavailable choice is
+invalid or needs an upgrade. If capability discovery fails, the cost request
+still runs. No plan-specific grouping list is embedded in the CLI.
 
 Aggregate `--group-by` accepts Core dimensions and `tag:<key>`. Tag analytics need
 Team. Core caps non-day groups at 100 and returns `truncated`; use `costs total`
@@ -89,8 +91,12 @@ range or custom-window options because the catalog is a current snapshot.
 
 `costs simulate` replays a bounded historical window against one target from
 `priced-models`. It reports stored baseline spend, simulated current-rate spend,
-the delta, event counts, exclusion counts, and truthfulness caveats. Bedrock
-requires both `--region` and `--service-tier`; other providers reject either
-option. The CLI validates those combinations before sending a request. A
-simulation excludes unpriced and local traffic, modality mismatches, and events
-whose required usage breakdown is missing; it does not rewrite historical spend.
+the delta, scanned/baseline/repriced event counts, exclusion counts, and
+truthfulness caveats. Bedrock requires both `--region` and `--service-tier`;
+other providers reject either option. The CLI validates those combinations
+before sending a request. Unpriced and local traffic are excluded from both
+costs. Priced modality mismatches and events without the required usage
+breakdown remain in the stored-cost baseline but are excluded from current-rate
+repricing, so the CLI warns when the delta compares unequal event populations.
+Current rates are a pricing snapshot and tokenizer equivalence is approximate.
+Simulation does not rewrite historical spend.

@@ -228,8 +228,19 @@ def drift(
         ),
     )
     report_window(data.window)
+    estimate_heuristic = (
+        "server-side input tokens equal output tokens"
+        if data.caveats.estimate_heuristic == "server_side_input_equals_output"
+        else data.caveats.estimate_heuristic
+    )
     typer.echo(
-        "Drift caveats: null estimates excluded; unit-priced and unpriced estimates are null; denied events included.",
+        f"Drift caveats: estimate heuristic is {estimate_heuristic}; null estimates "
+        "excluded; unit-priced and unpriced estimates are null; denied events included.",
+        err=True,
+    )
+    typer.echo(
+        f"Drift coverage: {data.included_event_count} estimates included; "
+        f"{data.missing_estimate_count} events missing estimates.",
         err=True,
     )
     rows = [

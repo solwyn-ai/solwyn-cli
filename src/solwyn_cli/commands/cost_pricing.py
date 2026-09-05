@@ -64,6 +64,43 @@ def _handle_failure(context: typer.Context, error: BaseException) -> NoReturn:
     )
 
 
+def _counted(noun: str, count: int) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+def _report_simulation_caveats(data: CostSimulationResponse) -> None:
+    baseline_only = data.excluded.modality_mismatch + data.excluded.missing_breakdown
+    outside_both = data.excluded.unpriced + data.excluded.local
+    typer.echo(
+        "Simulation populations: "
+        f"scanned {_counted('event', data.scanned_event_count)}; "
+        "baseline uses stored actual cost for "
+        f"{_counted('priced served event', data.baseline_event_count)}; "
+        "current-rate repricing includes "
+        f"{_counted('compatible event', data.included_event_count)}.",
+        err=True,
+    )
+    typer.echo(
+        f"{_counted('modality-mismatch/missing-breakdown event', baseline_only)} "
+        f"{'remains' if baseline_only == 1 else 'remain'} in the baseline but "
+        f"{'is' if baseline_only == 1 else 'are'} excluded from repricing; "
+        f"{_counted('unpriced/local event', outside_both)} "
+        f"{'is' if outside_both == 1 else 'are'} excluded from both costs.",
+        err=True,
+    )
+    if data.baseline_event_count != data.included_event_count:
+        typer.echo(
+            "Unequal event sets: the delta is current-rate repriced cost minus the "
+            "stored-cost baseline across different populations.",
+            err=True,
+        )
+    typer.echo(
+        f"Pricing caveats: {data.caveats.pricing_version} current-rate snapshot; "
+        "tokenizer equivalence is approximate.",
+        err=True,
+    )
+
+
 def priced_models(context: typer.Context) -> None:
     """List exact models available to the current pricing catalog."""
     runtime, project_path = _runtime_project(context)
@@ -180,10 +217,7 @@ def simulate(
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         _handle_failure(context, error)
     report_window(data.window)
-    typer.echo(
-        f"Simulation pricing snapshot: {data.caveats.pricing_version}; excluded unpriced {data.excluded.unpriced}, local {data.excluded.local}, modality mismatch {data.excluded.modality_mismatch}, missing breakdown {data.excluded.missing_breakdown}.",
-        err=True,
-    )
+    _report_simulation_caveats(data)
     output_engine(context).write_success(
         schema="solwyn.costs.simulation.v1",
         data=data,
@@ -202,8 +236,10 @@ def simulate(
                 ),
                 ("Baseline", f"{data.baseline_actual_cost:.6f}"),
                 ("Simulated", f"{data.simulated_cost:.6f}"),
-                ("Delta", f"{data.delta_cost:+.6f}"),
-                ("Included events", str(data.included_event_count)),
+                ("Delta (repriced - baseline)", f"{data.delta_cost:+.6f}"),
+                ("Scanned events", str(data.scanned_event_count)),
+                ("Baseline events", str(data.baseline_event_count)),
+                ("Repriced events", str(data.included_event_count)),
                 ("Excluded events", str(data.excluded_event_count)),
             ),
         ),
