@@ -27,6 +27,7 @@ TOOL_NAMES = [
     "budget_check",
     "budget_confirm",
     "get_project_status",
+    "get_forecast",
     "get_costs",
     "list_projects",
     "get_cost_total",
@@ -148,11 +149,26 @@ PROVIDERS_RESPONSE = [
         "success_count": 9,
         "error_count": 1,
         "failover_count": 0,
+        "model_failover_count": 0,
+        "provider_failover_count": 0,
         "success_rate": 90.0,
         "avg_latency_ms": 125.0,
         "circuit_state": "closed",
+        "circuit_source": "inferred",
     }
 ]
+FORECAST_RESPONSE = {
+    "current_spend": 12.5,
+    "forecast_eom": 75.0,
+    "burn_rate_per_day": 2.5,
+    "ci_low": 60.0,
+    "ci_high": 90.0,
+    "period_start": "2026-09-01T00:00:00+00:00",
+    "period_end": "2026-09-30T23:59:59.999999+00:00",
+    "days_elapsed": 5,
+    "days_remaining": 25,
+    "insufficient_data": False,
+}
 COSTS_RESPONSE = {
     "window": {
         "requested_from": "2026-07-09T00:00:00Z",
@@ -215,11 +231,11 @@ def _mutate_required(contract: list[dict[str, Any]]) -> None:
 
 
 def _mutate_default(contract: list[dict[str, Any]]) -> None:
-    contract[4]["inputSchema"]["properties"]["time_range"]["default"] = "30d"
+    contract[5]["inputSchema"]["properties"]["time_range"]["default"] = "30d"
 
 
 def _mutate_enum(contract: list[dict[str, Any]]) -> None:
-    contract[4]["inputSchema"]["$defs"]["CostRange"]["enum"].append("all")
+    contract[5]["inputSchema"]["$defs"]["CostRange"]["enum"].append("all")
 
 
 def _mutate_bound(contract: list[dict[str, Any]]) -> None:
@@ -245,7 +261,7 @@ def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
 
 
 def _mutate_additional_properties(contract: list[dict[str, Any]]) -> None:
-    contract[5]["inputSchema"]["additionalProperties"] = False
+    contract[6]["inputSchema"]["additionalProperties"] = False
 
 
 def _mutate_nested_output(contract: list[dict[str, Any]]) -> None:
@@ -395,6 +411,7 @@ def mcp_http(
         httpx.Response(204),
         httpx.Response(200, json=BUDGET_RESPONSE),
         httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=FORECAST_RESPONSE),
         httpx.Response(200, json=COSTS_RESPONSE),
         httpx.Response(200, json=PROJECTS_RESPONSE),
     ]
@@ -413,6 +430,7 @@ def mcp_http(
             project_key,
             project_key,
             project_key,
+            project_key,
             jwt,
         ],
     )
@@ -420,7 +438,7 @@ def mcp_http(
     yield requests
 
     assert response_queue == []
-    assert len(clients) == 6
+    assert len(clients) == 7
     assert all(client.is_closed for client in clients)
 
 
@@ -488,6 +506,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "tool_use_input_tokens",
                     "is_estimated",
                 },
+                {"project_id"},
                 {"project_id"},
                 {
                     "project_id",
@@ -564,6 +583,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     },
                 ),
                 await session.call_tool("get_project_status", {}),
+                await session.call_tool("get_forecast", {}),
                 await session.call_tool(
                     "get_costs", {"time_range": "30d", "group_by": "provider"}
                 ),
@@ -572,7 +592,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
 
         assert all(call.isError is False for call in calls)
         assert all(call.structuredContent is not None for call in calls)
-        assert [call.structuredContent["ok"] for call in calls] == [True] * 6
+        assert [call.structuredContent["ok"] for call in calls] == [True] * 7
         assert calls[0].structuredContent["data"]["project_id"] == "proj_alpha"
         assert calls[1].structuredContent["data"]["reservation_id"] == "res_01JZEXAMPLE"
         assert calls[2].structuredContent["data"] == {
@@ -580,8 +600,9 @@ def test_exact_tool_contract_and_mocked_http_conformance(
             "call_id": "12345678-1234-1234-1234-123456789abc",
         }
         assert calls[3].structuredContent["data"]["providers"] == PROVIDERS_RESPONSE
-        assert calls[4].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
-        assert calls[5].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
+        assert calls[4].structuredContent["data"]["forecast_eom"] == 75.0
+        assert calls[5].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
+        assert calls[6].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
 
     anyio.run(exercise_protocol)
 
@@ -630,6 +651,12 @@ def test_exact_tool_contract_and_mocked_http_conformance(
         ),
         ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
         ("GET", "/api/v1/projects/proj_alpha/providers", {}, None),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/forecast",
+            {"period": "mtd"},
+            None,
+        ),
         (
             "GET",
             "/api/v1/projects/proj_alpha/costs",

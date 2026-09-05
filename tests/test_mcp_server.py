@@ -39,6 +39,7 @@ _TOOL_NAMES = [
     "budget_check",
     "budget_confirm",
     "get_project_status",
+    "get_forecast",
     "get_costs",
     "list_projects",
     "get_cost_total",
@@ -108,7 +109,7 @@ def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
         )
 
         with (tmp_path / "mcp-stderr.log").open("w+", encoding="utf-8") as stderr:
-            # Six complete tool schemas make startup sensitive to loaded CI hosts;
+            # Seven complete tool schemas make startup sensitive to loaded CI hosts;
             # 30 seconds remains a bounded protocol-stall and shutdown detector.
             with anyio.fail_after(30):
                 async with stdio_client(server, errlog=stderr) as streams:

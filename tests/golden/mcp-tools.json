@@ -1649,55 +1649,7 @@
           "title": "_BudgetSummary",
           "type": "object"
         },
-        "_ProviderHealth": {
-          "properties": {
-            "provider": {
-              "title": "Provider",
-              "type": "string"
-            },
-            "total_calls": {
-              "title": "Total Calls",
-              "type": "integer"
-            },
-            "success_count": {
-              "title": "Success Count",
-              "type": "integer"
-            },
-            "error_count": {
-              "title": "Error Count",
-              "type": "integer"
-            },
-            "failover_count": {
-              "title": "Failover Count",
-              "type": "integer"
-            },
-            "success_rate": {
-              "title": "Success Rate",
-              "type": "number"
-            },
-            "avg_latency_ms": {
-              "title": "Avg Latency Ms",
-              "type": "number"
-            },
-            "circuit_state": {
-              "title": "Circuit State",
-              "type": "string"
-            }
-          },
-          "required": [
-            "provider",
-            "total_calls",
-            "success_count",
-            "error_count",
-            "failover_count",
-            "success_rate",
-            "avg_latency_ms",
-            "circuit_state"
-          ],
-          "title": "_ProviderHealth",
-          "type": "object"
-        },
-        "_StatusData": {
+        "_ProjectStatusData": {
           "additionalProperties": false,
           "properties": {
             "project_id": {
@@ -1720,7 +1672,80 @@
             "budget",
             "providers"
           ],
-          "title": "_StatusData",
+          "title": "_ProjectStatusData",
+          "type": "object"
+        },
+        "_ProviderHealth": {
+          "properties": {
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "success_count": {
+              "title": "Success Count",
+              "type": "integer"
+            },
+            "error_count": {
+              "title": "Error Count",
+              "type": "integer"
+            },
+            "failover_count": {
+              "title": "Failover Count",
+              "type": "integer"
+            },
+            "model_failover_count": {
+              "title": "Model Failover Count",
+              "type": "integer"
+            },
+            "provider_failover_count": {
+              "title": "Provider Failover Count",
+              "type": "integer"
+            },
+            "success_rate": {
+              "title": "Success Rate",
+              "type": "number"
+            },
+            "avg_latency_ms": {
+              "title": "Avg Latency Ms",
+              "type": "number"
+            },
+            "circuit_state": {
+              "enum": [
+                "closed",
+                "half_open",
+                "open",
+                "unknown"
+              ],
+              "title": "Circuit State",
+              "type": "string"
+            },
+            "circuit_source": {
+              "enum": [
+                "reported",
+                "inferred"
+              ],
+              "title": "Circuit Source",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "total_calls",
+            "success_count",
+            "error_count",
+            "failover_count",
+            "model_failover_count",
+            "provider_failover_count",
+            "success_rate",
+            "avg_latency_ms",
+            "circuit_state",
+            "circuit_source"
+          ],
+          "title": "_ProviderHealth",
           "type": "object"
         },
         "_ToolError": {
@@ -1783,7 +1808,7 @@
         "data": {
           "anyOf": [
             {
-              "$ref": "#/$defs/_StatusData"
+              "$ref": "#/$defs/_ProjectStatusData"
             },
             {
               "type": "null"
@@ -1807,6 +1832,186 @@
         "ok"
       ],
       "title": "_ProjectStatusResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_forecast",
+    "title": null,
+    "description": "Read the configured project's month-to-date spend forecast without authorizing spend.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "get_forecastArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ForecastData": {
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "current_spend": {
+              "title": "Current Spend",
+              "type": "number"
+            },
+            "forecast_eom": {
+              "title": "Forecast Eom",
+              "type": "number"
+            },
+            "burn_rate_per_day": {
+              "title": "Burn Rate Per Day",
+              "type": "number"
+            },
+            "ci_low": {
+              "title": "Ci Low",
+              "type": "number"
+            },
+            "ci_high": {
+              "title": "Ci High",
+              "type": "number"
+            },
+            "period_start": {
+              "title": "Period Start",
+              "type": "string"
+            },
+            "period_end": {
+              "title": "Period End",
+              "type": "string"
+            },
+            "days_elapsed": {
+              "title": "Days Elapsed",
+              "type": "integer"
+            },
+            "days_remaining": {
+              "title": "Days Remaining",
+              "type": "integer"
+            },
+            "insufficient_data": {
+              "title": "Insufficient Data",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "project_id",
+            "current_spend",
+            "forecast_eom",
+            "burn_rate_per_day",
+            "ci_low",
+            "ci_high",
+            "period_start",
+            "period_end",
+            "days_elapsed",
+            "days_remaining",
+            "insufficient_data"
+          ],
+          "title": "ForecastData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.forecast.v1",
+          "default": "solwyn.mcp.forecast.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForecastData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_ForecastResult",
       "type": "object"
     },
     "icons": null,

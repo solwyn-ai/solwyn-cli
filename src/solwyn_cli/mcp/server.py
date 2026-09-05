@@ -38,6 +38,7 @@ from solwyn_cli.commands.costs import (
     fetch_cost_total,
     CostTotalResponse,
 )
+from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
 from solwyn_cli.commands.projects import ProjectsListData, fetch_projects
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
 from solwyn_cli.errors import ApiError
@@ -54,6 +55,7 @@ TOOL_NAMES = (
     "budget_check",
     "budget_confirm",
     "get_project_status",
+    "get_forecast",
     "get_costs",
     "list_projects",
     "get_cost_total",
@@ -191,6 +193,13 @@ class _ProjectStatusResult(_ToolResult[ProjectStatusData]):
     )
 
 
+class _ForecastResult(_ToolResult[ForecastData]):
+    schema_name: Literal["solwyn.mcp.forecast.v1"] = Field(
+        default="solwyn.mcp.forecast.v1",
+        alias="schema",
+    )
+
+
 class _CostsResult(_ToolResult[CostsData]):
     schema_name: Literal["solwyn.mcp.costs.v1"] = Field(
         default="solwyn.mcp.costs.v1",
@@ -248,6 +257,10 @@ def _canonical_guidance_line(fragment: str) -> str:
 
 PROJECT_STATUS_DESCRIPTION = "Read the configured project's budget and provider health without authorizing spend."
 COSTS_DESCRIPTION = "Read project costs grouped by a Core dimension or tag:<key>, with shared cost filters and timezone-aware custom windows."
+FORECAST_DESCRIPTION = (
+    "Read the configured project's month-to-date spend forecast without "
+    "authorizing spend."
+)
 PROJECTS_DESCRIPTION = (
     "List projects visible to the logged-in user. Requires login/JWT authentication."
 )
@@ -622,6 +635,23 @@ def _project_status_operation(
         )
 
 
+def _forecast_operation(
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+) -> _ForecastResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            resolved_project = _project_id(command_runtime, project_id)
+            data = fetch_forecast(client=client, project_id=resolved_project)
+        return _success(_ForecastResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _ForecastResult,
+            error,
+            invalid_response_code="invalid_forecast_response",
+        )
+
+
 def _costs_operation(
     *,
     launch_options: McpLaunchOptions,
@@ -695,7 +725,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
 
 
 def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
-    """Build the stateless local MCP server and register exactly six tools."""
+    """Build the stateless local MCP server and register exactly seven tools."""
     launch = launch_options or McpLaunchOptions()
     server = _ToolOnlyFastMCP(
         name="solwyn",
@@ -840,6 +870,18 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
 
     @server.tool(
         name=TOOL_NAMES[4],
+        description=FORECAST_DESCRIPTION,
+        structured_output=True,
+    )
+    async def get_forecast(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _ForecastResult:
+        return await anyio.to_thread.run_sync(
+            partial(_forecast_operation, project_id, launch)
+        )
+
+    @server.tool(
+        name=TOOL_NAMES[5],
         description=COSTS_DESCRIPTION,
         structured_output=True,
     )
@@ -885,7 +927,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         )
 
     @server.tool(
-        name=TOOL_NAMES[5],
+        name=TOOL_NAMES[6],
         description=PROJECTS_DESCRIPTION,
         structured_output=True,
     )

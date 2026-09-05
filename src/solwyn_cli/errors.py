@@ -63,6 +63,13 @@ _ENTITLEMENT_HINTS = {
     "quota_exceeded": _quota_hint,
     "project_limit_reached": _project_limit_hint,
 }
+_CROSS_PROJECT_KEY_DETAILS = frozenset(
+    {
+        "Cannot access agent runs for a different project",
+        "Cannot access forecast for a different project",
+        "Cannot access a different project",
+    }
+)
 
 
 def _response_detail(response: httpx.Response) -> RawDetail | None:
@@ -125,6 +132,11 @@ def error_from_response(
             hint = "Rotate to a full-scope key with solwyn keys rotate --scope full."
         elif detail == "This endpoint requires JWT authentication":
             hint = "Run solwyn login to authenticate with your user account."
+        elif isinstance(detail, str) and detail in _CROSS_PROJECT_KEY_DETAILS:
+            hint = (
+                "Select the project associated with this key, or configure a key "
+                "for the selected project."
+            )
         elif code in role_codes or isinstance(detail, str) and detail in role_codes:
             hint = (
                 "Your role cannot perform this action; use solwyn whoami to inspect it."

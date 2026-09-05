@@ -14,11 +14,13 @@ from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import app as costs_app
+from solwyn_cli.commands.forecast import FORECAST_HELP, forecast
 from solwyn_cli.commands.init import INIT_HELP, init
 from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
 from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
+from solwyn_cli.commands.providers import app as providers_app
 from solwyn_cli.commands.status import STATUS_HELP, status
 from solwyn_cli.commands.webhooks import app as webhooks_app
 from solwyn_cli.commands.whoami import WHOAMI_HELP, whoami
@@ -56,6 +58,8 @@ app.add_typer(projects_app, name="projects")
 app.add_typer(webhooks_app, name="webhooks")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
 app.add_typer(costs_app, name="costs")
+app.add_typer(providers_app, name="providers")
+app.command("forecast", epilog=FORECAST_HELP)(forecast)
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)

@@ -1,0 +1,10 @@
+Field                                                               Value
+Project                                                        proj_alpha
+Requested window                                                  90 days
+Effective window                                                  30 days
+Data retention                                                    30 days
+1 identity          openai | chat.completions | sync | responses | direct
+1 capability scope                                        responses.write
+1 posture                                                     unsupported
+1 occurrences                          17 (advisory; never billing truth)
+1 first/last                  2026-08-15T10:00:00Z / 2026-09-05T12:30:00Z

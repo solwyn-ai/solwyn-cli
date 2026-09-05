@@ -32,6 +32,7 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
 from solwyn_cli.commands.costs import CostRange
+from solwyn_cli.commands.providers import FailoverRange, UntrackedRange
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
@@ -462,6 +463,44 @@ def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
         _assert_string_parameter_domain(parameter, values=values, context=context)
 
 
+def assert_forecast_and_provider_query_contracts(snapshot: dict[str, Any]) -> None:
+    """Guard the exact query names, enum domains, and defaults for W3 reads."""
+    contracts = (
+        (
+            "/api/v1/projects/{project_id}/forecast",
+            "period",
+            {"mtd"},
+            "mtd",
+        ),
+        (
+            "/api/v1/projects/{project_id}/providers/failovers",
+            "range",
+            {member.value for member in FailoverRange},
+            "7d",
+        ),
+        (
+            "/api/v1/projects/{project_id}/untracked-surfaces",
+            "range",
+            {member.value for member in UntrackedRange},
+            "7d",
+        ),
+    )
+    for path, name, values, default in contracts:
+        parameter = _operation_parameter(
+            snapshot,
+            path=path,
+            method="get",
+            location="query",
+            name=name,
+        )
+        context = f"GET {path} query {name}"
+        assert parameter.get("required") is False, f"{context}: requiredness differs"
+        assert parameter["schema"].get("default") == default, (
+            f"{context}: default differs"
+        )
+        _assert_string_parameter_domain(parameter, values=values, context=context)
+
+
 def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> None:
     """Bind the guardrail POST to its exact required request component."""
     path = "/api/v1/budgets/check"
@@ -768,6 +807,33 @@ def test_init_reuses_guarded_login_and_project_create_requests() -> None:
 
 def test_costs_query_contract_matches_snapshot() -> None:
     assert_costs_query_contract(_snapshot())
+
+
+def test_forecast_and_provider_query_contracts_match_snapshot() -> None:
+    assert_forecast_and_provider_query_contracts(_snapshot())
+
+
+@pytest.mark.parametrize(
+    ("path", "name"),
+    [
+        ("/api/v1/projects/{project_id}/forecast", "period"),
+        ("/api/v1/projects/{project_id}/providers/failovers", "range"),
+        ("/api/v1/projects/{project_id}/untracked-surfaces", "range"),
+    ],
+)
+def test_forecast_and_provider_query_drift_trips_guard(path: str, name: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path=path,
+        method="get",
+        location="query",
+        name=name,
+    )
+    parameter["schema"]["default"] = "changed"
+
+    with pytest.raises(AssertionError, match="default differs"):
+        assert_forecast_and_provider_query_contracts(mutated)
 
 
 def test_budget_check_operation_uses_required_request_component() -> None:
