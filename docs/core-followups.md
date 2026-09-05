@@ -37,10 +37,19 @@ Place the scheduled workflow in `solwyn-ai/core` or the private infrastructure r
 must never run from a CLI `pull_request` or any other public CLI workflow. Public CLI CI continues
 to use only the vendored JSON and needs no Core checkout, Core token, or cross-repository secret.
 
-The Core/infra maintainers own the workflow, schedule, and GitHub App credential. The CLI
-maintainers own triage of the generated CLI issue and the follow-up snapshot/adoption pull
-request. The GitHub App should have only the cross-repository permissions needed for this job:
-read Core and CLI contents, and read/write CLI issues. Do not use a personal access token.
+The Core/infra maintainers own the workflow, schedule, and credentials. The CLI maintainers own
+triage of the generated CLI issue and the follow-up snapshot/adoption pull request. Keep the
+credential split specific to the workflow's host:
+
+- **Core-hosted workflow:** grant that job's repository `GITHUB_TOKEN` `contents: read` and
+  `issues: write`, and use it only for the Core monitor-failure issue. Use a GitHub App
+  installation token for cross-repository CLI access, limited to CLI contents read and CLI issues
+  read/write.
+- **Infrastructure-hosted workflow:** use a GitHub App installation limited to the Core and CLI
+  repositories. It needs contents read in both repositories, CLI issues read/write for the drift
+  issue, and narrowly scoped Core issues read/write for the monitor-failure issue.
+
+Do not use a personal access token. Neither placement grants a Core credential to public CLI CI.
 
 ### Proposed mechanism
 
@@ -61,9 +70,12 @@ Run daily and allow `workflow_dispatch` for repair and testing:
    field adoption requires a maintainer to review the request/response drift guards.
 6. If content matches, close an open drift issue only after recording the matching Core commit in
    a final comment. Do not alter the checked-in snapshot or its age metadata.
-7. Treat checkout, authentication, parsing, and issue-update failures as monitor failures. Open or
-   update a separate failure issue in Core so an infrastructure failure can never be reported as
-   "no drift."
+7. Treat checkout, authentication, parsing, comparison, and issue-update failures as monitor
+   failures and preserve a failing workflow conclusion. After capturing the failure, make a
+   best-effort attempt to open or update a separate failure issue in Core with the placement's
+   Core issue credential. If that publication also fails, log the reporting failure without
+   replacing or masking the original non-zero conclusion. Missing issue-write authorization can
+   prevent the issue from being created; it can never turn the run into "no drift."
 
 The Core repository already proves that its own `shared/openapi.json` matches a fresh export in
 `scripts/check-openapi.sh:8-16`. The proposed job starts from that checked-in customer contract
@@ -79,8 +91,9 @@ Implementation of this monitor is tracked in
   Core opens or updates the deduplicated CLI issue on the next scheduled run.
 - Changing only `x-solwyn-snapshot-date`, `x-solwyn-core-ref`, whitespace, or JSON key order does
   not report content drift.
-- A broken Core checkout or GitHub App token makes the workflow fail and creates a visible Core
-  monitor-failure issue.
+- A broken checkout, credential, comparison, or issue update makes the workflow conclude failure.
+- An authorized run attempts to create or update the Core monitor-failure issue; failure to publish
+  that issue is reported in logs and the workflow still concludes failure.
 - The workflow cannot run with secrets on an untrusted CLI pull request.
 - The CLI's existing 30-day age test and request/response drift tests remain unchanged.
 
