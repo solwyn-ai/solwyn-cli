@@ -1124,3 +1124,59 @@ def test_init_invalid_run_cap_does_not_create_project():
     result = runner.invoke(app, ["--json", "init", "--run-cap", "0.001"])
     assert result.exit_code == 2
     assert not FakeClient.instances
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (auth.AuthError("Authentication refresh failed."), "authentication_failed"),
+        (
+            auth.CredentialStorageError("Refreshed credentials could not be stored."),
+            "credential_storage_failed",
+        ),
+    ],
+)
+def test_init_run_cap_auth_failure_reports_created_project(
+    monkeypatch: pytest.MonkeyPatch,
+    error: auth.AuthError,
+    code: str,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    prompt_values = iter(["Created project", 100.0])
+    monkeypatch.setattr(
+        init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
+    )
+    monkeypatch.setattr(init_module, "store_project_key", lambda key: None)
+    created = {
+        **PROJECT,
+        "key": CREATED_KEY,
+        "key_prefix": CREATED_KEY[:24],
+        "scope": "full",
+    }
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=created),
+        error,
+    ]
+
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "5"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert (
+        "Project proj_alpha was created; review its budget rules before retrying "
+        "the run-cap setup."
+    ) in result.stderr
+    assert json.loads(result.stderr.splitlines()[-1])["code"] == code
+    requests = [
+        request for client in FakeClient.instances for request in client.requests
+    ]
+    assert [(method, path) for method, path, _ in requests] == [
+        ("GET", "/api/v1/projects"),
+        ("POST", "/api/v1/projects"),
+        ("GET", "/api/v1/projects/proj_alpha/budget"),
+    ]
+    assert not config_module.get_config_path().exists()
+    for secret in (CREATED_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
+        assert secret not in result.stdout + result.stderr + repr(result.exception)

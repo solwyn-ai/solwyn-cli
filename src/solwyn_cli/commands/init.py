@@ -262,7 +262,7 @@ def _create_project(
                         kind="runaway_run", spend=run_cap, mode="hard_deny"
                     ),
                 )
-            except (ApiError, ValueError, TypeError):
+            except (ApiError, AuthError, ValueError, TypeError):
                 typer.echo(
                     f"Project {created.id} was created; review its budget rules before retrying the run-cap setup.",
                     err=True,
