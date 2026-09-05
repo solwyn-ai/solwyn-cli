@@ -4,4 +4,7 @@ Source                     keyring
 User                Person Example
 Email           person@example.com
 Tier                          team
+Account ID                acct_123
+Role                         admin
+Seats                          3/5
 Project         proj_alpha (Alpha)

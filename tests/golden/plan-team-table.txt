@@ -1,0 +1,29 @@
+Field                                           Value
+Tier                                             team
+Billing interval                                 year
+Status                                         active
+Limit api keys/project                             10
+Limit projects                              unlimited
+Limit requests/month                           500000
+Limit webhook targets                               5
+Analytics ranges                         7d, 30d, 90d
+Analytics group by                         day, model
+                                     provider, status
+                        service_tier, provider_region
+                           failover_reason, agent_run
+Analytics tags                                    yes
+Analytics CSV                                    full
+Paginated cost events                             yes
+Budget modes                    alert_only, hard_deny
+Budget periods                 daily, weekly, monthly
+Budget sub-period                                 yes
+Max thresholds                                     10
+Hard-cap projects                           unlimited
+Account spend alerts                              yes
+Notification channels                    slack, email
+API-key expiry                                    yes
+Ingest/second                                      30
+Checks/minute                                   12000
+Failover entitlement                              yes
+Data retention                               180 days
+Upgrade in dashboard                         /billing

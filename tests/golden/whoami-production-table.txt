@@ -4,3 +4,6 @@ Source                     keyring
 User                Person Example
 Email           person@example.com
 Tier                    production
+Account ID                acct_123
+Role                         owner
+Seats                          1/2

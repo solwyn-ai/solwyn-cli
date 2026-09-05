@@ -209,6 +209,8 @@ class SolwynClient:
         self,
         method: str,
         path: str,
+        *,
+        accepted_statuses: frozenset[int] = frozenset(),
         **kwargs: Any,
     ) -> httpx.Response:
         """Make a guarded request without resolving or sending credentials."""
@@ -229,7 +231,8 @@ class SolwynClient:
                 hint=None,
                 detail=None,
             ) from None
-        self._raise_for_unsuccessful_response(response)
+        if response.status_code not in accepted_statuses:
+            self._raise_for_unsuccessful_response(response)
         return response
 
     def request(

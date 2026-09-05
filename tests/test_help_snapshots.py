@@ -310,6 +310,12 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.forecast.v1",
     },
+    ("doctor",): {
+        "endpoint": "GET /health/ready plus one credential-specific authenticated probe",
+        "auth": "optional; JWT or project key enables the authenticated probe",
+        "exits": "0 all checks pass; 1 diagnostic failure; 2 usage",
+        "schema": "solwyn.doctor.v1",
+    },
     ("init",): {
         "endpoint": "composite onboarding workflow",
         "auth": "any or interactive bootstrap",
@@ -357,6 +363,12 @@ HELP_CONTRACTS = {
         "auth": "resolved per tool call",
         "exits": "0 clean shutdown; 1 startup or protocol failure; 2 usage",
         "schema": "MCP protocol (stdio JSON-RPC)",
+    },
+    ("plan",): {
+        "endpoint": "GET /api/v1/billing/status",
+        "auth": "JWT or project key with account context",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
+        "schema": "solwyn.plan.v1",
     },
     ("projects",): {
         "endpoint": "composite router for project subcommands",
@@ -409,8 +421,10 @@ HELP_CONTRACTS = {
         "schema": "solwyn.status.v1",
     },
     ("whoami",): {
-        "endpoint": "local key identity or GET /api/v1/account/me and GET "
-        "/api/v1/projects",
+        "endpoint": (
+            "local key identity or GET /api/v1/account/me, "
+            "GET /api/v1/accounts/me, and GET /api/v1/projects"
+        ),
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.whoami.v1",

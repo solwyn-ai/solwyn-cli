@@ -3171,6 +3171,18 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.doctor.v1",
+      "name": "doctor",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "doctor"
+      ],
+      "summary": "Check local configuration, dependencies, credentials, and API metadata."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.forecast.v1",
       "name": "forecast",
       "output_kind": "json-envelope",
@@ -3593,6 +3605,18 @@
         "test"
       ],
       "summary": "Test delivery or SMS eligibility; failure exits 1, including HTTP 200 failures."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.v1",
+      "name": "plan",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "plan"
+      ],
+      "summary": "Show the current plan, limits, and capabilities."
     },
     {
       "hidden": false,
@@ -4930,6 +4954,20 @@
     },
     {
       "keys": [
+        "authenticated_probe",
+        "config",
+        "keychain",
+        "readiness",
+        "schema",
+        "snapshot",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.doctor.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "code",
         "detail",
         "hint",
@@ -5054,6 +5092,20 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.notifications.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "billing_interval",
+        "capabilities",
+        "cta_path",
+        "limits",
+        "schema",
+        "status",
+        "tier"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.v1",
       "universal_error_envelope": false
     },
     {
@@ -5235,13 +5287,17 @@
     },
     {
       "keys": [
+        "account_id",
         "auth_source",
         "auth_type",
         "configured_project",
         "hint",
         "projects",
         "schema",
-        "user"
+        "seat_limit",
+        "seats_used",
+        "user",
+        "your_role"
       ],
       "optional_keys": [],
       "schema": "solwyn.whoami.v1",
