@@ -179,6 +179,18 @@ def _read(
     except ApiError as error:
         if error.status_code == 402:
             typer.echo("Tag analytics need Team.", err=True)
+        if error.status_code == 422:
+            error = ApiError(
+                status_code=error.status_code,
+                code=error.code,
+                message=error.message,
+                hint=(
+                    "Check the tag key and prefix; use a cursor returned for the "
+                    "same key and prefix, or omit --cursor to restart pagination."
+                ),
+                detail=error.detail,
+            )
+            exit_with_error(context, error, semantic=ErrorSemantic.USAGE)
         exit_with_error(context, error)
     except AuthError as error:
         exit_with_error(

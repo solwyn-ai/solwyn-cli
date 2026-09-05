@@ -196,3 +196,49 @@ def test_retire_never_registered_is_not_found(transport, monkeypatch):
         "/api/v1/account/tags",
         {"params": {"key": "missing"}},
     )
+
+
+def test_values_invalid_cursor_is_usage_error_with_safe_local_hint(transport):
+    requests, replies = transport
+    replies.append(
+        error_from_response(
+            httpx.Response(
+                422,
+                json={
+                    "detail": [
+                        {
+                            "loc": ["query", "cursor"],
+                            "msg": "Invalid cursor",
+                            "type": "value_error",
+                            "input": "raw-untrusted-cursor",
+                        }
+                    ]
+                },
+            )
+        )
+    )
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "--project",
+            "proj_1",
+            "tags",
+            "values",
+            "env",
+            "--cursor",
+            "invalid",
+        ],
+    )
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "http_error"
+    assert error["message"] == "Request failed with status 422."
+    assert (
+        "cursor" in error["hint"]
+        and "key" in error["hint"]
+        and "prefix" in error["hint"]
+    )
+    assert "raw-untrusted-cursor" not in result.stderr
+    assert len(requests) == 1

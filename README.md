@@ -59,7 +59,7 @@ solwyn budget check --provider openai --model gpt-4.1 --estimated-input-tokens 1
 # 2. Make the provider call yourself.
 
 # 3. Settle the reservation with what the call actually used.
-solwyn budget confirm --call-id call-01 --provider openai --model gpt-4.1 \
+solwyn budget confirm --call-id 12345678-1234-1234-1234-123456789abc --provider openai --model gpt-4.1 \
   --reservation-id "$RESERVATION" --input-tokens 1180 --output-tokens 640
 ```
 
