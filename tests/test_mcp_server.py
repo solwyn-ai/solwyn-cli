@@ -49,6 +49,7 @@ _TOOL_NAMES = [
     "list_tag_values",
     "list_agent_runs",
     "get_agent_run",
+    "list_alert_events",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

@@ -680,6 +680,58 @@ RESPONSE_READS = {
         "unpriced_and_local_excluded",
         "modality_mismatches_excluded",
     ),
+    "AlertEventEntry": (
+        "id",
+        "project_id",
+        "account_id",
+        "scope",
+        "rule_key",
+        "emitted_at",
+        "event_type",
+        "rule_type",
+        "value_at_event",
+        "threshold_at_event",
+        "period_key",
+        "linked_event_ids",
+        "metadata_json",
+        "delivery",
+    ),
+    "AlertDeliveryStatus": (
+        "status",
+        "attempt_count",
+        "next_attempt_at",
+        "dead_lettered_at",
+        "legs",
+    ),
+    "AlertDeliveryLegEntry": (
+        "leg_key",
+        "channel_type",
+        "channel_name",
+        "status",
+        "attempt_count",
+        "last_attempted_at",
+        "delivered_at",
+        "error",
+    ),
+    "AlertEventListResponse": ("events", "next_cursor", "window"),
+    "AlertEventWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AccountAlertResponse": (
+        "account_id",
+        "spend_threshold_usd",
+        "enabled",
+        "channel_ids",
+        "snoozed_until",
+        "routing",
+        "created_at",
+        "updated_at",
+    ),
+    "AccountAlertSnoozeResponse": ("snoozed_until",),
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
@@ -717,6 +769,29 @@ OPERATION_RESPONSE_BINDINGS = {
         "200",
         "object",
         "CostSimulationResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/alert-events"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alert-events"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alerts"): ("200", "object", "AccountAlertResponse"),
+    ("PUT", "/api/v1/account/alerts"): ("200", "object", "AccountAlertResponse"),
+    ("POST", "/api/v1/account/alerts/preview"): ("200", "object", "AlertRouting"),
+    ("POST", "/api/v1/account/alerts/snooze"): (
+        "200",
+        "object",
+        "AccountAlertSnoozeResponse",
+    ),
+    ("POST", "/api/v1/account/alerts/unsnooze"): (
+        "200",
+        "object",
+        "AccountAlertSnoozeResponse",
     ),
     ("GET", "/api/v1/projects/{project_id}/costs/events"): (
         "200",
@@ -949,6 +1024,7 @@ INFORMATIVE_OPERATION_RESPONSE_BINDINGS = {
 }
 NO_CONTENT_OPERATION_BINDINGS = {
     ("DELETE", "/api/v1/account/notification-channels/{channel_id}"): "204",
+    ("DELETE", "/api/v1/account/alerts"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/webhooks/{webhook_id}"): "204",
 }
@@ -1397,12 +1473,13 @@ def test_every_consumed_no_content_operation_is_bodyless() -> None:
     assert_no_content_operation_bindings(_snapshot())
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/projects/{project_id}/key/{key_id}", "/api/v1/account/alerts"]
+)
 @pytest.mark.parametrize("mutation", ["status", "body", "alternate"])
-def test_project_key_revoke_response_drift_trips_guard(mutation: str) -> None:
+def test_no_content_response_drift_trips_guard(path: str, mutation: str) -> None:
     mutated = copy.deepcopy(_snapshot())
-    responses = mutated["paths"]["/api/v1/projects/{project_id}/key/{key_id}"][
-        "delete"
-    ]["responses"]
+    responses = mutated["paths"][path]["delete"]["responses"]
     if mutation == "status":
         responses["200"] = responses.pop("204")
     elif mutation == "body":

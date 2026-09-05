@@ -24,6 +24,11 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.artifacts import agent_guidance
 from solwyn_cli.auth import AuthError, JwtCredential, ProjectKeyCredential
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands.alerts import (
+    AlertEventListResponse,
+    AlertQueryError,
+    request_alert_events,
+)
 from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rules
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
@@ -97,6 +102,7 @@ TOOL_NAMES = (
     "list_tag_values",
     "list_agent_runs",
     "get_agent_run",
+    "list_alert_events",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -264,6 +270,12 @@ class _CostsResult(_ToolResult[CostsData]):
     schema_name: Literal["solwyn.mcp.costs.v1"] = Field(
         default="solwyn.mcp.costs.v1",
         alias="schema",
+    )
+
+
+class _AlertEventsResult(_ToolResult[AlertEventListResponse]):
+    schema_name: Literal["solwyn.alerts.v1"] = Field(
+        default="solwyn.alerts.v1", alias="schema"
     )
 
 
@@ -513,6 +525,37 @@ def _require_project_key(
         ),
         hint="Set SOLWYN_API_KEY or store a project key with solwyn login --with-key.",
     )
+
+
+def _alert_events_operation(
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+    *,
+    account: bool = False,
+    **filters: Any,
+) -> _AlertEventsResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            data = request_alert_events(
+                client=client,
+                project_id=None
+                if account
+                else _project_id(command_runtime, project_id),
+                account=account,
+                **filters,
+            )
+        return _success(_AlertEventsResult, data)
+    except AlertQueryError:
+        return _error(
+            _AlertEventsResult,
+            code="invalid_alert_query",
+            message="The alert query was invalid.",
+            hint="Use range 7d|30d|90d or paired timezone-aware from_/to bounds; scope and rule_type allow at most 32 characters and no NUL.",
+        )
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _AlertEventsResult, error, invalid_response_code="invalid_alerts_response"
+        )
 
 
 def _budget_status_operation(
@@ -1494,6 +1537,40 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 launch_options=launch,
                 run=run,
                 project_id=project_id,
+            )
+        )
+
+    @server.tool(
+        name="list_alert_events",
+        description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
+        structured_output=True,
+    )
+    async def list_alert_events(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        account: bool = False,
+        time_range: str = "30d",
+        from_: str | None = None,
+        to: str | None = None,
+        rule_type: str | None = None,
+        scope: str | None = None,
+        failed_only: bool = False,
+        cursor: str | None = None,
+        all_pages: bool = False,
+    ) -> _AlertEventsResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _alert_events_operation,
+                project_id,
+                launch,
+                account=account,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+                rule_type=rule_type,
+                scope=scope,
+                failed_only=failed_only,
+                cursor=cursor,
+                all_pages=all_pages,
             )
         )
 

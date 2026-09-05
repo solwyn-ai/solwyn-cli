@@ -12,6 +12,7 @@ from solwyn_cli.commands.notifications import app as notifications_app
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.attest import ATTEST_HELP, attest
 from solwyn_cli.commands.budget import app as budget_app
+from solwyn_cli.commands.alerts import app as alerts_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.cost_analysis import register_cost_analysis_commands
@@ -74,6 +75,7 @@ app.add_typer(costs_app, name="costs")
 app.add_typer(providers_app, name="providers")
 app.command("forecast", epilog=FORECAST_HELP)(forecast)
 app.command("doctor", epilog=DOCTOR_HELP)(doctor)
+app.add_typer(alerts_app, name="alerts")
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)

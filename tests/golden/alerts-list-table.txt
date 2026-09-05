@@ -1,0 +1,2 @@
+id         emitted at                 rule type      event      delivery
+event-one  2026-09-01T00:00:00+00:00  scoped_budget  triggered  partial 

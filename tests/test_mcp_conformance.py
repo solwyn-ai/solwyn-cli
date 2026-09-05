@@ -13,6 +13,7 @@ import pytest
 from mcp import McpError
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from test_alerts_command import EVENT as ALERT_EVENT, WINDOW as ALERT_WINDOW
 from solwyn_cli import auth, runtime
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.mcp import server as mcp_server
@@ -37,6 +38,7 @@ TOOL_NAMES = [
     "list_tag_values",
     "list_agent_runs",
     "get_agent_run",
+    "list_alert_events",
 ]
 
 BUDGET_RESPONSE = {
@@ -626,6 +628,18 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "cursor",
                 },
                 {"run", "project_id"},
+                {
+                    "project_id",
+                    "account",
+                    "time_range",
+                    "from_",
+                    "to",
+                    "rule_type",
+                    "scope",
+                    "failed_only",
+                    "cursor",
+                    "all_pages",
+                },
             ]
 
             calls = [
@@ -2082,3 +2096,58 @@ def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
     assert result.structuredContent["ok"]
     assert result.structuredContent["data"]["recorded"]["status"] == "failed"
     assert len(requests) == 2
+
+
+def test_list_alert_events_project_key_and_filters(monkeypatch):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200,
+                json={
+                    "events": [ALERT_EVENT],
+                    "window": ALERT_WINDOW,
+                    "next_cursor": "next",
+                },
+            )
+        ],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(
+        _call_tool,
+        "list_alert_events",
+        {
+            "scope": "tag",
+            "rule_type": "scoped_budget",
+            "failed_only": True,
+            "cursor": "start",
+            "time_range": "7d",
+        },
+    )
+    assert not result.isError
+    assert (
+        result.structuredContent["data"]["events"][0]["delivery"]["status"] == "partial"
+    )
+    assert requests[0][:2] == ("GET", "/api/v1/projects/proj_alpha/alert-events")
+    assert requests[0][2]["query"] == {
+        "range": "7d",
+        "scope": "tag",
+        "rule_type": "scoped_budget",
+        "cursor": "start",
+    }
+
+
+def test_list_alert_events_bad_query(monkeypatch):
+    _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(
+        _call_tool, "list_alert_events", {"from_": "2026-09-01T00:00:00Z"}
+    )
+    assert result.structuredContent["error"]["code"] == "invalid_alert_query"

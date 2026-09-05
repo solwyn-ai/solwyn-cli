@@ -50,6 +50,72 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.costs.simulation.v1",
     },
+    ("alerts",): {
+        "endpoint": "GET /api/v1/projects/{project_id}/alert-events or /api/v1/account/alert-events",
+        "auth": "key or JWT; account requires JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.v1",
+    },
+    ("alerts", "list"): {
+        "endpoint": "GET /api/v1/projects/{project_id}/alert-events or /api/v1/account/alert-events",
+        "auth": "key or JWT; account requires JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.v1",
+    },
+    ("alerts", "show"): {
+        "endpoint": "GET /api/v1/projects/{project_id}/alert-events or /api/v1/account/alert-events (cursor walk; local event ID match)",
+        "auth": "key or JWT; account requires JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.v1",
+    },
+    ("alerts", "export"): {
+        "endpoint": "GET /api/v1/projects/{project_id}/alert-events/export or /api/v1/account/alert-events/export",
+        "auth": "key or JWT; account requires JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "stream (CSV or NDJSON)",
+    },
+    ("alerts", "account"): {
+        "endpoint": "/api/v1/account/alerts",
+        "auth": "JWT; mutations require owner",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
+    ("alerts", "account", "show"): {
+        "endpoint": "GET /api/v1/account/alerts",
+        "auth": "JWT; any account member",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
+    ("alerts", "account", "set"): {
+        "endpoint": "PUT /api/v1/account/alerts",
+        "auth": "JWT owner",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
+    ("alerts", "account", "delete"): {
+        "endpoint": "DELETE /api/v1/account/alerts",
+        "auth": "JWT owner",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
+    ("alerts", "account", "snooze"): {
+        "endpoint": "POST /api/v1/account/alerts/snooze",
+        "auth": "JWT owner",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
+    ("alerts", "account", "unsnooze"): {
+        "endpoint": "POST /api/v1/account/alerts/unsnooze",
+        "auth": "JWT owner",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
+    ("alerts", "account", "preview"): {
+        "endpoint": "POST /api/v1/account/alerts/preview",
+        "auth": "JWT; any account member",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.account.v1",
+    },
     ("costs", "events"): {
         "endpoint": "GET /api/v1/projects/{project}/costs/events",
         "auth": "any",
@@ -646,7 +712,7 @@ def test_mcp_help_names_the_exact_tool_surface() -> None:
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
         "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
-        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run."
+        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events."
     ) in rendered
 
 

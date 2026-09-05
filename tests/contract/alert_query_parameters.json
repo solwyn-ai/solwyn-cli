@@ -1,0 +1,314 @@
+{
+  "/api/v1/projects/{project_id}/alert-events": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "7d",
+          "30d",
+          "90d"
+        ],
+        "type": "string",
+        "default": "30d"
+      }
+    },
+    "cursor": {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "rule_type": {
+      "name": "rule_type",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "name": "scope",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  },
+  "/api/v1/projects/{project_id}/alert-events/export": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "7d",
+          "30d",
+          "90d"
+        ],
+        "type": "string",
+        "default": "30d"
+      }
+    },
+    "format": {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "csv",
+          "json"
+        ],
+        "type": "string",
+        "default": "csv"
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  },
+  "/api/v1/account/alert-events": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "7d",
+          "30d",
+          "90d"
+        ],
+        "type": "string",
+        "default": "30d"
+      }
+    },
+    "cursor": {
+      "name": "cursor",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "rule_type": {
+      "name": "rule_type",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "name": "scope",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 32
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  },
+  "/api/v1/account/alert-events/export": {
+    "range": {
+      "name": "range",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "7d",
+          "30d",
+          "90d"
+        ],
+        "type": "string",
+        "default": "30d"
+      }
+    },
+    "format": {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "enum": [
+          "csv",
+          "json"
+        ],
+        "type": "string",
+        "default": "csv"
+      }
+    },
+    "from": {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "to": {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  }
+}

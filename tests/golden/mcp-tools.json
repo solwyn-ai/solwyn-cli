@@ -5979,5 +5979,539 @@
     "annotations": null,
     "_meta": null,
     "execution": null
+  },
+  {
+    "name": "list_alert_events",
+    "title": null,
+    "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "account": {
+          "default": false,
+          "title": "Account",
+          "type": "boolean"
+        },
+        "time_range": {
+          "default": "30d",
+          "title": "Time Range",
+          "type": "string"
+        },
+        "from_": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "rule_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Type"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope"
+        },
+        "failed_only": {
+          "default": false,
+          "title": "Failed Only",
+          "type": "boolean"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "all_pages": {
+          "default": false,
+          "title": "All Pages",
+          "type": "boolean"
+        }
+      },
+      "title": "list_alert_eventsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "AlertDeliveryLegEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "leg_key": {
+              "title": "Leg Key",
+              "type": "string"
+            },
+            "channel_type": {
+              "title": "Channel Type",
+              "type": "string"
+            },
+            "channel_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Channel Name"
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "retrying",
+                "accepted",
+                "delivered",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "attempt_count": {
+              "title": "Attempt Count",
+              "type": "integer"
+            },
+            "last_attempted_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Attempted At"
+            },
+            "delivered_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delivered At"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            }
+          },
+          "required": [
+            "leg_key",
+            "channel_type",
+            "status",
+            "attempt_count"
+          ],
+          "title": "AlertDeliveryLegEntry",
+          "type": "object"
+        },
+        "AlertDeliveryStatus": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "pending",
+                "retrying",
+                "processed",
+                "delivered",
+                "partial",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "attempt_count": {
+              "title": "Attempt Count",
+              "type": "integer"
+            },
+            "next_attempt_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Next Attempt At"
+            },
+            "dead_lettered_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Dead Lettered At"
+            },
+            "legs": {
+              "items": {
+                "$ref": "#/$defs/AlertDeliveryLegEntry"
+              },
+              "title": "Legs",
+              "type": "array"
+            }
+          },
+          "required": [
+            "status",
+            "attempt_count",
+            "legs"
+          ],
+          "title": "AlertDeliveryStatus",
+          "type": "object"
+        },
+        "AlertEventEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "project_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Project Id"
+            },
+            "account_id": {
+              "title": "Account Id",
+              "type": "string"
+            },
+            "scope": {
+              "title": "Scope",
+              "type": "string"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "emitted_at": {
+              "format": "date-time",
+              "title": "Emitted At",
+              "type": "string"
+            },
+            "event_type": {
+              "title": "Event Type",
+              "type": "string"
+            },
+            "rule_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Rule Type"
+            },
+            "value_at_event": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value At Event"
+            },
+            "threshold_at_event": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Threshold At Event"
+            },
+            "period_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Period Key"
+            },
+            "linked_event_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Linked Event Ids",
+              "type": "array"
+            },
+            "metadata_json": {
+              "additionalProperties": true,
+              "title": "Metadata Json",
+              "type": "object"
+            },
+            "delivery": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AlertDeliveryStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "id",
+            "account_id",
+            "scope",
+            "rule_key",
+            "emitted_at",
+            "event_type"
+          ],
+          "title": "AlertEventEntry",
+          "type": "object"
+        },
+        "AlertEventListResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "items": {
+                "$ref": "#/$defs/AlertEventEntry"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Next Cursor"
+            },
+            "window": {
+              "$ref": "#/$defs/AlertEventWindow"
+            }
+          },
+          "required": [
+            "events",
+            "window"
+          ],
+          "title": "AlertEventListResponse",
+          "type": "object"
+        },
+        "AlertEventWindow": {
+          "additionalProperties": false,
+          "description": "Alert history uses the same requested/effective window shape as costs.",
+          "properties": {
+            "requested_from": {
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "AlertEventWindow",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.alerts.v1",
+          "default": "solwyn.alerts.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlertEventListResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_AlertEventsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   }
 ]

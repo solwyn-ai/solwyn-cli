@@ -378,3 +378,20 @@ class IngestMetadataEvent(_WireModel):
         if value:
             raise ValueError("CLI recording does not implement provider routing.")
         return value
+
+
+class AccountAlertUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    spend_threshold_usd: float = Field(gt=0)
+    enabled: bool | None = None
+    channel_ids: list[str] = Field(default_factory=list)
+
+
+class AccountAlertPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    channel_ids: list[str] = Field(default_factory=list)
+
+
+class AccountAlertSnoozeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    snoozed_until: datetime

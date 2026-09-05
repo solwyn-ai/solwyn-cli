@@ -18,6 +18,9 @@ from solwyn_cli._vendor.notification_wire import (
     PagerDutyTestRequest,
 )
 from solwyn_cli._vendor.wire import (
+    AccountAlertUpdateRequest,
+    AccountAlertPreviewRequest,
+    AccountAlertSnoozeRequest,
     BudgetCheckRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
@@ -45,6 +48,9 @@ REQUEST_MIRRORS = {
     AlertEmailUpdate: "AlertEmailUpdate",
     SlackTestRequest: "SlackTestRequest",
     PagerDutyTestRequest: "PagerDutyTestRequest",
+    AccountAlertUpdateRequest: "AccountAlertUpdateRequest",
+    AccountAlertPreviewRequest: "AccountAlertPreviewRequest",
+    AccountAlertSnoozeRequest: "AccountAlertSnoozeRequest",
     LoginRequest: "LoginRequest",
     RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
