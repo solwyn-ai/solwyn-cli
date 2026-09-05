@@ -1,0 +1,6 @@
+Field       Value                               
+Status      rejected                            
+Ingested    0                                   
+Rejected    1                                   
+Duplicates  0                                   
+Call IDs    12345678-1234-1234-1234-123456789abc

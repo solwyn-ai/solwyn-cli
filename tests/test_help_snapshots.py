@@ -14,6 +14,36 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("record",): {
+        "endpoint": "POST /api/v1/metadata/ingest",
+        "auth": "key",
+        "exits": "0 recorded or call-ID replay; 1 rejection/collision/API; 2 usage; 3 auth",
+        "schema": "solwyn.record.v1",
+    },
+    ("tags",): {
+        "endpoint": "composite tag router",
+        "auth": "varies by subcommand",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("tags", "list"): {
+        "endpoint": "GET /api/v1/projects/{project}/tags",
+        "auth": "any",
+        "exits": "0 success; 1 API/upgrade; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.tags.v1",
+    },
+    ("tags", "values"): {
+        "endpoint": "GET /api/v1/projects/{project}/tags/values",
+        "auth": "any",
+        "exits": "0 success; 1 API/upgrade; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.tags.values.v1",
+    },
+    ("tags", "retire"): {
+        "endpoint": "DELETE /api/v1/account/tags",
+        "auth": "JWT admin/owner",
+        "exits": "0 retired; 1 API; 2 usage; 3 auth; 5 never registered",
+        "schema": "solwyn.tags.v1",
+    },
     (): {
         "endpoint": "composite command router",
         "auth": "varies by command",
@@ -264,7 +294,7 @@ def test_mcp_help_names_the_exact_six_tool_surface() -> None:
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_costs, list_projects."
+        "get_costs, list_projects, record_call, list_tags, list_tag_values."
     ) in rendered
 
 

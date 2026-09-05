@@ -1,6 +1,7 @@
 """Project budget inspection and pre-flight guardrail commands."""
 
 import math
+from uuid import uuid4
 from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -22,6 +23,7 @@ from solwyn_cli._vendor.wire import (
     BudgetPeriod,
     BudgetUpdateRequest,
     MediaUsage,
+    IngestMetadataEvent,
     ProviderName,
     ServiceTier,
     TokenDetails,
@@ -33,6 +35,14 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._record import (
+    CALL_ID_HINT,
+    RecordingResult,
+    build_event,
+    record_best_effort,
+    validate_call_id,
+)
+from solwyn_cli.commands._tags import parse_tags
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
@@ -256,7 +266,11 @@ class _BudgetCheckData(BaseModel):
     mode: BudgetMode
     budget_limit: FiniteFloat
     current_usage: FiniteFloat
-    denied_by_period: BudgetPeriod | None = None
+    denied_by_period: str | None = None
+    call_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    recorded: RecordingResult | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     project_id: str
     price_hints: dict[ProviderName, FiniteFloat] | None = None
 
@@ -277,6 +291,9 @@ class _BudgetConfirmData(BaseModel):
 
     reservation_id: str
     call_id: str
+    recorded: RecordingResult | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 BudgetCheckData = _BudgetCheckData
@@ -318,6 +335,75 @@ def request_budget_confirm(
         reservation_id=request.reservation_id,
         call_id=request.call_id,
     )
+
+
+def record_denial(
+    *,
+    client: SolwynClient,
+    request: BudgetCheckRequest,
+    data: BudgetCheckData,
+    estimated_output_tokens: int | None = None,
+    no_record: bool = False,
+    sdk_instance_id: str | None = None,
+) -> BudgetCheckData:
+    """Attach a denial receipt only to a denied check; shared with batch/MCP."""
+    if data.allowed:
+        return data
+    call_id = str(uuid4())
+    inputs = dict(
+        model=request.model,
+        provider=request.provider,
+        call_id=call_id,
+        input_tokens=request.estimated_input_tokens,
+        output_tokens=0,
+        latency_ms=0,
+        status="budget_denied",
+        deny_source="server",
+        deny_reason=data.denied_by_period,
+        denied_by_period=data.denied_by_period,
+        estimated_output_bound=estimated_output_tokens,
+        agent_run_id=request.agent_run_id,
+        tags=request.tags,
+        media_usage=request.estimated_media,
+    )
+    if sdk_instance_id is not None:
+        inputs["sdk_instance_id"] = sdk_instance_id
+    try:
+        event = build_event(**inputs)
+        recorded = record_best_effort(client=client, event=event, no_record=no_record)
+    except (ValueError, TypeError) as error:
+        typer.echo(f"Warning: denial attribution failed: {error}", err=True)
+        recorded = RecordingResult(status="failed", ingested=0, call_ids=[call_id])
+    return data.model_copy(update={"call_id": call_id, "recorded": recorded})
+
+
+def confirm_event(
+    *, request: BudgetConfirmRequest, **attribution: object
+) -> IngestMetadataEvent:
+    """Prepare and validate attribution before committing the settlement."""
+    return build_event(
+        call_id=request.call_id,
+        model=request.model,
+        provider=request.provider,
+        token_details=request.token_details,
+        input_tokens=request.token_details.input_tokens,
+        output_tokens=request.token_details.output_tokens,
+        provider_region=request.provider_region,
+        service_tier=request.service_tier,
+        **attribution,
+    )
+
+
+def confirm_and_record(
+    *,
+    client: SolwynClient,
+    request: BudgetConfirmRequest,
+    event: IngestMetadataEvent,
+    no_record: bool = False,
+) -> BudgetConfirmData:
+    data = request_budget_confirm(client=client, request=request)
+    recorded = record_best_effort(client=client, event=event, no_record=no_record)
+    return data.model_copy(update={"recorded": recorded})
 
 
 def _table(data: _BudgetStatusOutput) -> TableData:
@@ -380,12 +466,22 @@ def _check_table(data: _BudgetCheckData) -> TableData:
             ("Remaining budget", f"{data.remaining_budget:.2f}"),
             (
                 "Denied by period",
-                data.denied_by_period.value if data.denied_by_period else "-",
+                data.denied_by_period or "-",
             ),
         ),
         right_align=("Value",),
     )
 
+    if data.recorded is not None:
+        table = TableData(
+            columns=table.columns,
+            rows=(
+                *table.rows,
+                ("Call ID", data.call_id or "-"),
+                ("Recorded", data.recorded.status),
+            ),
+            right_align=table.right_align,
+        )
     if data.price_hints:
         return TableData(
             columns=(*table.columns, "rel. price"),
@@ -409,6 +505,7 @@ def _confirm_table(data: _BudgetConfirmData) -> TableData:
         rows=(
             ("Reservation ID", data.reservation_id),
             ("Call ID", data.call_id),
+            ("Recorded", data.recorded.status if data.recorded else "-"),
         ),
         right_align=("Value",),
     )
@@ -527,6 +624,7 @@ def _set_table(data: _BudgetSetData) -> TableData:
         schema="solwyn.budget-check.v1",
         guidance=(
             "Run immediately before caller-made un-instrumented provider spend.",
+            "Denied checks record a receipt by default; --no-record skips ingest. Copy the emitted call_id when referring to that attempt.",
             "Do not use with Solwyn SDK-instrumented calls. Do not poll with check.",
             "Set the media quantities for an image, video, audio, or speech call; "
             "the API prices the reservation from them instead of from tokens.",
@@ -551,6 +649,25 @@ def check(
         ProviderName,
         typer.Option("--provider", help="Primary provider."),
     ],
+    tag: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--tag",
+            help="Verbatim key=value tag; repeatable. Flags override SOLWYN_TAGS.",
+        ),
+    ] = None,
+    estimated_output_tokens: Annotated[
+        int | None,
+        typer.Option(
+            "--estimated-output-tokens",
+            min=0,
+            max=100_000_000,
+            help="Output upper bound for denial savings attribution.",
+        ),
+    ] = None,
+    no_record: Annotated[
+        bool, typer.Option("--no-record", help="Skip the denial receipt.")
+    ] = False,
     fallback_providers: Annotated[
         list[ProviderName] | None,
         typer.Option(
@@ -569,6 +686,7 @@ def check(
         str | None,
         typer.Option(
             "--agent-run-id",
+            envvar="SOLWYN_AGENT_RUN_ID",
             help=(
                 "Optional agent run identifier for per-run budget enforcement; "
                 "omit for project-only behavior."
@@ -688,16 +806,16 @@ def check(
             fallback_providers=providers,
             fallback_models=models,
             agent_run_id=agent_run_id,
+            tags=parse_tags(tag),
         )
-    except ValidationError:
+    except (ValidationError, ValueError) as error:
         exit_with_error(
             context,
             OutputError(
                 code="invalid_budget_check_request",
                 message="The budget check request is invalid.",
                 hint=(
-                    "Check model, agent run id, and media variant lengths and use "
-                    "no more than eight fallbacks."
+                    f"{error}. Check tag bounds and use no more than eight fallbacks."
                 ),
             ),
             semantic=ErrorSemantic.USAGE,
@@ -725,6 +843,13 @@ def check(
             credential=credential,
         ) as client:
             data = request_budget_check(client=client, request=request)
+            data = record_denial(
+                client=client,
+                request=request,
+                data=data,
+                estimated_output_tokens=estimated_output_tokens,
+                no_record=no_record,
+            )
     except ApiError as error:
         exit_with_error(context, _read_only_key_hinted(error))
     except AuthError as error:
@@ -748,6 +873,10 @@ def check(
         table=_check_table(data),
     )
     if not data.allowed:
+        if data.denied_by_period == "tag":
+            keys = list(request.tags or {})
+            suffix = f" `{keys[0]}`" if len(keys) == 1 else ""
+            typer.echo(f"denied by tag cap{suffix}", err=True)
         raise typer.Exit(code=ExitCode.BUDGET_DENIED)
     if data.reservation_id is None:
         typer.echo(_FAIL_OPEN_NOTICE, err=True)
@@ -763,6 +892,7 @@ def check(
         guidance=(
             "Settle only when check returned a non-null reservation after the call.",
             "Skip confirm when the reservation is null.",
+            "Records attribution with the same call ID by default; --no-record skips ingest. Recording failure warns without undoing settlement.",
         ),
     ),
 )
@@ -780,6 +910,24 @@ def confirm(
         ProviderName,
         typer.Option("--provider", help="Provider that actually served the call."),
     ],
+    latency_ms: Annotated[float, typer.Option("--latency-ms", min=0)] = 0,
+    status: Annotated[
+        str, typer.Option("--status", help="success or error.")
+    ] = "success",
+    agent_run_id: Annotated[
+        str | None, typer.Option("--agent-run-id", envvar="SOLWYN_AGENT_RUN_ID")
+    ] = None,
+    parent_run_id: Annotated[str | None, typer.Option("--parent-run-id")] = None,
+    run_name: Annotated[str | None, typer.Option("--run-name")] = None,
+    tag: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--tag", help="Verbatim key=value; repeatable; overrides SOLWYN_TAGS."
+        ),
+    ] = None,
+    no_record: Annotated[
+        bool, typer.Option("--no-record", help="Settle without recording attribution.")
+    ] = False,
     reservation_id: Annotated[
         str | None,
         typer.Option(
@@ -908,6 +1056,9 @@ def confirm(
             semantic=ErrorSemantic.USAGE,
         )
     try:
+        validate_call_id(call_id)
+        if status not in ("success", "error"):
+            raise ValueError("Status must be success or error.")
         token_details = TokenDetails(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -934,13 +1085,22 @@ def confirm(
             service_tier=service_tier.value if service_tier is not None else None,
             token_details=token_details,
         )
-    except ValidationError:
+        event = confirm_event(
+            request=request,
+            latency_ms=latency_ms,
+            status=status,
+            agent_run_id=agent_run_id,
+            parent_agent_run_id=parent_run_id,
+            agent_run_name=run_name,
+            tags=parse_tags(tag),
+        )
+    except (ValidationError, ValueError) as error:
         exit_with_error(
             context,
             OutputError(
                 code="invalid_budget_confirm_request",
                 message="The budget confirmation request is invalid.",
-                hint="Check identifier lengths, provider metadata, and token counts.",
+                hint=f"{error}. {CALL_ID_HINT}",
             ),
             semantic=ErrorSemantic.USAGE,
         )
@@ -980,7 +1140,9 @@ def confirm(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            data = request_budget_confirm(client=client, request=request)
+            data = confirm_and_record(
+                client=client, request=request, event=event, no_record=no_record
+            )
     except ApiError as error:
         if error.status_code == 404:
             error = ApiError(

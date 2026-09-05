@@ -6,6 +6,8 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from solwyn_cli.auth import ProjectKeyCredential
+from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._tags import parse_tags, validate_tags
 from solwyn_cli.commands._record import build_event, request_ingest
 
@@ -162,3 +164,94 @@ def test_explicit_dispositions(body, status, capsys):
     ]
     if status == "rejected":
         assert "Use the exact model name." in capsys.readouterr().err
+
+
+def test_token_details_fill_top_level_counts():
+    event = build_event(
+        model="gpt-4o",
+        provider="openai",
+        token_details={"input_tokens": 12, "output_tokens": 3},
+    )
+    assert event.input_tokens == 12 and event.output_tokens == 3
+
+
+def test_conflicting_top_level_usage_is_rejected():
+    with pytest.raises(ValueError, match="match"):
+        build_event(
+            model="gpt-4o",
+            provider="openai",
+            input_tokens=7,
+            token_details={"input_tokens": 12},
+        )
+
+
+@pytest.mark.parametrize("latency", [float("nan"), float("inf"), -1])
+def test_invalid_latency_is_rejected(latency):
+    with pytest.raises(ValueError):
+        build_event(model="gpt-4o", provider="openai", latency_ms=latency)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"ingested": 0},
+        {"ingested": 2},
+        {
+            "ingested": 0,
+            "duplicates": [
+                {
+                    "index": 1,
+                    "reason": "call_id",
+                    "call_id": "12345678-1234-1234-1234-123456789abc",
+                }
+            ],
+        },
+        {
+            "ingested": 0,
+            "duplicates": [
+                {
+                    "index": 0,
+                    "reason": "call_id",
+                    "call_id": "12345678-1234-1234-1234-123456789abd",
+                }
+            ],
+        },
+    ],
+)
+def test_ambiguous_or_mismatched_dispositions_fail_closed(body):
+    with pytest.raises(ValueError):
+        request_ingest(
+            client=Client(body),
+            events=[
+                build_event(
+                    model="llama3",
+                    provider="ollama",
+                    call_id="12345678-1234-1234-1234-123456789abc",
+                )
+            ],
+        )
+
+
+def test_ingest_429_uses_existing_bounded_retry():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                429, headers={"Retry-After": "0"}, json={"detail": "Slow down"}
+            )
+        return httpx.Response(202, json={"ingested": 1})
+
+    with SolwynClient(
+        api_url="https://api.example.test",
+        credential=ProjectKeyCredential(
+            api_key="sk_proj_" + "a1" * 32, source="environment"
+        ),
+        transport=httpx.MockTransport(handler),
+        sleeper=lambda _: None,
+    ) as client:
+        event = build_event(model="llama3", provider="ollama")
+        result = request_ingest(client=client, events=[event])
+    assert result.status == "ingested" and len(requests) == 2
+    assert requests[0].content == requests[1].content

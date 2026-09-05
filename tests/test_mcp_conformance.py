@@ -29,6 +29,9 @@ TOOL_NAMES = [
     "get_project_status",
     "get_costs",
     "list_projects",
+    "record_call",
+    "list_tags",
+    "list_tag_values",
 ]
 
 BUDGET_RESPONSE = {
@@ -437,7 +440,7 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
             ] == TOOL_NAMES
             assert all(tool.description for tool in tools)
             assert all(tool.outputSchema is not None for tool in tools)
-            assert [set(tool.inputSchema["properties"]) for tool in tools] == [
+            assert [set(tool.inputSchema["properties"]) for tool in tools[:6]] == [
                 {"project_id"},
                 {
                     "estimated_input_tokens",
@@ -454,6 +457,9 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "resolution",
                     "quality",
                     "is_estimated",
+                    "tags",
+                    "no_record",
+                    "estimated_output_tokens",
                 },
                 {
                     "reservation_id",
@@ -477,6 +483,13 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "rejected_prediction_tokens",
                     "tool_use_input_tokens",
                     "is_estimated",
+                    "latency_ms",
+                    "status",
+                    "agent_run_id",
+                    "parent_run_id",
+                    "run_name",
+                    "tags",
+                    "no_record",
                 },
                 {"project_id"},
                 {"project_id", "time_range", "group_by"},
@@ -498,6 +511,7 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                 await session.call_tool(
                     "budget_confirm",
                     {
+                        "no_record": True,
                         "reservation_id": "res_01JZEXAMPLE",
                         "call_id": "12345678-1234-1234-1234-123456789abc",
                         "model": "gpt-5",
@@ -533,6 +547,13 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
         assert calls[2].structuredContent["data"] == {
             "reservation_id": "res_01JZEXAMPLE",
             "call_id": "12345678-1234-1234-1234-123456789abc",
+            "recorded": {
+                "status": "skipped",
+                "ingested": 0,
+                "rejected": [],
+                "duplicates": [],
+                "call_ids": ["12345678-1234-1234-1234-123456789abc"],
+            },
         }
         assert calls[3].structuredContent["data"]["providers"] == PROVIDERS_RESPONSE
         assert calls[4].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
@@ -740,7 +761,7 @@ def test_local_preconditions_return_structured_errors_without_http(
             "budget_confirm",
             {
                 "reservation_id": "reservation",
-                "call_id": "call",
+                "call_id": "12345678-1234-1234-1234-123456789abc",
                 "model": "m",
                 "provider": "openai",
             },
@@ -1337,7 +1358,7 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
         "budget_confirm",
         {
             "reservation_id": "reservation",
-            "call_id": "call",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
             "model": "m",
             "provider": "openai",
         },
@@ -1365,7 +1386,7 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
                 "model": "m",
                 "provider": "openai",
                 "is_provider_fallback": False,
-                "call_id": "call",
+                "call_id": "12345678-1234-1234-1234-123456789abc",
                 "token_details": {
                     "input_tokens": 0,
                     "output_tokens": 0,
@@ -1441,3 +1462,209 @@ def test_shared_client_honors_one_jwt_refresh_and_retry(
     rendered = str(result)
     for secret in (JWT_ACCESS, JWT_REFRESH, new_access, new_refresh):
         assert secret not in rendered
+
+
+@pytest.mark.parametrize("status", ["ingested", "deduplicated", "rejected", "failed"])
+def test_record_call_preserves_dispositions(monkeypatch, status):
+    call_id = "12345678-1234-1234-1234-123456789abc"
+    body = {"ingested": 1}
+    if status == "rejected":
+        body = {
+            "ingested": 0,
+            "rejected": [
+                {
+                    "index": 0,
+                    "code": "unknown_model",
+                    "model": "llama3",
+                    "message": "Verbatim guidance.",
+                }
+            ],
+        }
+    if status in ("deduplicated", "failed"):
+        body = {
+            "ingested": 0,
+            "duplicates": [
+                {
+                    "index": 0,
+                    "reason": "call_id" if status == "deduplicated" else "legacy_key",
+                    "call_id": call_id,
+                }
+            ],
+        }
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch, responses=[httpx.Response(202, json=body)], credentials=[key]
+    )
+    result = anyio.run(
+        _call_tool,
+        "record_call",
+        {
+            "model": "llama3",
+            "provider": "ollama",
+            "call_id": call_id,
+            "tags": {"env": "prod"},
+        },
+    )
+    assert result.structuredContent["data"]["status"] == status
+    assert requests[0][1] == "/api/v1/metadata/ingest"
+    event = requests[0][2]["json"][0]
+    assert event["call_id"] == call_id and event["tags"] == {"env": "prod"}
+    assert "lease_id" not in event and "cost_usd" not in event
+    assert responses == []
+
+
+def test_mcp_confirm_records_same_call_id_by_default(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(204), httpx.Response(202, json={"ingested": 1})],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "res",
+            "model": "gpt-4o",
+            "provider": "openai",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
+            "tags": {"env": "prod"},
+            "agent_run_id": "job",
+        },
+    )
+    assert result.structuredContent["ok"]
+    assert result.structuredContent["data"]["recorded"]["status"] == "ingested"
+    assert requests[0][2]["json"]["call_id"] == requests[1][2]["json"][0]["call_id"]
+    assert requests[1][2]["json"][0]["agent_run_id"] == "job"
+    assert "tags" not in requests[0][2]["json"]
+    assert responses == []
+
+
+def test_mcp_denial_receipt(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    denied = {
+        **CHECK_RESPONSE,
+        "allowed": False,
+        "reservation_id": None,
+        "denied_by_period": "tag",
+    }
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(200, json=denied),
+            httpx.Response(202, json={"ingested": 1}),
+        ],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {
+            "model": "gpt-4o",
+            "provider": "openai",
+            "estimated_input_tokens": 12,
+            "estimated_output_tokens": 30,
+            "tags": {"env": "prod"},
+        },
+    )
+    data = result.structuredContent["data"]
+    assert data["allowed"] is False and data["recorded"]["status"] == "ingested"
+    event = requests[1][2]["json"][0]
+    assert event["call_id"] == data["call_id"] and event["estimated_output_bound"] == 30
+    assert event["status"] == "budget_denied" and event["output_tokens"] == 0
+    assert responses == []
+
+
+@pytest.mark.parametrize(
+    "tool,args,body",
+    [
+        ("list_tags", {}, {"keys": [], "usage": {"keys_used": 0}, "scope": "account"}),
+        (
+            "list_tag_values",
+            {"key": "route /? # =", "prefix": "p"},
+            {
+                "key": "route /? # =",
+                "values": [],
+                "next_cursor": None,
+                "has_more": False,
+            },
+        ),
+    ],
+)
+def test_mcp_tag_discovery(monkeypatch, tool, args, body):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[key]
+    )
+    result = anyio.run(_call_tool, tool, args)
+    assert result.structuredContent["ok"]
+    assert requests[0][0] == "GET" and "/tags" in requests[0][1]
+    if tool == "list_tag_values":
+        assert requests[0][2]["query"] == {
+            "key": "route /? # =",
+            "q": "p",
+            "limit": "25",
+        }
+    assert responses == []
+
+
+def test_mcp_confirm_bad_uuid_rejected_before_network(monkeypatch):
+    requests, _, _ = _install_http(monkeypatch, responses=[], credentials=[])
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "res",
+            "call_id": "not-a-uuid",
+            "model": "gpt-4o",
+            "provider": "openai",
+        },
+    )
+    assert result.isError
+    assert requests == []
+
+
+def test_mcp_record_details_populate_top_level_counts(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(202, json={"ingested": 1})],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "record_call",
+        {
+            "model": "llama3",
+            "provider": "ollama",
+            "token_details": {"input_tokens": 12, "output_tokens": 3},
+        },
+    )
+    assert result.structuredContent["ok"]
+    assert requests[0][2]["json"][0]["input_tokens"] == 12
+    assert requests[0][2]["json"][0]["output_tokens"] == 3
+
+
+def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(204),
+            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+        ],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "res",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
+            "model": "gpt-4o",
+            "provider": "openai",
+        },
+    )
+    assert result.structuredContent["ok"]
+    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert len(requests) == 2

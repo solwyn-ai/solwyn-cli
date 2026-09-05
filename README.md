@@ -33,6 +33,9 @@ solwyn status         # project budget and provider health at a glance
 | `init` | Configure Solwyn safely for the current repository. |
 | `status` | Show project budget and provider health. |
 | `costs` | Show aggregate project costs (`--range 7d\|30d\|90d\|365d`, `--group-by day\|model\|provider`). |
+| `record` | Attribute one completed call, or a JSON batch, without a reservation. |
+| `tags list`, `tags values` | Discover account-scoped keys and values (Team+). |
+| `tags retire` | Retire a registered account tag key (JWT admin/owner). |
 | `budget status` | Read current budget status without authorizing spend. |
 | `budget check` / `budget confirm` | Pre-flight guardrail loop for un-instrumented provider calls (below). |
 | `budget set` | Update selected budget settings while preserving all other configuration. |
@@ -71,7 +74,7 @@ Use `budget status` to poll; `check` is for the moment immediately before spend.
 
 ## For coding agents
 
-`solwyn mcp` serves six read-and-guardrail tools over stdio — `budget_status`, `budget_check`, `budget_confirm`, `get_project_status`, `get_costs`, `list_projects` — resolving configuration and credentials fresh on every call. `solwyn agent-context` prints a compact capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
+`solwyn mcp` serves read, guardrail, and attribution tools over stdio — `budget_status`, `budget_check`, `budget_confirm`, `get_project_status`, `get_costs`, `list_projects`, `record_call`, `list_tags`, `list_tag_values` — resolving configuration and credentials fresh on every call. `solwyn agent-context` prints a compact capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
 ## Scripting
 
@@ -94,9 +97,46 @@ Two test-suite properties worth knowing before contributing:
 - Any change to the CLI surface (commands, flags, help text, exit codes, JSON output) requires regenerating the machine-readable contract snapshot with `scripts/generate_contract.py`; `tests/test_contract_snapshot.py` fails until you do.
 - The vendored OpenAPI snapshot and its drift guards are self-invalidating by design — adopt fields properly or record a decline in the registry; never loosen a guard to make a test pass.
 
+## Recording caller-owned spend
+
+`budget confirm` records attribution after successful settlement by default.
+`--no-record` skips attribution; a recording failure warns without undoing settlement.
+Use `record` for completed calls that have no reservation, including local providers:
+
+```sh
+export SOLWYN_AGENT_RUN_ID="job-42"
+export SOLWYN_TAGS="environment=prod,team=ops"
+solwyn record --provider ollama --model llama3 --input-tokens 120 --output-tokens 30
+solwyn record --batch events.json --json
+solwyn --project YOUR_PROJECT_ID tags list
+```
+
+Reuse the same canonical lowercase `--call-id` UUID for retries of one logical event
+(generate one with `uuidgen | tr A-F a-f`). `record --batch FILE|-` takes a nonempty
+JSON array of event inputs and chunks it into at most 1000 events per request. Each
+invocation uses a fresh `sdk_instance_id` across all its chunks. Never send `cost_usd`
+or `lease_id`; Core computes prices. Inspect `rejected` and `duplicates`: call-ID
+replays succeed, while rejections and legacy timestamp collisions exit 1. On an uncertain
+or partial write, retain the returned `call_ids` in input order before retrying; the
+result has `status=failed` and preserves the dispositions already received.
+
+Repeat `--tag key=value` to override environment tags. Keys and values preserve
+whitespace and case; empty values and equals signs in values are legal, commas in
+flag values are not. Tags allow at most 10 keys, keys of 1–64 characters, and values
+up to 256 characters, with no NUL. Reusing `SOLWYN_AGENT_RUN_ID` groups a job's calls;
+otherwise Core creates automatic runs from each invocation's ID.
+
+Denied budget checks also record receipts unless `--no-record` is set. Supply
+`--estimated-output-tokens` to attribute the upper savings bound. Tag submission
+and enforcement work on every tier; discovery is account-scoped and requires Team.
+`tags values KEY --prefix Q` pages through values; retiring a key frees an active
+key slot, and later successful ingest may reactivate it.
+
 ## Trust posture
 
 Solwyn CLI:
+
+- sends only your own spend events; `sdk_instance_id` is a random per-invocation ID; no telemetry;
 
 - never captures, logs, or transmits prompts or responses;
 - never collects, stores, or proxies provider API keys;

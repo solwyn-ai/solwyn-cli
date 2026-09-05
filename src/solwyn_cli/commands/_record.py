@@ -1,5 +1,6 @@
 """Shared synchronous attribution transport for CLI and MCP."""
 
+import math
 import re
 from datetime import UTC, datetime
 from typing import Literal
@@ -8,7 +9,7 @@ from uuid import uuid4
 import typer
 from pydantic import BaseModel, ConfigDict, Field
 
-from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent
+from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent, TokenDetails
 from solwyn_cli.auth import AuthError
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._tags import validate_tags
@@ -69,9 +70,18 @@ def build_event(**inputs: object) -> IngestMetadataEvent:
         "call_id": str(uuid4()),
     }
     values.update(inputs)
+    if inputs.get("token_details") is not None:
+        details = TokenDetails.model_validate(inputs["token_details"])
+        for name in ("input_tokens", "output_tokens"):
+            count = getattr(details, name)
+            if name in inputs and inputs[name] != count:
+                raise ValueError("Top-level token counts must match token_details.")
+            values[name] = count
     validate_call_id(values["call_id"])
     event = IngestMetadataEvent.model_validate(values)
     validate_tags(event.tags)
+    if not math.isfinite(event.latency_ms) or event.latency_ms < 0:
+        raise ValueError("Latency must be a finite nonnegative number.")
     return event
 
 
