@@ -1,0 +1,9 @@
+Metric                                                                    Value
+Project                                                              proj_alpha
+Period             2026-09-01T00:00:00+00:00 - 2026-09-30T23:59:59.999999+00:00
+Days                                                   5 elapsed / 25 remaining
+Current spend                                                        $12.500000
+Forecast EOM                                                         $75.000000
+Burn rate                                                       $2.500000 / day
+95% CI                                                  $60.000000 - $90.000000
+Insufficient data                                                           yes

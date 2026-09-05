@@ -86,6 +86,12 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.costs.v1",
     },
+    ("forecast",): {
+        "endpoint": "GET /api/v1/projects/{project}/forecast",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.forecast.v1",
+    },
     ("init",): {
         "endpoint": "composite onboarding workflow",
         "auth": "any or interactive bootstrap",
@@ -158,8 +164,30 @@ HELP_CONTRACTS = {
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.projects-show.v1",
     },
+    ("providers",): {
+        "endpoint": "composite router for provider visibility subcommands",
+        "auth": "any",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("providers", "failovers"): {
+        "endpoint": "GET /api/v1/projects/{project}/providers/failovers",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.providers.failovers.v1",
+    },
+    ("providers", "untracked"): {
+        "endpoint": "GET /api/v1/projects/{project}/untracked-surfaces",
+        "auth": "any",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.providers.untracked.v1",
+    },
     ("status",): {
-        "endpoint": "GET /api/v1/projects/{project}/budget and GET /api/v1/projects/{project}/providers",
+        "endpoint": (
+            "GET /api/v1/projects/{project}/budget and GET "
+            "/api/v1/projects/{project}/providers; optionally GET forecast "
+            "and provider failovers"
+        ),
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.status.v1",
@@ -259,12 +287,12 @@ def test_budget_help_preserves_guardrail_semantics() -> None:
     assert "Poll with status, never check" in status_help
 
 
-def test_mcp_help_names_the_exact_six_tool_surface() -> None:
+def test_mcp_help_names_the_exact_seven_tool_surface() -> None:
     rendered = _normalized_help(("mcp",))
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_costs, list_projects."
+        "get_forecast, get_costs, list_projects."
     ) in rendered
 
 

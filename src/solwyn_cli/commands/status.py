@@ -1,6 +1,6 @@
 """At-a-glance project status command."""
 
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 import typer
@@ -9,6 +9,13 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
+from solwyn_cli.commands.providers import (
+    FailoverRange,
+    ProviderFailoversData,
+    failovers_table,
+    fetch_provider_failovers,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -31,7 +38,8 @@ class _BudgetSummary(BaseModel):
 STATUS_HELP = help_contract(
     endpoint=(
         "GET /api/v1/projects/{project}/budget and "
-        "GET /api/v1/projects/{project}/providers"
+        "GET /api/v1/projects/{project}/providers; optionally GET forecast "
+        "and provider failovers"
     ),
     auth="any",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
@@ -51,12 +59,15 @@ class _ProviderHealth(BaseModel):
     success_count: int
     error_count: int
     failover_count: int
+    model_failover_count: int
+    provider_failover_count: int
     success_rate: float
     avg_latency_ms: float
-    circuit_state: str
+    circuit_state: Literal["closed", "half_open", "open", "unknown"]
+    circuit_source: Literal["reported", "inferred"]
 
 
-class _StatusData(BaseModel):
+class _ProjectStatusData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: str
@@ -64,18 +75,27 @@ class _StatusData(BaseModel):
     providers: list[_ProviderHealth]
 
 
+class _StatusData(_ProjectStatusData):
+    forecast: ForecastData | None = None
+    failovers: ProviderFailoversData | None = None
+
+
 _PROVIDERS = TypeAdapter(list[_ProviderHealth])
-ProjectStatusData = _StatusData
+ProjectStatusData = _ProjectStatusData
 
 
-def fetch_project_status(*, client: SolwynClient, project_id: str) -> ProjectStatusData:
+def fetch_project_status(
+    *,
+    client: SolwynClient,
+    project_id: str,
+) -> ProjectStatusData:
     """Read and validate budget plus provider health through one shared client."""
     project = quote(project_id, safe="")
     budget_response = client.request("GET", f"/api/v1/projects/{project}/budget")
     providers_response = client.request("GET", f"/api/v1/projects/{project}/providers")
     budget = _BudgetResponse.model_validate(budget_response.json())
     providers = _PROVIDERS.validate_python(providers_response.json())
-    data = _StatusData(
+    data = _ProjectStatusData(
         project_id=budget.project_id,
         budget=_BudgetSummary.model_validate(budget.model_dump()),
         providers=providers,
@@ -98,11 +118,13 @@ def _table(data: _StatusData) -> TableData:
         ),
         ("Budget mode", budget.budget_mode),
         ("Utilization", f"{budget.utilization_pct:.2f}%"),
+        ("Provider health window", "24h (fixed)"),
     ]
     for provider in data.providers:
         rows.extend(
             [
                 (f"{provider.provider} circuit", provider.circuit_state),
+                (f"{provider.provider} circuit source", provider.circuit_source),
                 (
                     f"{provider.provider} success",
                     f"{provider.success_count} / {provider.total_calls} "
@@ -116,8 +138,40 @@ def _table(data: _StatusData) -> TableData:
                     f"{provider.provider} errors / failovers",
                     f"{provider.error_count} / {provider.failover_count}",
                 ),
+                (
+                    f"{provider.provider} model failovers",
+                    str(provider.model_failover_count),
+                ),
+                (
+                    f"{provider.provider} provider failovers",
+                    str(provider.provider_failover_count),
+                ),
             ]
         )
+    if data.forecast is not None:
+        rows.extend(
+            (
+                ("Forecast EOM", f"${data.forecast.forecast_eom:.6f}"),
+                (
+                    "Forecast burn rate",
+                    f"${data.forecast.burn_rate_per_day:.6f} / day",
+                ),
+                (
+                    "Forecast 95% CI",
+                    f"${data.forecast.ci_low:.6f} - ${data.forecast.ci_high:.6f}",
+                ),
+                (
+                    "Forecast insufficient data",
+                    "yes" if data.forecast.insufficient_data else "no",
+                ),
+            )
+        )
+    if data.failovers is not None:
+        for field, value in failovers_table(data.failovers).rows:
+            if field == "Project":
+                continue
+            label = "Failover range" if field == "Range" else f"Failover {field}"
+            rows.append((label, str(value)))
     return TableData(
         columns=("Field", "Value"),
         rows=tuple(rows),
@@ -125,7 +179,17 @@ def _table(data: _StatusData) -> TableData:
     )
 
 
-def status(context: typer.Context) -> None:
+def status(
+    context: typer.Context,
+    include_forecast: Annotated[
+        bool,
+        typer.Option("--forecast", help="Include the month-to-date spend forecast."),
+    ] = False,
+    include_failovers: Annotated[
+        bool,
+        typer.Option("--failovers", help="Include top failover groups for 7d."),
+    ] = False,
+) -> None:
     """Show project budget and provider health."""
     runtime = command_context(context)
     if runtime.project is None:
@@ -148,7 +212,27 @@ def status(context: typer.Context) -> None:
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            data = fetch_project_status(client=client, project_id=runtime.project)
+            project_status = fetch_project_status(
+                client=client,
+                project_id=runtime.project,
+            )
+            data = _StatusData(
+                **project_status.model_dump(),
+                forecast=(
+                    fetch_forecast(client=client, project_id=runtime.project)
+                    if include_forecast
+                    else None
+                ),
+                failovers=(
+                    fetch_provider_failovers(
+                        client=client,
+                        project_id=runtime.project,
+                        time_range=FailoverRange.SEVEN_DAYS,
+                    )
+                    if include_failovers
+                    else None
+                ),
+            )
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -166,8 +250,15 @@ def status(context: typer.Context) -> None:
             ),
         )
 
+    if include_failovers:
+        typer.echo("Showing top 50 groups of an unknown total.", err=True)
+    response_data = data.model_dump()
+    if data.forecast is None:
+        response_data.pop("forecast")
+    if data.failovers is None:
+        response_data.pop("failovers")
     output_engine(context).write_success(
         schema="solwyn.status.v1",
-        data=data,
+        data=response_data,
         table=_table(data),
     )

@@ -993,6 +993,18 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.forecast.v1",
+      "name": "forecast",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "forecast"
+      ],
+      "summary": "Show the month-to-date project spend forecast."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.init.v1",
       "name": "init",
       "output_kind": "json-envelope",
@@ -1318,11 +1330,118 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "providers",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "providers"
+      ],
+      "summary": null
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.providers.failovers.v1",
+      "name": "failovers",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "24h",
+            "7d",
+            "30d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Failover aggregation range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "providers",
+        "failovers"
+      ],
+      "summary": "Show recent provider and model failover groups."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.providers.untracked.v1",
+      "name": "untracked",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Observation range before retention clamp.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "providers",
+        "untracked"
+      ],
+      "summary": "Show advisory observations for unmetered provider surfaces."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.status.v1",
       "name": "status",
       "output_kind": "json-envelope",
-      "params": [],
+      "params": [
+        {
+          "cli_names": [
+            "--forecast"
+          ],
+          "default": false,
+          "help": "Include the month-to-date spend forecast.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_forecast",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--failovers"
+          ],
+          "default": false,
+          "help": "Include top failover groups for 7d.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_failovers",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
       "path": [
         "status"
       ],
@@ -1466,6 +1585,25 @@
     },
     {
       "keys": [
+        "burn_rate_per_day",
+        "ci_high",
+        "ci_low",
+        "current_spend",
+        "days_elapsed",
+        "days_remaining",
+        "forecast_eom",
+        "insufficient_data",
+        "period_end",
+        "period_start",
+        "project_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.forecast.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "api_url",
         "config_path",
         "detected_providers",
@@ -1582,12 +1720,43 @@
     },
     {
       "keys": [
+        "failovers",
+        "project_id",
+        "range",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.providers.failovers.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "data_retention_days",
+        "effective_window_days",
+        "project_id",
+        "requested_range",
+        "requested_window_days",
+        "schema",
+        "surfaces",
+        "window_source"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.providers.untracked.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "budget",
+        "failovers",
+        "forecast",
         "project_id",
         "providers",
         "schema"
       ],
-      "optional_keys": [],
+      "optional_keys": [
+        "failovers",
+        "forecast"
+      ],
       "schema": "solwyn.status.v1",
       "universal_error_envelope": false
     },
