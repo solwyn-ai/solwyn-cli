@@ -1,4 +1,4 @@
-"""OpenAPI drift guard for the six public request mirrors."""
+"""OpenAPI drift guard for public request mirrors."""
 
 import copy
 import json
@@ -13,6 +13,7 @@ from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
+    CostSimulationRequest,
     LoginRequest,
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
@@ -32,6 +33,7 @@ REQUEST_MIRRORS = {
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
+    CostSimulationRequest: "CostSimulationRequest",
 }
 DECLARED_DEFAULT_FIELDS = {
     "ProjectCreateRequest": (

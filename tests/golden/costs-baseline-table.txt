@@ -1,0 +1,2 @@
+Lookback  Days with data  Mean / day  Stdev / day  Armed  Freshness       
+       7               6    1.250000     0.375000  yes    refreshed hourly

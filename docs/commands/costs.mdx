@@ -12,6 +12,11 @@ solwyn --json --project proj_example costs --group-by tag:customer --tag custome
 solwyn --project proj_example costs total --from 2026-08-01T00:00:00Z --to 2026-09-01T00:00:00Z
 solwyn --project proj_example costs events --limit 25 --cursor CURSOR
 solwyn --project proj_example costs export --format json > costs.jsonl
+solwyn --project proj_example costs baseline --days 7
+solwyn --project proj_example costs unit-economics --range 30d --cause
+solwyn --project proj_example costs drift --range 7d
+solwyn --project proj_example costs priced-models
+solwyn --project proj_example costs simulate --provider openai --model gpt-5 --range 30d
 ```
 
 All reads accept `--model`, `--provider`, `--modality`, `--status`, `--service-tier`,
@@ -56,3 +61,36 @@ its output can be incomplete and is never automatically replayed.
 Invalid queries (Core 400/422) exit 2; authentication/authorization errors exit 3.
 Upgrade errors print Core's message, allowed choices when supplied, and a safe
 dashboard path. They never launch a checkout.
+
+## Baselines, unit economics, and drift
+
+`costs baseline --days 3..30` reads the daily-spend materialized view. The view
+is refreshed hourly, so it can trail the live aggregate. `armed` becomes true
+after Core has at least three days of data.
+
+`costs unit-economics` accepts `--range 7d|30d|90d`, defaults to `30d`, and
+compares the immediately preceding window unless `--no-vs-prev` is set. Add
+`--cause` to request Core's suspected-cause analysis. A metric row is displayed
+only when Core returns a non-null cell. Null previous values and deltas render as
+`—`; a null `cost_per_agent_run` (including on pre-P6 Core deployments) or
+`suspected_cause` is omitted rather than displayed as zero. JSON preserves
+Core's explicit nulls.
+
+`costs drift` compares stored actual spend with pre-flight estimates. It accepts
+the shared preset or paired custom window. The response includes Core's caveats:
+null estimates are excluded, unit-priced and unpriced estimates are null, and
+denied events are included. Retention-clamp warnings go to stderr.
+
+## Pricing discovery and simulation
+
+`costs priced-models` lists the exact provider/model/modality combinations in
+Core's first-party vendored catalog and includes `pricing_version`. It takes no
+range or custom-window options because the catalog is a current snapshot.
+
+`costs simulate` replays a bounded historical window against one target from
+`priced-models`. It reports stored baseline spend, simulated current-rate spend,
+the delta, event counts, exclusion counts, and truthfulness caveats. Bedrock
+requires both `--region` and `--service-tier`; other providers reject either
+option. The CLI validates those combinations before sending a request. A
+simulation excludes unpriced and local traffic, modality mismatches, and events
+whose required usage breakdown is missing; it does not rewrite historical spend.

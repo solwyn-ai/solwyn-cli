@@ -1,0 +1,4 @@
+Metric                    Value    Previous    Delta  Context           
+Cost / request         0.012500    0.010000  +25.00%  200 requests      
+Tokens / dollar    50000.000000           —        —  2.0M tokens served
+Avg prompt tokens    120.000000  100.000000  +20.00%  200 requests      

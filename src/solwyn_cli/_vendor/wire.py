@@ -54,6 +54,15 @@ class ServiceTier(StrEnum):
     OPTIMIZED = "optimized"
 
 
+class CostSimulationRequest(_WireModel):
+    """Exact current-rate target for replaying a bounded usage window."""
+
+    target_provider: ProviderName
+    target_model: Annotated[str, Field(min_length=1, max_length=2048)]
+    target_region: Annotated[str, Field(max_length=32)] | None = None
+    target_service_tier: ServiceTier | None = None
+
+
 class BudgetPeriod(StrEnum):
     """Rolling window for budget accounting."""
 

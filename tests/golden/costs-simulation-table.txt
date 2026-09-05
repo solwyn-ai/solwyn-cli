@@ -1,0 +1,11 @@
+Metric           Value               
+Provider         bedrock             
+Model            amazon.nova-pro-v1:0
+Modality         text                
+Region           us-east-1           
+Service tier     standard            
+Baseline         12.500000           
+Simulated        9.750000            
+Delta            -2.750000           
+Included events  90                  
+Excluded events  10                  
