@@ -14,6 +14,54 @@ from solwyn_cli.commands import budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "SubscriptionStatusResponse": (
+        "tier",
+        "billing_interval",
+        "limits",
+        "capabilities",
+        "status",
+        "current_period_end",
+        "cancel_at_period_end",
+        "grace_period_until",
+        "stripe_customer_id",
+        "recent_invoices",
+        "pending_plan",
+    ),
+    "TierCapabilities": (
+        "analytics",
+        "budget",
+        "notifications",
+        "api_keys",
+        "ingest",
+        "enforcement",
+        "failover_entitlement",
+        "data_retention_days",
+    ),
+    "AnalyticsCapabilities": (
+        "allowed_ranges",
+        "allowed_group_by",
+        "tags",
+        "csv_export_mode",
+        "cost_events_paginated",
+    ),
+    "BudgetCapabilities": (
+        "allowed_modes",
+        "allowed_periods",
+        "sub_period_enabled",
+        "max_thresholds",
+        "max_hard_cap_projects",
+        "account_spend_alerts",
+    ),
+    "NotificationCapabilities": (
+        "notification_channels",
+        "sms_allowed_events",
+        "email_allowed_events",
+    ),
+    "ApiKeyCapabilities": ("expiry_configurable",),
+    "IngestCapabilities": ("rate_limit_per_second",),
+    "EnforcementCapabilities": ("checks_per_minute",),
+    "InvoiceSummary": ("hosted_url", "amount_due_cents", "period_end", "status"),
+    "PendingPlan": ("tier", "billing_interval"),
     "TokenResponse": ("access_token", "refresh_token", "token_type"),
     "Error402Response": (
         "detail.code",
@@ -202,6 +250,7 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
     ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
     ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
     ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),
