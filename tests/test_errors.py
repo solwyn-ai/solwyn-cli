@@ -181,3 +181,19 @@ def test_402_allowed_values_are_preserved_in_hint():
     assert error.message == "Range unavailable"
     assert "7d, 30d" in error.hint
     assert "/billing" in error.hint
+
+
+def test_seat_limit_422_is_ready_for_deferred_team_commands() -> None:
+    detail = {
+        "code": "seat_limit_exceeded",
+        "message": "Seat limit exceeded for the account tier.",
+        "current_seats": 5,
+        "target_seat_limit": 5,
+    }
+
+    error = error_from_response(_response(422, {"detail": detail}))
+
+    assert error.status_code == 422
+    assert error.code == "seat_limit_exceeded"
+    assert error.message == "Seat limit exceeded for the account tier."
+    assert error.detail == detail

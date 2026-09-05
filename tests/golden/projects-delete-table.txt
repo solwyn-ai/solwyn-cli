@@ -1,0 +1,4 @@
+Field                      Value
+Project           proj/lifecycle
+Archived                    true
+API keys revoked            true

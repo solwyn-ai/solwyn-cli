@@ -1,0 +1,15 @@
+Field                                             Value
+Event                                          audit_02
+Created                            2026-08-30T16:45:00Z
+Account                                      acct_alpha
+Actor                                     user_operator
+Action                                agent_run.stopped
+Target   agent_run:run_0123456789abcdef0123456789abcdef
+Detail                         {"reason":"manual_kill"}
+Event                                          audit_01
+Created                            2026-08-29T12:00:00Z
+Account                                      acct_alpha
+Actor                                        user_owner
+Action                                  project.updated
+Target                               project:proj_alpha
+Detail                                               {}
