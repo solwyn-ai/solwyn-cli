@@ -1,0 +1,50 @@
+---
+title: Attestations
+---
+
+`solwyn attest` downloads a spend-control evidence artifact for one project.
+Select the project with `--project`, `SOLWYN_PROJECT_ID`, or
+`config default_project`. A project key or user login works.
+
+```sh
+solwyn --project proj_example attest --format json > attestation.json
+solwyn --project proj_example attest --format csv > attestation.csv
+solwyn attest --account --range 90d --format json > account-attestation.json
+```
+
+Use `--account` for an account-wide artifact. Account attestations require user
+login with `solwyn login`; a project key cannot read account-wide evidence.
+Project artifacts requested with a project key have actor user IDs redacted by
+the server. A JWT project export can include the account-only evidence and actor
+identity that the caller is allowed to see.
+
+`--range` accepts `7d`, `30d`, `90d`, or `365d` and defaults to `30d`. Paired,
+timezone-aware `--from` and `--to` replace the preset; the end is exclusive.
+Available ranges depend on the account tier. Core reports a range upgrade as a
+separate `spend_control_attestation.range` error with the ranges allowed on the
+current tier.
+
+Both JSON and CSV attestation exports require Production or above. Free-tier
+requests receive Core's `spend_control_attestation` upgrade error for either
+format. The CLI prints Core's message and a safe dashboard path. It never opens
+or creates a checkout.
+
+The JSON output is Core's strict `SpendControlAttestation` document. CSV uses
+the generic columns `section,field,value`, with nested object and list paths in
+`field`. Treat fields as evidence labels rather than a fixed rectangular cost
+table.
+
+The CLI copies response bytes directly to stdout without reformatting them.
+`X-Solwyn-Requested-From`, `X-Solwyn-Requested-To`,
+`X-Solwyn-Effective-From`, `X-Solwyn-Effective-To`, and
+`X-Solwyn-Retention-Clamped` are printed to stderr. Keep stderr visible or save
+it separately when the requested period may exceed retained evidence:
+
+```sh
+solwyn --project proj_example attest --range 365d \
+  > attestation.json 2> attestation-window.txt
+```
+
+An interrupted stream exits nonzero and can leave a partial file. Discard the
+partial artifact before retrying; the CLI never replays bytes after output has
+started.

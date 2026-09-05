@@ -14,6 +14,12 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("attest",): {
+        "endpoint": "GET /api/v1/projects/{project}/spend-control-attestation or GET /api/v1/account/spend-control-attestation",
+        "auth": "project: key or JWT; account: JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "stream (SpendControlAttestation JSON or section,field,value CSV)",
+    },
     ("costs", "events"): {
         "endpoint": "GET /api/v1/projects/{project}/costs/events",
         "auth": "any",

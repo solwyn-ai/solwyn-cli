@@ -105,3 +105,12 @@ def test_cost_export_declares_stream_output_kind() -> None:
     )
     assert export["output_kind"] == "stream"
     assert export["json_schema"] is None
+
+
+def test_attestation_declares_stream_output_kind() -> None:
+    contract = build_cli_contract()
+    attestation = next(
+        command for command in contract["commands"] if command["path"] == ["attest"]
+    )
+    assert attestation["output_kind"] == "stream"
+    assert attestation["json_schema"] is None

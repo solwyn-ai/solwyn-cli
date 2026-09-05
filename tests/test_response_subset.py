@@ -14,6 +14,107 @@ from solwyn_cli.commands import budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "SpendControlAttestation": (
+        "schema_version",
+        "generated_at",
+        "scope",
+        "range",
+        "window",
+        "spend_summary",
+        "budgets",
+        "alerts",
+        "account_spend_alert",
+        "subscription",
+        "audit",
+    ),
+    "AttestationScope": ("type", "account_id", "project_id"),
+    "AttestationWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AttestationSpendSummary": (
+        "real_spend_usd",
+        "real_call_count",
+        "denied_spend_usd",
+        "denial_count",
+    ),
+    "AttestationBudget": (
+        "project_id",
+        "project_name",
+        "archived",
+        "archived_at",
+        "budget_limit_usd",
+        "budget_period",
+        "budget_mode",
+        "sub_period",
+        "sub_limit_usd",
+        "rules",
+    ),
+    "AttestationAlertEvent": (
+        "id",
+        "project_id",
+        "account_id",
+        "scope",
+        "rule_key",
+        "emitted_at",
+        "event_type",
+        "rule_type",
+        "value_at_event",
+        "threshold_at_event",
+        "period_key",
+        "linked_event_ids",
+        "metadata_json",
+    ),
+    "AttestationAlerts": (
+        "begins_at",
+        "delivery_evidence_available",
+        "delivered_count",
+        "coverage_note",
+        "events",
+    ),
+    "AttestationAccountSpendAlert": (
+        "evidence_available",
+        "configured",
+        "spend_threshold_usd",
+        "enabled",
+        "snoozed_until",
+        "channel_ids",
+        "coverage_note",
+    ),
+    "AttestationAuditEvent": (
+        "id",
+        "account_id",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "detail",
+        "created_at",
+    ),
+    "AttestationSubscriptionSnapshot": (
+        "tier",
+        "billing_interval",
+        "status",
+        "pending_update_exists",
+        "current_period_start",
+        "current_period_end",
+        "cancel_at_period_end",
+        "pause_collection_exists",
+        "grace_period_until",
+        "raw_status_at",
+        "created_at",
+        "updated_at",
+    ),
+    "AttestationSubscription": (
+        "current_tier",
+        "snapshot",
+        "changes",
+        "coverage_note",
+    ),
+    "AttestationAudit": ("begins_at", "coverage_note", "events"),
     "SubscriptionStatusResponse": (
         "tier",
         "billing_interval",
@@ -327,6 +428,16 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/api/v1/projects/{project_id}/spend-control-attestation"): (
+        "200",
+        "object",
+        "SpendControlAttestation",
+    ),
+    ("GET", "/api/v1/account/spend-control-attestation"): (
+        "200",
+        "object",
+        "SpendControlAttestation",
+    ),
     ("GET", "/api/v1/projects/{project_id}/costs/events"): (
         "200",
         "object",
@@ -725,6 +836,28 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
         "object",
         "ProjectCreateResponse",
     )
+
+
+def test_attestation_response_tree_and_both_routes_are_registered() -> None:
+    assert RESPONSE_READS["SpendControlAttestation"] == (
+        "schema_version",
+        "generated_at",
+        "scope",
+        "range",
+        "window",
+        "spend_summary",
+        "budgets",
+        "alerts",
+        "account_spend_alert",
+        "subscription",
+        "audit",
+    )
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/projects/{project_id}/spend-control-attestation")
+    ] == ("200", "object", "SpendControlAttestation")
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/account/spend-control-attestation")
+    ] == ("200", "object", "SpendControlAttestation")
 
 
 def test_init_reuses_guarded_project_login_and_budget_response_operations() -> None:

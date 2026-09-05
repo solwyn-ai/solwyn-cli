@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from solwyn_cli import __version__
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
+from solwyn_cli.commands.attest import ATTEST_HELP, attest
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.costs import app as costs_app
@@ -45,6 +46,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
+app.command("attest", epilog=ATTEST_HELP)(attest)
 app.add_typer(costs_app, name="costs")
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
