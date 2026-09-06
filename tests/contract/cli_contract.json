@@ -206,6 +206,10 @@
       "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.budget-check.v1",
+      "json_schemas": [
+        "solwyn.budget-check.v1",
+        "solwyn.budget.check.batch.v1"
+      ],
       "name": "check",
       "output_kind": "json-envelope",
       "params": [
@@ -5047,6 +5051,20 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.budget-status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "failed_chunk_start",
+        "results",
+        "schema",
+        "total_checks"
+      ],
+      "optional_keys": [
+        "failed_chunk_start",
+        "total_checks"
+      ],
+      "schema": "solwyn.budget.check.batch.v1",
       "universal_error_envelope": false
     },
     {
