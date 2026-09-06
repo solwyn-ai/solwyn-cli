@@ -6,10 +6,12 @@ from urllib.parse import quote
 import typer
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
-from solwyn_cli.auth import AuthError, resolve_credential
+from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
+from solwyn_cli.commands._cost_models import SavingsSummary
+from solwyn_cli.commands.overview import fetch_overview
 from solwyn_cli.commands.providers import (
     FailoverRange,
     ProviderFailoversData,
@@ -39,7 +41,7 @@ STATUS_HELP = help_contract(
     endpoint=(
         "GET /api/v1/projects/{project}/budget and "
         "GET /api/v1/projects/{project}/providers; optionally GET forecast "
-        "and provider failovers"
+        "and provider failovers; JWT also GET /api/v1/overview"
     ),
     auth="any",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
@@ -78,6 +80,7 @@ class _ProjectStatusData(BaseModel):
 class _StatusData(_ProjectStatusData):
     forecast: ForecastData | None = None
     failovers: ProviderFailoversData | None = None
+    savings: SavingsSummary | None = None
 
 
 _PROVIDERS = TypeAdapter(list[_ProviderHealth])
@@ -105,7 +108,7 @@ def fetch_project_status(
     return data
 
 
-def _table(data: _StatusData) -> TableData:
+def _table(data: _StatusData, *, include_savings: bool = False) -> TableData:
     budget = data.budget
     rows: list[tuple[str, str]] = [
         ("Project", data.project_id),
@@ -118,8 +121,24 @@ def _table(data: _StatusData) -> TableData:
         ),
         ("Budget mode", budget.budget_mode),
         ("Utilization", f"{budget.utilization_pct:.2f}%"),
-        ("Provider health window", "24h (fixed)"),
     ]
+    if include_savings:
+        if data.savings is None:
+            rows.append(("Savings", "—"))
+        else:
+            upper = (
+                "—"
+                if data.savings.saved_cost_upper is None
+                else f"${data.savings.saved_cost_upper:.6f}"
+            )
+            rows.append(
+                (
+                    "Savings",
+                    f"${data.savings.saved_cost:.6f}; upper {upper}; "
+                    f"{data.savings.blocked_call_count} blocked calls",
+                )
+            )
+    rows.append(("Provider health window", "24h (fixed)"))
     for provider in data.providers:
         rows.extend(
             [
@@ -232,6 +251,11 @@ def status(
                     if include_failovers
                     else None
                 ),
+                savings=(
+                    fetch_overview(client=client).savings
+                    if isinstance(credential, JwtCredential)
+                    else None
+                ),
             )
     except ApiError as error:
         exit_with_error(context, error)
@@ -257,8 +281,10 @@ def status(
         response_data.pop("forecast")
     if data.failovers is None:
         response_data.pop("failovers")
+    if data.savings is None:
+        response_data.pop("savings")
     output_engine(context).write_success(
         schema="solwyn.status.v1",
         data=response_data,
-        table=_table(data),
+        table=_table(data, include_savings=isinstance(credential, JwtCredential)),
     )

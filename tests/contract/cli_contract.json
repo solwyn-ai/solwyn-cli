@@ -2128,6 +2128,20 @@
         },
         {
           "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": "Show the JWT-authenticated account rollup across projects.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
             "--range"
           ],
           "default": "7d",
@@ -3452,6 +3466,18 @@
     },
     {
       "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.overview.v1",
+      "name": "overview",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "overview"
+      ],
+      "summary": "Show calendar-month account spend and request totals."
+    },
+    {
+      "hidden": false,
       "is_group": true,
       "json_schema": null,
       "name": "projects",
@@ -3900,6 +3926,23 @@
     },
     {
       "keys": [
+        "analytics_withheld",
+        "group_by",
+        "groups",
+        "range",
+        "savings",
+        "schema",
+        "truncated",
+        "window"
+      ],
+      "optional_keys": [
+        "savings"
+      ],
+      "schema": "solwyn.account_costs.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "allowed",
         "budget_limit",
         "current_usage",
@@ -4219,6 +4262,32 @@
     },
     {
       "keys": [
+        "current_requests",
+        "included_requests",
+        "period_end",
+        "period_start",
+        "project_count",
+        "quota_exceeded",
+        "savings",
+        "schema",
+        "total_requests",
+        "total_spend",
+        "trend_vs_last_period",
+        "window_end",
+        "window_start"
+      ],
+      "optional_keys": [
+        "current_requests",
+        "included_requests",
+        "savings",
+        "window_end",
+        "window_start"
+      ],
+      "schema": "solwyn.overview.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "budget_limit",
         "budget_mode",
         "budget_period",
@@ -4294,11 +4363,13 @@
         "forecast",
         "project_id",
         "providers",
+        "savings",
         "schema"
       ],
       "optional_keys": [
         "failovers",
-        "forecast"
+        "forecast",
+        "savings"
       ],
       "schema": "solwyn.status.v1",
       "universal_error_envelope": false

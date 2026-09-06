@@ -16,6 +16,7 @@ from test_entitlement import BILLING
 from solwyn_cli.commands._entitlement import TierCapabilities
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import costs as costs_module
+from solwyn_cli.commands._cost_models import AccountCostDailyPoint
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
@@ -33,6 +34,35 @@ WINDOW = {
     "effective_from": "2026-07-09T00:00:00Z",
     "effective_to": "2026-07-16T00:00:00Z",
     "retention_clamped": False,
+}
+
+ACCOUNT_RESPONSE = {
+    "range": "7d",
+    "group_by": "project",
+    "groups": [
+        {
+            "group_key": "proj_alpha",
+            "provider": None,
+            "modality": None,
+            "agent_run_name": None,
+            "total_cost": 2.5,
+            "total_input_tokens": 2400,
+            "total_output_tokens": 680,
+            "call_count": 8,
+            "unpriced_call_count": 0,
+            "local_call_count": 0,
+            "project_name": "Alpha",
+            "current_period_cost": 3.0,
+            "daily": [
+                {"day": "2026-07-09", "cost": 0.5},
+                {"day": "2026-07-10", "cost": 2.0},
+            ],
+        }
+    ],
+    "truncated": False,
+    "analytics_withheld": False,
+    "savings": None,
+    "window": WINDOW,
 }
 
 GROUPS = {
@@ -148,6 +178,373 @@ def test_costs_command_is_registered() -> None:
 
     assert result.exit_code == 0
     assert "costs" in result.stdout
+
+
+def test_account_costs_defaults_to_project_rollup_without_a_project_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = auth.JwtCredential(
+        access_token=ACCESS_TOKEN,
+        refresh_token=REFRESH_TOKEN,
+    )
+    monkeypatch.setattr(
+        costs_module, "resolve_credential", lambda: credential, raising=False
+    )
+    FakeClient.responses = [httpx.Response(200, json=ACCOUNT_RESPONSE)]
+
+    result = runner.invoke(app, ["--json", "costs", "--account"])
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests == [
+        (
+            "GET",
+            "/api/v1/account/costs",
+            {"params": {"range": "7d", "group_by": "project"}},
+        )
+    ]
+    payload = json.loads(result.stdout)
+    assert payload["schema"] == "solwyn.account_costs.v1"
+    assert payload["groups"][0]["current_period_cost"] == 3.0
+
+
+def test_account_daily_point_preserves_core_date_schema() -> None:
+    schema = AccountCostDailyPoint.model_json_schema()
+
+    assert schema["properties"]["day"]["format"] == "date"
+
+
+@pytest.mark.parametrize(
+    ("daily", "expected"),
+    [
+        ([], "—"),
+        (
+            [
+                {"day": "2026-07-09", "cost": 0.0},
+                {"day": "2026-07-10", "cost": 0.0},
+            ],
+            "▁▁",
+        ),
+    ],
+)
+def test_account_cost_sparkline_distinguishes_empty_and_all_zero_series(
+    monkeypatch: pytest.MonkeyPatch,
+    daily: list[dict[str, object]],
+    expected: str,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    payload = copy.deepcopy(ACCOUNT_RESPONSE)
+    payload["groups"][0]["daily"] = daily
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+
+    result = runner.invoke(app, ["--no-color", "costs", "--account"])
+
+    assert result.exit_code == 0, result.stderr
+    assert expected in result.stdout
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_account_cost_project_rollup_and_sparkline_match_goldens(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    FakeClient.responses = [httpx.Response(200, json=ACCOUNT_RESPONSE)]
+
+    result = runner.invoke(
+        app,
+        ["--format", output_format, "--no-color", "costs", "--account"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"costs-account-{output_format}.{suffix}",
+    )
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_account_costs_withheld_rows_never_render_analytic_zeros(
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    withheld = copy.deepcopy(ACCOUNT_RESPONSE)
+    withheld["analytics_withheld"] = True
+    withheld["groups"][0].update(
+        total_cost=0,
+        total_input_tokens=0,
+        total_output_tokens=0,
+        call_count=0,
+        daily=[],
+    )
+    withheld["savings"] = {
+        "saved_cost": 1.25,
+        "saved_cost_upper": None,
+        "saved_input_tokens": 1000,
+        "blocked_call_count": 2,
+    }
+    FakeClient.responses = [httpx.Response(200, json=withheld)]
+
+    result = runner.invoke(
+        app,
+        ["--format", output_format, "--no-color", "costs", "--account"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"costs-account-withheld-{output_format}.{suffix}",
+    )
+    assert "0.000000" not in result.stdout
+    if output_format == "json":
+        row = json.loads(result.stdout)["groups"][0]
+        for field in (
+            "total_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "call_count",
+            "unpriced_call_count",
+            "local_call_count",
+            "daily",
+        ):
+            assert field not in row
+
+
+def test_account_costs_forward_only_supported_filters_and_custom_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    payload = copy.deepcopy(ACCOUNT_RESPONSE)
+    payload["group_by"] = "provider"
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "costs",
+            "--account",
+            "--group-by",
+            "provider",
+            "--from",
+            "2026-07-01T00:00:00Z",
+            "--to",
+            "2026-07-02T00:00:00Z",
+            "--model",
+            "gpt-5",
+            "--provider",
+            "openai",
+            "--modality",
+            "text",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests[0][2]["params"] == {
+        "from": "2026-07-01T00:00:00Z",
+        "to": "2026-07-02T00:00:00Z",
+        "model": "gpt-5",
+        "provider": "openai",
+        "modality": "text",
+        "group_by": "provider",
+    }
+
+
+def test_account_costs_project_key_stops_before_http_with_login_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(costs_module, "resolve_credential", _credential, raising=False)
+
+    result = runner.invoke(app, ["--json", "costs", "--account"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "authentication_required"
+    assert "solwyn login" in error["hint"]
+    assert FakeClient.instances == []
+    assert VALID_KEY not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        ["--status", "success"],
+        ["--service-tier", "flex"],
+        ["--provider-region", "us-east-1"],
+        ["--agent-run", "run"],
+        ["--failover-reason", "primary_error"],
+        ["--model-fallback"],
+        ["--provider-fallback"],
+        ["--tag", "customer=example"],
+    ],
+)
+def test_account_costs_reject_project_only_filters_before_http(
+    monkeypatch: pytest.MonkeyPatch,
+    option: list[str],
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+
+    result = runner.invoke(app, ["--json", "costs", "--account", *option])
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["code"] == "invalid_cost_query"
+    assert FakeClient.instances == []
+
+
+def test_account_costs_print_core_window_headers_on_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    headers = {
+        "X-Solwyn-Requested-From": "2026-07-01T00:00:00Z",
+        "X-Solwyn-Requested-To": "2026-07-31T00:00:00Z",
+        "X-Solwyn-Effective-From": "2026-07-02T00:00:00Z",
+        "X-Solwyn-Effective-To": "2026-07-31T00:00:00Z",
+        "X-Solwyn-Retention-Clamped": "true",
+    }
+    FakeClient.responses = [httpx.Response(200, json=ACCOUNT_RESPONSE, headers=headers)]
+
+    result = runner.invoke(app, ["--json", "costs", "--account"])
+
+    assert result.exit_code == 0, result.stderr
+    for name, value in headers.items():
+        assert f"{name}: {value}" in result.stderr
+
+
+def test_account_bad_group_by_is_left_to_core_422_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    FakeClient.responses = [
+        error_from_response(
+            httpx.Response(422, json={"detail": "Invalid account group_by"})
+        )
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "costs", "--account", "--group-by", "tag:"],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid account group_by" in result.stderr
+    assert FakeClient.instances[0].requests == [
+        (
+            "GET",
+            "/api/v1/account/costs",
+            {"params": {"range": "7d", "group_by": "tag:"}},
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("status_code", "detail", "expected_code", "expected_hint"),
+    [
+        (
+            402,
+            {
+                "code": "quota_exceeded",
+                "message": "Monthly request quota reached (5000/5000)",
+                "cta_path": "/billing",
+            },
+            "quota_exceeded",
+            "Review usage and plan limits in the dashboard: /billing",
+        ),
+        (
+            403,
+            "This endpoint requires JWT authentication",
+            "http_error",
+            "Run solwyn login to authenticate with your user account.",
+        ),
+    ],
+)
+def test_account_costs_keep_core_402_and_403_messages_safe(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    detail: dict[str, object] | str,
+    expected_code: str,
+    expected_hint: str,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    FakeClient.responses = [
+        error_from_response(httpx.Response(status_code, json={"detail": detail}))
+    ]
+
+    result = runner.invoke(app, ["--json", "costs", "--account", "--group-by", "day"])
+
+    assert result.exit_code == (1 if status_code == 402 else 3)
+    error = json.loads(result.stderr)
+    assert error["code"] == expected_code
+    assert error["hint"] == expected_hint
+    assert "checkout" not in result.stderr.lower()
+    assert ACCESS_TOKEN not in result.stderr
 
 
 @pytest.mark.parametrize(

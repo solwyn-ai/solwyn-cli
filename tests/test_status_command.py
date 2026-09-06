@@ -102,6 +102,26 @@ FAILOVERS_RESPONSE = [
     }
 ]
 
+OVERVIEW_RESPONSE = {
+    "total_spend": 42.5,
+    "total_requests": 5100,
+    "project_count": 3,
+    "trend_vs_last_period": 0.125,
+    "period_start": "2026-09-01",
+    "period_end": "2026-09-30",
+    "savings": {
+        "saved_cost": 4.25,
+        "saved_cost_upper": None,
+        "saved_input_tokens": 12000,
+        "blocked_call_count": 6,
+    },
+    "quota_exceeded": True,
+    "included_requests": 5000,
+    "current_requests": 5100,
+    "window_start": "2026-09-01T00:00:00Z",
+    "window_end": "2026-10-01T00:00:00Z",
+}
+
 
 class FakeClient:
     """Minimal closeable command client with queued request results."""
@@ -154,20 +174,10 @@ def test_status_command_is_registered() -> None:
     assert "status" in result.stdout
 
 
-@pytest.mark.parametrize(
-    "credential",
-    [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
-    ],
-)
-def test_status_supports_bare_key_and_jwt_with_two_read_only_gets(
+def test_status_supports_project_key_with_two_read_only_gets(
     monkeypatch: pytest.MonkeyPatch,
-    credential: auth.ResolvedCredential,
 ) -> None:
+    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda: credential, raising=False
     )
@@ -197,13 +207,47 @@ def test_status_supports_bare_key_and_jwt_with_two_read_only_gets(
         assert secret not in rendered
 
 
-def test_status_non_tty_table_and_no_color_match_golden(
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_status_jwt_adds_one_account_savings_summary(
     monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
 ) -> None:
     credential = auth.JwtCredential(
         access_token=ACCESS_TOKEN,
         refresh_token=REFRESH_TOKEN,
     )
+    monkeypatch.setattr(
+        status_module, "resolve_credential", lambda: credential, raising=False
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=OVERVIEW_RESPONSE),
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--format", output_format, "--no-color", "-p", "proj_alpha", "status"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
+        ("GET", "/api/v1/projects/proj_alpha/providers", {}),
+        ("GET", "/api/v1/overview", {}),
+    ]
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"status-jwt-savings-{output_format}.{suffix}",
+    )
+    assert result.stderr == ""
+
+
+def test_status_non_tty_table_and_no_color_match_golden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda: credential, raising=False
     )
@@ -294,6 +338,7 @@ def test_status_optional_sections_are_schema_bearing_json(
         httpx.Response(200, json=PROVIDERS_RESPONSE),
         httpx.Response(200, json=FORECAST_RESPONSE),
         httpx.Response(200, json=FAILOVERS_RESPONSE),
+        httpx.Response(200, json=OVERVIEW_RESPONSE),
     ]
 
     result = runner.invoke(

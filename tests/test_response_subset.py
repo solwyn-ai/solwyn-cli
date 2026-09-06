@@ -352,6 +352,45 @@ RESPONSE_READS = {
         "savings",
         "window",
     ),
+    "AccountCostQueryResponse": (
+        "range",
+        "group_by",
+        "groups",
+        "truncated",
+        "analytics_withheld",
+        "savings",
+        "window",
+    ),
+    "AccountCostGroup": (
+        "group_key",
+        "provider",
+        "modality",
+        "agent_run_name",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "call_count",
+        "unpriced_call_count",
+        "local_call_count",
+        "project_name",
+        "current_period_cost",
+        "daily",
+    ),
+    "AccountCostDailyPoint": ("day", "cost"),
+    "OverviewResponse": (
+        "total_spend",
+        "total_requests",
+        "project_count",
+        "trend_vs_last_period",
+        "period_start",
+        "period_end",
+        "savings",
+        "quota_exceeded",
+        "included_requests",
+        "current_requests",
+        "window_start",
+        "window_end",
+    ),
     "CostGroup": (
         "group_key",
         "provider",
@@ -435,6 +474,12 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/api/v1/account/costs"): (
+        "200",
+        "object",
+        "AccountCostQueryResponse",
+    ),
+    ("GET", "/api/v1/overview"): ("200", "object", "OverviewResponse"),
     ("GET", "/api/v1/projects/{project_id}/costs/events"): (
         "200",
         "object",

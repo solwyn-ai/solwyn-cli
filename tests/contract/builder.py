@@ -169,9 +169,9 @@ def declared_schema_tokens() -> set[str]:
     """Every ``solwyn.*.v1`` schema the live CLI declares it emits."""
     tokens: set[str] = set()
     for _, command in _walk(get_command(app)):
-        token = _schema_token(_declared_schema_line(command))
-        if token is not None:
-            tokens.add(token)
+        schema_line = _declared_schema_line(command)
+        if schema_line is not None:
+            tokens.update(_SCHEMA_TOKEN.findall(schema_line))
     return tokens
 
 

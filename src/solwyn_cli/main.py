@@ -7,9 +7,10 @@ from pydantic import ValidationError
 
 from solwyn_cli import __version__
 from solwyn_cli.commands.account import app as account_app
+from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.channels import app as channels_app
 from solwyn_cli.commands.notifications import app as notifications_app
-from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
+from solwyn_cli.commands.overview import OVERVIEW_HELP, overview
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
@@ -64,6 +65,7 @@ app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)
 app.command("mcp", epilog=MCP_HELP)(mcp)
+app.command("overview", epilog=OVERVIEW_HELP)(overview)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 

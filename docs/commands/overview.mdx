@@ -1,0 +1,32 @@
+---
+title: Overview
+---
+
+`solwyn overview` reads the logged-in user's calendar-month summary across all
+projects. It requires JWT login; a configured project key stops locally with a
+`solwyn login` hint and no account request.
+
+```sh
+solwyn overview
+solwyn --json overview
+```
+
+The `solwyn.overview.v1` envelope includes total spend, request count, active
+project count, the ratio versus the previous calendar period, period dates, and
+whether the monthly request quota is exceeded. Human output renders the trend
+as a signed percentage.
+
+Savings contains avoided cost, an independently nullable upper estimate, saved
+input tokens, and blocked-call count. Missing savings is omitted rather than
+reported as zero. A null upper estimate renders as `—` and remains JSON `null`
+inside a present savings object.
+
+Free-tier responses include the request allowance, current request count, and
+UTC quota window. Those fields are omitted when Core returns them as null for a
+paid tier. The quota window is the UTC calendar month and is distinct from
+retention-clamped analytics windows.
+
+MCP `get_overview` returns the same typed data in
+`solwyn.mcp.overview.v1`. It is read-only and requires JWT authentication; under
+a project key it returns an authentication error with a login hint before making
+an account request.

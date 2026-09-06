@@ -1,0 +1,69 @@
+{
+  "range": {
+    "name": "range",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "type": "string",
+      "description": "Preset window: `7d`, `30d`, `90d`, or `365d`; availability is tier-dependent. To use a custom window, provide both `from` and `to` as timezone-aware datetimes (`to` later than `from`); custom bounds override `range` and cannot exceed the tier's maximum analytics window. Results are clamped to the tier's data-retention window.",
+      "default": "7d",
+      "title": "Range"
+    }
+  },
+  "group_by": {
+    "name": "group_by",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "type": "string",
+      "description": "Group results by exactly one of `project`, `day`, `model`, or `provider`. `project` is available on every tier; the rest follow the tier's analytics entitlement. Rows for `project` carry `project_name`, `current_period_cost`, and `daily`, and include every active project even when it has no spend in the window.",
+      "default": "project",
+      "title": "Group By"
+    }
+  },
+  "model": {
+    "name": "model",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "anyOf": [{"type": "string"}, {"type": "null"}],
+      "title": "Model"
+    }
+  },
+  "provider": {
+    "name": "provider",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "anyOf": [{"type": "string"}, {"type": "null"}],
+      "title": "Provider"
+    }
+  },
+  "modality": {
+    "name": "modality",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "anyOf": [{"type": "string"}, {"type": "null"}],
+      "title": "Modality"
+    }
+  },
+  "from": {
+    "name": "from",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "anyOf": [{"type": "string", "format": "date-time"}, {"type": "null"}],
+      "title": "From"
+    }
+  },
+  "to": {
+    "name": "to",
+    "in": "query",
+    "required": false,
+    "schema": {
+      "anyOf": [{"type": "string", "format": "date-time"}, {"type": "null"}],
+      "title": "To"
+    }
+  }
+}

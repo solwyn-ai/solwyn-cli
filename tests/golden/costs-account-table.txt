@@ -1,0 +1,2 @@
+Project  Window cost  Current period  Calls  Daily
+Alpha       2.500000        3.000000      8  ▃█   

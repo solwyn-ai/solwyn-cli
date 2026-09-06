@@ -111,3 +111,9 @@ def test_underscore_rule_action_schema_is_declared_and_captured() -> None:
     assert "solwyn.budget.rule_action.v1" in declared_schema_tokens()
     schemas = {entry["schema"] for entry in build_cli_contract()["json_schemas"]}
     assert "solwyn.budget.rule_action.v1" in schemas
+
+
+def test_account_costs_conditional_schema_is_declared_and_captured() -> None:
+    assert "solwyn.account_costs.v1" in declared_schema_tokens()
+    schemas = {entry["schema"] for entry in build_cli_contract()["json_schemas"]}
+    assert "solwyn.account_costs.v1" in schemas

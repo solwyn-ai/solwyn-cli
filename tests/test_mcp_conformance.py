@@ -32,6 +32,7 @@ TOOL_NAMES = [
     "list_projects",
     "get_cost_total",
     "list_budget_rules",
+    "get_overview",
 ]
 
 BUDGET_RESPONSE = {
@@ -195,6 +196,25 @@ COSTS_RESPONSE = {
             "local_call_count": 0,
         }
     ],
+}
+OVERVIEW_RESPONSE = {
+    "total_spend": 42.5,
+    "total_requests": 5100,
+    "project_count": 3,
+    "trend_vs_last_period": 0.125,
+    "period_start": "2026-09-01",
+    "period_end": "2026-09-30",
+    "savings": {
+        "saved_cost": 4.25,
+        "saved_cost_upper": None,
+        "saved_input_tokens": 12000,
+        "blocked_call_count": 6,
+    },
+    "quota_exceeded": True,
+    "included_requests": 5000,
+    "current_requests": 5100,
+    "window_start": "2026-09-01T00:00:00Z",
+    "window_end": "2026-10-01T00:00:00Z",
 }
 PROJECTS_RESPONSE = [
     {
@@ -392,6 +412,75 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         return await session.call_tool(name, arguments)
 
 
+def test_get_overview_requires_jwt_before_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[key],
+    )
+
+    result = anyio.run(_call_tool, "get_overview", {})
+
+    assert result.structuredContent["error"] == {
+        "code": "authentication_required",
+        "message": "User login is required to read the account overview.",
+        "hint": "Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+        "status_code": None,
+    }
+    assert requests == []
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_get_overview_reads_typed_account_summary_with_jwt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=OVERVIEW_RESPONSE)],
+        credentials=[jwt],
+    )
+
+    result = anyio.run(_call_tool, "get_overview", {})
+
+    assert result.structuredContent["ok"] is True
+    assert result.structuredContent["schema"] == "solwyn.mcp.overview.v1"
+    assert result.structuredContent["data"] == OVERVIEW_RESPONSE
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/overview", {}, None),
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_get_overview_invalid_response_is_fixed_and_secret_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json={"total_spend": JWT_ACCESS})],
+        credentials=[jwt],
+    )
+
+    result = anyio.run(_call_tool, "get_overview", {})
+
+    assert result.structuredContent["error"] == {
+        "code": "invalid_overview_response",
+        "message": "The Solwyn API response was invalid.",
+        "hint": None,
+        "status_code": None,
+    }
+    assert JWT_ACCESS not in json.dumps(result.structuredContent)
+    assert _wire_requests(requests) == [("GET", "/api/v1/overview", {}, None)]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
 def _wire_requests(
     requests: list[tuple[str, str, dict[str, Any]]],
 ) -> list[tuple[str, str, dict[str, str], Any]]:
@@ -414,6 +503,7 @@ def mcp_http(
         httpx.Response(200, json=FORECAST_RESPONSE),
         httpx.Response(200, json=COSTS_RESPONSE),
         httpx.Response(200, json=PROJECTS_RESPONSE),
+        httpx.Response(200, json=OVERVIEW_RESPONSE),
     ]
 
     project_key = auth.ProjectKeyCredential(
@@ -432,13 +522,14 @@ def mcp_http(
             project_key,
             project_key,
             jwt,
+            jwt,
         ],
     )
 
     yield requests
 
     assert response_queue == []
-    assert len(clients) == 7
+    assert len(clients) == 8
     assert all(client.is_closed for client in clients)
 
 
@@ -545,6 +636,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "tag",
                 },
                 {"project_id"},
+                set(),
             ]
 
             calls = [
@@ -588,11 +680,12 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "get_costs", {"time_range": "30d", "group_by": "provider"}
                 ),
                 await session.call_tool("list_projects", {}),
+                await session.call_tool("get_overview", {}),
             ]
 
         assert all(call.isError is False for call in calls)
         assert all(call.structuredContent is not None for call in calls)
-        assert [call.structuredContent["ok"] for call in calls] == [True] * 7
+        assert [call.structuredContent["ok"] for call in calls] == [True] * 8
         assert calls[0].structuredContent["data"]["project_id"] == "proj_alpha"
         assert calls[1].structuredContent["data"]["reservation_id"] == "res_01JZEXAMPLE"
         assert calls[2].structuredContent["data"] == {
@@ -603,6 +696,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
         assert calls[4].structuredContent["data"]["forecast_eom"] == 75.0
         assert calls[5].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
         assert calls[6].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
+        assert calls[7].structuredContent["data"] == OVERVIEW_RESPONSE
 
     anyio.run(exercise_protocol)
 
@@ -664,6 +758,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
             None,
         ),
         ("GET", "/api/v1/projects", {}, None),
+        ("GET", "/api/v1/overview", {}, None),
     ]
     assert {request[2]["authorization"] for request in mcp_http} == {
         f"Bearer {VALID_KEY}",

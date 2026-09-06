@@ -279,10 +279,13 @@ HELP_CONTRACTS = {
         "schema": "none (human confirmation on stderr)",
     },
     ("costs",): {
-        "endpoint": "GET /api/v1/projects/{project}/costs",
-        "auth": "any",
+        "endpoint": (
+            "GET /api/v1/projects/{project}/costs or, with --account, "
+            "GET /api/v1/account/costs"
+        ),
+        "auth": "project key or JWT; --account requires JWT",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
-        "schema": "solwyn.costs.v1",
+        "schema": "solwyn.costs.v1 or solwyn.account_costs.v1",
     },
     ("forecast",): {
         "endpoint": "GET /api/v1/projects/{project}/forecast",
@@ -384,11 +387,17 @@ HELP_CONTRACTS = {
         "endpoint": (
             "GET /api/v1/projects/{project}/budget and GET "
             "/api/v1/projects/{project}/providers; optionally GET forecast "
-            "and provider failovers"
+            "and provider failovers; JWT also GET /api/v1/overview"
         ),
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.status.v1",
+    },
+    ("overview",): {
+        "endpoint": "GET /api/v1/overview",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 3 auth",
+        "schema": "solwyn.overview.v1",
     },
     ("whoami",): {
         "endpoint": "local key identity or GET /api/v1/account/me and GET /api/v1/projects",
@@ -516,12 +525,13 @@ def test_budget_help_preserves_guardrail_semantics() -> None:
     assert "Poll with status, never check" in status_help
 
 
-def test_mcp_help_names_the_exact_seven_tool_surface() -> None:
+def test_mcp_help_names_the_exact_tool_surface() -> None:
     rendered = _normalized_help(("mcp",))
 
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules."
+        "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
+        "get_overview."
     ) in rendered
 
 
