@@ -1,6 +1,7 @@
-"""Project creation and metadata inspection commands."""
+"""Project creation, metadata inspection, and lifecycle commands."""
 
 import math
+import sys
 from typing import Annotated
 from urllib.parse import quote
 
@@ -24,6 +25,7 @@ from solwyn_cli._vendor.wire import (
     BudgetPeriod,
     ProjectCreateRequest,
     ProjectKeyScope,
+    ProjectUpdateRequest,
 )
 from solwyn_cli.auth import (
     AuthError,
@@ -35,6 +37,7 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.config import ConfigLoadError, ConfigWriteError, clear_default_project
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -147,6 +150,14 @@ class _ProjectCreateStoredData(_CreatedProject):
     stored: bool = True
 
 
+class _ProjectDeleteData(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_id: str
+    archived: bool = True
+    api_keys_revoked: bool = True
+
+
 def _date_time(value: AwareDatetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
@@ -204,6 +215,18 @@ def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableDat
     )
 
 
+def _delete_table(data: _ProjectDeleteData) -> TableData:
+    return TableData(
+        columns=("Field", "Value"),
+        rows=(
+            ("Project", data.project_id),
+            ("Archived", "true"),
+            ("API keys revoked", "true"),
+        ),
+        right_align=("Value",),
+    )
+
+
 def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
@@ -222,6 +245,56 @@ def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
             semantic=ErrorSemantic.AUTH,
         )
     return credential
+
+
+def _jwt_credential_for_mutation(
+    context: typer.Context, *, operation: str
+) -> JwtCredential:
+    credential = required_credential(context, resolve=resolve_credential)
+    if isinstance(credential, ProjectKeyCredential):
+        hint = (
+            f"Unset SOLWYN_API_KEY, run solwyn login, then retry projects {operation}."
+            if credential.source == "environment"
+            else f"Run solwyn logout, then solwyn login, and retry projects {operation}."
+        )
+        exit_with_error(
+            context,
+            OutputError(
+                code="authentication_required",
+                message="User login is required to manage project lifecycle.",
+                hint=hint,
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
+    return credential
+
+
+def _validated_project_id(context: typer.Context, project_id: str) -> str:
+    normalized = project_id.strip()
+    if not normalized:
+        exit_with_error(
+            context,
+            OutputError(
+                code="project_required",
+                message="A project identifier is required.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    return normalized
+
+
+def _stdin_is_tty() -> bool:
+    return sys.stdin.isatty()
+
+
+def _invalid_projects_response(context: typer.Context) -> None:
+    exit_with_error(
+        context,
+        OutputError(
+            code="invalid_projects_response",
+            message="The projects response was invalid.",
+        ),
+    )
 
 
 @app.command(
@@ -466,4 +539,171 @@ def show_project(context: typer.Context) -> None:
         schema="solwyn.projects-show.v1",
         data=project,
         table=_show_table(project),
+    )
+
+
+@app.command(
+    "rename",
+    epilog=help_contract(
+        endpoint="PUT /api/v1/projects/{id}",
+        auth="JWT (owner or admin)",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.projects-rename.v1",
+    ),
+)
+def rename_project(
+    context: typer.Context,
+    project_id: Annotated[str, typer.Argument(help="Project identifier to rename.")],
+    name: Annotated[str, typer.Option("--name", help="New project name.")],
+) -> None:
+    """Rename a project as an account owner or admin."""
+    validated_project_id = _validated_project_id(context, project_id)
+    try:
+        request = ProjectUpdateRequest(name=name.strip())
+    except ValidationError:
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_project_update_request",
+                message="The project rename request is invalid.",
+                hint="Provide a nonblank name of at most 100 characters.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    credential = _jwt_credential_for_mutation(context, operation="rename")
+    runtime = command_context(context)
+    path = quote(validated_project_id, safe="")
+    try:
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            response = client.request(
+                "PUT",
+                f"/api/v1/projects/{path}",
+                json=request.model_dump(mode="json"),
+            )
+        if response.status_code != 200:
+            raise ValueError("Project rename did not return 200")
+        project = _Project.model_validate(response.json())
+    except ApiError as error:
+        semantic = (
+            ErrorSemantic.USAGE
+            if error.status_code == 400 and error.message == "No fields to update"
+            else None
+        )
+        exit_with_error(context, error, semantic=semantic)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValidationError, ValueError, TypeError):
+        _invalid_projects_response(context)
+
+    output_engine(context).write_success(
+        schema="solwyn.projects-rename.v1",
+        data=project,
+        table=_show_table(project),
+    )
+
+
+@app.command(
+    "delete",
+    epilog=help_contract(
+        endpoint="DELETE /api/v1/projects/{id}",
+        auth="JWT (owner or admin)",
+        exits=(
+            "0 success; 1 generic/API or local config cleanup; "
+            "2 usage or confirmation; 3 auth; 5 not found"
+        ),
+        schema="solwyn.projects-delete.v1 (CLI output after bodyless 204)",
+        guidance=(
+            "Irreversible: archives the project, revokes every project key in the same transaction, and the project immediately becomes unavailable.",
+            "Pass --yes; an interactive terminal must also type the exact project name.",
+        ),
+    ),
+)
+def delete_project(
+    context: typer.Context,
+    project_id: Annotated[str, typer.Argument(help="Project identifier to archive.")],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Acknowledge the irreversible project deletion."),
+    ] = False,
+) -> None:
+    """Irreversibly archive a project and revoke all of its keys."""
+    validated_project_id = _validated_project_id(context, project_id)
+    if not yes:
+        exit_with_error(
+            context,
+            OutputError(
+                code="confirmation_required",
+                message="Project deletion requires --yes.",
+                hint="This action is irreversible and revokes every project key.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    credential = _jwt_credential_for_mutation(context, operation="delete")
+    runtime = command_context(context)
+    path = quote(validated_project_id, safe="")
+    try:
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            if _stdin_is_tty():
+                response = client.request("GET", f"/api/v1/projects/{path}")
+                if response.status_code != 200:
+                    raise ValueError("Project lookup did not return 200")
+                project = _Project.model_validate(response.json())
+                confirmation = typer.prompt(
+                    f"Type the project name '{project.name}' to confirm",
+                    err=True,
+                    hide_input=True,
+                )
+                if confirmation != project.name:
+                    exit_with_error(
+                        context,
+                        OutputError(
+                            code="confirmation_failed",
+                            message="The project name did not match; nothing was deleted.",
+                        ),
+                        semantic=ErrorSemantic.USAGE,
+                    )
+            response = client.request(
+                "DELETE",
+                f"/api/v1/projects/{path}",
+            )
+        if response.status_code != 204 or response.content:
+            raise ValueError("Project deletion did not return a bodyless 204")
+    except ApiError as error:
+        exit_with_error(context, error)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValidationError, ValueError, TypeError):
+        _invalid_projects_response(context)
+
+    try:
+        clear_default_project(validated_project_id)
+    except (ConfigLoadError, ConfigWriteError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="project_deleted_config_update_failed",
+                message=(
+                    "The project was archived and its keys were revoked, but the "
+                    "matching local default_project could not be cleared."
+                ),
+                hint=(
+                    "Repair config.toml or select a live project with "
+                    "solwyn config set default_project PROJECT."
+                ),
+            ),
+        )
+
+    data = _ProjectDeleteData(project_id=validated_project_id)
+    output_engine(context).write_success(
+        schema="solwyn.projects-delete.v1",
+        data=data,
+        table=_delete_table(data),
     )

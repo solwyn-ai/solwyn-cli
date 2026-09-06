@@ -1,0 +1,1 @@
+{"schema":"solwyn.forecast.v1","project_id":"proj_alpha","current_spend":12.5,"forecast_eom":75.0,"burn_rate_per_day":2.5,"ci_low":60.0,"ci_high":90.0,"period_start":"2026-09-01T00:00:00+00:00","period_end":"2026-09-30T23:59:59.999999+00:00","days_elapsed":5,"days_remaining":25,"insufficient_data":true}

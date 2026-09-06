@@ -1,0 +1,55 @@
+                                         Snooze                                 
+Rule                                     d       Will    Channe  Muted   Usage /
+key      Type    Params  Mode    Paused  until   send    ls      reason  limit  
+budget:  budget  {"perc  alert_  true    2026-0  false   —       email_  —      
+80       _thres  ent":   only            7-11T1                  off            
+         hold    80}                     2:00:0                                 
+                                         0+00:0                                 
+                                         0                                      
+forecas  foreca  {"peri  alert_  false   —       false   —       email_  —      
+t:125    st_ove  od":    only                                    off            
+         rrun    "month                                                         
+                 ",                                                             
+                 "spend                                                         
+                 _thres                                                         
+                 hold_u                                                         
+                 sd":                                                           
+                 125.5}                                                         
+runaway  runawa  {"call  alert_  false   —       false   —       email_  —      
+:50      y_run   _thres  only                                    off            
+                 hold":                                                         
+                  100,                                                          
+                 "spend                                                         
+                 _thres                                                         
+                 hold_u                                                         
+                 sd":                                                           
+                 50.0,                                                          
+                 "windo                                                         
+                 w_minu                                                         
+                 tes":                                                          
+                 60}                                                            
+daily:2  daily_  {"look  alert_  false   —       false   —       email_  —      
+.5:14    anomal  back_d  only                                    off            
+         y       ays":                                                          
+                 14,                                                            
+                 "multi                                                         
+                 plier"                                                         
+                 : 2.5}                                                         
+unit:3:  unit_c  {"look  alert_  true    —       false   —       email_  —      
+21       ost_an  back_d  only                                    off            
+         omaly   ays":                                                          
+                 21,                                                            
+                 "multi                                                         
+                 plier"                                                         
+                 : 3.0}                                                         
+scoped:  scoped  {"limi  hard_d  false   —       false   —       email_  — /    
+model:g  _budge  t":     eny                                     off     25.5   
+pt-4o    t       25.5,                                                          
+                 "match                                                         
+                 ":                                                             
+                 "gpt-4                                                         
+                 o",                                                            
+                 "scope                                                         
+                 ":                                                             
+                 "model                                                         
+                 "}                                                             

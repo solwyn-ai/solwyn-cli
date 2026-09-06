@@ -4,11 +4,23 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    SecretStr,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 
 class _WireModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+CALL_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 
 
 class ProviderName(StrEnum):
@@ -45,6 +57,15 @@ class ServiceTier(StrEnum):
     PRIORITY = "priority"
     STANDARD = "standard"
     OPTIMIZED = "optimized"
+
+
+class CostSimulationRequest(_WireModel):
+    """Exact current-rate target for replaying a bounded usage window."""
+
+    target_provider: ProviderName
+    target_model: Annotated[str, Field(min_length=1, max_length=2048)]
+    target_region: Annotated[str, Field(max_length=32)] | None = None
+    target_service_tier: ServiceTier | None = None
 
 
 class BudgetPeriod(StrEnum):
@@ -87,6 +108,7 @@ class _ForecastOverrunConfig(_WireModel):
 
 
 class _RunawayRunConfig(_WireModel):
+    mode: BudgetMode = BudgetMode.ALERT_ONLY
     type: Literal["runaway_run"]
     spend_threshold_usd: Annotated[float, Field(gt=0, le=1999999.99)]
     call_threshold: Annotated[int, Field(ge=1)] | None = None
@@ -116,13 +138,27 @@ class _UnitCostAnomalyConfig(_WireModel):
 
 class _ScopedBudgetConfig(_WireModel):
     type: Literal["scoped_budget"]
-    scope: Literal["model", "provider", "agent_run"]
+    scope: Literal["model", "provider", "agent_run", "tag"]
+    match_value: Annotated[str, Field(max_length=256)] | None = None
     match: Annotated[str, Field(min_length=1, max_length=2048)]
     limit: Annotated[float, Field(gt=0, le=999999.999999)]
     mode: BudgetMode
     channel_ids: list[str] = Field(default_factory=list)
     snoozed_until: datetime | None = None
     paused: bool = False
+
+    @model_validator(mode="after")
+    def validate_tag_selector(self) -> "_ScopedBudgetConfig":
+        if self.scope == "tag":
+            if self.match_value is None:
+                raise ValueError("Tag scope requires match_value")
+            if len(self.match) > 64:
+                raise ValueError("Tag keys must be at most 64 characters")
+            if "\x00" in self.match or "\x00" in self.match_value:
+                raise ValueError("Tag selectors cannot contain NUL")
+        elif self.match_value is not None:
+            raise ValueError("match_value is only valid for tag scope")
+        return self
 
 
 _BudgetRule = (
@@ -180,7 +216,7 @@ class LoginRequest(_WireModel):
 
     email: str
     password: Annotated[SecretStr, Field(max_length=128)]
-    plan: Literal["founder", "team", "scale"] | None = None
+    plan: Literal["production", "team", "scale"] | None = None
     billing_interval: Literal["month", "year"] | None = None
 
     @field_serializer("password")
@@ -208,11 +244,22 @@ class ProjectCreateRequest(_WireModel):
     scope: ProjectKeyScope = ProjectKeyScope.FULL
 
 
+class ProjectUpdateRequest(_WireModel):
+    name: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+
+
 class ProjectKeyRotateRequest(_WireModel):
     grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
     # No default on the wire: a null scope asks the API to carry the replaced
     # key's scope over to the replacement.
     scope: ProjectKeyScope | None = None
+
+
+class WebhookCreateRequest(_WireModel):
+    """Webhook target registration body with an open event-name domain."""
+
+    url: HttpUrl
+    events: str = "*"
 
 
 class BudgetUpdateRequest(_WireModel):
@@ -225,6 +272,8 @@ class BudgetUpdateRequest(_WireModel):
 
 
 class BudgetCheckRequest(_WireModel):
+    tags: dict[str, str] | None = None
+    price_hints_version: Literal["1"] | None = None
     estimated_input_tokens: Annotated[int, Field(ge=0)]
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
@@ -235,14 +284,122 @@ class BudgetCheckRequest(_WireModel):
         list[Annotated[str, Field(max_length=2048)]], Field(max_length=8)
     ] = Field(default_factory=list)
     agent_run_id: Annotated[str, Field(max_length=256)] | None = None
+    run_directive_version: Literal["1"] | None = None
+
+
+class BudgetCheckBatchRequest(_WireModel):
+    checks: Annotated[list[BudgetCheckRequest], Field(min_length=1, max_length=32)]
 
 
 class BudgetConfirmRequest(_WireModel):
+    # Core requires exactly one of reservation_id / lease_id. The CLI owns no
+    # lease plane: require a reservation and never emit lease_id.
     reservation_id: str
     model: Annotated[str, Field(max_length=2048)]
     provider: ProviderName
     is_provider_fallback: bool = False
-    call_id: Annotated[str, Field(max_length=36)]
+    call_id: Annotated[str, Field(max_length=36, pattern=CALL_ID_PATTERN)]
     token_details: TokenDetails
     provider_region: Annotated[str, Field(max_length=32)] | None = None
     service_tier: ServiceTier | None = None
+
+
+class SnoozeRequest(_WireModel):
+    snoozed_until: datetime
+
+
+class AlertPreviewItem(_WireModel):
+    rule: _BudgetRule
+    channel_ids: list[str] | None = None
+
+
+class ProjectAlertsPreviewRequest(_WireModel):
+    alerts: Annotated[list[AlertPreviewItem], Field(max_length=50)]
+
+
+class CallStatus(StrEnum):
+    SUCCESS = "success"
+    ERROR = "error"
+    BUDGET_DENIED = "budget_denied"
+
+
+class DenySource(StrEnum):
+    SERVER = "server"
+    STICKY_REPLAY = "sticky_replay"
+    LOCAL_ENFORCEMENT = "local_enforcement"
+    LEASE_EXHAUSTED = "lease_exhausted"
+    LOCAL_VELOCITY = "local_velocity"
+    RUN_TERMINATED = "run_terminated"
+    AGGREGATE_REPLAY = "aggregate_replay"
+
+
+class Modality(StrEnum):
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    EMBEDDING = "embedding"
+
+
+class IngestMetadataEvent(_WireModel):
+    """Caller-owned usage only; costs are computed by Core."""
+
+    model: Annotated[str, Field(max_length=2048)]
+    provider: ProviderName
+    input_tokens: Annotated[int, Field(ge=0, le=100_000_000)]
+    output_tokens: Annotated[int, Field(ge=0, le=100_000_000)]
+    latency_ms: float
+    status: CallStatus
+    is_model_fallback: bool
+    call_id: Annotated[str, Field(max_length=36, pattern=CALL_ID_PATTERN)]
+    sdk_instance_id: str
+    timestamp: datetime
+    modality: Modality = Modality.TEXT
+    token_details: TokenDetails | None = None
+    media_usage: MediaUsage | None = None
+    service_tier: Annotated[str, Field(max_length=32)] | None = None
+    provider_region: Annotated[str, Field(max_length=32)] | None = None
+    agent_run_id: Annotated[str, Field(max_length=256)] | None = None
+    parent_agent_run_id: Annotated[str, Field(max_length=256)] | None = None
+    agent_run_name: Annotated[str, Field(max_length=255)] | None = None
+    tags: (
+        dict[Annotated[str, Field(strict=True)], Annotated[str, Field(strict=True)]]
+        | None
+    ) = None
+    deny_source: DenySource | None = None
+    deny_reason: Annotated[str, Field(max_length=64)] | None = None
+    denied_by_period: Annotated[str, Field(max_length=32)] | None = None
+    estimated_output_bound: Annotated[int, Field(ge=0, le=100_000_000)] | None = None
+    attempt_index: Annotated[int, Field(ge=0)] = 0
+    is_provider_fallback: bool = False
+
+    @field_validator("attempt_index")
+    @classmethod
+    def primary_attempt_only(cls, value: int) -> int:
+        if value != 0:
+            raise ValueError("CLI recording supports attempt_index=0 only.")
+        return value
+
+    @field_validator("is_provider_fallback")
+    @classmethod
+    def no_provider_routing(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("CLI recording does not implement provider routing.")
+        return value
+
+
+class AccountAlertUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    spend_threshold_usd: float = Field(gt=0)
+    enabled: bool | None = None
+    channel_ids: list[str] = Field(default_factory=list)
+
+
+class AccountAlertPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    channel_ids: list[str] = Field(default_factory=list)
+
+
+class AccountAlertSnoozeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    snoozed_until: datetime

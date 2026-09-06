@@ -67,7 +67,7 @@ EXIT_CODE_MEANINGS: dict[ExitCode, str] = {
     ),
 }
 
-_SCHEMA_TOKEN = re.compile(r"solwyn\.[a-z0-9.-]+\.v1")
+_SCHEMA_TOKEN = re.compile(r"solwyn\.[a-z0-9._-]+\.v1")
 _JSON_SCHEMA_LINE = re.compile(r"JSON schema:\s*(.+)")
 
 
@@ -110,11 +110,9 @@ def _declared_schema_line(command: click.Command) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _schema_token(schema_line: str | None) -> str | None:
-    if not schema_line:
-        return None
-    match = _SCHEMA_TOKEN.search(schema_line)
-    return match.group(0) if match else None
+def _schema_tokens(schema_line: str | None) -> list[str]:
+    """All declared output variants in declaration order, without duplicates."""
+    return list(dict.fromkeys(_SCHEMA_TOKEN.findall(schema_line or "")))
 
 
 def _output_kind(schema_line: str | None, schema_token: str | None) -> str | None:
@@ -124,6 +122,8 @@ def _output_kind(schema_line: str | None, schema_token: str | None) -> str | Non
     if schema_line is None:
         return None
     lowered = schema_line.lower()
+    if lowered.startswith("stream"):
+        return "stream"
     if "mcp" in lowered:
         return "mcp-stdio"
     if lowered.startswith("varies"):
@@ -147,7 +147,8 @@ def _command_entries() -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for path, command in _walk(root):
         schema_line = _declared_schema_line(command)
-        schema_token = _schema_token(schema_line)
+        schema_tokens = _schema_tokens(schema_line)
+        schema_token = schema_tokens[0] if schema_tokens else None
         entries.append(
             {
                 "path": list(path),
@@ -156,6 +157,10 @@ def _command_entries() -> list[dict[str, Any]]:
                 "hidden": bool(getattr(command, "hidden", False)),
                 "summary": (command.help or "").strip() or None,
                 "json_schema": schema_token,
+                # Retain the original primary-schema field for existing readers.
+                # Conditional outputs add the complete list without changing any
+                # single-schema command's contract shape.
+                **({"json_schemas": schema_tokens} if len(schema_tokens) > 1 else {}),
                 "output_kind": _output_kind(schema_line, schema_token),
                 "params": [_param_entry(p) for p in command.params],
             }
@@ -167,9 +172,7 @@ def declared_schema_tokens() -> set[str]:
     """Every ``solwyn.*.v1`` schema the live CLI declares it emits."""
     tokens: set[str] = set()
     for _, command in _walk(get_command(app)):
-        token = _schema_token(_declared_schema_line(command))
-        if token is not None:
-            tokens.add(token)
+        tokens.update(_schema_tokens(_declared_schema_line(command)))
     return tokens
 
 

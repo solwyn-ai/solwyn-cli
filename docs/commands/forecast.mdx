@@ -1,0 +1,30 @@
+---
+title: Forecast and cost analysis
+---
+
+Solwyn's forward-looking and comparative views use separate Core calculations.
+Select a project with `--project` or `SOLWYN_PROJECT_ID`; project keys and user
+login both work.
+
+```sh
+solwyn --project proj_example forecast
+solwyn --project proj_example costs baseline --days 7
+solwyn --project proj_example costs unit-economics --range 30d --cause
+solwyn --project proj_example costs drift --range 7d
+```
+
+`forecast` projects month-end spend from live month-to-date activity. Its period
+ends at the final microsecond of the month. `costs baseline` reads an
+hourly-refreshed materialized view, so the two commands can legitimately differ
+for recent events.
+
+`costs unit-economics` compares cost per request, tokens per dollar, and average
+prompt tokens over `7d`, `30d`, or `90d`. Core may also return cost per agent run
+and a suspected cause. The CLI omits optional table rows when Core returns null;
+JSON keeps the explicit null values so scripts can distinguish unavailable data
+from zero spend.
+
+`costs drift` compares actual stored cost with the estimate captured before the
+call. Its caveats describe which events were excluded or included. Paired
+timezone-aware `--from` and `--to` bounds replace `--range`, and retention-clamp
+warnings are written to stderr.

@@ -1,0 +1,3 @@
+Field    Value                                       
+Success  true                                        
+Message  SMS eligibility confirmed (no message sent).

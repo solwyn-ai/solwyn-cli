@@ -1,0 +1,13 @@
+Metric                                                      Value
+Period                                    2026-09-01 - 2026-09-30
+Total spend                                            $42.500000
+Total requests                                               5100
+Projects                                                        3
+Trend vs last period                                      +12.50%
+Savings                                                 $4.250000
+Savings upper                                                   —
+Saved input tokens                                          12000
+Blocked calls                                                   6
+Quota exceeded                                                yes
+Quota requests                                        5100 / 5000
+Quota window          2026-09-01T00:00:00Z - 2026-10-01T00:00:00Z

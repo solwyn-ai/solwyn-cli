@@ -1,0 +1,9 @@
+Field                                           Value
+Name                                   checkout-agent
+ID               run_1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a
+Cost (lifetime)                             12.345678
+Denied cost                                  1.250000
+Calls                                              42
+Velocity flags       rate_acceleration, future_signal
+Stopped                                             -
+Stoppable                                         yes

@@ -1,0 +1,15 @@
+Field                                                Value
+Project                                         proj_alpha
+Range                                                   7d
+1 route          openai/gpt-5 -> anthropic/claude-sonnet-4
+1 reason                                     Primary error
+1 error class                                 TimeoutError
+1 events                                                 4
+1 cost                                           $1.234567
+1 first/last   2026-09-01T10:00:00Z / 2026-09-05T12:30:00Z
+2 route                      -/- -> bedrock/opaque-profile
+2 reason                                    capacity_shift
+2 error class                                            -
+2 events                                                 2
+2 cost                       unpriced ($0.000000 reported)
+2 first/last   2026-09-02T09:00:00Z / 2026-09-03T09:00:00Z

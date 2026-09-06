@@ -1,0 +1,24 @@
+Field                                                       Value
+Project                                                proj_alpha
+Budget limit                                               100.00
+Current usage                                               37.50
+Remaining budget                                            62.50
+Budget period                                   monthly (2026-07)
+Budget mode                                             hard_deny
+Utilization                                                37.50%
+Savings                       $4.250000; upper —; 6 blocked calls
+Provider health window                                24h (fixed)
+openai circuit                                             closed
+openai circuit source                                    reported
+openai success                                  98 / 100 (98.00%)
+openai latency                                          245.50 ms
+openai errors / failovers                                   2 / 1
+openai model failovers                                          1
+openai provider failovers                                       0
+anthropic circuit                                            open
+anthropic circuit source                                 inferred
+anthropic success                                40 / 50 (80.00%)
+anthropic latency                                       410.00 ms
+anthropic errors / failovers                               10 / 3
+anthropic model failovers                                       1
+anthropic provider failovers                                    2

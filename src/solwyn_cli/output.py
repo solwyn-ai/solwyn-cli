@@ -2,9 +2,9 @@
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import StrEnum
-from typing import Any, TextIO
+from typing import Any, BinaryIO, TextIO
 
 from pydantic import (
     BaseModel,
@@ -56,6 +56,7 @@ class TableData(BaseModel):
     columns: tuple[str, ...]
     rows: tuple[tuple[Any, ...], ...]
     right_align: tuple[str, ...] = ()
+    fold_cells: bool = False
 
     @model_validator(mode="after")
     def validate_shape(self) -> "TableData":
@@ -225,6 +226,7 @@ class OutputEngine:
             rich_table.add_column(
                 Text(_terminal_safe(column)),
                 justify="right" if column in table.right_align else "left",
+                overflow="fold" if table.fold_cells else "ellipsis",
             )
         for row in table.rows:
             rich_table.add_row(*(Text(_terminal_safe(cell)) for cell in row))
@@ -261,3 +263,10 @@ class OutputEngine:
             hint = Text("Hint: ", style="bold yellow")
             hint.append(Text(_terminal_safe(error.hint)))
             console.print(hint)
+
+
+def write_byte_stream(*, chunks: Iterable[bytes], output: BinaryIO) -> None:
+    """Write export bytes incrementally without decoding or wrapping the payload."""
+    for chunk in chunks:
+        output.write(chunk)
+        output.flush()

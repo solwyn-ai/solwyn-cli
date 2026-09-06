@@ -1,0 +1,10 @@
+Field              Value               
+ID                 ch_one              
+Account            acct_one            
+Type               slack               
+Name               Ops                 
+slack.webhook_url  ****abcd            
+slack.bot_token    —                   
+slack.channel      —                   
+Created            2026-09-01T12:00:00Z
+Updated            2026-09-02T12:00:00Z

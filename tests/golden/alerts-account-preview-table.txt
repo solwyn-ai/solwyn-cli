@@ -1,0 +1,6 @@
+field      value                                          
+will_send  False                                          
+email      —                                              
+channels   []                                             
+source     project_default                                
+muted      {"reason": "email_off", "severity_floor": null}

@@ -1,0 +1,43 @@
+# Alerts
+
+Inspect alert history, per-channel delivery receipts, and account spend alert configuration.
+
+```sh
+solwyn alerts list --range 7d
+solwyn --json alerts list --rule-type scoped_budget --scope tag --failed-only --all
+solwyn alerts list --cursor CURSOR
+solwyn alerts show EVENT_ID --range 90d
+solwyn alerts list --account --from 2026-09-01T00:00:00Z --to 2026-09-05T00:00:00Z
+```
+
+History defaults to 30 days. Presets are `7d`, `30d`, and `90d`. Custom windows require both timezone-aware bounds with `--to` later than `--from`; these replace the preset. Longer custom windows may require an upgrade. Core clamps retained history and the CLI reports `window.retention_clamped` on stderr. Project history accepts a project key or JWT; account history requires JWT and reads account-scope events.
+
+Core supplies at most 25 events per page and has no `limit` parameter. `--all` walks continuation cursors; otherwise JSON preserves `next_cursor` and table mode prints continuation guidance on stderr. `--scope` matches the rule scope in event metadata, such as `tag`, rather than selecting account versus project history. Scope and rule-type filters allow at most 32 characters and no NUL. `--failed-only` filters the returned page locally to `partial` and `failed` delivery rollups; combine it with `--all` to search all pages. An empty filtered page can still have a continuation cursor.
+
+The delivery column uses Core's worst-leg rollup. `processed` means dispatch was acknowledged without per-channel delivery receipts and does not prove delivery. `partial` means at least one leg succeeded and another failed. JSON includes the full delivery object and legs; leg states can include `accepted`, which differs from parent states. `alerts show` searches the same list endpoint across pages and matches the event ID locally within the selected window. It never calls a nonexistent single-event endpoint. Its table shows channel type/name, status, attempts, delivery time, and error. An event absent from the selected retained window exits 5; a wider window may find it.
+
+List and detail JSON use `solwyn.alerts.v1`. List output carries `events`, `next_cursor`, and `window`; detail output carries the selected event fields. Human notices remain on stderr.
+
+```sh
+solwyn alerts export --format csv > alerts.csv
+solwyn alerts export --account --format json --range 90d > alerts.ndjson
+```
+
+Exports require Production or above (`csv_export` entitlement, including JSON). They stream CSV or newline-delimited JSON bytes to stdout; `--format json` here means NDJSON, without a CLI JSON envelope. Exports exclude `delivery` receipts and do not support list-only scope/rule-type/failed filters. Requested/effective window and retention headers print to stderr. CSV's formula-safety apostrophes and all raw bytes are preserved. A stream failure can leave a partial output file; use a temporary file and rename it only after exit 0. An interrupted response is never replayed automatically.
+
+```sh
+solwyn alerts account show
+solwyn alerts account set --spend 100 --channel CHANNEL_ONE --channel CHANNEL_TWO
+solwyn alerts account set --spend 150 --disabled
+solwyn alerts account snooze --until 2026-09-10T12:00:00Z
+solwyn alerts account snooze --until +2h
+solwyn alerts account unsnooze
+solwyn alerts account preview --channel CHANNEL_ONE
+solwyn alerts account delete
+```
+
+Account configuration uses `solwyn.alerts.account.v1`. Any account member with JWT can show or preview routing. Mutations require the owner, and creating or updating the spend alert requires Production or above (`account_spend_alert`). This is an alert threshold; it does not establish a spend enforcement cap. Spend must be a finite positive USD amount. Repeated `--channel` flags replace the referenced channels. Omitting channels or the enabled toggle preserves existing settings; creation defaults to enabled with no explicit channel refs. Preview is an ungated, side-effect-free POST for an unsaved draft. Snooze takes an absolute timezone-aware timestamp, with relative `+Nm`, `+Nh`, or `+Nd` converted locally. Delete succeeds even if configuration is already absent; show/snooze/unsnooze return exit 5 when absent.
+
+A definite 401 rejection may refresh JWT once; a definite 429 rejection uses the client's bounded rate-limit retry. Mutations are never replayed after 503 or transport failures. If a mutation's outcome is uncertain, inspect `alerts account show` before deciding whether to retry. Role failures exit 3 and point to `whoami`; key authentication failures point to login. Upgrade errors preserve Core's message, allowed values when present, and safe dashboard path. No checkout URL is opened.
+
+The default MCP surface adds only `list_alert_events`, with project/account selection, window and rule filters, cursor/all-pages options, and local failed-only filtering. It exposes the same typed history and receipt fields. Account configuration mutation tools are not registered.

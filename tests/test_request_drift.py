@@ -1,4 +1,4 @@
-"""OpenAPI drift guard for the six public request mirrors."""
+"""OpenAPI drift guard for the public request mirrors and query contracts."""
 
 import copy
 import json
@@ -9,29 +9,65 @@ from typing import Any
 
 import pytest
 
+from solwyn_cli._vendor.notification_wire import (
+    NotificationConfigUpdate,
+    NotificationChannelCreate,
+    NotificationChannelUpdate,
+    AlertEmailUpdate,
+    SlackTestRequest,
+    PagerDutyTestRequest,
+)
 from solwyn_cli._vendor.wire import (
+    AccountAlertUpdateRequest,
+    AccountAlertPreviewRequest,
+    AccountAlertSnoozeRequest,
     BudgetCheckRequest,
+    BudgetCheckBatchRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
+    CostSimulationRequest,
     LoginRequest,
+    IngestMetadataEvent,
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
+    ProjectUpdateRequest,
     RefreshRequest,
+    SnoozeRequest,
+    ProjectAlertsPreviewRequest,
+    WebhookCreateRequest,
 )
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
-from solwyn_cli.commands.costs import CostGrouping, CostRange
+from solwyn_cli.commands.costs import CostRange
+from solwyn_cli.commands.providers import FailoverRange, UntrackedRange
+from solwyn_cli.commands.audit import AuditRange
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 REQUEST_MIRRORS = {
+    NotificationConfigUpdate: "NotificationConfigUpdate",
+    NotificationChannelCreate: "NotificationChannelCreate",
+    NotificationChannelUpdate: "NotificationChannelUpdate",
+    AlertEmailUpdate: "AlertEmailUpdate",
+    SlackTestRequest: "SlackTestRequest",
+    PagerDutyTestRequest: "PagerDutyTestRequest",
+    AccountAlertUpdateRequest: "AccountAlertUpdateRequest",
+    AccountAlertPreviewRequest: "AccountAlertPreviewRequest",
+    AccountAlertSnoozeRequest: "AccountAlertSnoozeRequest",
     LoginRequest: "LoginRequest",
     RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
     ProjectKeyRotateRequest: "ProjectKeyRotateRequest",
+    WebhookCreateRequest: "WebhookCreateRequest",
+    ProjectUpdateRequest: "ProjectUpdateRequest",
     BudgetUpdateRequest: "BudgetUpdateRequest",
     BudgetCheckRequest: "BudgetCheckRequest",
     BudgetConfirmRequest: "BudgetConfirmRequest",
+    SnoozeRequest: "SnoozeRequest",
+    ProjectAlertsPreviewRequest: "ProjectAlertsPreviewRequest",
+    IngestMetadataEvent: "IngestMetadataEvent",
+    CostSimulationRequest: "CostSimulationRequest",
+    BudgetCheckBatchRequest: "BudgetCheckBatchRequest",
 }
 DECLARED_DEFAULT_FIELDS = {
     "ProjectCreateRequest": (
@@ -43,6 +79,7 @@ DECLARED_DEFAULT_FIELDS = {
         "scope",
     ),
     "ProjectKeyRotateRequest": ("grace_seconds",),
+    "WebhookCreateRequest": ("events",),
 }
 # Optional request fields the API accepts that the CLI deliberately does not
 # send. Every entry is proven to exist and to be optional in the snapshot before
@@ -50,6 +87,20 @@ DECLARED_DEFAULT_FIELDS = {
 # trips the guard — and any field NOT listed here trips it the moment Core adds
 # it. Mirrors stay an exact match against everything the CLI actually posts.
 UNADOPTED_OPTIONAL_FIELDS = {
+    "IngestMetadataEvent": (
+        # SDK-internal velocity observation and aggregate receipt accounting.
+        "velocity_flags",
+        "receipt_aggregate_count",
+        "receipt_pricing_input_tokens",
+        # SDK router/abort state is not observed by the CLI.
+        "possibly_succeeded",
+        "failover_reason",
+        "failover_error_class",
+        "requested_provider",
+        "requested_model",
+        # Reservation-only wave: the CLI has no lease plane, including batch input.
+        "lease_id",
+    ),
     "BudgetCheckRequest": (
         # Declined: the directive it requests only tunes SDK-side retry and
         # circuit-breaker behavior, which the CLI does not perform; opting in
@@ -60,6 +111,8 @@ UNADOPTED_OPTIONAL_FIELDS = {
         "modality",
     ),
     "BudgetConfirmRequest": (
+        # No CLI lease plane: confirmation always requires a reservation.
+        "lease_id",
         # Declined: the confirm endpoint settles from token_details only and
         # never reads it.
         "media_usage",
@@ -80,6 +133,7 @@ UNADOPTED_OPTIONAL_FIELDS = {
 # test_response_subset.py. Adopt the rule type; do not relax the union instead.
 UNADOPTED_THRESHOLD_CONFIGS: tuple[str, ...] = ()
 UNADOPTED_FIELD_OWNERS = {
+    "IngestMetadataEvent": IngestMetadataEvent,
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
 }
@@ -281,6 +335,19 @@ def _adopted_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
                 f"now requires it; the CLI must send it"
             )
 
+    # Reservation-only specialization of Core's XOR funding contract. Assert
+    # the upstream shape before narrowing it; never waive general requiredness.
+    confirm = schemas["BudgetConfirmRequest"]
+    reservation = confirm["properties"].get("reservation_id", {})
+    assert "reservation_id" not in confirm.get("required", []), (
+        "BudgetConfirmRequest.reservation_id: Core optionality changed"
+    )
+    assert reservation.get("anyOf") == [{"type": "string"}, {"type": "null"}], (
+        "BudgetConfirmRequest.reservation_id: funding-source shape changed"
+    )
+    confirm["required"].append("reservation_id")
+    confirm["properties"]["reservation_id"] = {"type": "string"}
+
     thresholds = schemas["BudgetUpdateRequest"]["properties"]["thresholds"]
     branches = thresholds["items"]["oneOf"]
     retained = [
@@ -404,7 +471,7 @@ def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
     path = "/api/v1/projects/{project_id}/costs"
     contracts = {
         "range": ({member.value for member in CostRange}, "7d"),
-        "group_by": ({member.value for member in CostGrouping}, "model"),
+        "group_by": ({"model"}, "model"),
     }
     for name, (values, default) in contracts.items():
         parameter = _operation_parameter(
@@ -420,6 +487,78 @@ def assert_costs_query_contract(snapshot: dict[str, Any]) -> None:
             f"{context}: default differs"
         )
         _assert_string_parameter_domain(parameter, values=values, context=context)
+
+
+def assert_forecast_and_provider_query_contracts(snapshot: dict[str, Any]) -> None:
+    """Guard the exact query names, enum domains, and defaults for W3 reads."""
+    contracts = (
+        (
+            "/api/v1/projects/{project_id}/forecast",
+            "period",
+            {"mtd"},
+            "mtd",
+        ),
+        (
+            "/api/v1/projects/{project_id}/providers/failovers",
+            "range",
+            {member.value for member in FailoverRange},
+            "7d",
+        ),
+        (
+            "/api/v1/projects/{project_id}/untracked-surfaces",
+            "range",
+            {member.value for member in UntrackedRange},
+            "7d",
+        ),
+    )
+    for path, name, values, default in contracts:
+        parameter = _operation_parameter(
+            snapshot,
+            path=path,
+            method="get",
+            location="query",
+            name=name,
+        )
+        context = f"GET {path} query {name}"
+        assert parameter.get("required") is False, f"{context}: requiredness differs"
+        assert parameter["schema"].get("default") == default, (
+            f"{context}: default differs"
+        )
+        _assert_string_parameter_domain(parameter, values=values, context=context)
+
+
+def assert_audit_query_contract(snapshot: dict[str, Any]) -> None:
+    """Guard the audit filter domains and fixed server pagination contract."""
+    path = "/api/v1/account/audit-events"
+    parameters = snapshot["paths"][path]["get"]["parameters"]
+    assert {parameter["name"] for parameter in parameters} == {
+        "range",
+        "cursor",
+        "action",
+    }
+    range_parameter = _operation_parameter(
+        snapshot,
+        path=path,
+        method="get",
+        location="query",
+        name="range",
+    )
+    assert range_parameter.get("required") is False
+    assert range_parameter["schema"].get("default") == "30d"
+    _assert_string_parameter_domain(
+        range_parameter,
+        values={member.value for member in AuditRange},
+        context=f"GET {path} query range",
+    )
+    action = _operation_parameter(
+        snapshot,
+        path=path,
+        method="get",
+        location="query",
+        name="action",
+    )["schema"]["anyOf"][0]
+    assert action.get("minLength") == 1
+    assert action.get("maxLength") == 100
 
 
 def assert_budget_check_operation_request_binding(snapshot: dict[str, Any]) -> None:
@@ -476,6 +615,37 @@ def assert_project_key_rotate_operation_request_binding(
     ][0]
     assert local.get("minimum") == remote.get("minimum") == 0
     assert local.get("maximum") == remote.get("maximum") == 604800
+
+
+def assert_webhook_create_operation_request_binding(
+    snapshot: dict[str, Any],
+) -> None:
+    """Bind webhook creation to the exact open-ended request component."""
+    path = "/api/v1/projects/{project_id}/webhooks"
+    request_body = snapshot["paths"][path]["post"]["requestBody"]
+    assert request_body.get("required") is True
+    schema = request_body["content"]["application/json"]["schema"]
+    assert schema.get("$ref") == "#/components/schemas/WebhookCreateRequest"
+
+    local_properties = WebhookCreateRequest.model_json_schema()["properties"]
+    remote_properties = _schema(snapshot, "WebhookCreateRequest")["properties"]
+    local_url = local_properties["url"]
+    remote_url = remote_properties["url"]
+    assert local_url.get("format") == remote_url.get("format") == "uri"
+    assert local_url.get("minLength") == remote_url.get("minLength") == 1
+    assert local_url.get("maxLength") == remote_url.get("maxLength") == 2083
+    for events in (local_properties["events"], remote_properties["events"]):
+        assert "enum" not in events
+        assert "pattern" not in events
+
+
+def assert_project_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
+    """Bind project rename to its exact required request component."""
+    path = "/api/v1/projects/{project_id}"
+    request_body = snapshot["paths"][path]["put"]["requestBody"]
+    assert request_body.get("required") is True
+    schema = request_body["content"]["application/json"]["schema"]
+    assert schema.get("$ref") == "#/components/schemas/ProjectUpdateRequest"
 
 
 def assert_budget_update_operation_request_binding(snapshot: dict[str, Any]) -> None:
@@ -588,6 +758,14 @@ def assert_budget_confirm_contract(snapshot: dict[str, Any]) -> None:
 
 def test_snapshot_matches_every_public_request_mirror() -> None:
     assert_request_mirrors_match(_snapshot())
+
+
+def test_project_update_operation_uses_the_registered_request_mirror() -> None:
+    assert_project_update_operation_request_binding(_snapshot())
+
+
+def test_audit_query_matches_the_fixed_page_contract() -> None:
+    assert_audit_query_contract(_snapshot())
 
 
 def test_unadopted_registry_names_only_fields_no_mirror_sends() -> None:
@@ -708,6 +886,33 @@ def test_costs_query_contract_matches_snapshot() -> None:
     assert_costs_query_contract(_snapshot())
 
 
+def test_forecast_and_provider_query_contracts_match_snapshot() -> None:
+    assert_forecast_and_provider_query_contracts(_snapshot())
+
+
+@pytest.mark.parametrize(
+    ("path", "name"),
+    [
+        ("/api/v1/projects/{project_id}/forecast", "period"),
+        ("/api/v1/projects/{project_id}/providers/failovers", "range"),
+        ("/api/v1/projects/{project_id}/untracked-surfaces", "range"),
+    ],
+)
+def test_forecast_and_provider_query_drift_trips_guard(path: str, name: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    parameter = _operation_parameter(
+        mutated,
+        path=path,
+        method="get",
+        location="query",
+        name=name,
+    )
+    parameter["schema"]["default"] = "changed"
+
+    with pytest.raises(AssertionError, match="default differs"):
+        assert_forecast_and_provider_query_contracts(mutated)
+
+
 def test_budget_check_operation_uses_required_request_component() -> None:
     assert_budget_check_operation_request_binding(_snapshot())
 
@@ -718,6 +923,35 @@ def test_project_create_operation_uses_required_request_component() -> None:
 
 def test_project_key_rotate_request_and_operation_match_snapshot() -> None:
     assert_project_key_rotate_operation_request_binding(_snapshot())
+
+
+def test_webhook_create_request_and_operation_match_snapshot() -> None:
+    snapshot = _snapshot()
+
+    assert_request_mirrors_match(snapshot)
+    assert_webhook_create_operation_request_binding(snapshot)
+
+
+@pytest.mark.parametrize("mutation", ["field", "default", "format", "binding"])
+def test_webhook_create_request_drift_trips_guard(mutation: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    schema = mutated["components"]["schemas"]["WebhookCreateRequest"]
+    if mutation == "field":
+        schema["properties"]["event_types"] = schema["properties"].pop("events")
+    elif mutation == "default":
+        schema["properties"]["events"]["default"] = "budget_threshold"
+    elif mutation == "format":
+        schema["properties"]["url"]["format"] = "url"
+    else:
+        mutated["paths"]["/api/v1/projects/{project_id}/webhooks"]["post"][
+            "requestBody"
+        ]["content"]["application/json"]["schema"][
+            "$ref"
+        ] = "#/components/schemas/ProjectCreateRequest"
+
+    with pytest.raises(AssertionError):
+        assert_request_mirrors_match(mutated)
+        assert_webhook_create_operation_request_binding(mutated)
 
 
 @pytest.mark.parametrize("mutation", ["field", "default", "bounds", "binding"])
@@ -754,7 +988,16 @@ def test_budget_confirm_request_and_operation_match_snapshot() -> None:
 
 def test_costs_cli_domains_are_frozen() -> None:
     assert {member.value for member in CostRange} == {"7d", "30d", "90d", "365d"}
-    assert {member.value for member in CostGrouping} == {"day", "model", "provider"}
+    parameter = _operation_parameter(
+        _snapshot(),
+        path="/api/v1/projects/{project_id}/costs",
+        method="get",
+        location="query",
+        name="group_by",
+    )
+    assert parameter["schema"]["type"] == "string"
+    assert "enum" not in parameter["schema"]
+    assert "pattern" not in parameter["schema"]
 
 
 @pytest.mark.parametrize(
@@ -1283,3 +1526,27 @@ def test_swapped_union_discriminators_trip_drift_guard() -> None:
         r"(?:DailyAnomalyConfig|ThresholdConfig)>\.type",
     ):
         assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize("mutation", ["required", "not_nullable", "removed"])
+def test_reservation_funding_specialization_still_guards_core_shape(mutation):
+    snapshot = copy.deepcopy(_snapshot())
+    confirm = _schema(snapshot, "BudgetConfirmRequest")
+    if mutation == "required":
+        confirm["required"].append("reservation_id")
+    elif mutation == "not_nullable":
+        confirm["properties"]["reservation_id"] = {"type": "string"}
+    else:
+        confirm["properties"].pop("reservation_id")
+    with pytest.raises(AssertionError, match="BudgetConfirmRequest.reservation_id"):
+        assert_request_mirrors_match(snapshot)
+
+
+def test_budget_batch_request_operation_and_limits():
+    snapshot = _snapshot()
+    body = snapshot["paths"]["/api/v1/budgets/check/batch"]["post"]["requestBody"]
+    assert body["required"] is True
+    assert body["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BudgetCheckBatchRequest"
+    }
+    assert REQUEST_MIRRORS[BudgetCheckBatchRequest] == "BudgetCheckBatchRequest"

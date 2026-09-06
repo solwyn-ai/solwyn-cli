@@ -1,9 +1,10 @@
-"""FastMCP stdio server and the frozen six-tool Solwyn surface."""
+"""FastMCP stdio server and the supported Solwyn tool surface."""
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
-from typing import Annotated, Generic, Literal, TypeVar
+from typing import Any, Annotated, Generic, Literal, TypeVar
 
 import anyio
 from mcp.server.fastmcp import FastMCP
@@ -11,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from solwyn_cli import auth, runtime
 from solwyn_cli._vendor.wire import (
+    CALL_ID_PATTERN,
+    Modality,
     BudgetCheckRequest,
     BudgetConfirmRequest,
     MediaUsage,
@@ -21,21 +24,65 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.artifacts import agent_guidance
 from solwyn_cli.auth import AuthError, JwtCredential, ProjectKeyCredential
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands.alerts import (
+    AlertEventListResponse,
+    AlertQueryError,
+    request_alert_events,
+)
+from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rules
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
+    BudgetCheckBatchData,
+    BudgetCheckBatchFailure,
+    BATCH_FAILURE_HINT,
+    prepare_batch_checks,
+    request_budget_check_batch,
     BudgetConfirmData,
     BudgetStatusData,
     request_budget_check,
-    request_budget_confirm,
+    confirm_and_record,
+    confirm_event,
+    record_denial,
     request_budget_status,
 )
+from solwyn_cli.commands._cost_filters import CostQueryError
+from solwyn_cli.commands._record import (
+    CALL_ID_HINT,
+    RecordingResult,
+    build_event,
+    request_ingest,
+)
+from solwyn_cli.commands._tags import parse_tags, validate_tags
+from solwyn_cli.commands.tags import (
+    TagDiscoveryResponse,
+    TagValuesPage,
+    fetch_tags,
+    fetch_tag_values,
+)
 from solwyn_cli.commands.costs import (
-    CostGrouping,
     CostRange,
     CostsData,
     fetch_costs,
+    fetch_cost_total,
+    CostTotalResponse,
 )
+from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
+from solwyn_cli.commands.overview import OverviewData, fetch_overview
 from solwyn_cli.commands.projects import ProjectsListData, fetch_projects
+from solwyn_cli.commands.runs import (
+    AgentRunAmbiguousError,
+    AgentRunEntry,
+    AgentRunListData,
+    AgentRunNotFoundError,
+    RunRange,
+    RunSort,
+    _cursor_sort,
+    _known_allowed_ranges,
+    _validate_custom_window,
+    fetch_agent_runs,
+    get_agent_run,
+    resolve_agent_run_id,
+)
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
 from solwyn_cli.errors import ApiError
 
@@ -51,8 +98,19 @@ TOOL_NAMES = (
     "budget_check",
     "budget_confirm",
     "get_project_status",
+    "get_forecast",
     "get_costs",
     "list_projects",
+    "get_cost_total",
+    "list_budget_rules",
+    "record_call",
+    "list_tags",
+    "list_tag_values",
+    "list_agent_runs",
+    "get_agent_run",
+    "list_alert_events",
+    "budget_check_batch",
+    "get_overview",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -152,6 +210,29 @@ class _ToolResult(BaseModel, Generic[DataT]):
         return self
 
 
+class _RecordResult(_ToolResult[RecordingResult]):
+    schema_name: Literal["solwyn.mcp.record.v1"] = Field(
+        default="solwyn.mcp.record.v1", alias="schema"
+    )
+
+
+class _TagsResult(_ToolResult[TagDiscoveryResponse]):
+    schema_name: Literal["solwyn.mcp.tags.v1"] = Field(
+        default="solwyn.mcp.tags.v1", alias="schema"
+    )
+
+
+class _TagValuesResult(_ToolResult[TagValuesPage]):
+    schema_name: Literal["solwyn.mcp.tags.values.v1"] = Field(
+        default="solwyn.mcp.tags.values.v1", alias="schema"
+    )
+
+
+def _tool_tags(tags: dict[str, str] | None) -> dict[str, str] | None:
+    # Explicit tool arguments override ambient defaults key by key.
+    return validate_tags({**(parse_tags() or {}), **(validate_tags(tags) or {})})
+
+
 class _BudgetStatusResult(_ToolResult[BudgetStatusData]):
     schema_name: Literal["solwyn.mcp.budget-status.v1"] = Field(
         default="solwyn.mcp.budget-status.v1",
@@ -159,10 +240,22 @@ class _BudgetStatusResult(_ToolResult[BudgetStatusData]):
     )
 
 
+class _BudgetRulesResult(_ToolResult[BudgetRulesData]):
+    schema_name: Literal["solwyn.budget.rules.v1"] = Field(
+        default="solwyn.budget.rules.v1", alias="schema"
+    )
+
+
 class _BudgetCheckResult(_ToolResult[BudgetCheckData]):
     schema_name: Literal["solwyn.mcp.budget-check.v1"] = Field(
         default="solwyn.mcp.budget-check.v1",
         alias="schema",
+    )
+
+
+class _BudgetCheckBatchResult(_ToolResult[BudgetCheckBatchData]):
+    schema_name: Literal["solwyn.budget.check.batch.v1"] = Field(
+        default="solwyn.budget.check.batch.v1", alias="schema"
     )
 
 
@@ -180,6 +273,13 @@ class _ProjectStatusResult(_ToolResult[ProjectStatusData]):
     )
 
 
+class _ForecastResult(_ToolResult[ForecastData]):
+    schema_name: Literal["solwyn.mcp.forecast.v1"] = Field(
+        default="solwyn.mcp.forecast.v1",
+        alias="schema",
+    )
+
+
 class _CostsResult(_ToolResult[CostsData]):
     schema_name: Literal["solwyn.mcp.costs.v1"] = Field(
         default="solwyn.mcp.costs.v1",
@@ -187,10 +287,42 @@ class _CostsResult(_ToolResult[CostsData]):
     )
 
 
+class _AlertEventsResult(_ToolResult[AlertEventListResponse]):
+    schema_name: Literal["solwyn.alerts.v1"] = Field(
+        default="solwyn.alerts.v1", alias="schema"
+    )
+
+
+class _CostTotalResult(_ToolResult[CostTotalResponse]):
+    schema_name: Literal["solwyn.mcp.cost-total.v1"] = Field(
+        default="solwyn.mcp.cost-total.v1", alias="schema"
+    )
+
+
 class _ProjectsResult(_ToolResult[ProjectsListData]):
     schema_name: Literal["solwyn.mcp.projects.v1"] = Field(
         default="solwyn.mcp.projects.v1",
         alias="schema",
+    )
+
+
+class _AgentRunsResult(_ToolResult[AgentRunListData]):
+    schema_name: Literal["solwyn.mcp.agent-runs.v1"] = Field(
+        default="solwyn.mcp.agent-runs.v1",
+        alias="schema",
+    )
+
+
+class _AgentRunResult(_ToolResult[AgentRunEntry]):
+    schema_name: Literal["solwyn.mcp.agent-run.v1"] = Field(
+        default="solwyn.mcp.agent-run.v1",
+        alias="schema",
+    )
+
+
+class _OverviewResult(_ToolResult[OverviewData]):
+    schema_name: Literal["solwyn.mcp.overview.v1"] = Field(
+        default="solwyn.mcp.overview.v1", alias="schema"
     )
 
 
@@ -230,11 +362,21 @@ def _canonical_guidance_line(fragment: str) -> str:
 
 
 PROJECT_STATUS_DESCRIPTION = "Read the configured project's budget and provider health without authorizing spend."
-COSTS_DESCRIPTION = (
-    "Read aggregated project costs for one frozen time range and grouping."
+COSTS_DESCRIPTION = "Read project costs grouped by a Core dimension or tag:<key>, with shared cost filters and timezone-aware custom windows."
+FORECAST_DESCRIPTION = (
+    "Read the configured project's month-to-date spend forecast without "
+    "authorizing spend."
 )
 PROJECTS_DESCRIPTION = (
     "List projects visible to the logged-in user. Requires login/JWT authentication."
+)
+AGENT_RUNS_DESCRIPTION = (
+    "List project agent runs. Costs are lifetime totals; the window only selects "
+    "which runs qualify. Accepts a project key or login."
+)
+AGENT_RUN_DESCRIPTION = (
+    "Read one agent run by storage ID or exact raw run name. Accepts a project "
+    "key or login."
 )
 
 
@@ -248,9 +390,9 @@ def _budget_tool_descriptions() -> tuple[str, str, str]:
     shared_sharp_edges = " ".join((check, sdk, fail_open, unconfirmed))
     return (
         status,
-        "Reserve budget only immediately before the caller-made spend. "
+        "Reserve budget only immediately before the caller-made spend. Denials record attribution by default; no_record skips ingest. "
         f"{shared_sharp_edges}",
-        "Settle only a non-null reservation after the caller-made spend. "
+        "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. "
         f"{shared_sharp_edges}",
     )
 
@@ -294,6 +436,33 @@ def _operation_error(
     *,
     invalid_response_code: str,
 ) -> ResultT:
+    if isinstance(error, CostQueryError):
+        return _error(
+            result_type,
+            code="invalid_cost_query",
+            message="The cost query was invalid.",
+            hint=(
+                "Provide paired timezone-aware from_/to bounds with to later than from_; "
+                "use unique key=value tags with keys of 1–64 characters, values of at "
+                "most 256 characters and no NUL. Keep agent_run at most 256 characters; "
+                "tag:<key> uses the same key bounds."
+            ),
+        )
+    if isinstance(error, AgentRunAmbiguousError):
+        return _error(
+            result_type,
+            code="ambiguous_agent_run",
+            message="More than one run has that exact name.",
+            hint="Candidates: " + ", ".join(error.candidate_ids),
+        )
+    if isinstance(error, AgentRunNotFoundError):
+        return _error(
+            result_type,
+            code="agent_run_not_found",
+            message="Agent run not found.",
+            hint="Call list_agent_runs to inspect visible run names and IDs.",
+            status_code=404,
+        )
     if isinstance(error, ApiError):
         code = _normalized_remote_error_code(error)
         return _error(
@@ -378,6 +547,37 @@ def _require_project_key(
     )
 
 
+def _alert_events_operation(
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+    *,
+    account: bool = False,
+    **filters: Any,
+) -> _AlertEventsResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            data = request_alert_events(
+                client=client,
+                project_id=None
+                if account
+                else _project_id(command_runtime, project_id),
+                account=account,
+                **filters,
+            )
+        return _success(_AlertEventsResult, data)
+    except AlertQueryError:
+        return _error(
+            _AlertEventsResult,
+            code="invalid_alert_query",
+            message="The alert query was invalid.",
+            hint="Use range 7d|30d|90d or paired timezone-aware from_/to bounds; scope and rule_type allow at most 32 characters and no NUL.",
+        )
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _AlertEventsResult, error, invalid_response_code="invalid_alerts_response"
+        )
+
+
 def _budget_status_operation(
     project_id: str | None,
     launch_options: McpLaunchOptions,
@@ -398,6 +598,23 @@ def _budget_status_operation(
         )
 
 
+def _budget_rules_operation(
+    project_id: str | None, launch_options: McpLaunchOptions
+) -> _BudgetRulesResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            data = request_budget_rules(
+                client=client, project_id=_project_id(command_runtime, project_id)
+            )
+        return _success(_BudgetRulesResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _BudgetRulesResult,
+            error,
+            invalid_response_code="invalid_budget_rules_response",
+        )
+
+
 def _budget_check_operation(
     *,
     launch_options: McpLaunchOptions,
@@ -415,6 +632,9 @@ def _budget_check_operation(
     resolution: str | None,
     quality: str | None,
     is_estimated: bool,
+    tags: dict[str, str] | None = None,
+    estimated_output_tokens: int | None = None,
+    no_record: bool = False,
 ) -> _BudgetCheckResult:
     if len(fallback_providers) != len(fallback_models):
         return _error(
@@ -448,16 +668,24 @@ def _budget_check_operation(
             if is_estimated or any(value is not None for value in quantities)
             else None
         )
+        resolved_run_id = (
+            agent_run_id
+            if agent_run_id is not None
+            else os.environ.get("SOLWYN_AGENT_RUN_ID")
+        )
         request = BudgetCheckRequest(
+            price_hints_version="1",
+            run_directive_version="1" if resolved_run_id is not None else None,
             estimated_input_tokens=estimated_input_tokens,
             model=model,
             provider=provider,
             estimated_media=estimated_media,
             fallback_providers=fallback_providers,
             fallback_models=fallback_models,
-            agent_run_id=agent_run_id,
+            agent_run_id=resolved_run_id,
+            tags=_tool_tags(tags),
         )
-    except ValidationError:
+    except (ValidationError, ValueError):
         return _error(
             _BudgetCheckResult,
             code="invalid_budget_check_request",
@@ -471,12 +699,68 @@ def _budget_check_operation(
             if auth_error is not None:
                 return auth_error
             data = request_budget_check(client=client, request=request)
+            data = record_denial(
+                client=client,
+                request=request,
+                data=data,
+                estimated_output_tokens=estimated_output_tokens,
+                no_record=no_record,
+            )
         return _success(_BudgetCheckResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
             _BudgetCheckResult,
             error,
             invalid_response_code="invalid_budget_check_response",
+        )
+
+
+def _budget_check_batch_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    checks: list[dict[str, Any]],
+    no_record: bool,
+    estimated_output_tokens: int | None,
+) -> _BudgetCheckBatchResult:
+    try:
+        prepared = prepare_batch_checks(checks)
+    except (ValidationError, ValueError, TypeError):
+        return _error(
+            _BudgetCheckBatchResult,
+            code="invalid_budget_check_batch_request",
+            message="Batch input must be a non-empty array of valid check bodies.",
+        )
+    try:
+        with tool_call_client(launch_options) as (_, client):
+            auth_error = _require_project_key(
+                _BudgetCheckBatchResult, client.current_credential, "checks"
+            )
+            if auth_error is not None:
+                return auth_error
+            data = request_budget_check_batch(
+                client=client,
+                checks=prepared,
+                no_record=no_record,
+                estimated_output_tokens=estimated_output_tokens,
+            )
+        return _success(_BudgetCheckBatchResult, data)
+    except BudgetCheckBatchFailure as error:
+        failure = _operation_error(
+            _BudgetCheckBatchResult,
+            error.cause,
+            invalid_response_code="invalid_budget_check_batch_response",
+        )
+        tool_error = failure.error.model_copy(
+            update={
+                "hint": " ".join(filter(None, (failure.error.hint, BATCH_FAILURE_HINT)))
+            }
+        )
+        return _BudgetCheckBatchResult(ok=False, data=error.data, error=tool_error)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _BudgetCheckBatchResult,
+            error,
+            invalid_response_code="invalid_budget_check_batch_response",
         )
 
 
@@ -504,6 +788,13 @@ def _budget_confirm_operation(
     rejected_prediction_tokens: int,
     tool_use_input_tokens: int,
     is_estimated: bool,
+    latency_ms: float = 0,
+    status: str = "success",
+    agent_run_id: str | None = None,
+    parent_run_id: str | None = None,
+    run_name: str | None = None,
+    tags: dict[str, str] | None = None,
+    no_record: bool = False,
 ) -> _BudgetConfirmResult:
     try:
         request = BudgetConfirmRequest(
@@ -531,11 +822,23 @@ def _budget_confirm_operation(
                 is_estimated=is_estimated,
             ),
         )
-    except ValidationError:
+        event = confirm_event(
+            request=request,
+            latency_ms=latency_ms,
+            status=status,
+            agent_run_id=agent_run_id
+            if agent_run_id is not None
+            else os.environ.get("SOLWYN_AGENT_RUN_ID"),
+            parent_agent_run_id=parent_run_id,
+            agent_run_name=run_name,
+            tags=_tool_tags(tags),
+        )
+    except (ValidationError, ValueError):
         return _error(
             _BudgetConfirmResult,
             code="invalid_budget_confirm_request",
             message="The budget confirmation request is invalid.",
+            hint=CALL_ID_HINT,
         )
     try:
         with tool_call_client(launch_options) as (_, client):
@@ -544,7 +847,9 @@ def _budget_confirm_operation(
             )
             if auth_error is not None:
                 return auth_error
-            data = request_budget_confirm(client=client, request=request)
+            data = confirm_and_record(
+                client=client, request=request, event=event, no_record=no_record
+            )
         return _success(
             _BudgetConfirmResult,
             data,
@@ -577,12 +882,30 @@ def _project_status_operation(
         )
 
 
+def _forecast_operation(
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+) -> _ForecastResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            resolved_project = _project_id(command_runtime, project_id)
+            data = fetch_forecast(client=client, project_id=resolved_project)
+        return _success(_ForecastResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _ForecastResult,
+            error,
+            invalid_response_code="invalid_forecast_response",
+        )
+
+
 def _costs_operation(
     *,
     launch_options: McpLaunchOptions,
     project_id: str | None,
     time_range: CostRange,
-    group_by: CostGrouping,
+    group_by: str,
+    **filters: Any,
 ) -> _CostsResult:
     try:
         with tool_call_client(launch_options) as (command_runtime, client):
@@ -592,6 +915,7 @@ def _costs_operation(
                 project_id=resolved_project,
                 time_range=time_range,
                 group_by=group_by,
+                **filters,
             )
         return _success(_CostsResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
@@ -599,6 +923,28 @@ def _costs_operation(
             _CostsResult,
             error,
             invalid_response_code="invalid_costs_response",
+        )
+
+
+def _cost_total_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    project_id: str | None,
+    time_range: str = "7d",
+    **filters: Any,
+) -> _CostTotalResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            data = fetch_cost_total(
+                client=client,
+                project_id=_project_id(command_runtime, project_id),
+                time_range=time_range,
+                **filters,
+            )
+        return _success(_CostTotalResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _CostTotalResult, error, invalid_response_code="invalid_costs_response"
         )
 
 
@@ -625,8 +971,236 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
         )
 
 
+def _record_operation(
+    *, launch_options: McpLaunchOptions, inputs: dict[str, object]
+) -> _RecordResult:
+    try:
+        inputs["tags"] = _tool_tags(inputs.get("tags"))
+        if inputs.get("agent_run_id") is None:
+            inputs["agent_run_id"] = os.environ.get("SOLWYN_AGENT_RUN_ID")
+        event = build_event(
+            **{key: value for key, value in inputs.items() if value is not None}
+        )
+    except (ValueError, TypeError):
+        return _error(
+            _RecordResult,
+            code="invalid_record_request",
+            message="The recording request is invalid.",
+            hint=CALL_ID_HINT,
+        )
+    try:
+        with tool_call_client(launch_options) as (_, client):
+            auth_error = _require_project_key(
+                _RecordResult, client.current_credential, "recording"
+            )
+            if auth_error is not None:
+                return auth_error
+            data = request_ingest(client=client, events=[event])
+        return _success(_RecordResult, data)
+    except (ApiError, AuthError, ValueError, TypeError) as error:
+        result = _operation_error(
+            _RecordResult, error, invalid_response_code="invalid_ingest_response"
+        )
+        if result.error is not None:
+            retry_hint = (
+                f"Reuse call_id {event.call_id} when retrying this logical call."
+            )
+            result = result.model_copy(
+                update={
+                    "error": result.error.model_copy(
+                        update={
+                            "hint": f"{result.error.hint} {retry_hint}"
+                            if result.error.hint
+                            else retry_hint
+                        }
+                    )
+                }
+            )
+        return result
+
+
+def _tags_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    project_id: str | None,
+    key: str | None = None,
+    prefix: str | None = None,
+    limit: int = 25,
+    cursor: str | None = None,
+):
+    result_class = _TagsResult if key is None else _TagValuesResult
+    try:
+        if key is not None:
+            validate_tags({key: prefix or ""})
+    except ValueError:
+        return _error(
+            result_class, code="invalid_tag_query", message="Invalid tag key or prefix."
+        )
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            project = _project_id(command_runtime, project_id)
+            data = (
+                fetch_tags(client=client, project_id=project)
+                if key is None
+                else fetch_tag_values(
+                    client=client,
+                    project_id=project,
+                    key=key,
+                    prefix=prefix,
+                    limit=limit,
+                    cursor=cursor,
+                )
+            )
+        return _success(result_class, data)
+    except (ApiError, AuthError, ValueError, TypeError) as error:
+        return _operation_error(
+            result_class, error, invalid_response_code="invalid_tags_response"
+        )
+
+
+def _agent_runs_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    project_id: str | None,
+    time_range: RunRange,
+    from_time: str | None,
+    to_time: str | None,
+    query: str | None,
+    parent: str | None,
+    sort: RunSort,
+    limit: int,
+    cursor: str | None,
+) -> _AgentRunsResult:
+    try:
+        _validate_custom_window(from_time, to_time)
+    except ValueError as error:
+        return _error(
+            _AgentRunsResult,
+            code=str(error),
+            message="The custom run window is invalid.",
+            hint="Provide both timezone-aware bounds with to_time later than from_time.",
+        )
+    if cursor is not None:
+        embedded_sort = _cursor_sort(cursor)
+        if embedded_sort is not None and embedded_sort != sort.value:
+            return _error(
+                _AgentRunsResult,
+                code="cursor_sort_mismatch",
+                message="The cursor was created with a different sort.",
+                hint="Remove cursor when changing sort.",
+            )
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            resolved_project = _project_id(command_runtime, project_id)
+            data = fetch_agent_runs(
+                client=client,
+                project_id=resolved_project,
+                time_range=time_range,
+                from_=from_time,
+                to=to_time,
+                query=query,
+                parent=parent,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        return _success(_AgentRunsResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        if (
+            isinstance(error, ApiError)
+            and error.status_code == 402
+            and error.code == "upgrade_required"
+        ):
+            allowed = _known_allowed_ranges(error)
+            entitlement_hint = _safe_remote_error_hint(error, "upgrade_required")
+            allowed_hint = "Allowed values: " + ", ".join(allowed) if allowed else None
+            hint = (
+                f"{allowed_hint}. {entitlement_hint}"
+                if allowed_hint is not None and entitlement_hint is not None
+                else allowed_hint or entitlement_hint
+            )
+            if from_time is not None:
+                message = (
+                    "Custom windows longer than "
+                    f"{allowed[-1].removesuffix('d')} days are not available on "
+                    "your tier."
+                    if allowed
+                    else "The requested custom window is not available on your tier."
+                )
+            else:
+                message = f"Range '{time_range.value}' is not available on your tier."
+            return _error(
+                _AgentRunsResult,
+                code="upgrade_required",
+                message=message,
+                hint=hint,
+                status_code=402,
+            )
+        return _operation_error(
+            _AgentRunsResult,
+            error,
+            invalid_response_code="invalid_agent_runs_response",
+        )
+
+
+def _agent_run_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    run: str,
+    project_id: str | None,
+) -> _AgentRunResult:
+    try:
+        with tool_call_client(launch_options) as (command_runtime, client):
+            resolved_project = _project_id(command_runtime, project_id)
+            storage_run_id = resolve_agent_run_id(
+                client=client,
+                project_id=resolved_project,
+                run=run,
+            )
+            data = get_agent_run(
+                client=client,
+                project_id=resolved_project,
+                storage_run_id=storage_run_id,
+            )
+        return _success(_AgentRunResult, data)
+    except (
+        AgentRunAmbiguousError,
+        AgentRunNotFoundError,
+        ApiError,
+        AuthError,
+        ValidationError,
+        ValueError,
+        TypeError,
+    ) as error:
+        return _operation_error(
+            _AgentRunResult,
+            error,
+            invalid_response_code="invalid_agent_run_response",
+        )
+
+
+def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
+    try:
+        with tool_call_client(launch_options) as (_, client):
+            if isinstance(client.current_credential, ProjectKeyCredential):
+                return _error(
+                    _OverviewResult,
+                    code="authentication_required",
+                    message="User login is required to read the account overview.",
+                    hint="Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+                )
+            data = fetch_overview(client=client)
+        return _success(_OverviewResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _OverviewResult,
+            error,
+            invalid_response_code="invalid_overview_response",
+        )
+
+
 def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
-    """Build the stateless local MCP server and register exactly six tools."""
+    """Build the stateless local MCP server and register the supported tools."""
     launch = launch_options or McpLaunchOptions()
     server = _ToolOnlyFastMCP(
         name="solwyn",
@@ -677,6 +1251,11 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         resolution: Annotated[str, Field(max_length=32)] | None = None,
         quality: Annotated[str, Field(max_length=32)] | None = None,
         is_estimated: bool = False,
+        tags: dict[str, str] | None = None,
+        estimated_output_tokens: Annotated[
+            int | None, Field(ge=0, le=100_000_000)
+        ] = None,
+        no_record: bool = False,
     ) -> _BudgetCheckResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -696,6 +1275,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 resolution=resolution,
                 quality=quality,
                 is_estimated=is_estimated,
+                tags=tags,
+                estimated_output_tokens=estimated_output_tokens,
+                no_record=no_record,
             )
         )
 
@@ -706,7 +1288,15 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     )
     async def budget_confirm(
         reservation_id: Annotated[str, Field(min_length=1)],
-        call_id: Annotated[str, Field(min_length=1, max_length=36)],
+        call_id: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=36,
+                pattern=CALL_ID_PATTERN,
+                description=CALL_ID_HINT,
+            ),
+        ],
         model: Annotated[str, Field(min_length=1, max_length=2048)],
         provider: ProviderName,
         is_provider_fallback: bool = False,
@@ -728,6 +1318,13 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         rejected_prediction_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         tool_use_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         is_estimated: bool = False,
+        latency_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0,
+        status: Literal["success", "error"] = "success",
+        agent_run_id: BudgetAgentRunId | None = None,
+        parent_run_id: BudgetAgentRunId | None = None,
+        run_name: Annotated[str | None, Field(max_length=255)] = None,
+        tags: dict[str, str] | None = None,
+        no_record: bool = False,
     ) -> _BudgetConfirmResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -754,6 +1351,13 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 rejected_prediction_tokens=rejected_prediction_tokens,
                 tool_use_input_tokens=tool_use_input_tokens,
                 is_estimated=is_estimated,
+                latency_ms=latency_ms,
+                status=status,
+                agent_run_id=agent_run_id,
+                parent_run_id=parent_run_id,
+                run_name=run_name,
+                tags=tags,
+                no_record=no_record,
             )
         )
 
@@ -771,13 +1375,38 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
 
     @server.tool(
         name=TOOL_NAMES[4],
+        description=FORECAST_DESCRIPTION,
+        structured_output=True,
+    )
+    async def get_forecast(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _ForecastResult:
+        return await anyio.to_thread.run_sync(
+            partial(_forecast_operation, project_id, launch)
+        )
+
+    @server.tool(
+        name=TOOL_NAMES[5],
         description=COSTS_DESCRIPTION,
         structured_output=True,
     )
     async def get_costs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
         time_range: CostRange = CostRange.SEVEN_DAYS,
-        group_by: CostGrouping = CostGrouping.MODEL,
+        group_by: str = "model",
+        from_: str | None = None,
+        to: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        modality: str | None = None,
+        status: str | None = None,
+        service_tier: str | None = None,
+        provider_region: str | None = None,
+        agent_run: str | None = None,
+        failover_reason: str | None = None,
+        model_fallback: bool | None = None,
+        provider_fallback: bool | None = None,
+        tag: list[str] | None = None,
     ) -> _CostsResult:
         return await anyio.to_thread.run_sync(
             partial(
@@ -786,15 +1415,295 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 project_id=project_id,
                 time_range=time_range,
                 group_by=group_by,
+                from_=from_,
+                to=to,
+                model=model,
+                provider=provider,
+                modality=modality,
+                status=status,
+                service_tier=service_tier,
+                provider_region=provider_region,
+                agent_run=agent_run,
+                failover_reason=failover_reason,
+                model_fallback=model_fallback,
+                provider_fallback=provider_fallback,
+                tag=tag,
             )
         )
 
     @server.tool(
-        name=TOOL_NAMES[5],
+        name=TOOL_NAMES[6],
         description=PROJECTS_DESCRIPTION,
         structured_output=True,
     )
     async def list_projects() -> _ProjectsResult:
         return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
+
+    @server.tool(
+        name="get_cost_total",
+        description="Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
+        structured_output=True,
+    )
+    async def get_cost_total(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: CostRange = CostRange.SEVEN_DAYS,
+        from_: str | None = None,
+        to: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        modality: str | None = None,
+        status: str | None = None,
+        service_tier: str | None = None,
+        provider_region: str | None = None,
+        agent_run: str | None = None,
+        failover_reason: str | None = None,
+        model_fallback: bool | None = None,
+        provider_fallback: bool | None = None,
+        tag: list[str] | None = None,
+    ) -> _CostTotalResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _cost_total_operation,
+                launch_options=launch,
+                project_id=project_id,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+                model=model,
+                provider=provider,
+                modality=modality,
+                status=status,
+                service_tier=service_tier,
+                provider_region=provider_region,
+                agent_run=agent_run,
+                failover_reason=failover_reason,
+                model_fallback=model_fallback,
+                provider_fallback=provider_fallback,
+                tag=tag,
+            )
+        )
+
+    @server.tool(
+        name="list_budget_rules",
+        description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
+        structured_output=True,
+    )
+    async def list_budget_rules(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _BudgetRulesResult:
+        return await anyio.to_thread.run_sync(
+            partial(_budget_rules_operation, project_id, launch)
+        )
+
+    @server.tool(
+        name="record_call",
+        description="Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
+        structured_output=True,
+    )
+    async def record_call(
+        model: BudgetCheckModel,
+        provider: ProviderName,
+        call_id: Annotated[
+            str | None,
+            Field(pattern=CALL_ID_PATTERN, max_length=36, description=CALL_ID_HINT),
+        ] = None,
+        input_tokens: Annotated[int | None, Field(ge=0, le=100_000_000)] = None,
+        output_tokens: Annotated[int | None, Field(ge=0, le=100_000_000)] = None,
+        token_details: TokenDetails | None = None,
+        media_usage: MediaUsage | None = None,
+        latency_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0,
+        status: Literal["success", "error"] = "success",
+        modality: Modality = Modality.TEXT,
+        provider_region: Annotated[str | None, Field(max_length=32)] = None,
+        service_tier: ServiceTier | None = None,
+        agent_run_id: BudgetAgentRunId | None = None,
+        parent_agent_run_id: BudgetAgentRunId | None = None,
+        agent_run_name: Annotated[str | None, Field(max_length=255)] = None,
+        tags: dict[str, str] | None = None,
+    ) -> _RecordResult:
+        inputs = dict(
+            model=model,
+            provider=provider,
+            call_id=call_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            token_details=token_details,
+            media_usage=media_usage,
+            latency_ms=latency_ms,
+            status=status,
+            modality=modality,
+            provider_region=provider_region,
+            service_tier=service_tier,
+            agent_run_id=agent_run_id,
+            parent_agent_run_id=parent_agent_run_id,
+            agent_run_name=agent_run_name,
+            tags=tags,
+        )
+        return await anyio.to_thread.run_sync(
+            partial(_record_operation, launch_options=launch, inputs=inputs)
+        )
+
+    @server.tool(
+        name="list_tags",
+        description="List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
+        structured_output=True,
+    )
+    async def list_tags(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _TagsResult:
+        return await anyio.to_thread.run_sync(
+            partial(_tags_operation, launch_options=launch, project_id=project_id)
+        )
+
+    @server.tool(
+        name="list_tag_values",
+        description="Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
+        structured_output=True,
+    )
+    async def list_tag_values(
+        key: Annotated[str, Field(min_length=1, max_length=64)],
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        prefix: Annotated[str | None, Field(max_length=256)] = None,
+        limit: Annotated[int, Field(ge=1, le=100)] = 25,
+        cursor: str | None = None,
+    ) -> _TagValuesResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _tags_operation,
+                launch_options=launch,
+                project_id=project_id,
+                key=key,
+                prefix=prefix,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+
+    @server.tool(
+        name="list_agent_runs",
+        description=AGENT_RUNS_DESCRIPTION,
+        structured_output=True,
+    )
+    async def list_agent_runs(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: RunRange = RunRange.SEVEN_DAYS,
+        from_time: str | None = None,
+        to_time: str | None = None,
+        query: Annotated[str | None, Field(max_length=255)] = None,
+        parent: Annotated[str | None, Field(min_length=1, max_length=256)] = None,
+        sort: RunSort = RunSort.LAST_SEEN_AT,
+        limit: Annotated[int, Field(ge=1, le=100)] = 25,
+        cursor: str | None = None,
+    ) -> _AgentRunsResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _agent_runs_operation,
+                launch_options=launch,
+                project_id=project_id,
+                time_range=time_range,
+                from_time=from_time,
+                to_time=to_time,
+                query=query,
+                parent=parent,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+
+    @server.tool(
+        name="get_agent_run",
+        description=AGENT_RUN_DESCRIPTION,
+        structured_output=True,
+    )
+    async def get_agent_run_tool(
+        run: Annotated[str, Field(min_length=1, max_length=255)],
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _AgentRunResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _agent_run_operation,
+                launch_options=launch,
+                run=run,
+                project_id=project_id,
+            )
+        )
+
+    @server.tool(
+        name="list_alert_events",
+        description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
+        structured_output=True,
+    )
+    async def list_alert_events(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        account: bool = False,
+        time_range: str = "30d",
+        from_: str | None = None,
+        to: str | None = None,
+        rule_type: str | None = None,
+        scope: str | None = None,
+        failed_only: bool = False,
+        cursor: str | None = None,
+        all_pages: bool = False,
+    ) -> _AlertEventsResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _alert_events_operation,
+                project_id,
+                launch,
+                account=account,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+                rule_type=rule_type,
+                scope=scope,
+                failed_only=failed_only,
+                cursor=cursor,
+                all_pages=all_pages,
+            )
+        )
+
+    @server.tool(
+        name="budget_check_batch",
+        description=(
+            "Reserve budget immediately before multiple caller-made un-instrumented provider calls. "
+            "Checks are JSON check bodies, fully validated before submission and chunked at 32; "
+            "results preserve input order. Each allowed item holds its own reservation: confirm it "
+            "after its call. Unknown models return per-item errors; 404/503 fail the request. "
+            "Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. "
+            "Admission counts each item against checks_per_minute. Do not poll or replay to refresh reservations."
+        ),
+        structured_output=True,
+    )
+    async def budget_check_batch(
+        checks: Annotated[list[BudgetCheckRequest], Field(min_length=1)],
+        no_record: bool = False,
+        estimated_output_tokens: Annotated[
+            int | None, Field(ge=0, le=100_000_000)
+        ] = None,
+    ) -> _BudgetCheckBatchResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _budget_check_batch_operation,
+                launch_options=launch,
+                checks=[
+                    check.model_dump(mode="json", exclude_unset=True)
+                    for check in checks
+                ],
+                no_record=no_record,
+                estimated_output_tokens=estimated_output_tokens,
+            )
+        )
+
+    @server.tool(
+        name="get_overview",
+        description=(
+            "Read calendar-month account spend, requests, trend, savings, and "
+            "free-tier quota metadata. Requires login/JWT authentication."
+        ),
+        structured_output=True,
+    )
+    async def get_overview() -> _OverviewResult:
+        return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
 
     return server

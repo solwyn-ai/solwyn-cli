@@ -21,7 +21,10 @@ from solwyn_cli.runtime import command_context, output_engine
 
 
 WHOAMI_HELP = help_contract(
-    endpoint=("local key identity or GET /api/v1/account/me and GET /api/v1/projects"),
+    endpoint=(
+        "local key identity or GET /api/v1/account/me, "
+        "GET /api/v1/accounts/me, and GET /api/v1/projects"
+    ),
     auth="any",
     exits="0 success; 1 generic/API; 2 usage; 3 auth",
     schema="solwyn.whoami.v1",
@@ -34,7 +37,7 @@ class _Identity(BaseModel):
     user_id: str
     email: str
     display_name: str
-    subscription_tier: Literal["free", "founder", "team", "scale"]
+    subscription_tier: Literal["free", "production", "team", "scale"]
 
 
 class _Project(BaseModel):
@@ -44,12 +47,28 @@ class _Project(BaseModel):
     name: str
 
 
+class _AccountSelf(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str
+    subscription_tier: Literal["free", "production", "team", "scale"]
+    alert_email_override: str | None
+    seat_limit: int
+    seats_used: int
+    your_role: Literal["owner", "admin", "member"]
+
+
 class _WhoamiData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     auth_type: Literal["jwt", "project_key"]
     auth_source: Literal["keyring", "environment"]
     configured_project: str | None
+    account_id: str | None
+    your_role: Literal["owner", "admin", "member"] | None
+    seats_used: int | None
+    seat_limit: int | None
     user: _Identity | None
     projects: list[_Project]
     hint: str | None
@@ -63,6 +82,10 @@ def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiD
         auth_type="project_key",
         auth_source=credential.source,
         configured_project=project,
+        account_id=None,
+        your_role=None,
+        seats_used=None,
+        seat_limit=None,
         user=None,
         projects=[],
         hint=(
@@ -81,8 +104,10 @@ def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
             credential=credential,
         ) as client:
             identity_response = client.request("GET", "/api/v1/account/me")
+            account_response = client.request("GET", "/api/v1/accounts/me")
             projects_response = client.request("GET", "/api/v1/projects")
         identity = _Identity.model_validate(identity_response.json())
+        account = _AccountSelf.model_validate(account_response.json())
         projects = _PROJECTS.validate_python(projects_response.json())
     except ApiError as error:
         exit_with_error(context, error)
@@ -104,6 +129,10 @@ def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
         auth_type="jwt",
         auth_source="keyring",
         configured_project=None,
+        account_id=account.id,
+        your_role=account.your_role,
+        seats_used=account.seats_used,
+        seat_limit=account.seat_limit,
         user=identity,
         projects=projects,
         hint=None,
@@ -125,6 +154,16 @@ def _table(data: _WhoamiData) -> TableData:
                 ("User", data.user.display_name),
                 ("Email", data.user.email),
                 ("Tier", data.user.subscription_tier),
+                ("Account ID", data.account_id or "unavailable"),
+                ("Role", data.your_role or "unavailable"),
+                (
+                    "Seats",
+                    (
+                        f"{data.seats_used}/{data.seat_limit}"
+                        if data.seats_used is not None and data.seat_limit is not None
+                        else "unavailable"
+                    ),
+                ),
             ]
         )
         rows.extend(

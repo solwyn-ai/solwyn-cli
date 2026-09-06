@@ -1,0 +1,1 @@
+{"schema":"solwyn.costs.baseline.v1","project_id":"proj_alpha","lookback_days":7,"days_with_data":6,"mean_daily_spend":1.25,"stdev_daily_spend":0.375,"armed":true}

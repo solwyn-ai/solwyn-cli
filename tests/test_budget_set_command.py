@@ -51,6 +51,7 @@ THRESHOLDS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "rule_key": "runaway:50",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
@@ -82,6 +83,8 @@ THRESHOLDS = [
     },
     {
         "type": "scoped_budget",
+        "current_usage": None,
+        "match_value": None,
         "rule_key": "scoped:model:gpt-4o",
         "scope": "model",
         "match": "gpt-4o",
@@ -101,6 +104,7 @@ BUDGET_RESPONSE = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 25.0,
     "thresholds": THRESHOLDS,
     "sub_period": "daily",
@@ -130,6 +134,7 @@ EXPECTED_THRESHOLD_CONFIGS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
         "window_minutes": 60,
@@ -155,6 +160,7 @@ EXPECTED_THRESHOLD_CONFIGS = [
     },
     {
         "type": "scoped_budget",
+        "match_value": None,
         "scope": "model",
         "match": "gpt-4o",
         "limit": 25.5,
@@ -598,3 +604,115 @@ def test_budget_set_goldens_never_contain_credentials_or_response_only_state() -
         rendered = golden.read_text(encoding="utf-8")
         for secret in (JWT_ACCESS, JWT_REFRESH, VALID_KEY, "rule_key", "routing"):
             assert secret not in rendered
+
+
+@pytest.mark.parametrize(
+    "reconciled",
+    [
+        _response(budget_limit=125.0, current_usage=31.0),
+        _response(
+            budget_limit=125.0,
+            thresholds=[
+                {
+                    **rule,
+                    "rule_key": "new-server-key",
+                    **(
+                        {"current_usage": 9.0}
+                        if rule["type"] == "scoped_budget"
+                        else {}
+                    ),
+                }
+                for rule in THRESHOLDS
+            ],
+        ),
+    ],
+)
+def test_budget_set_reconciles_post_commit_503_without_replaying_put(
+    monkeypatch, reconciled
+):
+    monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        error_from_response(
+            httpx.Response(
+                503, json={"detail": "Budget backend temporarily unavailable; retry"}
+            )
+        ),
+        httpx.Response(200, json=reconciled),
+    ]
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"]
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["budget_limit"] == 125.0
+    assert [request[0] for request in FakeClient.instances[0].requests] == [
+        "GET",
+        "PUT",
+        "GET",
+    ]
+
+
+@pytest.mark.parametrize(
+    "reconciled",
+    [
+        httpx.Response(200, json=_response()),
+        httpx.Response(200, json=_response(budget_limit=125.0, budget_period="weekly")),
+        httpx.Response(
+            200, json=_response(budget_limit=125.0, budget_mode="alert_only")
+        ),
+        httpx.Response(200, json=_response(budget_limit=125.0, sub_limit=21.0)),
+        httpx.Response(200, json=_response(budget_limit=125.0, sub_period="weekly")),
+        *[
+            httpx.Response(
+                200,
+                json=_response(
+                    budget_limit=125.0,
+                    thresholds=[
+                        {**rule, **changes} if rule["type"] == rule_type else rule
+                        for rule in THRESHOLDS
+                    ],
+                ),
+            )
+            for rule_type, changes in [
+                ("runaway_run", {"mode": "hard_deny"}),
+                ("scoped_budget", {"match": "different-model"}),
+                ("budget_threshold", {"channel_ids": ["different-channel"]}),
+                ("daily_anomaly", {"paused": True}),
+            ]
+        ],
+        httpx.Response(
+            200, json=_response(budget_limit=125.0, thresholds=THRESHOLDS[:-1])
+        ),
+        httpx.Response(200, json=_response(budget_limit=125.0, project_id="different")),
+        httpx.Response(200, json={"invalid": True}),
+        error_from_response(httpx.Response(503, json={"detail": "Still unavailable"})),
+        auth.AuthError("Synthetic auth failure"),
+    ],
+)
+def test_budget_set_503_unreconciled_is_explicitly_indeterminate(
+    monkeypatch, reconciled
+):
+    monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        error_from_response(
+            httpx.Response(
+                503, json={"detail": "Budget backend temporarily unavailable; retry"}
+            )
+        ),
+        reconciled,
+    ]
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"]
+    )
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "budget_update_indeterminate"
+    assert "may have been saved" in error["message"]
+    assert "budget status" in error["hint"]
+    assert [request[0] for request in FakeClient.instances[0].requests] == [
+        "GET",
+        "PUT",
+        "GET",
+    ]

@@ -1,10 +1,8 @@
 [
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "budget_status",
+    "title": null,
     "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "project_id": {
@@ -24,7 +22,6 @@
       "title": "budget_statusArguments",
       "type": "object"
     },
-    "name": "budget_status",
     "outputSchema": {
       "$defs": {
         "BudgetMode": {
@@ -49,12 +46,9 @@
         "_AlertRouting": {
           "additionalProperties": false,
           "properties": {
-            "channels": {
-              "items": {
-                "$ref": "#/$defs/_RoutingChannel"
-              },
-              "title": "Channels",
-              "type": "array"
+            "will_send": {
+              "title": "Will Send",
+              "type": "boolean"
             },
             "email": {
               "anyOf": [
@@ -68,16 +62,12 @@
               "default": null,
               "title": "Email"
             },
-            "muted": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/_RoutingMuted"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/_RoutingChannel"
+              },
+              "title": "Channels",
+              "type": "array"
             },
             "source": {
               "enum": [
@@ -88,9 +78,16 @@
               "title": "Source",
               "type": "string"
             },
-            "will_send": {
-              "title": "Will Send",
-              "type": "boolean"
+            "muted": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RoutingMuted"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           },
           "required": [
@@ -117,13 +114,13 @@
               "title": "Allowed Periods",
               "type": "array"
             },
-            "max_thresholds": {
-              "title": "Max Thresholds",
-              "type": "integer"
-            },
             "sub_period_enabled": {
               "title": "Sub Period Enabled",
               "type": "boolean"
+            },
+            "max_thresholds": {
+              "title": "Max Thresholds",
+              "type": "integer"
             }
           },
           "required": [
@@ -138,8 +135,24 @@
         "_BudgetStatusData": {
           "additionalProperties": false,
           "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
             "budget_limit": {
               "title": "Budget Limit",
+              "type": "number"
+            },
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "utilization_pct": {
+              "title": "Utilization Pct",
               "type": "number"
             },
             "budget_mode": {
@@ -148,47 +161,9 @@
             "budget_period": {
               "$ref": "#/$defs/BudgetPeriod"
             },
-            "constraints": {
-              "$ref": "#/$defs/_BudgetConstraints"
-            },
-            "current_usage": {
-              "title": "Current Usage",
-              "type": "number"
-            },
             "period_date": {
               "title": "Period Date",
               "type": "string"
-            },
-            "project_id": {
-              "title": "Project Id",
-              "type": "string"
-            },
-            "remaining_budget": {
-              "title": "Remaining Budget",
-              "type": "number"
-            },
-            "sub_limit": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Sub Limit"
-            },
-            "sub_period": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/BudgetPeriod"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
             },
             "thresholds": {
               "items": {
@@ -227,9 +202,47 @@
               "title": "Thresholds",
               "type": "array"
             },
-            "utilization_pct": {
-              "title": "Utilization Pct",
+            "sub_period": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BudgetPeriod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "sub_limit": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sub Limit"
+            },
+            "constraints": {
+              "$ref": "#/$defs/_BudgetConstraints"
+            },
+            "outage_overspend_ceiling_usd": {
+              "title": "Outage Overspend Ceiling Usd",
               "type": "number"
+            },
+            "lease_float_usd": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lease Float Usd"
             }
           },
           "required": [
@@ -242,7 +255,8 @@
             "budget_period",
             "period_date",
             "thresholds",
-            "constraints"
+            "constraints",
+            "outage_overspend_ceiling_usd"
           ],
           "title": "_BudgetStatusData",
           "type": "object"
@@ -250,6 +264,10 @@
         "_BudgetThresholdState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -257,23 +275,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
-            "percent": {
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Percent",
-              "type": "integer"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -288,10 +291,21 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "budget_threshold",
               "title": "Type",
               "type": "string"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Percent",
+              "type": "integer"
             }
           },
           "required": [
@@ -307,6 +321,10 @@
         "_DailyAnomalyState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -314,30 +332,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "lookback_days": {
-              "default": 7,
-              "maximum": 30,
-              "minimum": 3,
-              "title": "Lookback Days",
-              "type": "integer"
-            },
-            "multiplier": {
-              "exclusiveMinimum": 1,
-              "maximum": 100,
-              "title": "Multiplier",
-              "type": "number"
-            },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -352,10 +348,28 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "daily_anomaly",
               "title": "Type",
               "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
             }
           },
           "required": [
@@ -371,6 +385,10 @@
         "_ForecastOverrunState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -378,23 +396,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
-            "period": {
-              "const": "month",
-              "default": "month",
-              "title": "Period",
-              "type": "string"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -409,14 +412,25 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "forecast_overrun",
+              "title": "Type",
+              "type": "string"
+            },
             "spend_threshold_usd": {
               "exclusiveMinimum": 0,
               "title": "Spend Threshold Usd",
               "type": "number"
             },
-            "type": {
-              "const": "forecast_overrun",
-              "title": "Type",
+            "period": {
+              "const": "month",
+              "default": "month",
+              "title": "Period",
               "type": "string"
             }
           },
@@ -483,18 +497,9 @@
         "_RunawayRunState": {
           "additionalProperties": false,
           "properties": {
-            "call_threshold": {
-              "anyOf": [
-                {
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Call Threshold"
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
             },
             "channel_ids": {
               "items": {
@@ -503,17 +508,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -528,16 +524,38 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode",
+              "default": "alert_only"
+            },
+            "type": {
+              "const": "runaway_run",
+              "title": "Type",
+              "type": "string"
+            },
             "spend_threshold_usd": {
               "exclusiveMinimum": 0,
               "maximum": 1999999.99,
               "title": "Spend Threshold Usd",
               "type": "number"
             },
-            "type": {
-              "const": "runaway_run",
-              "title": "Type",
-              "type": "string"
+            "call_threshold": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Threshold"
             },
             "window_minutes": {
               "anyOf": [
@@ -567,6 +585,10 @@
         "_ScopedBudgetState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -574,41 +596,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "limit": {
-              "exclusiveMinimum": 0,
-              "maximum": 999999.999999,
-              "title": "Limit",
-              "type": "number"
-            },
-            "match": {
-              "maxLength": 2048,
-              "minLength": 1,
-              "title": "Match",
-              "type": "string"
-            },
-            "mode": {
-              "$ref": "#/$defs/BudgetMode"
-            },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
-            },
-            "scope": {
-              "enum": [
-                "model",
-                "provider",
-                "agent_run"
-              ],
-              "title": "Scope",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -623,10 +612,64 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "scoped_budget",
               "title": "Type",
               "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "model",
+                "provider",
+                "agent_run",
+                "tag"
+              ],
+              "title": "Scope",
+              "type": "string"
+            },
+            "match_value": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Match Value"
+            },
+            "current_usage": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Usage"
+            },
+            "match": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Match",
+              "type": "string"
+            },
+            "limit": {
+              "exclusiveMinimum": 0,
+              "maximum": 999999.999999,
+              "title": "Limit",
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
             }
           },
           "required": [
@@ -635,6 +678,7 @@
             "routing",
             "type",
             "scope",
+            "current_usage",
             "match",
             "limit",
             "mode"
@@ -650,6 +694,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -661,10 +709,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -689,6 +733,10 @@
         "_UnitCostAnomalyState": {
           "additionalProperties": false,
           "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
             "channel_ids": {
               "items": {
                 "type": "string"
@@ -696,30 +744,8 @@
               "title": "Channel Ids",
               "type": "array"
             },
-            "lookback_days": {
-              "default": 7,
-              "maximum": 30,
-              "minimum": 3,
-              "title": "Lookback Days",
-              "type": "integer"
-            },
-            "multiplier": {
-              "exclusiveMinimum": 1,
-              "maximum": 100,
-              "title": "Multiplier",
-              "type": "number"
-            },
-            "paused": {
-              "default": false,
-              "title": "Paused",
-              "type": "boolean"
-            },
             "routing": {
               "$ref": "#/$defs/_AlertRouting"
-            },
-            "rule_key": {
-              "title": "Rule Key",
-              "type": "string"
             },
             "snoozed_until": {
               "anyOf": [
@@ -734,10 +760,28 @@
               "default": null,
               "title": "Snoozed Until"
             },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
             "type": {
               "const": "unit_cost_anomaly",
               "title": "Type",
               "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
             }
           },
           "required": [
@@ -753,6 +797,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.budget-status.v1",
+          "default": "solwyn.mcp.budget-status.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -774,16 +828,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.budget-status.v1",
-          "default": "solwyn.mcp.budget-status.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -792,14 +836,15 @@
       "title": "_BudgetStatusResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
-    "description": "Reserve budget only immediately before the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
-    "execution": null,
-    "icons": null,
+    "name": "budget_check",
+    "title": null,
+    "description": "Reserve budget only immediately before the caller-made spend. Denials record attribution by default; no_record skips ingest. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
     "inputSchema": {
       "$defs": {
         "ProviderName": {
@@ -830,36 +875,34 @@
         }
       },
       "properties": {
-        "agent_run_id": {
-          "anyOf": [
-            {
-              "maxLength": 256,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Agent Run Id"
-        },
-        "audio_seconds": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Audio Seconds"
-        },
         "estimated_input_tokens": {
           "minimum": 0,
           "title": "Estimated Input Tokens",
           "type": "integer"
+        },
+        "model": {
+          "maxLength": 2048,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "fallback_providers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProviderName"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Providers"
         },
         "fallback_models": {
           "anyOf": [
@@ -878,34 +921,18 @@
           "default": null,
           "title": "Fallback Models"
         },
-        "fallback_providers": {
+        "agent_run_id": {
           "anyOf": [
             {
-              "items": {
-                "$ref": "#/$defs/ProviderName"
-              },
-              "maxItems": 8,
-              "type": "array"
+              "maxLength": 256,
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Fallback Providers"
-        },
-        "generation_count": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Generation Count"
+          "title": "Agent Run Id"
         },
         "image_count": {
           "anyOf": [
@@ -920,6 +947,45 @@
           "default": null,
           "title": "Image Count"
         },
+        "generation_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation Count"
+        },
+        "video_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Seconds"
+        },
+        "audio_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Seconds"
+        },
         "input_characters": {
           "anyOf": [
             {
@@ -932,32 +998,6 @@
           ],
           "default": null,
           "title": "Input Characters"
-        },
-        "is_estimated": {
-          "default": false,
-          "title": "Is Estimated",
-          "type": "boolean"
-        },
-        "model": {
-          "maxLength": 2048,
-          "title": "Model",
-          "type": "string"
-        },
-        "provider": {
-          "$ref": "#/$defs/ProviderName"
-        },
-        "quality": {
-          "anyOf": [
-            {
-              "maxLength": 32,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Quality"
         },
         "resolution": {
           "anyOf": [
@@ -972,18 +1012,57 @@
           "default": null,
           "title": "Resolution"
         },
-        "video_seconds": {
+        "quality": {
           "anyOf": [
             {
-              "minimum": 0,
-              "type": "number"
+              "maxLength": 32,
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Video Seconds"
+          "title": "Quality"
+        },
+        "is_estimated": {
+          "default": false,
+          "title": "Is Estimated",
+          "type": "boolean"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        },
+        "estimated_output_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Output Tokens"
+        },
+        "no_record": {
+          "default": false,
+          "title": "No Record",
+          "type": "boolean"
         }
       },
       "required": [
@@ -994,7 +1073,6 @@
       "title": "budget_checkArguments",
       "type": "object"
     },
-    "name": "budget_check",
     "outputSchema": {
       "$defs": {
         "BudgetMode": {
@@ -1006,15 +1084,71 @@
           "title": "BudgetMode",
           "type": "string"
         },
-        "BudgetPeriod": {
-          "description": "Rolling window for budget accounting.",
-          "enum": [
-            "daily",
-            "weekly",
-            "monthly"
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
           ],
-          "title": "BudgetPeriod",
-          "type": "string"
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
         },
         "ProviderName": {
           "description": "Provider identifiers accepted by budget request endpoints.",
@@ -1042,11 +1176,79 @@
           "title": "ProviderName",
           "type": "string"
         },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
+        },
         "_BudgetCheckData": {
           "properties": {
             "allowed": {
               "title": "Allowed",
               "type": "boolean"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
             },
             "budget_limit": {
               "title": "Budget Limit",
@@ -1059,7 +1261,31 @@
             "denied_by_period": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/BudgetPeriod"
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Denied By Period"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recorded": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecordingResult"
                 },
                 {
                   "type": "null"
@@ -1067,8 +1293,9 @@
               ],
               "default": null
             },
-            "mode": {
-              "$ref": "#/$defs/BudgetMode"
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
             },
             "price_hints": {
               "anyOf": [
@@ -1088,18 +1315,21 @@
               "default": null,
               "title": "Price Hints"
             },
-            "project_id": {
-              "title": "Project Id",
-              "type": "string"
-            },
-            "remaining_budget": {
-              "title": "Remaining Budget",
-              "type": "number"
-            },
-            "reservation_id": {
+            "run_control": {
               "anyOf": [
                 {
-                  "minLength": 1,
+                  "$ref": "#/$defs/_RunControlDirective"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "const": "run_terminated",
                   "type": "string"
                 },
                 {
@@ -1107,7 +1337,7 @@
                 }
               ],
               "default": null,
-              "title": "Reservation Id"
+              "title": "Reason"
             }
           },
           "required": [
@@ -1121,12 +1351,49 @@
           "title": "_BudgetCheckData",
           "type": "object"
         },
+        "_RunControlDirective": {
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": "1",
+              "title": "Version",
+              "type": "string"
+            },
+            "action": {
+              "const": "terminate",
+              "title": "Action",
+              "type": "string"
+            },
+            "agent_run_id": {
+              "maxLength": 256,
+              "title": "Agent Run Id",
+              "type": "string"
+            },
+            "reason": {
+              "const": "manual_kill",
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "action",
+            "agent_run_id",
+            "reason"
+          ],
+          "title": "_RunControlDirective",
+          "type": "object"
+        },
         "_ToolError": {
           "additionalProperties": false,
           "description": "Safe structured MCP error with no raw server or credential material.",
           "properties": {
             "code": {
               "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
               "type": "string"
             },
             "hint": {
@@ -1140,10 +1407,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1168,6 +1431,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.budget-check.v1",
+          "default": "solwyn.mcp.budget-check.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -1189,16 +1462,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.budget-check.v1",
-          "default": "solwyn.mcp.budget-check.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -1207,14 +1470,15 @@
       "title": "_BudgetCheckResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
-    "description": "Settle only a non-null reservation after the caller-made spend. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
-    "execution": null,
-    "icons": null,
+    "name": "budget_confirm",
+    "title": null,
+    "description": "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself. Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend. Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm. Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.",
     "inputSchema": {
       "$defs": {
         "ProviderName": {
@@ -1259,11 +1523,98 @@
         }
       },
       "properties": {
-        "accepted_prediction_tokens": {
+        "reservation_id": {
+          "minLength": 1,
+          "title": "Reservation Id",
+          "type": "string"
+        },
+        "call_id": {
+          "description": "Use a canonical lowercase UUID: uuidgen | tr A-F a-f",
+          "maxLength": 36,
+          "minLength": 1,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Call Id",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "is_provider_fallback": {
+          "default": false,
+          "title": "Is Provider Fallback",
+          "type": "boolean"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input_tokens": {
           "default": 0,
           "maximum": 100000000,
           "minimum": 0,
-          "title": "Accepted Prediction Tokens",
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "cached_input_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cached Input Tokens",
+          "type": "integer"
+        },
+        "cache_creation_5m_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cache Creation 5M Tokens",
+          "type": "integer"
+        },
+        "cache_creation_1h_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Cache Creation 1H Tokens",
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "maximum": 100000000,
+          "minimum": 0,
+          "title": "Reasoning Tokens",
           "type": "integer"
         },
         "audio_input_tokens": {
@@ -1280,33 +1631,6 @@
           "title": "Audio Output Tokens",
           "type": "integer"
         },
-        "cache_creation_1h_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Cache Creation 1H Tokens",
-          "type": "integer"
-        },
-        "cache_creation_5m_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Cache Creation 5M Tokens",
-          "type": "integer"
-        },
-        "cached_input_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Cached Input Tokens",
-          "type": "integer"
-        },
-        "call_id": {
-          "maxLength": 36,
-          "minLength": 1,
-          "title": "Call Id",
-          "type": "string"
-        },
         "image_input_tokens": {
           "default": 0,
           "maximum": 100000000,
@@ -1321,58 +1645,11 @@
           "title": "Image Output Tokens",
           "type": "integer"
         },
-        "input_tokens": {
+        "accepted_prediction_tokens": {
           "default": 0,
           "maximum": 100000000,
           "minimum": 0,
-          "title": "Input Tokens",
-          "type": "integer"
-        },
-        "is_estimated": {
-          "default": false,
-          "title": "Is Estimated",
-          "type": "boolean"
-        },
-        "is_provider_fallback": {
-          "default": false,
-          "title": "Is Provider Fallback",
-          "type": "boolean"
-        },
-        "model": {
-          "maxLength": 2048,
-          "minLength": 1,
-          "title": "Model",
-          "type": "string"
-        },
-        "output_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Output Tokens",
-          "type": "integer"
-        },
-        "provider": {
-          "$ref": "#/$defs/ProviderName"
-        },
-        "provider_region": {
-          "anyOf": [
-            {
-              "maxLength": 32,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Provider Region"
-        },
-        "reasoning_tokens": {
-          "default": 0,
-          "maximum": 100000000,
-          "minimum": 0,
-          "title": "Reasoning Tokens",
+          "title": "Accepted Prediction Tokens",
           "type": "integer"
         },
         "rejected_prediction_tokens": {
@@ -1382,28 +1659,91 @@
           "title": "Rejected Prediction Tokens",
           "type": "integer"
         },
-        "reservation_id": {
-          "minLength": 1,
-          "title": "Reservation Id",
-          "type": "string"
-        },
-        "service_tier": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ServiceTier"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "tool_use_input_tokens": {
           "default": 0,
           "maximum": 100000000,
           "minimum": 0,
           "title": "Tool Use Input Tokens",
           "type": "integer"
+        },
+        "is_estimated": {
+          "default": false,
+          "title": "Is Estimated",
+          "type": "boolean"
+        },
+        "latency_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "status": {
+          "default": "success",
+          "enum": [
+            "success",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Id"
+        },
+        "parent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Run Id"
+        },
+        "run_name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Name"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        },
+        "no_record": {
+          "default": false,
+          "title": "No Record",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1415,19 +1755,143 @@
       "title": "budget_confirmArguments",
       "type": "object"
     },
-    "name": "budget_confirm",
     "outputSchema": {
       "$defs": {
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
+          ],
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
+        },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
+        },
         "_BudgetConfirmData": {
           "additionalProperties": false,
           "properties": {
+            "reservation_id": {
+              "title": "Reservation Id",
+              "type": "string"
+            },
             "call_id": {
               "title": "Call Id",
               "type": "string"
             },
-            "reservation_id": {
-              "title": "Reservation Id",
-              "type": "string"
+            "recorded": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecordingResult"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           },
           "required": [
@@ -1445,6 +1909,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -1456,10 +1924,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1484,6 +1948,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.budget-confirm.v1",
+          "default": "solwyn.mcp.budget-confirm.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -1505,16 +1979,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.budget-confirm.v1",
-          "default": "solwyn.mcp.budget-confirm.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -1523,14 +1987,15 @@
       "title": "_BudgetConfirmResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "get_project_status",
+    "title": null,
     "description": "Read the configured project's budget and provider health without authorizing spend.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "project_id": {
@@ -1550,7 +2015,6 @@
       "title": "get_project_statusArguments",
       "type": "object"
     },
-    "name": "get_project_status",
     "outputSchema": {
       "$defs": {
         "_BudgetSummary": {
@@ -1559,13 +2023,13 @@
               "title": "Budget Limit",
               "type": "number"
             },
-            "budget_mode": {
-              "enum": [
-                "alert_only",
-                "hard_deny"
-              ],
-              "title": "Budget Mode",
-              "type": "string"
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
             },
             "budget_period": {
               "enum": [
@@ -1576,17 +2040,17 @@
               "title": "Budget Period",
               "type": "string"
             },
-            "current_usage": {
-              "title": "Current Usage",
-              "type": "number"
+            "budget_mode": {
+              "enum": [
+                "alert_only",
+                "hard_deny"
+              ],
+              "title": "Budget Mode",
+              "type": "string"
             },
             "period_date": {
               "title": "Period Date",
               "type": "string"
-            },
-            "remaining_budget": {
-              "title": "Remaining Budget",
-              "type": "number"
             },
             "utilization_pct": {
               "title": "Utilization Pct",
@@ -1605,63 +2069,15 @@
           "title": "_BudgetSummary",
           "type": "object"
         },
-        "_ProviderHealth": {
-          "properties": {
-            "avg_latency_ms": {
-              "title": "Avg Latency Ms",
-              "type": "number"
-            },
-            "circuit_state": {
-              "title": "Circuit State",
-              "type": "string"
-            },
-            "error_count": {
-              "title": "Error Count",
-              "type": "integer"
-            },
-            "failover_count": {
-              "title": "Failover Count",
-              "type": "integer"
-            },
-            "provider": {
-              "title": "Provider",
-              "type": "string"
-            },
-            "success_count": {
-              "title": "Success Count",
-              "type": "integer"
-            },
-            "success_rate": {
-              "title": "Success Rate",
-              "type": "number"
-            },
-            "total_calls": {
-              "title": "Total Calls",
-              "type": "integer"
-            }
-          },
-          "required": [
-            "provider",
-            "total_calls",
-            "success_count",
-            "error_count",
-            "failover_count",
-            "success_rate",
-            "avg_latency_ms",
-            "circuit_state"
-          ],
-          "title": "_ProviderHealth",
-          "type": "object"
-        },
-        "_StatusData": {
+        "_ProjectStatusData": {
           "additionalProperties": false,
           "properties": {
-            "budget": {
-              "$ref": "#/$defs/_BudgetSummary"
-            },
             "project_id": {
               "title": "Project Id",
               "type": "string"
+            },
+            "budget": {
+              "$ref": "#/$defs/_BudgetSummary"
             },
             "providers": {
               "items": {
@@ -1676,7 +2092,80 @@
             "budget",
             "providers"
           ],
-          "title": "_StatusData",
+          "title": "_ProjectStatusData",
+          "type": "object"
+        },
+        "_ProviderHealth": {
+          "properties": {
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "success_count": {
+              "title": "Success Count",
+              "type": "integer"
+            },
+            "error_count": {
+              "title": "Error Count",
+              "type": "integer"
+            },
+            "failover_count": {
+              "title": "Failover Count",
+              "type": "integer"
+            },
+            "model_failover_count": {
+              "title": "Model Failover Count",
+              "type": "integer"
+            },
+            "provider_failover_count": {
+              "title": "Provider Failover Count",
+              "type": "integer"
+            },
+            "success_rate": {
+              "title": "Success Rate",
+              "type": "number"
+            },
+            "avg_latency_ms": {
+              "title": "Avg Latency Ms",
+              "type": "number"
+            },
+            "circuit_state": {
+              "enum": [
+                "closed",
+                "half_open",
+                "open",
+                "unknown"
+              ],
+              "title": "Circuit State",
+              "type": "string"
+            },
+            "circuit_source": {
+              "enum": [
+                "reported",
+                "inferred"
+              ],
+              "title": "Circuit Source",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "total_calls",
+            "success_count",
+            "error_count",
+            "failover_count",
+            "model_failover_count",
+            "provider_failover_count",
+            "success_rate",
+            "avg_latency_ms",
+            "circuit_state",
+            "circuit_source"
+          ],
+          "title": "_ProviderHealth",
           "type": "object"
         },
         "_ToolError": {
@@ -1685,6 +2174,10 @@
           "properties": {
             "code": {
               "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
               "type": "string"
             },
             "hint": {
@@ -1698,10 +2191,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1726,10 +2215,20 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.project-status.v1",
+          "default": "solwyn.mcp.project-status.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
-              "$ref": "#/$defs/_StatusData"
+              "$ref": "#/$defs/_ProjectStatusData"
             },
             {
               "type": "null"
@@ -1747,16 +2246,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.project-status.v1",
-          "default": "solwyn.mcp.project-status.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -1765,28 +2254,198 @@
       "title": "_ProjectStatusResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
-    "description": "Read aggregated project costs for one frozen time range and grouping.",
-    "execution": null,
-    "icons": null,
+    "name": "get_forecast",
+    "title": null,
+    "description": "Read the configured project's month-to-date spend forecast without authorizing spend.",
     "inputSchema": {
-      "$defs": {
-        "CostGrouping": {
-          "description": "Supported aggregate dimensions frozen for the v1 command.",
-          "enum": [
-            "day",
-            "model",
-            "provider"
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "CostGrouping",
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "get_forecastArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ForecastData": {
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "current_spend": {
+              "title": "Current Spend",
+              "type": "number"
+            },
+            "forecast_eom": {
+              "title": "Forecast Eom",
+              "type": "number"
+            },
+            "burn_rate_per_day": {
+              "title": "Burn Rate Per Day",
+              "type": "number"
+            },
+            "ci_low": {
+              "title": "Ci Low",
+              "type": "number"
+            },
+            "ci_high": {
+              "title": "Ci High",
+              "type": "number"
+            },
+            "period_start": {
+              "title": "Period Start",
+              "type": "string"
+            },
+            "period_end": {
+              "title": "Period End",
+              "type": "string"
+            },
+            "days_elapsed": {
+              "title": "Days Elapsed",
+              "type": "integer"
+            },
+            "days_remaining": {
+              "title": "Days Remaining",
+              "type": "integer"
+            },
+            "insufficient_data": {
+              "title": "Insufficient Data",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "project_id",
+            "current_spend",
+            "forecast_eom",
+            "burn_rate_per_day",
+            "ci_low",
+            "ci_high",
+            "period_start",
+            "period_end",
+            "days_elapsed",
+            "days_remaining",
+            "insufficient_data"
+          ],
+          "title": "ForecastData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.forecast.v1",
+          "default": "solwyn.mcp.forecast.v1",
+          "title": "Schema",
           "type": "string"
         },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForecastData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_ForecastResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_costs",
+    "title": null,
+    "description": "Read project costs grouped by a Core dimension or tag:<key>, with shared cost filters and timezone-aware custom windows.",
+    "inputSchema": {
+      "$defs": {
         "CostRange": {
-          "description": "Supported aggregate windows frozen for the v1 command.",
           "enum": [
             "7d",
             "30d",
@@ -1798,10 +2457,6 @@
         }
       },
       "properties": {
-        "group_by": {
-          "$ref": "#/$defs/CostGrouping",
-          "default": "model"
-        },
         "project_id": {
           "anyOf": [
             {
@@ -1818,28 +2473,189 @@
         "time_range": {
           "$ref": "#/$defs/CostRange",
           "default": "7d"
+        },
+        "group_by": {
+          "default": "model",
+          "title": "Group By",
+          "type": "string"
+        },
+        "from_": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "modality": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modality"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Tier"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "agent_run": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run"
+        },
+        "failover_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failover Reason"
+        },
+        "model_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Fallback"
+        },
+        "provider_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Fallback"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
         }
       },
       "title": "get_costsArguments",
       "type": "object"
     },
-    "name": "get_costs",
     "outputSchema": {
       "$defs": {
-        "_CostGroup": {
+        "CostGroup": {
           "properties": {
-            "call_count": {
-              "title": "Call Count",
-              "type": "integer"
-            },
             "group_key": {
-              "title": "Group Key",
-              "type": "string"
-            },
-            "local_call_count": {
-              "default": 0,
-              "title": "Local Call Count",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Key"
             },
             "provider": {
               "anyOf": [
@@ -1853,6 +2669,30 @@
               "default": null,
               "title": "Provider"
             },
+            "modality": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Modality"
+            },
+            "agent_run_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Run Name"
+            },
             "total_cost": {
               "title": "Total Cost",
               "type": "number"
@@ -1865,9 +2705,18 @@
               "title": "Total Output Tokens",
               "type": "integer"
             },
+            "call_count": {
+              "title": "Call Count",
+              "type": "integer"
+            },
             "unpriced_call_count": {
               "default": 0,
               "title": "Unpriced Call Count",
+              "type": "integer"
+            },
+            "local_call_count": {
+              "default": 0,
+              "title": "Local Call Count",
               "type": "integer"
             }
           },
@@ -1878,49 +2727,126 @@
             "total_output_tokens",
             "call_count"
           ],
-          "title": "_CostGroup",
+          "title": "CostGroup",
           "type": "object"
         },
-        "_CostsData": {
+        "CostQueryResponse": {
           "properties": {
-            "group_by": {
-              "enum": [
-                "day",
-                "model",
-                "provider"
-              ],
-              "title": "Group By",
-              "type": "string"
-            },
-            "groups": {
-              "items": {
-                "$ref": "#/$defs/_CostGroup"
-              },
-              "title": "Groups",
-              "type": "array"
-            },
             "project_id": {
               "title": "Project Id",
               "type": "string"
             },
             "range": {
-              "enum": [
-                "7d",
-                "30d",
-                "90d",
-                "365d"
-              ],
               "title": "Range",
               "type": "string"
+            },
+            "group_by": {
+              "title": "Group By",
+              "type": "string"
+            },
+            "groups": {
+              "items": {
+                "$ref": "#/$defs/CostGroup"
+              },
+              "title": "Groups",
+              "type": "array"
+            },
+            "truncated": {
+              "title": "Truncated",
+              "type": "boolean"
+            },
+            "savings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SavingsSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "window": {
+              "$ref": "#/$defs/CostWindow"
             }
           },
           "required": [
             "project_id",
             "range",
             "group_by",
-            "groups"
+            "groups",
+            "truncated",
+            "window"
           ],
-          "title": "_CostsData",
+          "title": "CostQueryResponse",
+          "type": "object"
+        },
+        "CostWindow": {
+          "properties": {
+            "requested_from": {
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "CostWindow",
+          "type": "object"
+        },
+        "SavingsSummary": {
+          "properties": {
+            "saved_cost": {
+              "title": "Saved Cost",
+              "type": "number"
+            },
+            "saved_cost_upper": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Cost Upper"
+            },
+            "saved_input_tokens": {
+              "title": "Saved Input Tokens",
+              "type": "integer"
+            },
+            "blocked_call_count": {
+              "title": "Blocked Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "saved_cost",
+            "saved_cost_upper",
+            "saved_input_tokens",
+            "blocked_call_count"
+          ],
+          "title": "SavingsSummary",
           "type": "object"
         },
         "_ToolError": {
@@ -1929,6 +2855,10 @@
           "properties": {
             "code": {
               "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
               "type": "string"
             },
             "hint": {
@@ -1942,10 +2872,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -1970,10 +2896,20 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.costs.v1",
+          "default": "solwyn.mcp.costs.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
-              "$ref": "#/$defs/_CostsData"
+              "$ref": "#/$defs/CostQueryResponse"
             },
             {
               "type": "null"
@@ -1991,16 +2927,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.costs.v1",
-          "default": "solwyn.mcp.costs.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -2009,47 +2935,47 @@
       "title": "_CostsResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   },
   {
-    "_meta": null,
-    "annotations": null,
+    "name": "list_projects",
+    "title": null,
     "description": "List projects visible to the logged-in user. Requires login/JWT authentication.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {},
       "title": "list_projectsArguments",
       "type": "object"
     },
-    "name": "list_projects",
     "outputSchema": {
       "$defs": {
         "_Project": {
           "properties": {
-            "budget_limit": {
-              "title": "Budget Limit",
-              "type": "number"
-            },
-            "budget_mode": {
-              "title": "Budget Mode",
-              "type": "string"
-            },
-            "budget_period": {
-              "title": "Budget Period",
-              "type": "string"
-            },
-            "created_at": {
-              "format": "date-time",
-              "title": "Created At",
-              "type": "string"
-            },
             "id": {
               "title": "Id",
               "type": "string"
             },
             "name": {
               "title": "Name",
+              "type": "string"
+            },
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "budget_period": {
+              "title": "Budget Period",
+              "type": "string"
+            },
+            "budget_mode": {
+              "title": "Budget Mode",
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
               "type": "string"
             }
           },
@@ -2089,6 +3015,10 @@
               "title": "Code",
               "type": "string"
             },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
             "hint": {
               "anyOf": [
                 {
@@ -2100,10 +3030,6 @@
               ],
               "default": null,
               "title": "Hint"
-            },
-            "message": {
-              "title": "Message",
-              "type": "string"
             },
             "status_code": {
               "anyOf": [
@@ -2128,6 +3054,16 @@
       },
       "additionalProperties": false,
       "properties": {
+        "schema": {
+          "const": "solwyn.mcp.projects.v1",
+          "default": "solwyn.mcp.projects.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
         "data": {
           "anyOf": [
             {
@@ -2149,16 +3085,6 @@
             }
           ],
           "default": null
-        },
-        "ok": {
-          "title": "Ok",
-          "type": "boolean"
-        },
-        "schema": {
-          "const": "solwyn.mcp.projects.v1",
-          "default": "solwyn.mcp.projects.v1",
-          "title": "Schema",
-          "type": "string"
         }
       },
       "required": [
@@ -2167,6 +3093,4432 @@
       "title": "_ProjectsResult",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_cost_total",
+    "title": null,
+    "description": "Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
+    "inputSchema": {
+      "$defs": {
+        "CostRange": {
+          "enum": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "title": "CostRange",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "time_range": {
+          "$ref": "#/$defs/CostRange",
+          "default": "7d"
+        },
+        "from_": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "modality": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modality"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Tier"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "agent_run": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run"
+        },
+        "failover_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failover Reason"
+        },
+        "model_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Fallback"
+        },
+        "provider_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Fallback"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        }
+      },
+      "title": "get_cost_totalArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "CostTotalResponse": {
+          "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "range": {
+              "title": "Range",
+              "type": "string"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "call_count": {
+              "title": "Call Count",
+              "type": "integer"
+            },
+            "unpriced_call_count": {
+              "title": "Unpriced Call Count",
+              "type": "integer"
+            },
+            "local_call_count": {
+              "title": "Local Call Count",
+              "type": "integer"
+            },
+            "savings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SavingsSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "window": {
+              "$ref": "#/$defs/CostWindow"
+            }
+          },
+          "required": [
+            "project_id",
+            "range",
+            "total_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "call_count",
+            "unpriced_call_count",
+            "local_call_count",
+            "window"
+          ],
+          "title": "CostTotalResponse",
+          "type": "object"
+        },
+        "CostWindow": {
+          "properties": {
+            "requested_from": {
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "CostWindow",
+          "type": "object"
+        },
+        "SavingsSummary": {
+          "properties": {
+            "saved_cost": {
+              "title": "Saved Cost",
+              "type": "number"
+            },
+            "saved_cost_upper": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Cost Upper"
+            },
+            "saved_input_tokens": {
+              "title": "Saved Input Tokens",
+              "type": "integer"
+            },
+            "blocked_call_count": {
+              "title": "Blocked Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "saved_cost",
+            "saved_cost_upper",
+            "saved_input_tokens",
+            "blocked_call_count"
+          ],
+          "title": "SavingsSummary",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.cost-total.v1",
+          "default": "solwyn.mcp.cost-total.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CostTotalResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_CostTotalResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_budget_rules",
+    "title": null,
+    "description": "Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "list_budget_rulesArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "BudgetMode": {
+          "description": "Budget enforcement mode.",
+          "enum": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "title": "BudgetMode",
+          "type": "string"
+        },
+        "BudgetRulesData": {
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "rules": {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "budget_threshold": "#/$defs/_BudgetThresholdState",
+                    "daily_anomaly": "#/$defs/_DailyAnomalyState",
+                    "forecast_overrun": "#/$defs/_ForecastOverrunState",
+                    "runaway_run": "#/$defs/_RunawayRunState",
+                    "scoped_budget": "#/$defs/_ScopedBudgetState",
+                    "unit_cost_anomaly": "#/$defs/_UnitCostAnomalyState"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/_BudgetThresholdState"
+                  },
+                  {
+                    "$ref": "#/$defs/_ForecastOverrunState"
+                  },
+                  {
+                    "$ref": "#/$defs/_RunawayRunState"
+                  },
+                  {
+                    "$ref": "#/$defs/_DailyAnomalyState"
+                  },
+                  {
+                    "$ref": "#/$defs/_UnitCostAnomalyState"
+                  },
+                  {
+                    "$ref": "#/$defs/_ScopedBudgetState"
+                  }
+                ]
+              },
+              "title": "Rules",
+              "type": "array"
+            }
+          },
+          "required": [
+            "project_id",
+            "rules"
+          ],
+          "title": "BudgetRulesData",
+          "type": "object"
+        },
+        "_AlertRouting": {
+          "additionalProperties": false,
+          "properties": {
+            "will_send": {
+              "title": "Will Send",
+              "type": "boolean"
+            },
+            "email": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Email"
+            },
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/_RoutingChannel"
+              },
+              "title": "Channels",
+              "type": "array"
+            },
+            "source": {
+              "enum": [
+                "override",
+                "project_default",
+                "account_default"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "muted": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RoutingMuted"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "will_send",
+            "source"
+          ],
+          "title": "_AlertRouting",
+          "type": "object"
+        },
+        "_BudgetThresholdState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "budget_threshold",
+              "title": "Type",
+              "type": "string"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Percent",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "percent"
+          ],
+          "title": "_BudgetThresholdState",
+          "type": "object"
+        },
+        "_DailyAnomalyState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "daily_anomaly",
+              "title": "Type",
+              "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "multiplier"
+          ],
+          "title": "_DailyAnomalyState",
+          "type": "object"
+        },
+        "_ForecastOverrunState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "forecast_overrun",
+              "title": "Type",
+              "type": "string"
+            },
+            "spend_threshold_usd": {
+              "exclusiveMinimum": 0,
+              "title": "Spend Threshold Usd",
+              "type": "number"
+            },
+            "period": {
+              "const": "month",
+              "default": "month",
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "spend_threshold_usd"
+          ],
+          "title": "_ForecastOverrunState",
+          "type": "object"
+        },
+        "_RoutingChannel": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "title": "_RoutingChannel",
+          "type": "object"
+        },
+        "_RoutingMuted": {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "severity_floor",
+                "event_filter",
+                "email_off"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "severity_floor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Severity Floor"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "title": "_RoutingMuted",
+          "type": "object"
+        },
+        "_RunawayRunState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode",
+              "default": "alert_only"
+            },
+            "type": {
+              "const": "runaway_run",
+              "title": "Type",
+              "type": "string"
+            },
+            "spend_threshold_usd": {
+              "exclusiveMinimum": 0,
+              "maximum": 1999999.99,
+              "title": "Spend Threshold Usd",
+              "type": "number"
+            },
+            "call_threshold": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Threshold"
+            },
+            "window_minutes": {
+              "anyOf": [
+                {
+                  "maximum": 1440,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window Minutes"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "spend_threshold_usd"
+          ],
+          "title": "_RunawayRunState",
+          "type": "object"
+        },
+        "_ScopedBudgetState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "scoped_budget",
+              "title": "Type",
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "model",
+                "provider",
+                "agent_run",
+                "tag"
+              ],
+              "title": "Scope",
+              "type": "string"
+            },
+            "match_value": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Match Value"
+            },
+            "current_usage": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Usage"
+            },
+            "match": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Match",
+              "type": "string"
+            },
+            "limit": {
+              "exclusiveMinimum": 0,
+              "maximum": 999999.999999,
+              "title": "Limit",
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "scope",
+            "current_usage",
+            "match",
+            "limit",
+            "mode"
+          ],
+          "title": "_ScopedBudgetState",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        },
+        "_UnitCostAnomalyState": {
+          "additionalProperties": false,
+          "properties": {
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "channel_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Channel Ids",
+              "type": "array"
+            },
+            "routing": {
+              "$ref": "#/$defs/_AlertRouting"
+            },
+            "snoozed_until": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Snoozed Until"
+            },
+            "paused": {
+              "default": false,
+              "title": "Paused",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "unit_cost_anomaly",
+              "title": "Type",
+              "type": "string"
+            },
+            "multiplier": {
+              "exclusiveMinimum": 1,
+              "maximum": 100,
+              "title": "Multiplier",
+              "type": "number"
+            },
+            "lookback_days": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 3,
+              "title": "Lookback Days",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rule_key",
+            "channel_ids",
+            "routing",
+            "type",
+            "multiplier"
+          ],
+          "title": "_UnitCostAnomalyState",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.budget.rules.v1",
+          "default": "solwyn.budget.rules.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetRulesData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_BudgetRulesResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "record_call",
+    "title": null,
+    "description": "Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
+    "inputSchema": {
+      "$defs": {
+        "MediaUsage": {
+          "additionalProperties": false,
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
+          "properties": {
+            "image_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Image Count"
+            },
+            "generation_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Generation Count"
+            },
+            "video_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Video Seconds"
+            },
+            "audio_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Seconds"
+            },
+            "input_characters": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Characters"
+            },
+            "resolution": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Resolution"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Quality"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "MediaUsage",
+          "type": "object"
+        },
+        "Modality": {
+          "enum": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "title": "Modality",
+          "type": "string"
+        },
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        },
+        "ServiceTier": {
+          "description": "Provider service tiers accepted by budget confirmation.",
+          "enum": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "title": "ServiceTier",
+          "type": "string"
+        },
+        "TokenDetails": {
+          "additionalProperties": false,
+          "description": "Normalized provider token usage used to settle a reservation.",
+          "properties": {
+            "input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "cached_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cached Input Tokens",
+              "type": "integer"
+            },
+            "cache_creation_5m_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 5M Tokens",
+              "type": "integer"
+            },
+            "cache_creation_1h_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 1H Tokens",
+              "type": "integer"
+            },
+            "reasoning_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Reasoning Tokens",
+              "type": "integer"
+            },
+            "audio_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Input Tokens",
+              "type": "integer"
+            },
+            "audio_output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Output Tokens",
+              "type": "integer"
+            },
+            "image_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Input Tokens",
+              "type": "integer"
+            },
+            "image_output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Output Tokens",
+              "type": "integer"
+            },
+            "accepted_prediction_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Accepted Prediction Tokens",
+              "type": "integer"
+            },
+            "rejected_prediction_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Rejected Prediction Tokens",
+              "type": "integer"
+            },
+            "tool_use_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Tool Use Input Tokens",
+              "type": "integer"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "TokenDetails",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "model": {
+          "maxLength": 2048,
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "call_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Use a canonical lowercase UUID: uuidgen | tr A-F a-f",
+          "title": "Call Id"
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens"
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens"
+        },
+        "token_details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenDetails"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "media_usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "latency_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "status": {
+          "default": "success",
+          "enum": [
+            "success",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "modality": {
+          "$ref": "#/$defs/Modality",
+          "default": "text"
+        },
+        "provider_region": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Region"
+        },
+        "service_tier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Id"
+        },
+        "parent_agent_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Agent Run Id"
+        },
+        "agent_run_name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Run Name"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "required": [
+        "model",
+        "provider"
+      ],
+      "title": "record_callArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
+          ],
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
+        },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.record.v1",
+          "default": "solwyn.mcp.record.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordingResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_RecordResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_tags",
+    "title": null,
+    "description": "List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "list_tagsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "TagDiscoveryResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "items": {
+                "$ref": "#/$defs/TagKeySummary"
+              },
+              "title": "Keys",
+              "type": "array"
+            },
+            "usage": {
+              "$ref": "#/$defs/TagRegistryUsage"
+            },
+            "scope": {
+              "const": "account",
+              "default": "account",
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          "required": [
+            "keys",
+            "usage"
+          ],
+          "title": "TagDiscoveryResponse",
+          "type": "object"
+        },
+        "TagKeySummary": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "title": "Key",
+              "type": "string"
+            },
+            "values_count": {
+              "minimum": 0,
+              "title": "Values Count",
+              "type": "integer"
+            },
+            "first_seen_at": {
+              "format": "date-time",
+              "title": "First Seen At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            },
+            "similar": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Similar",
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "values_count",
+            "first_seen_at",
+            "last_seen_at"
+          ],
+          "title": "TagKeySummary",
+          "type": "object"
+        },
+        "TagRegistryUsage": {
+          "additionalProperties": false,
+          "properties": {
+            "keys_used": {
+              "maximum": 100,
+              "minimum": 0,
+              "title": "Keys Used",
+              "type": "integer"
+            },
+            "keys_cap": {
+              "const": 100,
+              "default": 100,
+              "title": "Keys Cap",
+              "type": "integer"
+            },
+            "values_cap_per_key": {
+              "const": 1000,
+              "default": 1000,
+              "title": "Values Cap Per Key",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys_used"
+          ],
+          "title": "TagRegistryUsage",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.tags.v1",
+          "default": "solwyn.mcp.tags.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TagDiscoveryResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_TagsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_tag_values",
+    "title": null,
+    "description": "Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "prefix": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prefix"
+        },
+        "limit": {
+          "default": 25,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "list_tag_valuesArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "TagValueSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "title": "Value",
+              "type": "string"
+            },
+            "first_seen_at": {
+              "format": "date-time",
+              "title": "First Seen At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "value",
+            "first_seen_at",
+            "last_seen_at"
+          ],
+          "title": "TagValueSummary",
+          "type": "object"
+        },
+        "TagValuesPage": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "title": "Key",
+              "type": "string"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/TagValueSummary"
+              },
+              "title": "Values",
+              "type": "array"
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Next Cursor"
+            },
+            "has_more": {
+              "title": "Has More",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "values",
+            "next_cursor",
+            "has_more"
+          ],
+          "title": "TagValuesPage",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.tags.values.v1",
+          "default": "solwyn.mcp.tags.values.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TagValuesPage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_TagValuesResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_agent_runs",
+    "title": null,
+    "description": "List project agent runs. Costs are lifetime totals; the window only selects which runs qualify. Accepts a project key or login.",
+    "inputSchema": {
+      "$defs": {
+        "RunRange": {
+          "description": "Preset agent-run listing windows.",
+          "enum": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "title": "RunRange",
+          "type": "string"
+        },
+        "RunSort": {
+          "description": "Server-supported descending run sort keys.",
+          "enum": [
+            "last_seen_at",
+            "total_cost",
+            "total_calls"
+          ],
+          "title": "RunSort",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "time_range": {
+          "$ref": "#/$defs/RunRange",
+          "default": "7d"
+        },
+        "from_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Time"
+        },
+        "to_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Time"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent"
+        },
+        "sort": {
+          "$ref": "#/$defs/RunSort",
+          "default": "last_seen_at"
+        },
+        "limit": {
+          "default": 25,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "list_agent_runsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "_AgentRunEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^run_[0-9a-f]{32}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "parent_run_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Run Id"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_denied_cost": {
+              "title": "Total Denied Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "velocity_flags": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Velocity Flags"
+            },
+            "stopped_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped At"
+            },
+            "stopped_by_user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped By User Id"
+            },
+            "stoppable": {
+              "title": "Stoppable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "parent_run_id",
+            "project_id",
+            "started_at",
+            "last_seen_at",
+            "total_calls",
+            "total_cost",
+            "total_denied_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "velocity_flags",
+            "stopped_at",
+            "stopped_by_user_id",
+            "stoppable"
+          ],
+          "title": "_AgentRunEntry",
+          "type": "object"
+        },
+        "_AgentRunListData": {
+          "additionalProperties": false,
+          "properties": {
+            "runs": {
+              "items": {
+                "$ref": "#/$defs/_AgentRunEntry"
+              },
+              "title": "Runs",
+              "type": "array"
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Next Cursor"
+            },
+            "has_more": {
+              "title": "Has More",
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/$defs/_CostWindow"
+            }
+          },
+          "required": [
+            "runs",
+            "next_cursor",
+            "has_more",
+            "window"
+          ],
+          "title": "_AgentRunListData",
+          "type": "object"
+        },
+        "_CostWindow": {
+          "additionalProperties": false,
+          "properties": {
+            "requested_from": {
+              "format": "date-time",
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "format": "date-time",
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "format": "date-time",
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "format": "date-time",
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "_CostWindow",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.agent-runs.v1",
+          "default": "solwyn.mcp.agent-runs.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_AgentRunListData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_AgentRunsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_agent_run",
+    "title": null,
+    "description": "Read one agent run by storage ID or exact raw run name. Accepts a project key or login.",
+    "inputSchema": {
+      "properties": {
+        "run": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Run",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "title": "get_agent_run_toolArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "_AgentRunEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^run_[0-9a-f]{32}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "parent_run_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Run Id"
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "last_seen_at": {
+              "format": "date-time",
+              "title": "Last Seen At",
+              "type": "string"
+            },
+            "total_calls": {
+              "title": "Total Calls",
+              "type": "integer"
+            },
+            "total_cost": {
+              "title": "Total Cost",
+              "type": "number"
+            },
+            "total_denied_cost": {
+              "title": "Total Denied Cost",
+              "type": "number"
+            },
+            "total_input_tokens": {
+              "title": "Total Input Tokens",
+              "type": "integer"
+            },
+            "total_output_tokens": {
+              "title": "Total Output Tokens",
+              "type": "integer"
+            },
+            "velocity_flags": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Velocity Flags"
+            },
+            "stopped_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped At"
+            },
+            "stopped_by_user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stopped By User Id"
+            },
+            "stoppable": {
+              "title": "Stoppable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "parent_run_id",
+            "project_id",
+            "started_at",
+            "last_seen_at",
+            "total_calls",
+            "total_cost",
+            "total_denied_cost",
+            "total_input_tokens",
+            "total_output_tokens",
+            "velocity_flags",
+            "stopped_at",
+            "stopped_by_user_id",
+            "stoppable"
+          ],
+          "title": "_AgentRunEntry",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.agent-run.v1",
+          "default": "solwyn.mcp.agent-run.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_AgentRunEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_AgentRunResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "list_alert_events",
+    "title": null,
+    "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "account": {
+          "default": false,
+          "title": "Account",
+          "type": "boolean"
+        },
+        "time_range": {
+          "default": "30d",
+          "title": "Time Range",
+          "type": "string"
+        },
+        "from_": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "rule_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Type"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope"
+        },
+        "failed_only": {
+          "default": false,
+          "title": "Failed Only",
+          "type": "boolean"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "all_pages": {
+          "default": false,
+          "title": "All Pages",
+          "type": "boolean"
+        }
+      },
+      "title": "list_alert_eventsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "AlertDeliveryLegEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "leg_key": {
+              "title": "Leg Key",
+              "type": "string"
+            },
+            "channel_type": {
+              "title": "Channel Type",
+              "type": "string"
+            },
+            "channel_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Channel Name"
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "retrying",
+                "accepted",
+                "delivered",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "attempt_count": {
+              "title": "Attempt Count",
+              "type": "integer"
+            },
+            "last_attempted_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Attempted At"
+            },
+            "delivered_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delivered At"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error"
+            }
+          },
+          "required": [
+            "leg_key",
+            "channel_type",
+            "status",
+            "attempt_count"
+          ],
+          "title": "AlertDeliveryLegEntry",
+          "type": "object"
+        },
+        "AlertDeliveryStatus": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "pending",
+                "retrying",
+                "processed",
+                "delivered",
+                "partial",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "attempt_count": {
+              "title": "Attempt Count",
+              "type": "integer"
+            },
+            "next_attempt_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Next Attempt At"
+            },
+            "dead_lettered_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Dead Lettered At"
+            },
+            "legs": {
+              "items": {
+                "$ref": "#/$defs/AlertDeliveryLegEntry"
+              },
+              "title": "Legs",
+              "type": "array"
+            }
+          },
+          "required": [
+            "status",
+            "attempt_count",
+            "legs"
+          ],
+          "title": "AlertDeliveryStatus",
+          "type": "object"
+        },
+        "AlertEventEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "project_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Project Id"
+            },
+            "account_id": {
+              "title": "Account Id",
+              "type": "string"
+            },
+            "scope": {
+              "title": "Scope",
+              "type": "string"
+            },
+            "rule_key": {
+              "title": "Rule Key",
+              "type": "string"
+            },
+            "emitted_at": {
+              "format": "date-time",
+              "title": "Emitted At",
+              "type": "string"
+            },
+            "event_type": {
+              "title": "Event Type",
+              "type": "string"
+            },
+            "rule_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Rule Type"
+            },
+            "value_at_event": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value At Event"
+            },
+            "threshold_at_event": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Threshold At Event"
+            },
+            "period_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Period Key"
+            },
+            "linked_event_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Linked Event Ids",
+              "type": "array"
+            },
+            "metadata_json": {
+              "additionalProperties": true,
+              "title": "Metadata Json",
+              "type": "object"
+            },
+            "delivery": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AlertDeliveryStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "id",
+            "account_id",
+            "scope",
+            "rule_key",
+            "emitted_at",
+            "event_type"
+          ],
+          "title": "AlertEventEntry",
+          "type": "object"
+        },
+        "AlertEventListResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "events": {
+              "items": {
+                "$ref": "#/$defs/AlertEventEntry"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Next Cursor"
+            },
+            "window": {
+              "$ref": "#/$defs/AlertEventWindow"
+            }
+          },
+          "required": [
+            "events",
+            "window"
+          ],
+          "title": "AlertEventListResponse",
+          "type": "object"
+        },
+        "AlertEventWindow": {
+          "additionalProperties": false,
+          "description": "Alert history uses the same requested/effective window shape as costs.",
+          "properties": {
+            "requested_from": {
+              "title": "Requested From",
+              "type": "string"
+            },
+            "requested_to": {
+              "title": "Requested To",
+              "type": "string"
+            },
+            "effective_from": {
+              "title": "Effective From",
+              "type": "string"
+            },
+            "effective_to": {
+              "title": "Effective To",
+              "type": "string"
+            },
+            "retention_clamped": {
+              "title": "Retention Clamped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested_from",
+            "requested_to",
+            "effective_from",
+            "effective_to",
+            "retention_clamped"
+          ],
+          "title": "AlertEventWindow",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.alerts.v1",
+          "default": "solwyn.alerts.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlertEventListResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_AlertEventsResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "budget_check_batch",
+    "title": null,
+    "description": "Reserve budget immediately before multiple caller-made un-instrumented provider calls. Checks are JSON check bodies, fully validated before submission and chunked at 32; results preserve input order. Each allowed item holds its own reservation: confirm it after its call. Unknown models return per-item errors; 404/503 fail the request. Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. Admission counts each item against checks_per_minute. Do not poll or replay to refresh reservations.",
+    "inputSchema": {
+      "$defs": {
+        "BudgetCheckRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "tags": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tags"
+            },
+            "price_hints_version": {
+              "anyOf": [
+                {
+                  "const": "1",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Price Hints Version"
+            },
+            "estimated_input_tokens": {
+              "minimum": 0,
+              "title": "Estimated Input Tokens",
+              "type": "integer"
+            },
+            "model": {
+              "maxLength": 2048,
+              "title": "Model",
+              "type": "string"
+            },
+            "provider": {
+              "$ref": "#/$defs/ProviderName"
+            },
+            "estimated_media": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MediaUsage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "fallback_providers": {
+              "items": {
+                "$ref": "#/$defs/ProviderName"
+              },
+              "title": "Fallback Providers",
+              "type": "array"
+            },
+            "fallback_models": {
+              "items": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "title": "Fallback Models",
+              "type": "array"
+            },
+            "agent_run_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Run Id"
+            },
+            "run_directive_version": {
+              "anyOf": [
+                {
+                  "const": "1",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Run Directive Version"
+            }
+          },
+          "required": [
+            "estimated_input_tokens",
+            "model",
+            "provider"
+          ],
+          "title": "BudgetCheckRequest",
+          "type": "object"
+        },
+        "MediaUsage": {
+          "additionalProperties": false,
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
+          "properties": {
+            "image_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Image Count"
+            },
+            "generation_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Generation Count"
+            },
+            "video_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Video Seconds"
+            },
+            "audio_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Seconds"
+            },
+            "input_characters": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Characters"
+            },
+            "resolution": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Resolution"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Quality"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "MediaUsage",
+          "type": "object"
+        },
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/BudgetCheckRequest"
+          },
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        },
+        "no_record": {
+          "default": false,
+          "title": "No Record",
+          "type": "boolean"
+        },
+        "estimated_output_tokens": {
+          "anyOf": [
+            {
+              "maximum": 100000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Output Tokens"
+        }
+      },
+      "required": [
+        "checks"
+      ],
+      "title": "budget_check_batchArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "BudgetCheckBatchData": {
+          "additionalProperties": false,
+          "properties": {
+            "results": {
+              "items": {
+                "$ref": "#/$defs/BudgetCheckBatchItem"
+              },
+              "title": "Results",
+              "type": "array"
+            },
+            "failed_chunk_start": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Failed Chunk Start"
+            },
+            "total_checks": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Total Checks"
+            }
+          },
+          "required": [
+            "results"
+          ],
+          "title": "BudgetCheckBatchData",
+          "type": "object"
+        },
+        "BudgetCheckBatchItem": {
+          "additionalProperties": false,
+          "description": "Batch envelopes retain nullable result/error fields unlike single checks.",
+          "properties": {
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_BudgetCheckData"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "error_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Code"
+            },
+            "error_message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Message"
+            }
+          },
+          "title": "BudgetCheckBatchItem",
+          "type": "object"
+        },
+        "BudgetMode": {
+          "description": "Budget enforcement mode.",
+          "enum": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "title": "BudgetMode",
+          "type": "string"
+        },
+        "IngestDuplicate": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "reason": {
+              "enum": [
+                "call_id",
+                "legacy_key"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "call_id": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "reason",
+            "call_id"
+          ],
+          "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestRejection": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "unknown_model",
+                "unknown_service_tier",
+                "invalid_tags",
+                "tag_cardinality_exceeded",
+                "unsupported_modality"
+              ],
+              "title": "Code",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "code",
+            "model",
+            "message"
+          ],
+          "title": "IngestRejection",
+          "type": "object"
+        },
+        "ProviderName": {
+          "description": "Provider identifiers accepted by budget request endpoints.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "title": "ProviderName",
+          "type": "string"
+        },
+        "RecordingResult": {
+          "additionalProperties": false,
+          "properties": {
+            "ingested": {
+              "minimum": 0,
+              "title": "Ingested",
+              "type": "integer"
+            },
+            "rejected": {
+              "items": {
+                "$ref": "#/$defs/IngestRejection"
+              },
+              "title": "Rejected",
+              "type": "array"
+            },
+            "duplicates": {
+              "items": {
+                "$ref": "#/$defs/IngestDuplicate"
+              },
+              "title": "Duplicates",
+              "type": "array"
+            },
+            "status": {
+              "enum": [
+                "ingested",
+                "deduplicated",
+                "rejected",
+                "skipped",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "call_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Call Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "ingested",
+            "status"
+          ],
+          "title": "RecordingResult",
+          "type": "object"
+        },
+        "_BudgetCheckData": {
+          "properties": {
+            "allowed": {
+              "title": "Allowed",
+              "type": "boolean"
+            },
+            "remaining_budget": {
+              "title": "Remaining Budget",
+              "type": "number"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "mode": {
+              "$ref": "#/$defs/BudgetMode"
+            },
+            "budget_limit": {
+              "title": "Budget Limit",
+              "type": "number"
+            },
+            "current_usage": {
+              "title": "Current Usage",
+              "type": "number"
+            },
+            "denied_by_period": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Denied By Period"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recorded": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecordingResult"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "project_id": {
+              "title": "Project Id",
+              "type": "string"
+            },
+            "price_hints": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "type": "number"
+                  },
+                  "propertyNames": {
+                    "$ref": "#/$defs/ProviderName"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Price Hints"
+            },
+            "run_control": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_RunControlDirective"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "const": "run_terminated",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            }
+          },
+          "required": [
+            "allowed",
+            "remaining_budget",
+            "mode",
+            "budget_limit",
+            "current_usage",
+            "project_id"
+          ],
+          "title": "_BudgetCheckData",
+          "type": "object"
+        },
+        "_RunControlDirective": {
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": "1",
+              "title": "Version",
+              "type": "string"
+            },
+            "action": {
+              "const": "terminate",
+              "title": "Action",
+              "type": "string"
+            },
+            "agent_run_id": {
+              "maxLength": 256,
+              "title": "Agent Run Id",
+              "type": "string"
+            },
+            "reason": {
+              "const": "manual_kill",
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "action",
+            "agent_run_id",
+            "reason"
+          ],
+          "title": "_RunControlDirective",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.budget.check.batch.v1",
+          "default": "solwyn.budget.check.batch.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetCheckBatchData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_BudgetCheckBatchResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
+  },
+  {
+    "name": "get_overview",
+    "title": null,
+    "description": "Read calendar-month account spend, requests, trend, savings, and free-tier quota metadata. Requires login/JWT authentication.",
+    "inputSchema": {
+      "properties": {},
+      "title": "get_overviewArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "OverviewResponse": {
+          "properties": {
+            "total_spend": {
+              "title": "Total Spend",
+              "type": "number"
+            },
+            "total_requests": {
+              "title": "Total Requests",
+              "type": "integer"
+            },
+            "project_count": {
+              "title": "Project Count",
+              "type": "integer"
+            },
+            "trend_vs_last_period": {
+              "title": "Trend Vs Last Period",
+              "type": "number"
+            },
+            "period_start": {
+              "format": "date",
+              "title": "Period Start",
+              "type": "string"
+            },
+            "period_end": {
+              "format": "date",
+              "title": "Period End",
+              "type": "string"
+            },
+            "savings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SavingsSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "quota_exceeded": {
+              "title": "Quota Exceeded",
+              "type": "boolean"
+            },
+            "included_requests": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Included Requests"
+            },
+            "current_requests": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Requests"
+            },
+            "window_start": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window Start"
+            },
+            "window_end": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window End"
+            }
+          },
+          "required": [
+            "total_spend",
+            "total_requests",
+            "project_count",
+            "trend_vs_last_period",
+            "period_start",
+            "period_end",
+            "quota_exceeded"
+          ],
+          "title": "OverviewResponse",
+          "type": "object"
+        },
+        "SavingsSummary": {
+          "properties": {
+            "saved_cost": {
+              "title": "Saved Cost",
+              "type": "number"
+            },
+            "saved_cost_upper": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Cost Upper"
+            },
+            "saved_input_tokens": {
+              "title": "Saved Input Tokens",
+              "type": "integer"
+            },
+            "blocked_call_count": {
+              "title": "Blocked Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "saved_cost",
+            "saved_cost_upper",
+            "saved_input_tokens",
+            "blocked_call_count"
+          ],
+          "title": "SavingsSummary",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.overview.v1",
+          "default": "solwyn.mcp.overview.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OverviewResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_OverviewResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   }
 ]

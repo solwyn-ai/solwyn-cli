@@ -1,0 +1,10 @@
+Check                                                   Status
+Overall — One or more diagnostics need attention.     degraded
+Config — Configuration loaded.                              ok
+Keychain — Stored credential found.                         ok
+Readiness — HTTP 503; service solwyn-api              degraded
+Readiness database — connection refused               degraded
+Readiness redis — failover (non-gating)               degraded
+Authenticated project_key — Project budget readable.        ok
+Snapshot — 2026-09-05 (0 days old)                          ok
+Core ref — 690d61c0de1f11c6653f7a8a17800356f5009a8c         ok

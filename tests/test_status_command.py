@@ -32,6 +32,7 @@ BUDGET_RESPONSE = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 37.5,
     "thresholds": [],
     "sub_period": None,
@@ -50,9 +51,12 @@ PROVIDERS_RESPONSE = [
         "success_count": 98,
         "error_count": 2,
         "failover_count": 1,
+        "model_failover_count": 1,
+        "provider_failover_count": 0,
         "success_rate": 98.0,
         "avg_latency_ms": 245.5,
         "circuit_state": "closed",
+        "circuit_source": "reported",
     },
     {
         "provider": "anthropic",
@@ -60,11 +64,63 @@ PROVIDERS_RESPONSE = [
         "success_count": 40,
         "error_count": 10,
         "failover_count": 3,
+        "model_failover_count": 1,
+        "provider_failover_count": 2,
         "success_rate": 80.0,
         "avg_latency_ms": 410.0,
         "circuit_state": "open",
+        "circuit_source": "inferred",
     },
 ]
+
+FORECAST_RESPONSE = {
+    "current_spend": 12.5,
+    "forecast_eom": 75.0,
+    "burn_rate_per_day": 2.5,
+    "ci_low": 60.0,
+    "ci_high": 90.0,
+    "period_start": "2026-09-01T00:00:00+00:00",
+    "period_end": "2026-09-30T23:59:59.999999+00:00",
+    "days_elapsed": 5,
+    "days_remaining": 25,
+    "insufficient_data": False,
+}
+
+FAILOVERS_RESPONSE = [
+    {
+        "requested_provider": "openai",
+        "requested_model": "gpt-5",
+        "served_provider": "anthropic",
+        "served_model": "claude-sonnet-4",
+        "failover_reason": "circuit_open",
+        "failover_error_class": None,
+        "event_count": 4,
+        "total_cost_usd": 1.234567,
+        "first_seen": "2026-09-01T10:00:00Z",
+        "last_seen": "2026-09-05T12:30:00Z",
+        "is_unpriced": False,
+    }
+]
+
+OVERVIEW_RESPONSE = {
+    "total_spend": 42.5,
+    "total_requests": 5100,
+    "project_count": 3,
+    "trend_vs_last_period": 0.125,
+    "period_start": "2026-09-01",
+    "period_end": "2026-09-30",
+    "savings": {
+        "saved_cost": 4.25,
+        "saved_cost_upper": None,
+        "saved_input_tokens": 12000,
+        "blocked_call_count": 6,
+    },
+    "quota_exceeded": True,
+    "included_requests": 5000,
+    "current_requests": 5100,
+    "window_start": "2026-09-01T00:00:00Z",
+    "window_end": "2026-10-01T00:00:00Z",
+}
 
 
 class FakeClient:
@@ -118,20 +174,10 @@ def test_status_command_is_registered() -> None:
     assert "status" in result.stdout
 
 
-@pytest.mark.parametrize(
-    "credential",
-    [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
-    ],
-)
-def test_status_supports_bare_key_and_jwt_with_two_read_only_gets(
+def test_status_supports_project_key_with_two_read_only_gets(
     monkeypatch: pytest.MonkeyPatch,
-    credential: auth.ResolvedCredential,
 ) -> None:
+    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda: credential, raising=False
     )
@@ -152,19 +198,56 @@ def test_status_supports_bare_key_and_jwt_with_two_read_only_gets(
     ]
     assert all(method == "GET" for method, _, _ in client.requests)
     assert_matches_golden(result.stdout, GOLDEN_DIR / "status.json")
+    payload = json.loads(result.stdout)
+    assert "forecast" not in payload
+    assert "failovers" not in payload
     assert result.stderr == ""
     rendered = result.stdout + result.stderr + repr(result.exception)
     for secret in (VALID_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
         assert secret not in rendered
 
 
-def test_status_non_tty_table_and_no_color_match_golden(
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_status_jwt_adds_one_account_savings_summary(
     monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
 ) -> None:
     credential = auth.JwtCredential(
         access_token=ACCESS_TOKEN,
         refresh_token=REFRESH_TOKEN,
     )
+    monkeypatch.setattr(
+        status_module, "resolve_credential", lambda: credential, raising=False
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=OVERVIEW_RESPONSE),
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--format", output_format, "--no-color", "-p", "proj_alpha", "status"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
+        ("GET", "/api/v1/projects/proj_alpha/providers", {}),
+        ("GET", "/api/v1/overview", {}),
+    ]
+    suffix = "json" if output_format == "json" else "txt"
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR / f"status-jwt-savings-{output_format}.{suffix}",
+    )
+    assert result.stderr == ""
+
+
+def test_status_non_tty_table_and_no_color_match_golden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda: credential, raising=False
     )
@@ -198,6 +281,74 @@ def test_status_honors_environment_json_format(
 
     assert result.exit_code == 0
     assert_matches_golden(result.stdout, GOLDEN_DIR / "status.json")
+
+
+def test_status_optional_forecast_and_failover_shortcuts_add_reads_and_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    monkeypatch.setattr(
+        status_module, "resolve_credential", lambda: credential, raising=False
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=FORECAST_RESPONSE),
+        httpx.Response(200, json=FAILOVERS_RESPONSE),
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--no-color", "-p", "proj_alpha", "status", "--forecast", "--failovers"],
+    )
+
+    assert result.exit_code == 0
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
+        ("GET", "/api/v1/projects/proj_alpha/providers", {}),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/forecast",
+            {"params": {"period": "mtd"}},
+        ),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/providers/failovers",
+            {"params": {"range": "7d"}},
+        ),
+    ]
+    assert_matches_golden(result.stdout, GOLDEN_DIR / "status-flags-table.txt")
+    assert result.stderr == "Showing top 50 groups of an unknown total.\n"
+
+
+def test_status_optional_sections_are_schema_bearing_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        status_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=FORECAST_RESPONSE),
+        httpx.Response(200, json=FAILOVERS_RESPONSE),
+        httpx.Response(200, json=OVERVIEW_RESPONSE),
+    ]
+
+    result = runner.invoke(
+        app,
+        ["--json", "-p", "proj_alpha", "status", "--forecast", "--failovers"],
+    )
+
+    assert result.exit_code == 0
+    assert_matches_golden(result.stdout, GOLDEN_DIR / "status-flags.json")
+    assert result.stderr == "Showing top 50 groups of an unknown total.\n"
 
 
 @pytest.mark.parametrize(

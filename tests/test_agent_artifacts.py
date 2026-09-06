@@ -22,6 +22,7 @@ from solwyn_cli.main import app
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
+REPOSITORY_ROOT = Path(__file__).parent.parent
 ARTIFACT_PATHS = (CLAUDE_SKILL_PATH, CURSOR_RULE_PATH, AGENTS_PATH)
 
 
@@ -82,6 +83,46 @@ def test_artifact_content_teaches_guardrail_machine_and_trust_contracts() -> Non
     )
     for phrase in required:
         assert phrase in guidance
+
+
+def test_artifact_content_teaches_sdk_06_run_and_attribution_contracts() -> None:
+    guidance = render_surface(ArtifactSurface.AGENT_CONTEXT)
+
+    required = (
+        "SDK 0.6",
+        "SOLWYN_AGENT_RUN_ID",
+        "Reuse one run ID for the entire job",
+        "run_terminated",
+        "do not retry under a new run ID",
+        "solwyn runs stop RUN",
+        "in-flight requests finish",
+        "enforcement_deadline",
+        "SOLWYN_TAGS",
+        "split on the first `=`",
+        "do not trim whitespace",
+        "last duplicate key wins",
+        "solwyn record",
+        "after the caller-made provider call",
+        "canonical lowercase UUID",
+        "Reuse that same call ID",
+        "records attribution after settlement by default",
+        "Do not also run `solwyn record`",
+        "--no-record",
+        "relative price hints",
+    )
+    for phrase in required:
+        assert phrase in guidance
+
+
+def test_readme_frames_sdk_06_enforcement_attribution_and_mcp_capabilities() -> None:
+    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "enforce and attribute LLM spend" in readme
+    assert "SDK 0.6.0" in readme
+    assert "covers enforcement and attribution" in readme
+    assert "MCP capability and schema discovery" in readme
+    assert "serves read, guardrail, and attribution tools" in readme
+    assert "serves read, guardrail, and attribution tools over stdio —" not in readme
 
 
 def test_renderers_add_only_deterministic_surface_framing() -> None:

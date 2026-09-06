@@ -63,6 +63,13 @@ _ENTITLEMENT_HINTS = {
     "quota_exceeded": _quota_hint,
     "project_limit_reached": _project_limit_hint,
 }
+_CROSS_PROJECT_KEY_DETAILS = frozenset(
+    {
+        "Cannot access agent runs for a different project",
+        "Cannot access forecast for a different project",
+        "Cannot access a different project",
+    }
+)
 
 
 def _response_detail(response: httpx.Response) -> RawDetail | None:
@@ -104,6 +111,36 @@ def error_from_response(
         cta_path = _safe_cta_path(detail.get("cta_path"))
         if hint_builder is not None and cta_path is not None:
             hint = hint_builder(cta_path)
+
+        allowed_values = detail.get("allowed_values")
+        if (
+            response.status_code == 402
+            and isinstance(allowed_values, list)
+            and all(isinstance(value, str) for value in allowed_values)
+        ):
+            allowed_hint = "Allowed values: " + ", ".join(allowed_values)
+            hint = f"{allowed_hint}. {hint}" if hint else allowed_hint
+
+    if response.status_code == 403:
+        role_codes = {
+            "permission_required",
+            "owner_required",
+            "admin_required",
+            "role_required",
+        }
+        if code == "read_only_key":
+            hint = "Rotate to a full-scope key with solwyn keys rotate --scope full."
+        elif detail == "This endpoint requires JWT authentication":
+            hint = "Run solwyn login to authenticate with your user account."
+        elif isinstance(detail, str) and detail in _CROSS_PROJECT_KEY_DETAILS:
+            hint = (
+                "Select the project associated with this key, or configure a key "
+                "for the selected project."
+            )
+        elif code in role_codes or isinstance(detail, str) and detail in role_codes:
+            hint = (
+                "Your role cannot perform this action; use solwyn whoami to inspect it."
+            )
 
     return ApiError(
         status_code=response.status_code,

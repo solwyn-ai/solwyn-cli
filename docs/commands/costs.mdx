@@ -1,0 +1,128 @@
+---
+title: Costs
+---
+
+`solwyn costs` shows project costs grouped by model. Select the project with
+`--project` (or `SOLWYN_PROJECT_ID`) before `costs`. Project keys and user login
+both work. Use `--json` before `costs` for the `solwyn.costs.v1` envelope.
+
+Add `--account` to read one JWT-authenticated rollup across every active
+project. No project selection is required. Account output uses the
+`solwyn.account_costs.v1` envelope and defaults to `--group-by project`.
+
+```sh
+solwyn --project proj_example costs --group-by day
+solwyn --json costs --account --group-by project --range 30d
+solwyn --json --project proj_example costs --group-by tag:customer --tag customer=example
+solwyn --project proj_example costs total --from 2026-08-01T00:00:00Z --to 2026-09-01T00:00:00Z
+solwyn --project proj_example costs events --limit 25 --cursor CURSOR
+solwyn --project proj_example costs export --format json > costs.jsonl
+solwyn --project proj_example costs baseline --days 7
+solwyn --project proj_example costs unit-economics --range 30d --cause
+solwyn --project proj_example costs drift --range 7d
+solwyn --project proj_example costs priced-models
+solwyn --project proj_example costs simulate --provider openai --model gpt-5 --range 30d
+```
+
+Aggregate costs, `costs events`, `costs total`, and `costs export` accept `--model`,
+`--provider`, `--modality`, `--status`, `--service-tier`, `--provider-region`,
+`--agent-run`, `--failover-reason`,
+`--model-fallback/--no-model-fallback`, `--provider-fallback/--no-provider-fallback`,
+and repeatable `--tag key=value`. Tag filters split at the first `=` and preserve
+spaces and empty values; duplicate keys are rejected. Tag keys contain 1–64
+characters, values at most 256, and neither may contain NUL.
+
+Account costs accept model, provider, and modality filters plus the shared
+preset or paired custom window. Account grouping is limited by Core to
+`project`, `day`, `model`, or `provider`; unsupported values return a usage
+error. Project-only status, service-tier, provider-region, run, failover, and
+tag filters are rejected locally with exit 2 so they cannot be silently ignored.
+
+`--agent-run` accepts either the raw run identifier or the stored
+`run_<32 lowercase hex>` identifier and sends only the matching Core parameter.
+
+Aggregate costs, `costs events`, and `costs total` default to `--range 7d`;
+`costs export` defaults to `30d`. Paired timezone-aware `--from` and `--to` replace
+the preset. The end is exclusive. For these reads, the CLI checks billing
+capabilities once per invocation to validate the requested range and dimension
+and show current plan choices. Core decides whether an unavailable choice is
+invalid or needs an upgrade. If capability discovery fails, the cost request
+still runs. No plan-specific grouping list is embedded in the CLI.
+
+Aggregate `--group-by` accepts Core dimensions and `tag:<key>`. Tag analytics need
+Team. Core caps non-day groups at 100 and returns `truncated`; use `costs total`
+for uncapped totals. JSON includes the requested and effective `window`; retention
+clamp warnings go to stderr. `agent_run_name` is displayed when supplied. Missing
+savings are omitted from CLI JSON, and an unavailable savings upper bound is `—`
+in the human summary, never zero.
+
+For account project grouping, each row includes the project's current budget
+period cost and a chronological daily-spend sparkline. Empty daily data renders
+as `—`; an all-zero series renders at the lowest sparkline level. The account
+response also prints Core's requested/effective window headers to stderr when
+present.
+
+On a free account past its monthly request quota, Core returns
+`analytics_withheld=true` for project grouping. The CLI emits only project
+identity and current-period budget-gauge values in each row. It suppresses the
+wire's placeholder analytic zeros and empty daily list so withheld analytics
+can never be mistaken for zero spend. Savings remains visible when Core supplies
+it. Other account groupings can return Core's quota-exceeded 402 with its safe
+dashboard path.
+
+`costs events` emits `solwyn.costs.events.v1`, including `items`, `next_cursor`,
+`has_more`, and `window`. Table output prints a continuation notice and the next
+cursor on stderr when another page is available. Rows preserve denied cost, denial source/reason, SDK
+instance ID, and entitled tags. Events require Production except the onboarding
+probe (`--limit 1` without a cursor). Limits are 1–100. The event API omits
+`call_id`, provider fallback and failover reason; raw export provides the failover
+columns. `costs total` emits `solwyn.costs.total.v1`.
+
+`costs export --format csv|json` copies response bytes directly to stdout. JSON
+means NDJSON, one object per line. Raw export requires Team; set `--group-by` for
+Production's aggregate export. Free accounts cannot export. Core's CSV apostrophe
+prefix prevents formula injection and is preserved. Parse columns by header;
+new columns may be appended. Requested/effective window, retention-clamp, and
+truncation headers are printed to stderr. An interrupted stream exits nonzero;
+its output can be incomplete and is never automatically replayed.
+
+Invalid queries (Core 400/422) exit 2; authentication/authorization errors exit 3.
+Upgrade errors print Core's message, allowed choices when supplied, and a safe
+dashboard path. They never launch a checkout.
+
+## Baselines, unit economics, and drift
+
+`costs baseline --days 3..30` reads the daily-spend materialized view. The view
+is refreshed hourly, so it can trail the live aggregate. `armed` becomes true
+after Core has at least three days of data.
+
+`costs unit-economics` accepts `--range 7d|30d|90d`, defaults to `30d`, and
+compares the immediately preceding window unless `--no-vs-prev` is set. Add
+`--cause` to request Core's suspected-cause analysis. A metric row is displayed
+only when Core returns a non-null cell. Null previous values and deltas render as
+`—`; a null `cost_per_agent_run` (including on pre-P6 Core deployments) or
+`suspected_cause` is omitted rather than displayed as zero. JSON preserves
+Core's explicit nulls.
+
+`costs drift` compares stored actual spend with pre-flight estimates. It accepts
+the shared preset or paired custom window. The response includes Core's caveats:
+null estimates are excluded, unit-priced and unpriced estimates are null, and
+denied events are included. Retention-clamp warnings go to stderr.
+
+## Pricing discovery and simulation
+
+`costs priced-models` lists the exact provider/model/modality combinations in
+Core's first-party vendored catalog and includes `pricing_version`. It takes no
+range or custom-window options because the catalog is a current snapshot.
+
+`costs simulate` replays a bounded historical window against one target from
+`priced-models`. It reports stored baseline spend, simulated current-rate spend,
+the delta, scanned/baseline/repriced event counts, exclusion counts, and
+truthfulness caveats. Bedrock requires both `--region` and `--service-tier`;
+other providers reject either option. The CLI validates those combinations
+before sending a request. Unpriced and local traffic are excluded from both
+costs. Priced modality mismatches and events without the required usage
+breakdown remain in the stored-cost baseline but are excluded from current-rate
+repricing, so the CLI warns when the delta compares unequal event populations.
+Current rates are a pricing snapshot and tokenizer equivalence is approximate.
+Simulation does not rewrite historical spend.

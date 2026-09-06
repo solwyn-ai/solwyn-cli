@@ -8,19 +8,239 @@ from typing import Any, get_args
 
 import pytest
 
-from solwyn_cli.commands import budget, init, projects
+from solwyn_cli.commands import audit, budget, init, projects
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "AccountSelfResponse": (
+        "id",
+        "display_name",
+        "subscription_tier",
+        "alert_email_override",
+        "seat_limit",
+        "seats_used",
+        "your_role",
+    ),
+    "HealthResponse": ("status", "service"),
+    "ReadinessCheck": ("name", "status", "detail"),
+    "ReadinessResponse": ("status", "service", "checks"),
+    "SpendControlAttestation": (
+        "schema_version",
+        "generated_at",
+        "scope",
+        "range",
+        "window",
+        "spend_summary",
+        "budgets",
+        "alerts",
+        "account_spend_alert",
+        "subscription",
+        "audit",
+    ),
+    "AttestationScope": ("type", "account_id", "project_id"),
+    "AttestationWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AttestationSpendSummary": (
+        "real_spend_usd",
+        "real_call_count",
+        "denied_spend_usd",
+        "denial_count",
+    ),
+    "AttestationBudget": (
+        "project_id",
+        "project_name",
+        "archived",
+        "archived_at",
+        "budget_limit_usd",
+        "budget_period",
+        "budget_mode",
+        "sub_period",
+        "sub_limit_usd",
+        "rules",
+    ),
+    "AttestationAlertEvent": (
+        "id",
+        "project_id",
+        "account_id",
+        "scope",
+        "rule_key",
+        "emitted_at",
+        "event_type",
+        "rule_type",
+        "value_at_event",
+        "threshold_at_event",
+        "period_key",
+        "linked_event_ids",
+        "metadata_json",
+    ),
+    "AttestationAlerts": (
+        "begins_at",
+        "delivery_evidence_available",
+        "delivered_count",
+        "coverage_note",
+        "events",
+    ),
+    "AttestationAccountSpendAlert": (
+        "evidence_available",
+        "configured",
+        "spend_threshold_usd",
+        "enabled",
+        "snoozed_until",
+        "channel_ids",
+        "coverage_note",
+    ),
+    "AttestationAuditEvent": (
+        "id",
+        "account_id",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "detail",
+        "created_at",
+    ),
+    "AttestationSubscriptionSnapshot": (
+        "tier",
+        "billing_interval",
+        "status",
+        "pending_update_exists",
+        "current_period_start",
+        "current_period_end",
+        "cancel_at_period_end",
+        "pause_collection_exists",
+        "grace_period_until",
+        "raw_status_at",
+        "created_at",
+        "updated_at",
+    ),
+    "AttestationSubscription": (
+        "current_tier",
+        "snapshot",
+        "changes",
+        "coverage_note",
+    ),
+    "AttestationAudit": ("begins_at", "coverage_note", "events"),
+    "SubscriptionStatusResponse": (
+        "tier",
+        "billing_interval",
+        "limits",
+        "capabilities",
+        "status",
+        "current_period_end",
+        "cancel_at_period_end",
+        "grace_period_until",
+        "stripe_customer_id",
+        "recent_invoices",
+        "pending_plan",
+    ),
+    "TierCapabilities": (
+        "analytics",
+        "budget",
+        "notifications",
+        "api_keys",
+        "ingest",
+        "enforcement",
+        "failover_entitlement",
+        "data_retention_days",
+    ),
+    "AnalyticsCapabilities": (
+        "allowed_ranges",
+        "allowed_group_by",
+        "tags",
+        "csv_export_mode",
+        "cost_events_paginated",
+    ),
+    "BudgetCapabilities": (
+        "allowed_modes",
+        "allowed_periods",
+        "sub_period_enabled",
+        "max_thresholds",
+        "max_hard_cap_projects",
+        "account_spend_alerts",
+    ),
+    "NotificationCapabilities": (
+        "notification_channels",
+        "sms_allowed_events",
+        "email_allowed_events",
+    ),
+    "ApiKeyCapabilities": ("expiry_configurable",),
+    "IngestCapabilities": ("rate_limit_per_second",),
+    "EnforcementCapabilities": ("checks_per_minute",),
+    "InvoiceSummary": ("hosted_url", "amount_due_cents", "period_end", "status"),
+    "PendingPlan": ("tier", "billing_interval"),
+    "RuleActionResponse": ("rule_key", "paused", "deleted"),
+    "SnoozeResponse": ("snoozed_until",),
+    "AlertsPreviewResponse": ("results",),
+    "BudgetRestoreDefaultsResponse": ("project_id", "thresholds"),
+    "BudgetThresholdEntry": ("percent", "channel_ids", "snoozed_until"),
+    "NotificationConfigResponse": (
+        "channel_ids",
+        "channels",
+        "sms_config",
+        "email",
+        "severity_threshold",
+        "enabled_event_types",
+        "capabilities",
+    ),
+    "NotificationCapabilitiesResponse": (
+        "available_channels",
+        "sms_allowed_events",
+        "email_allowed_events",
+    ),
+    "NotificationChannelResponse": (
+        "id",
+        "account_id",
+        "channel_type",
+        "name",
+        "slack_config",
+        "pagerduty_config",
+        "teams_config",
+        "discord_config",
+        "telegram_config",
+        "created_at",
+        "updated_at",
+    ),
+    "SlackConfig": ("webhook_url", "bot_token", "channel"),
+    "PagerDutyConfig": ("routing_key", "api_token"),
+    "TeamsConfig": ("webhook_url",),
+    "DiscordConfig": ("webhook_url",),
+    "TelegramConfig": ("bot_token", "chat_id"),
+    "SmsConfig": ("enabled",),
+    "EmailConfig": ("enabled",),
+    "AlertEmailResponse": ("effective_email", "override"),
+    "NotificationChannelTestResponse": ("success", "message"),
+    "SlackTestResponse": ("success", "message"),
+    "PagerDutyTestResponse": ("success", "message"),
+    "SmsTestResponse": ("success", "message"),
+    "EmailTestResponse": ("delivered",),
+    "TagDiscoveryResponse": ("keys", "usage", "scope"),
+    "TagKeySummary": (
+        "key",
+        "values_count",
+        "first_seen_at",
+        "last_seen_at",
+        "similar",
+    ),
+    "TagRegistryUsage": ("keys_used", "keys_cap", "values_cap_per_key"),
+    "TagValuesPage": ("key", "values", "next_cursor", "has_more"),
+    "TagValueSummary": ("value", "first_seen_at", "last_seen_at"),
+    "IngestResponse": ("ingested", "rejected", "duplicates"),
+    "IngestRejection": ("index", "code", "model", "message"),
+    "IngestDuplicate": ("index", "reason", "call_id"),
     "TokenResponse": ("access_token", "refresh_token", "token_type"),
     "Error402Response": (
         "detail.code",
         "detail.message",
         "detail.cta_path",
     ),
-    "UpgradeRequiredDetail": ("code", "message", "cta_path"),
+    "UpgradeRequiredDetail": ("code", "message", "cta_path", "allowed_values"),
     "QuotaExceededDetail": ("code", "message", "cta_path"),
     "ProjectLimitReachedDetail": ("code", "message", "cta_path"),
     # Generic HTTP error parsing consumes detail; retry timing uses the header.
@@ -67,6 +287,29 @@ RESPONSE_READS = {
         "rotation_grace_until",
         "scope",
     ),
+    "WebhookResponse": (
+        "id",
+        "url",
+        "events",
+        "is_active",
+        "secret_prefix",
+        "created_at",
+    ),
+    "WebhookCreateResponse": (
+        "id",
+        "url",
+        "events",
+        "is_active",
+        "secret_prefix",
+        "created_at",
+        "signing_secret",
+    ),
+    "WebhookRotateResponse": (
+        "id",
+        "key_version",
+        "signing_secret",
+        "secret_prefix",
+    ),
     "BudgetStatusResponse": (
         "project_id",
         "budget_limit",
@@ -80,6 +323,8 @@ RESPONSE_READS = {
         "sub_period",
         "sub_limit",
         "constraints",
+        "outage_overspend_ceiling_usd",
+        "lease_float_usd",
     ),
     "ThresholdStateResponse": (
         "type",
@@ -101,6 +346,7 @@ RESPONSE_READS = {
         "paused",
     ),
     "RunawayRunStateResponse": (
+        "mode",
         "type",
         "rule_key",
         "spend_threshold_usd",
@@ -132,6 +378,8 @@ RESPONSE_READS = {
         "paused",
     ),
     "ScopedBudgetStateResponse": (
+        "match_value",
+        "current_usage",
         "type",
         "rule_key",
         "scope",
@@ -161,6 +409,8 @@ RESPONSE_READS = {
     # failover_directive is deliberately unread — declined: it is only attached
     # when a request opts in via failover_directive_version, which the CLI does
     # not send (see the request-side registry in test_request_drift.py).
+    "BudgetCheckBatchResponse": ("results",),
+    "BudgetCheckBatchItem": ("result", "error_code", "error_message"),
     "BudgetCheckResponse": (
         "allowed",
         "remaining_budget",
@@ -171,6 +421,42 @@ RESPONSE_READS = {
         "denied_by_period",
         "project_id",
         "price_hints",
+        "run_control",
+    ),
+    "RunControlDirective": ("version", "action", "agent_run_id", "reason"),
+    "AgentRunEntry": (
+        "id",
+        "name",
+        "parent_run_id",
+        "project_id",
+        "started_at",
+        "last_seen_at",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "stopped_at",
+        "stopped_by_user_id",
+        "stoppable",
+    ),
+    "AgentRunListResponse": ("runs", "next_cursor", "has_more", "window"),
+    "CostWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AgentRunStopResponse": (
+        "project_id",
+        "run_id",
+        "run_name",
+        "stopped_at",
+        "already_stopped",
+        "leases_revoked",
+        "enforcement_deadline",
     ),
     "ProviderHealthResponse": (
         "provider",
@@ -178,14 +464,103 @@ RESPONSE_READS = {
         "success_count",
         "error_count",
         "failover_count",
+        "model_failover_count",
+        "provider_failover_count",
         "success_rate",
         "avg_latency_ms",
         "circuit_state",
+        "circuit_source",
     ),
-    "CostQueryResponse": ("project_id", "range", "group_by", "groups"),
+    "ForecastResponse": (
+        "current_spend",
+        "forecast_eom",
+        "burn_rate_per_day",
+        "ci_low",
+        "ci_high",
+        "period_start",
+        "period_end",
+        "days_elapsed",
+        "days_remaining",
+        "insufficient_data",
+    ),
+    "ProviderFailoverResponse": (
+        "requested_provider",
+        "requested_model",
+        "served_provider",
+        "served_model",
+        "failover_reason",
+        "failover_error_class",
+        "event_count",
+        "total_cost_usd",
+        "first_seen",
+        "last_seen",
+        "is_unpriced",
+    ),
+    "UntrackedSurfaceResponse": (
+        "provider",
+        "client_shape",
+        "mode",
+        "surface",
+        "rule_kind",
+        "capability_scope",
+        "posture",
+        "occurrences",
+        "first_seen_at",
+        "last_seen_at",
+    ),
+    "CostQueryResponse": (
+        "project_id",
+        "range",
+        "group_by",
+        "groups",
+        "truncated",
+        "savings",
+        "window",
+    ),
+    "AccountCostQueryResponse": (
+        "range",
+        "group_by",
+        "groups",
+        "truncated",
+        "analytics_withheld",
+        "savings",
+        "window",
+    ),
+    "AccountCostGroup": (
+        "group_key",
+        "provider",
+        "modality",
+        "agent_run_name",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "call_count",
+        "unpriced_call_count",
+        "local_call_count",
+        "project_name",
+        "current_period_cost",
+        "daily",
+    ),
+    "AccountCostDailyPoint": ("day", "cost"),
+    "OverviewResponse": (
+        "total_spend",
+        "total_requests",
+        "project_count",
+        "trend_vs_last_period",
+        "period_start",
+        "period_end",
+        "savings",
+        "quota_exceeded",
+        "included_requests",
+        "current_requests",
+        "window_start",
+        "window_end",
+    ),
     "CostGroup": (
         "group_key",
         "provider",
+        "modality",
+        "agent_run_name",
         "total_cost",
         "total_input_tokens",
         "total_output_tokens",
@@ -193,9 +568,417 @@ RESPONSE_READS = {
         "unpriced_call_count",
         "local_call_count",
     ),
+    "SavingsSummary": (
+        "saved_cost",
+        "saved_cost_upper",
+        "saved_input_tokens",
+        "blocked_call_count",
+    ),
+    "CostEventResponse": (
+        "id",
+        "project_id",
+        "agent_run_id",
+        "provider",
+        "model",
+        "modality",
+        "provider_region",
+        "service_tier",
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens",
+        "reasoning_tokens",
+        "audio_input_tokens",
+        "audio_output_tokens",
+        "image_input_tokens",
+        "image_output_tokens",
+        "cost",
+        "denied_cost",
+        "deny_source",
+        "deny_reason",
+        "estimated_cost",
+        "is_unpriced",
+        "is_estimated",
+        "media",
+        "tags",
+        "status",
+        "is_model_fallback",
+        "latency_ms",
+        "sdk_instance_id",
+        "created_at",
+    ),
+    "CostEventsResponse": ("items", "next_cursor", "has_more", "window"),
+    "CostTotalResponse": (
+        "project_id",
+        "range",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "call_count",
+        "unpriced_call_count",
+        "local_call_count",
+        "savings",
+        "window",
+    ),
+    "MediaBreakdown": (
+        "image_count",
+        "generation_count",
+        "video_seconds",
+        "audio_seconds",
+        "input_characters",
+        "resolution",
+        "quality",
+        "is_estimated",
+    ),
+    "BaselineResult": (
+        "project_id",
+        "lookback_days",
+        "days_with_data",
+        "mean_daily_spend",
+        "stdev_daily_spend",
+        "armed",
+    ),
+    "UnitEconomicsResponse": (
+        "range",
+        "window_start",
+        "window_end",
+        "prev_window_start",
+        "prev_window_end",
+        "cost_per_request",
+        "cost_per_agent_run",
+        "tokens_per_dollar",
+        "avg_prompt_tokens",
+        "suspected_cause",
+    ),
+    "DeltaCell": ("value", "prev_value", "delta_pct", "context"),
+    "CauseResult": ("summary", "confidence", "spans"),
+    "CauseSpan": ("kind", "label", "contribution_pct"),
+    "CostDriftResponse": (
+        "project_id",
+        "range",
+        "window",
+        "actual_total",
+        "estimate_total",
+        "difference",
+        "included_event_count",
+        "missing_estimate_count",
+        "groups",
+        "caveats",
+    ),
+    "DriftGroup": (
+        "provider",
+        "model",
+        "actual_cost",
+        "estimated_cost",
+        "difference",
+        "event_count",
+    ),
+    "DriftCaveats": (
+        "estimate_heuristic",
+        "null_estimates_excluded",
+        "unit_priced_and_unpriced_estimates_are_null",
+        "denied_events_included",
+    ),
+    "PricedModelsResponse": (
+        "project_id",
+        "pricing_version",
+        "provenance",
+        "models",
+    ),
+    "PricedModelTarget": ("provider", "model", "modality"),
+    "CostSimulationResponse": (
+        "project_id",
+        "range",
+        "window",
+        "target",
+        "baseline_actual_cost",
+        "simulated_cost",
+        "delta_cost",
+        "scanned_event_count",
+        "baseline_event_count",
+        "included_event_count",
+        "excluded_event_count",
+        "excluded",
+        "caveats",
+    ),
+    "CostSimulationTarget": (
+        "provider",
+        "model",
+        "modality",
+        "region",
+        "service_tier",
+    ),
+    "SimulationExcludedCounts": (
+        "unpriced",
+        "local",
+        "modality_mismatch",
+        "missing_breakdown",
+    ),
+    "SimulationCaveats": (
+        "pricing_version",
+        "current_rates_snapshot",
+        "baseline_uses_stored_actual_cost",
+        "tokenizer_equivalence_approximation",
+        "unpriced_and_local_excluded",
+        "modality_mismatches_excluded",
+    ),
+    "AlertEventEntry": (
+        "id",
+        "project_id",
+        "account_id",
+        "scope",
+        "rule_key",
+        "emitted_at",
+        "event_type",
+        "rule_type",
+        "value_at_event",
+        "threshold_at_event",
+        "period_key",
+        "linked_event_ids",
+        "metadata_json",
+        "delivery",
+    ),
+    "AlertDeliveryStatus": (
+        "status",
+        "attempt_count",
+        "next_attempt_at",
+        "dead_lettered_at",
+        "legs",
+    ),
+    "AlertDeliveryLegEntry": (
+        "leg_key",
+        "channel_type",
+        "channel_name",
+        "status",
+        "attempt_count",
+        "last_attempted_at",
+        "delivered_at",
+        "error",
+    ),
+    "AlertEventListResponse": ("events", "next_cursor", "window"),
+    "AlertEventWindow": (
+        "requested_from",
+        "requested_to",
+        "effective_from",
+        "effective_to",
+        "retention_clamped",
+    ),
+    "AccountAlertResponse": (
+        "account_id",
+        "spend_threshold_usd",
+        "enabled",
+        "channel_ids",
+        "snoozed_until",
+        "routing",
+        "created_at",
+        "updated_at",
+    ),
+    "AccountAlertSnoozeResponse": ("snoozed_until",),
+    "AuditEventEntry": (
+        "id",
+        "account_id",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "detail",
+        "created_at",
+    ),
+    "AuditEventListResponse": ("events", "next_cursor", "has_more"),
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/api/v1/projects/{project_id}/spend-control-attestation"): (
+        "200",
+        "object",
+        "SpendControlAttestation",
+    ),
+    ("GET", "/api/v1/account/spend-control-attestation"): (
+        "200",
+        "object",
+        "SpendControlAttestation",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/spend-baseline"): (
+        "200",
+        "object",
+        "BaselineResult",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/unit-economics"): (
+        "200",
+        "object",
+        "UnitEconomicsResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/costs/drift"): (
+        "200",
+        "object",
+        "CostDriftResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/costs/priced-models"): (
+        "200",
+        "object",
+        "PricedModelsResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/costs/simulate"): (
+        "200",
+        "object",
+        "CostSimulationResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/alert-events"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alert-events"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alerts"): ("200", "object", "AccountAlertResponse"),
+    ("PUT", "/api/v1/account/alerts"): ("200", "object", "AccountAlertResponse"),
+    ("POST", "/api/v1/account/alerts/preview"): ("200", "object", "AlertRouting"),
+    ("POST", "/api/v1/account/alerts/snooze"): (
+        "200",
+        "object",
+        "AccountAlertSnoozeResponse",
+    ),
+    ("POST", "/api/v1/account/alerts/unsnooze"): (
+        "200",
+        "object",
+        "AccountAlertSnoozeResponse",
+    ),
+    ("GET", "/api/v1/account/costs"): (
+        "200",
+        "object",
+        "AccountCostQueryResponse",
+    ),
+    ("GET", "/api/v1/overview"): ("200", "object", "OverviewResponse"),
+    ("GET", "/api/v1/projects/{project_id}/costs/events"): (
+        "200",
+        "object",
+        "CostEventsResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/costs/total"): (
+        "200",
+        "object",
+        "CostTotalResponse",
+    ),
+    ("GET", "/health"): ("200", "object", "HealthResponse"),
+    ("GET", "/health/ready"): ("200", "object", "ReadinessResponse"),
+    ("GET", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
+    ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
+    ("DELETE", "/api/v1/projects/{project_id}/budget/rule/{rule_key}"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/pause"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/resume"): (
+        "200",
+        "object",
+        "RuleActionResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/snooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/threshold/{percent}/snooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze"): (
+        "200",
+        "object",
+        "SnoozeResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/alerts/preview"): (
+        "200",
+        "object",
+        "AlertsPreviewResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/budget/restore-defaults"): (
+        "200",
+        "object",
+        "BudgetRestoreDefaultsResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/notifications"): (
+        "200",
+        "object",
+        "NotificationConfigResponse",
+    ),
+    ("PUT", "/api/v1/projects/{project_id}/notifications"): (
+        "200",
+        "object",
+        "NotificationConfigResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/notifications/test-slack"): (
+        "200",
+        "object",
+        "SlackTestResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/notifications/test-pagerduty"): (
+        "200",
+        "object",
+        "PagerDutyTestResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/notifications/test-sms"): (
+        "200",
+        "object",
+        "SmsTestResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/notifications/test-email"): (
+        "200",
+        "object",
+        "EmailTestResponse",
+    ),
+    ("GET", "/api/v1/account/notification-channels"): (
+        "200",
+        "array",
+        "NotificationChannelResponse",
+    ),
+    ("POST", "/api/v1/account/notification-channels"): (
+        "201",
+        "object",
+        "NotificationChannelResponse",
+    ),
+    ("GET", "/api/v1/account/notification-channels/{channel_id}"): (
+        "200",
+        "object",
+        "NotificationChannelResponse",
+    ),
+    ("PUT", "/api/v1/account/notification-channels/{channel_id}"): (
+        "200",
+        "object",
+        "NotificationChannelResponse",
+    ),
+    ("POST", "/api/v1/account/notification-channels/{channel_id}/test"): (
+        "200",
+        "object",
+        "NotificationChannelTestResponse",
+    ),
+    ("GET", "/api/v1/account/alert-email"): ("200", "object", "AlertEmailResponse"),
+    ("PUT", "/api/v1/account/alert-email"): ("200", "object", "AlertEmailResponse"),
+    ("DELETE", "/api/v1/account/alert-email"): ("200", "object", "AlertEmailResponse"),
+    ("GET", "/api/v1/projects/{project_id}/tags"): (
+        "200",
+        "object",
+        "TagDiscoveryResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/tags/values"): (
+        "200",
+        "object",
+        "TagValuesPage",
+    ),
+    ("POST", "/api/v1/metadata/ingest"): ("202", "object", "IngestResponse"),
     ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
     ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
     ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),
@@ -210,6 +993,11 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "ProjectResponse",
     ),
+    ("PUT", "/api/v1/projects/{project_id}"): (
+        "200",
+        "object",
+        "ProjectResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/budget"): (
         "200",
         "object",
@@ -220,20 +1008,60 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "BudgetStatusResponse",
     ),
+    ("POST", "/api/v1/budgets/check/batch"): (
+        "200",
+        "object",
+        "BudgetCheckBatchResponse",
+    ),
     ("POST", "/api/v1/budgets/check"): (
         "200",
         "object",
         "BudgetCheckResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/agent-runs"): (
+        "200",
+        "object",
+        "AgentRunListResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/agent-runs/{run_id}"): (
+        "200",
+        "object",
+        "AgentRunEntry",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/agent-runs/{run_id}/stop"): (
+        "200",
+        "object",
+        "AgentRunStopResponse",
     ),
     ("GET", "/api/v1/projects/{project_id}/providers"): (
         "200",
         "array",
         "ProviderHealthResponse",
     ),
+    ("GET", "/api/v1/projects/{project_id}/forecast"): (
+        "200",
+        "object",
+        "ForecastResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/providers/failovers"): (
+        "200",
+        "array",
+        "ProviderFailoverResponse",
+    ),
+    ("GET", "/api/v1/projects/{project_id}/untracked-surfaces"): (
+        "200",
+        "array",
+        "UntrackedSurfaceResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/costs"): (
         "200",
         "object",
         "CostQueryResponse",
+    ),
+    ("GET", "/api/v1/account/audit-events"): (
+        "200",
+        "object",
+        "AuditEventListResponse",
     ),
     ("GET", "/api/v1/projects/{project_id}/key"): (
         "200",
@@ -245,9 +1073,34 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "ProjectKeyRotateResponse",
     ),
+    ("GET", "/api/v1/projects/{project_id}/webhooks"): (
+        "200",
+        "array",
+        "WebhookResponse",
+    ),
+    ("POST", "/api/v1/projects/{project_id}/webhooks"): (
+        "201",
+        "object",
+        "WebhookCreateResponse",
+    ),
+    (
+        "POST",
+        "/api/v1/projects/{project_id}/webhooks/{webhook_id}/rotate",
+    ): (
+        "200",
+        "object",
+        "WebhookRotateResponse",
+    ),
+}
+INFORMATIVE_OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/health/ready"): ("503", "object", "ReadinessResponse"),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
+    ("DELETE", "/api/v1/account/notification-channels/{channel_id}"): "204",
+    ("DELETE", "/api/v1/account/alerts"): "204",
+    ("DELETE", "/api/v1/projects/{project_id}"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
+    ("DELETE", "/api/v1/projects/{project_id}/webhooks/{webhook_id}"): "204",
 }
 _BUDGET_THRESHOLD_COMPONENTS = {
     "budget_threshold": "ThresholdStateResponse",
@@ -374,6 +1227,72 @@ def _assert_nullable_component_ref(
     )
 
 
+def _assert_nullable_array_component_ref(
+    schema: dict[str, Any],
+    *,
+    expected_component: str,
+    context: str,
+) -> None:
+    branches = schema.get("anyOf")
+    assert isinstance(branches, list), f"{context}: expected nullable array union"
+    arrays = [
+        branch
+        for branch in branches
+        if isinstance(branch, dict) and branch.get("type") == "array"
+    ]
+    null_branches = [
+        branch
+        for branch in branches
+        if isinstance(branch, dict) and branch.get("type") == "null"
+    ]
+    assert len(arrays) == 1 and len(null_branches) == 1, (
+        f"{context}: expected one array branch and one null branch"
+    )
+    items = arrays[0].get("items")
+    assert isinstance(items, dict), f"{context}: array items schema is missing"
+    _assert_component_ref(
+        items,
+        expected_component=expected_component,
+        context=context,
+    )
+
+
+def assert_account_nested_response_bindings(snapshot: dict[str, Any]) -> None:
+    """Bind nested account-cost and overview components consumed by the CLI."""
+    schemas = snapshot["components"]["schemas"]
+    account_properties = schemas["AccountCostQueryResponse"]["properties"]
+
+    groups_items = account_properties["groups"].get("items")
+    assert isinstance(groups_items, dict), (
+        "AccountCostQueryResponse.groups: array items schema is missing"
+    )
+    _assert_component_ref(
+        groups_items,
+        expected_component="AccountCostGroup",
+        context="AccountCostQueryResponse.groups",
+    )
+    _assert_nullable_array_component_ref(
+        schemas["AccountCostGroup"]["properties"]["daily"],
+        expected_component="AccountCostDailyPoint",
+        context="AccountCostGroup.daily",
+    )
+    _assert_nullable_component_ref(
+        account_properties["savings"],
+        expected_component="SavingsSummary",
+        context="AccountCostQueryResponse.savings",
+    )
+    _assert_component_ref(
+        account_properties["window"],
+        expected_component="CostWindow",
+        context="AccountCostQueryResponse.window",
+    )
+    _assert_nullable_component_ref(
+        schemas["OverviewResponse"]["properties"]["savings"],
+        expected_component="SavingsSummary",
+        context="OverviewResponse.savings",
+    )
+
+
 def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     """Bind every nested response component validated by the budget command."""
     schemas = snapshot["components"]["schemas"]
@@ -457,6 +1376,20 @@ def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     )
 
 
+def assert_audit_nested_response_binding(snapshot: dict[str, Any]) -> None:
+    """Bind audit list entries to the strict event component the CLI parses."""
+    events = snapshot["components"]["schemas"]["AuditEventListResponse"]["properties"][
+        "events"
+    ]
+    items = events.get("items")
+    assert isinstance(items, dict), "AuditEventListResponse.events: items missing"
+    _assert_component_ref(
+        items,
+        expected_component="AuditEventEntry",
+        context="AuditEventListResponse.events",
+    )
+
+
 def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
     """Validate the explicit response-read registry against the snapshot."""
     schemas = snapshot["components"]["schemas"]
@@ -472,16 +1405,18 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
                 component,
             )
     assert_budget_nested_response_bindings(snapshot)
+    assert_audit_nested_response_binding(snapshot)
+    assert_account_nested_response_bindings(snapshot)
 
 
 def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
     """Validate every consumed success operation against its response component."""
     paths = snapshot["paths"]
-    for (method, path), (
-        status,
-        shape,
-        component,
-    ) in OPERATION_RESPONSE_BINDINGS.items():
+    bindings = [
+        *OPERATION_RESPONSE_BINDINGS.items(),
+        *INFORMATIVE_OPERATION_RESPONSE_BINDINGS.items(),
+    ]
+    for (method, path), (status, shape, component) in bindings:
         assert path in paths, f"{method} {path}: path is missing for {component}"
         method_key = method.lower()
         assert method_key in paths[path], (
@@ -551,6 +1486,21 @@ def test_every_current_response_read_exists_in_snapshot() -> None:
     assert_response_reads_exist(_snapshot())
 
 
+def test_audit_response_models_remain_strict() -> None:
+    assert audit.AuditEventEntry.model_config["extra"] == "forbid"
+    assert audit.AuditEventListResponse.model_config["extra"] == "forbid"
+
+
+def test_audit_event_item_component_drift_trips_response_guard() -> None:
+    mutated = copy.deepcopy(_snapshot())
+    mutated["components"]["schemas"]["AuditEventListResponse"]["properties"]["events"][
+        "items"
+    ]["$ref"] = "#/components/schemas/UnrelatedResponse"
+
+    with pytest.raises(AssertionError, match="AuditEventListResponse.events"):
+        assert_response_reads_exist(mutated)
+
+
 def test_threshold_registries_match_the_rule_types_the_cli_actually_models() -> None:
     """Split the union honestly: the registry cannot excuse a modelled rule type."""
     union, _ = get_args(budget._ThresholdState)
@@ -585,6 +1535,78 @@ def test_project_create_response_fields_and_201_operation_are_registered() -> No
     )
 
 
+def test_agent_run_response_fields_and_operations_are_registered() -> None:
+    assert RESPONSE_READS["AgentRunEntry"] == (
+        "id",
+        "name",
+        "parent_run_id",
+        "project_id",
+        "started_at",
+        "last_seen_at",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "stopped_at",
+        "stopped_by_user_id",
+        "stoppable",
+    )
+    assert RESPONSE_READS["AgentRunListResponse"] == (
+        "runs",
+        "next_cursor",
+        "has_more",
+        "window",
+    )
+    assert RESPONSE_READS["AgentRunStopResponse"] == (
+        "project_id",
+        "run_id",
+        "run_name",
+        "stopped_at",
+        "already_stopped",
+        "leases_revoked",
+        "enforcement_deadline",
+    )
+    assert RESPONSE_READS["RunControlDirective"] == (
+        "version",
+        "action",
+        "agent_run_id",
+        "reason",
+    )
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/projects/{project_id}/agent-runs")
+    ] == ("200", "object", "AgentRunListResponse")
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/projects/{project_id}/agent-runs/{run_id}")
+    ] == ("200", "object", "AgentRunEntry")
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("POST", "/api/v1/projects/{project_id}/agent-runs/{run_id}/stop")
+    ] == ("200", "object", "AgentRunStopResponse")
+
+
+def test_attestation_response_tree_and_both_routes_are_registered() -> None:
+    assert RESPONSE_READS["SpendControlAttestation"] == (
+        "schema_version",
+        "generated_at",
+        "scope",
+        "range",
+        "window",
+        "spend_summary",
+        "budgets",
+        "alerts",
+        "account_spend_alert",
+        "subscription",
+        "audit",
+    )
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/projects/{project_id}/spend-control-attestation")
+    ] == ("200", "object", "SpendControlAttestation")
+    assert OPERATION_RESPONSE_BINDINGS[
+        ("GET", "/api/v1/account/spend-control-attestation")
+    ] == ("200", "object", "SpendControlAttestation")
+
+
 def test_init_reuses_guarded_project_login_and_budget_response_operations() -> None:
     """Init's composed reads remain covered by the shared response immune system."""
     expected = {
@@ -603,16 +1625,32 @@ def test_every_consumed_success_operation_returns_its_response_component() -> No
     assert_operation_response_bindings(_snapshot())
 
 
+def test_readiness_503_remains_an_informative_typed_response() -> None:
+    assert INFORMATIVE_OPERATION_RESPONSE_BINDINGS[("GET", "/health/ready")] == (
+        "503",
+        "object",
+        "ReadinessResponse",
+    )
+    mutated = copy.deepcopy(_snapshot())
+    mutated["paths"]["/health/ready"]["get"]["responses"]["503"]["content"][
+        "application/json"
+    ]["schema"]["$ref"] = "#/components/schemas/UnrelatedResponse"
+
+    with pytest.raises(AssertionError, match=r"GET /health/ready.*ReadinessResponse"):
+        assert_operation_response_bindings(mutated)
+
+
 def test_every_consumed_no_content_operation_is_bodyless() -> None:
     assert_no_content_operation_bindings(_snapshot())
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/projects/{project_id}/key/{key_id}", "/api/v1/account/alerts"]
+)
 @pytest.mark.parametrize("mutation", ["status", "body", "alternate"])
-def test_project_key_revoke_response_drift_trips_guard(mutation: str) -> None:
+def test_no_content_response_drift_trips_guard(path: str, mutation: str) -> None:
     mutated = copy.deepcopy(_snapshot())
-    responses = mutated["paths"]["/api/v1/projects/{project_id}/key/{key_id}"][
-        "delete"
-    ]["responses"]
+    responses = mutated["paths"][path]["delete"]["responses"]
     if mutation == "status":
         responses["200"] = responses.pop("204")
     elif mutation == "body":
@@ -874,6 +1912,57 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
 
     with pytest.raises(AssertionError, match=rf"{parent}\.{field}"):
         assert_budget_nested_response_bindings(mutated)
+
+
+@pytest.mark.parametrize(
+    ("parent", "field", "shape", "expected_component"),
+    [
+        ("AccountCostQueryResponse", "groups", "array", "AccountCostGroup"),
+        (
+            "AccountCostGroup",
+            "daily",
+            "nullable_array",
+            "AccountCostDailyPoint",
+        ),
+        (
+            "AccountCostQueryResponse",
+            "savings",
+            "nullable",
+            "SavingsSummary",
+        ),
+        ("AccountCostQueryResponse", "window", "direct", "CostWindow"),
+        ("OverviewResponse", "savings", "nullable", "SavingsSummary"),
+    ],
+)
+@pytest.mark.parametrize("mutation", ["replace", "remove"])
+def test_account_nested_component_ref_mutation_trips_guard(
+    parent: str,
+    field: str,
+    shape: str,
+    expected_component: str,
+    mutation: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    field_schema = mutated["components"]["schemas"][parent]["properties"][field]
+    if shape == "array":
+        target = field_schema["items"]
+    elif shape == "nullable_array":
+        array_branch = next(
+            branch for branch in field_schema["anyOf"] if branch.get("type") == "array"
+        )
+        target = array_branch["items"]
+    elif shape == "nullable":
+        target = next(branch for branch in field_schema["anyOf"] if "$ref" in branch)
+    else:
+        target = field_schema
+    assert target["$ref"] == f"#/components/schemas/{expected_component}"
+    if mutation == "replace":
+        target["$ref"] = "#/components/schemas/CostGroup"
+    else:
+        target.pop("$ref")
+
+    with pytest.raises(AssertionError, match=rf"{parent}\.{field}"):
+        assert_response_reads_exist(mutated)
 
 
 @pytest.mark.parametrize(

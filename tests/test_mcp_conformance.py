@@ -1,4 +1,4 @@
-"""In-process MCP conformance tests for the frozen six-tool surface."""
+"""In-process MCP conformance tests for the supported tool surface."""
 
 from collections.abc import Callable, Iterator
 from copy import deepcopy
@@ -13,6 +13,7 @@ import pytest
 from mcp import McpError
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from test_alerts_command import EVENT as ALERT_EVENT, WINDOW as ALERT_WINDOW
 from solwyn_cli import auth, runtime
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.mcp import server as mcp_server
@@ -27,8 +28,19 @@ TOOL_NAMES = [
     "budget_check",
     "budget_confirm",
     "get_project_status",
+    "get_forecast",
     "get_costs",
     "list_projects",
+    "get_cost_total",
+    "list_budget_rules",
+    "record_call",
+    "list_tags",
+    "list_tag_values",
+    "list_agent_runs",
+    "get_agent_run",
+    "list_alert_events",
+    "budget_check_batch",
+    "get_overview",
 ]
 
 BUDGET_RESPONSE = {
@@ -40,6 +52,7 @@ BUDGET_RESPONSE = {
     "budget_mode": "hard_deny",
     "budget_period": "monthly",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "thresholds": [],
     "sub_period": None,
     "sub_limit": None,
@@ -82,6 +95,7 @@ EVERY_RULE_TYPE_THRESHOLDS = [
     },
     {
         "type": "runaway_run",
+        "mode": "alert_only",
         "rule_key": "runaway:50",
         "spend_threshold_usd": 50.0,
         "call_threshold": 100,
@@ -113,6 +127,8 @@ EVERY_RULE_TYPE_THRESHOLDS = [
     },
     {
         "type": "scoped_budget",
+        "current_usage": None,
+        "match_value": None,
         "rule_key": "scoped:model:gpt-4o",
         "scope": "model",
         "match": "gpt-4o",
@@ -142,18 +158,43 @@ PROVIDERS_RESPONSE = [
         "success_count": 9,
         "error_count": 1,
         "failover_count": 0,
+        "model_failover_count": 0,
+        "provider_failover_count": 0,
         "success_rate": 90.0,
         "avg_latency_ms": 125.0,
         "circuit_state": "closed",
+        "circuit_source": "inferred",
     }
 ]
+FORECAST_RESPONSE = {
+    "current_spend": 12.5,
+    "forecast_eom": 75.0,
+    "burn_rate_per_day": 2.5,
+    "ci_low": 60.0,
+    "ci_high": 90.0,
+    "period_start": "2026-09-01T00:00:00+00:00",
+    "period_end": "2026-09-30T23:59:59.999999+00:00",
+    "days_elapsed": 5,
+    "days_remaining": 25,
+    "insufficient_data": False,
+}
 COSTS_RESPONSE = {
+    "window": {
+        "requested_from": "2026-07-09T00:00:00Z",
+        "requested_to": "2026-07-16T00:00:00Z",
+        "effective_from": "2026-07-09T00:00:00Z",
+        "effective_to": "2026-07-16T00:00:00Z",
+        "retention_clamped": False,
+    },
+    "truncated": False,
     "project_id": "proj_alpha",
     "range": "30d",
     "group_by": "provider",
     "groups": [
         {
             "group_key": "openai",
+            "modality": None,
+            "agent_run_name": None,
             "provider": "openai",
             "total_cost": 1.25,
             "total_input_tokens": 100,
@@ -163,6 +204,25 @@ COSTS_RESPONSE = {
             "local_call_count": 0,
         }
     ],
+}
+OVERVIEW_RESPONSE = {
+    "total_spend": 42.5,
+    "total_requests": 5100,
+    "project_count": 3,
+    "trend_vs_last_period": 0.125,
+    "period_start": "2026-09-01",
+    "period_end": "2026-09-30",
+    "savings": {
+        "saved_cost": 4.25,
+        "saved_cost_upper": None,
+        "saved_input_tokens": 12000,
+        "blocked_call_count": 6,
+    },
+    "quota_exceeded": True,
+    "included_requests": 5000,
+    "current_requests": 5100,
+    "window_start": "2026-09-01T00:00:00Z",
+    "window_end": "2026-10-01T00:00:00Z",
 }
 PROJECTS_RESPONSE = [
     {
@@ -174,6 +234,36 @@ PROJECTS_RESPONSE = [
         "created_at": "2026-07-10T12:00:00Z",
     }
 ]
+RUN_ID = "run_" + "1a" * 16
+RUN_RESPONSE = {
+    "id": RUN_ID,
+    "name": "checkout-agent",
+    "parent_run_id": None,
+    "project_id": "proj_alpha",
+    "started_at": "2026-08-01T10:00:00Z",
+    "last_seen_at": "2026-08-07T12:30:00Z",
+    "total_calls": 42,
+    "total_cost": 12.345678,
+    "total_denied_cost": 1.25,
+    "total_input_tokens": 12000,
+    "total_output_tokens": 3400,
+    "velocity_flags": ["future_signal"],
+    "stopped_at": None,
+    "stopped_by_user_id": None,
+    "stoppable": True,
+}
+RUN_LIST_RESPONSE = {
+    "runs": [RUN_RESPONSE],
+    "next_cursor": None,
+    "has_more": False,
+    "window": {
+        "requested_from": "2026-08-01T00:00:00Z",
+        "requested_to": "2026-08-08T00:00:00Z",
+        "effective_from": "2026-08-01T00:00:00Z",
+        "effective_to": "2026-08-08T00:00:00Z",
+        "retention_clamped": False,
+    },
+}
 MCP_TOOLS_GOLDEN = Path(__file__).parent / "golden" / "mcp-tools.json"
 
 
@@ -199,11 +289,11 @@ def _mutate_required(contract: list[dict[str, Any]]) -> None:
 
 
 def _mutate_default(contract: list[dict[str, Any]]) -> None:
-    contract[4]["inputSchema"]["properties"]["time_range"]["default"] = "30d"
+    contract[5]["inputSchema"]["properties"]["time_range"]["default"] = "30d"
 
 
 def _mutate_enum(contract: list[dict[str, Any]]) -> None:
-    contract[4]["inputSchema"]["$defs"]["CostRange"]["enum"].append("all")
+    contract[5]["inputSchema"]["$defs"]["CostRange"]["enum"].append("all")
 
 
 def _mutate_bound(contract: list[dict[str, Any]]) -> None:
@@ -229,7 +319,7 @@ def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
 
 
 def _mutate_additional_properties(contract: list[dict[str, Any]]) -> None:
-    contract[5]["inputSchema"]["additionalProperties"] = False
+    contract[6]["inputSchema"]["additionalProperties"] = False
 
 
 def _mutate_nested_output(contract: list[dict[str, Any]]) -> None:
@@ -360,6 +450,75 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         return await session.call_tool(name, arguments)
 
 
+def test_get_overview_requires_jwt_before_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[key],
+    )
+
+    result = anyio.run(_call_tool, "get_overview", {})
+
+    assert result.structuredContent["error"] == {
+        "code": "authentication_required",
+        "message": "User login is required to read the account overview.",
+        "hint": "Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+        "status_code": None,
+    }
+    assert requests == []
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_get_overview_reads_typed_account_summary_with_jwt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=OVERVIEW_RESPONSE)],
+        credentials=[jwt],
+    )
+
+    result = anyio.run(_call_tool, "get_overview", {})
+
+    assert result.structuredContent["ok"] is True
+    assert result.structuredContent["schema"] == "solwyn.mcp.overview.v1"
+    assert result.structuredContent["data"] == OVERVIEW_RESPONSE
+    assert _wire_requests(requests) == [
+        ("GET", "/api/v1/overview", {}, None),
+    ]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
+def test_get_overview_invalid_response_is_fixed_and_secret_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    requests, clients, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json={"total_spend": JWT_ACCESS})],
+        credentials=[jwt],
+    )
+
+    result = anyio.run(_call_tool, "get_overview", {})
+
+    assert result.structuredContent["error"] == {
+        "code": "invalid_overview_response",
+        "message": "The Solwyn API response was invalid.",
+        "hint": None,
+        "status_code": None,
+    }
+    assert JWT_ACCESS not in json.dumps(result.structuredContent)
+    assert _wire_requests(requests) == [("GET", "/api/v1/overview", {}, None)]
+    assert responses == []
+    assert len(clients) == 1 and clients[0].is_closed
+
+
 def _wire_requests(
     requests: list[tuple[str, str, dict[str, Any]]],
 ) -> list[tuple[str, str, dict[str, str], Any]]:
@@ -379,8 +538,12 @@ def mcp_http(
         httpx.Response(204),
         httpx.Response(200, json=BUDGET_RESPONSE),
         httpx.Response(200, json=PROVIDERS_RESPONSE),
+        httpx.Response(200, json=FORECAST_RESPONSE),
         httpx.Response(200, json=COSTS_RESPONSE),
         httpx.Response(200, json=PROJECTS_RESPONSE),
+        httpx.Response(200, json=RUN_LIST_RESPONSE),
+        httpx.Response(200, json=RUN_RESPONSE),
+        httpx.Response(200, json=OVERVIEW_RESPONSE),
     ]
 
     project_key = auth.ProjectKeyCredential(
@@ -397,6 +560,10 @@ def mcp_http(
             project_key,
             project_key,
             project_key,
+            project_key,
+            jwt,
+            project_key,
+            project_key,
             jwt,
         ],
     )
@@ -404,11 +571,11 @@ def mcp_http(
     yield requests
 
     assert response_queue == []
-    assert len(clients) == 6
+    assert len(clients) == 10
     assert all(client.is_closed for client in clients)
 
 
-def test_exact_six_tool_contract_and_mocked_http_conformance(
+def test_exact_tool_contract_and_mocked_http_conformance(
     mcp_http: list[tuple[str, str, dict[str, Any]]],
 ) -> None:
     caller_thread = get_ident()
@@ -448,6 +615,9 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "resolution",
                     "quality",
                     "is_estimated",
+                    "tags",
+                    "no_record",
+                    "estimated_output_tokens",
                 },
                 {
                     "reservation_id",
@@ -471,9 +641,98 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     "rejected_prediction_tokens",
                     "tool_use_input_tokens",
                     "is_estimated",
+                    "latency_ms",
+                    "status",
+                    "agent_run_id",
+                    "parent_run_id",
+                    "run_name",
+                    "tags",
+                    "no_record",
                 },
                 {"project_id"},
-                {"project_id", "time_range", "group_by"},
+                {"project_id"},
+                {
+                    "project_id",
+                    "time_range",
+                    "group_by",
+                    "from_",
+                    "to",
+                    "model",
+                    "provider",
+                    "modality",
+                    "status",
+                    "service_tier",
+                    "provider_region",
+                    "agent_run",
+                    "failover_reason",
+                    "model_fallback",
+                    "provider_fallback",
+                    "tag",
+                },
+                set(),
+                {
+                    "project_id",
+                    "time_range",
+                    "from_",
+                    "to",
+                    "model",
+                    "provider",
+                    "modality",
+                    "status",
+                    "service_tier",
+                    "provider_region",
+                    "agent_run",
+                    "failover_reason",
+                    "model_fallback",
+                    "provider_fallback",
+                    "tag",
+                },
+                {"project_id"},
+                {
+                    "model",
+                    "provider",
+                    "call_id",
+                    "input_tokens",
+                    "output_tokens",
+                    "token_details",
+                    "media_usage",
+                    "latency_ms",
+                    "status",
+                    "modality",
+                    "provider_region",
+                    "service_tier",
+                    "agent_run_id",
+                    "parent_agent_run_id",
+                    "agent_run_name",
+                    "tags",
+                },
+                {"project_id"},
+                {"key", "project_id", "prefix", "limit", "cursor"},
+                {
+                    "project_id",
+                    "time_range",
+                    "from_time",
+                    "to_time",
+                    "query",
+                    "parent",
+                    "sort",
+                    "limit",
+                    "cursor",
+                },
+                {"run", "project_id"},
+                {
+                    "project_id",
+                    "account",
+                    "time_range",
+                    "from_",
+                    "to",
+                    "rule_type",
+                    "scope",
+                    "failed_only",
+                    "cursor",
+                    "all_pages",
+                },
+                {"checks", "no_record", "estimated_output_tokens"},
                 set(),
             ]
 
@@ -487,11 +746,13 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                         "provider": "openai",
                         "fallback_providers": ["anthropic"],
                         "fallback_models": ["claude-sonnet-4"],
+                        "agent_run_id": "raw-run-42",
                     },
                 ),
                 await session.call_tool(
                     "budget_confirm",
                     {
+                        "no_record": True,
                         "reservation_id": "res_01JZEXAMPLE",
                         "call_id": "12345678-1234-1234-1234-123456789abc",
                         "model": "gpt-5",
@@ -513,24 +774,42 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
                     },
                 ),
                 await session.call_tool("get_project_status", {}),
+                await session.call_tool("get_forecast", {}),
                 await session.call_tool(
                     "get_costs", {"time_range": "30d", "group_by": "provider"}
                 ),
                 await session.call_tool("list_projects", {}),
+                await session.call_tool(
+                    "list_agent_runs",
+                    {"time_range": "30d", "query": "checkout"},
+                ),
+                await session.call_tool("get_agent_run", {"run": RUN_ID}),
+                await session.call_tool("get_overview", {}),
             ]
 
         assert all(call.isError is False for call in calls)
         assert all(call.structuredContent is not None for call in calls)
-        assert [call.structuredContent["ok"] for call in calls] == [True] * 6
+        assert [call.structuredContent["ok"] for call in calls] == [True] * 10
         assert calls[0].structuredContent["data"]["project_id"] == "proj_alpha"
         assert calls[1].structuredContent["data"]["reservation_id"] == "res_01JZEXAMPLE"
         assert calls[2].structuredContent["data"] == {
             "reservation_id": "res_01JZEXAMPLE",
             "call_id": "12345678-1234-1234-1234-123456789abc",
+            "recorded": {
+                "status": "skipped",
+                "ingested": 0,
+                "rejected": [],
+                "duplicates": [],
+                "call_ids": ["12345678-1234-1234-1234-123456789abc"],
+            },
         }
         assert calls[3].structuredContent["data"]["providers"] == PROVIDERS_RESPONSE
-        assert calls[4].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
-        assert calls[5].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
+        assert calls[4].structuredContent["data"]["forecast_eom"] == 75.0
+        assert calls[5].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
+        assert calls[6].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
+        assert calls[7].structuredContent["data"]["runs"] == [RUN_RESPONSE]
+        assert calls[8].structuredContent["data"] == RUN_RESPONSE
+        assert calls[9].structuredContent["data"] == OVERVIEW_RESPONSE
 
     anyio.run(exercise_protocol)
 
@@ -541,11 +820,14 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
             "/api/v1/budgets/check",
             {},
             {
+                "price_hints_version": "1",
                 "estimated_input_tokens": 1200,
                 "model": "gpt-5",
                 "provider": "openai",
                 "fallback_providers": ["anthropic"],
                 "fallback_models": ["claude-sonnet-4"],
+                "agent_run_id": "raw-run-42",
+                "run_directive_version": "1",
             },
         ),
         (
@@ -580,11 +862,30 @@ def test_exact_six_tool_contract_and_mocked_http_conformance(
         ("GET", "/api/v1/projects/proj_alpha/providers", {}, None),
         (
             "GET",
+            "/api/v1/projects/proj_alpha/forecast",
+            {"period": "mtd"},
+            None,
+        ),
+        (
+            "GET",
             "/api/v1/projects/proj_alpha/costs",
             {"range": "30d", "group_by": "provider"},
             None,
         ),
         ("GET", "/api/v1/projects", {}, None),
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/agent-runs",
+            {"range": "30d", "q": "checkout", "sort": "last_seen_at", "limit": "25"},
+            None,
+        ),
+        (
+            "GET",
+            f"/api/v1/projects/proj_alpha/agent-runs/{RUN_ID}",
+            {},
+            None,
+        ),
+        ("GET", "/api/v1/overview", {}, None),
     ]
     assert {request[2]["authorization"] for request in mcp_http} == {
         f"Bearer {VALID_KEY}",
@@ -733,7 +1034,7 @@ def test_local_preconditions_return_structured_errors_without_http(
             "budget_confirm",
             {
                 "reservation_id": "reservation",
-                "call_id": "call",
+                "call_id": "12345678-1234-1234-1234-123456789abc",
                 "model": "m",
                 "provider": "openai",
             },
@@ -870,6 +1171,7 @@ def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
             "/api/v1/budgets/check",
             {},
             {
+                "price_hints_version": "1",
                 "estimated_input_tokens": 1,
                 "model": "m",
                 "provider": "openai",
@@ -1147,6 +1449,143 @@ def test_plain_403_still_collapses_to_forbidden_without_a_key_scope_claim(
     assert "read-only" not in str(error)
 
 
+def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                402,
+                json={
+                    "detail": {
+                        "code": "upgrade_required",
+                        "message": f"hostile remote detail {VALID_KEY}",
+                        "allowed_values": ["7d", "hostile", "90d"],
+                        "cta_path": "/billing",
+                    }
+                },
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "list_agent_runs",
+        {"time_range": "30d"},
+    )
+
+    assert result.structuredContent["error"] == {
+        "code": "upgrade_required",
+        "message": "Range '30d' is not available on your tier.",
+        "hint": "Allowed values: 7d, 90d. Review upgrade options in the dashboard: /billing",
+        "status_code": 402,
+    }
+    assert VALID_KEY not in str(result)
+    assert "hostile" not in str(result)
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/agent-runs",
+            {"range": "30d", "sort": "last_seen_at", "limit": "25"},
+            None,
+        )
+    ]
+    assert responses == []
+
+
+def test_agent_runs_custom_window_gate_does_not_blame_default_preset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                402,
+                json={
+                    "detail": {
+                        "code": "upgrade_required",
+                        "message": "Custom windows longer than 7 days are not available on your tier",
+                        "allowed_values": ["7d"],
+                        "cta_path": "/billing",
+                    }
+                },
+            )
+        ],
+        credentials=[key],
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "list_agent_runs",
+        {
+            "from_time": "2026-07-01T00:00:00Z",
+            "to_time": "2026-08-01T00:00:00Z",
+        },
+    )
+
+    error = result.structuredContent["error"]
+    assert error == {
+        "code": "upgrade_required",
+        "message": "Custom windows longer than 7 days are not available on your tier.",
+        "hint": "Allowed values: 7d. Review upgrade options in the dashboard: /billing",
+        "status_code": 402,
+    }
+    assert "Range '7d'" not in str(error)
+    assert _wire_requests(requests) == [
+        (
+            "GET",
+            "/api/v1/projects/proj_alpha/agent-runs",
+            {
+                "range": "7d",
+                "from": "2026-07-01T00:00:00Z",
+                "to": "2026-08-01T00:00:00Z",
+                "sort": "last_seen_at",
+                "limit": "25",
+            },
+            None,
+        )
+    ]
+    assert responses == []
+
+
+@pytest.mark.parametrize(
+    ("from_time", "to_time"),
+    [
+        ("1785542400", "1785628800"),
+        ("2026-08-01 00:00:00Z", "2026-08-02T00:00:00Z"),
+    ],
+)
+def test_agent_runs_rejects_non_rfc3339_custom_window_before_auth(
+    monkeypatch: pytest.MonkeyPatch,
+    from_time: str,
+    to_time: str,
+) -> None:
+    monkeypatch.setattr(
+        auth,
+        "resolve_credential",
+        lambda: pytest.fail("must not resolve auth"),
+    )
+
+    result = anyio.run(
+        _call_tool,
+        "list_agent_runs",
+        {"from_time": from_time, "to_time": to_time},
+    )
+
+    assert result.structuredContent["error"] == {
+        "code": "custom_window_invalid",
+        "message": "The custom run window is invalid.",
+        "hint": (
+            "Provide both timezone-aware bounds with to_time later than from_time."
+        ),
+        "status_code": None,
+    }
+
+
 @pytest.mark.parametrize(
     ("arguments", "expected_run_id"),
     [
@@ -1295,6 +1734,7 @@ def test_budget_check_honors_exactly_one_429_retry(
         "/api/v1/budgets/check",
         {},
         {
+            "price_hints_version": "1",
             "estimated_input_tokens": 1,
             "model": "m",
             "provider": "openai",
@@ -1328,7 +1768,7 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
         "budget_confirm",
         {
             "reservation_id": "reservation",
-            "call_id": "call",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
             "model": "m",
             "provider": "openai",
         },
@@ -1356,7 +1796,7 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
                 "model": "m",
                 "provider": "openai",
                 "is_provider_fallback": False,
-                "call_id": "call",
+                "call_id": "12345678-1234-1234-1234-123456789abc",
                 "token_details": {
                     "input_tokens": 0,
                     "output_tokens": 0,
@@ -1432,3 +1872,379 @@ def test_shared_client_honors_one_jwt_refresh_and_retry(
     rendered = str(result)
     for secret in (JWT_ACCESS, JWT_REFRESH, new_access, new_refresh):
         assert secret not in rendered
+
+
+@pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])
+def test_cost_tools_forward_complete_filters(monkeypatch, tool):
+    payload = deepcopy(COSTS_RESPONSE)
+    if tool == "get_cost_total":
+        payload = {
+            "project_id": "proj_alpha",
+            "range": "custom",
+            "total_cost": 1.25,
+            "total_input_tokens": 100,
+            "total_output_tokens": 20,
+            "call_count": 2,
+            "unpriced_call_count": 0,
+            "local_call_count": 0,
+            "window": COSTS_RESPONSE["window"],
+            "savings": None,
+        }
+    requests, clients, remaining = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=payload)],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    args = {
+        "from_": "2026-07-01T00:00:00Z",
+        "to": "2026-07-02T00:00:00Z",
+        "model": "m",
+        "provider": "p",
+        "modality": "text",
+        "status": "success",
+        "service_tier": "flex",
+        "provider_region": "region",
+        "agent_run": "run_" + "a" * 32,
+        "failover_reason": "primary_error",
+        "model_fallback": False,
+        "provider_fallback": True,
+        "tag": ["x=a=b"],
+    }
+    result = anyio.run(_call_tool, tool, args)
+    assert result.structuredContent["ok"] is True
+    query = requests[0][2]["query"]
+    assert "range" not in query
+    assert query["agent_run_id"] == "run_" + "a" * 32
+    assert query["tag.x"] == "a=b"
+    assert query["is_model_fallback"] == "false"
+    assert query["is_provider_fallback"] == "true"
+    assert query["provider_region"] == "region"
+    assert not remaining
+    assert clients[0].is_closed
+
+
+@pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"from_": "2026-08-01T00:00:00Z"},
+        {"tag": ["private-customer-marker=" + "x" * 257]},
+    ],
+)
+def test_invalid_local_cost_queries_have_safe_actionable_errors(
+    monkeypatch, tool, arguments
+):
+    requests, clients, remaining = _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(_call_tool, tool, arguments)
+    error = result.structuredContent["error"]
+    assert result.structuredContent["ok"] is False
+    assert error["code"] == "invalid_cost_query"
+    assert error["message"] == "The cost query was invalid."
+    assert "from_" in error["hint"] and "to" in error["hint"]
+    assert "key=value" in error["hint"]
+    assert error["status_code"] is None
+    assert "private-customer-marker" not in str(result)
+    assert not requests and not remaining
+    assert all(client.is_closed for client in clients)
+
+
+@pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])
+def test_invalid_cost_responses_are_not_mislabeled_as_query_errors(monkeypatch, tool):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json={"invalid": "response"})],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(_call_tool, tool, {})
+    assert result.structuredContent["error"]["code"] == "invalid_costs_response"
+    assert len(requests) == 1
+
+
+def test_list_budget_rules_is_read_only_with_project_key(monkeypatch):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200, json={**BUDGET_RESPONSE, "thresholds": EVERY_RULE_TYPE_THRESHOLDS}
+            )
+        ],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(_call_tool, "list_budget_rules", {})
+    assert not result.isError
+    assert result.structuredContent["schema"] == "solwyn.budget.rules.v1"
+    assert len(result.structuredContent["data"]["rules"]) == 6
+    assert [r[:2] for r in requests] == [("GET", "/api/v1/projects/proj_alpha/budget")]
+
+
+@pytest.mark.parametrize("status", ["ingested", "deduplicated", "rejected", "failed"])
+def test_record_call_preserves_dispositions(monkeypatch, status):
+    call_id = "12345678-1234-1234-1234-123456789abc"
+    body = {"ingested": 1}
+    if status == "rejected":
+        body = {
+            "ingested": 0,
+            "rejected": [
+                {
+                    "index": 0,
+                    "code": "unknown_model",
+                    "model": "llama3",
+                    "message": "Verbatim guidance.",
+                }
+            ],
+        }
+    if status in ("deduplicated", "failed"):
+        body = {
+            "ingested": 0,
+            "duplicates": [
+                {
+                    "index": 0,
+                    "reason": "call_id" if status == "deduplicated" else "legacy_key",
+                    "call_id": call_id,
+                }
+            ],
+        }
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch, responses=[httpx.Response(202, json=body)], credentials=[key]
+    )
+    result = anyio.run(
+        _call_tool,
+        "record_call",
+        {
+            "model": "llama3",
+            "provider": "ollama",
+            "call_id": call_id,
+            "tags": {"env": "prod"},
+        },
+    )
+    assert result.structuredContent["data"]["status"] == status
+    assert requests[0][1] == "/api/v1/metadata/ingest"
+    event = requests[0][2]["json"][0]
+    assert event["call_id"] == call_id and event["tags"] == {"env": "prod"}
+    assert "lease_id" not in event and "cost_usd" not in event
+    assert responses == []
+
+
+def test_mcp_confirm_records_same_call_id_by_default(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(204), httpx.Response(202, json={"ingested": 1})],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "res",
+            "model": "gpt-4o",
+            "provider": "openai",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
+            "tags": {"env": "prod"},
+            "agent_run_id": "job",
+        },
+    )
+    assert result.structuredContent["ok"]
+    assert result.structuredContent["data"]["recorded"]["status"] == "ingested"
+    assert requests[0][2]["json"]["call_id"] == requests[1][2]["json"][0]["call_id"]
+    assert requests[1][2]["json"][0]["agent_run_id"] == "job"
+    assert "tags" not in requests[0][2]["json"]
+    assert responses == []
+
+
+def test_mcp_denial_receipt(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    denied = {
+        **CHECK_RESPONSE,
+        "allowed": False,
+        "reservation_id": None,
+        "denied_by_period": "tag",
+    }
+    requests, _, responses = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(200, json=denied),
+            httpx.Response(202, json={"ingested": 1}),
+        ],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {
+            "model": "gpt-4o",
+            "provider": "openai",
+            "estimated_input_tokens": 12,
+            "estimated_output_tokens": 30,
+            "tags": {"env": "prod"},
+        },
+    )
+    data = result.structuredContent["data"]
+    assert data["allowed"] is False and data["recorded"]["status"] == "ingested"
+    event = requests[1][2]["json"][0]
+    assert event["call_id"] == data["call_id"] and event["estimated_output_bound"] == 30
+    assert event["status"] == "budget_denied" and event["output_tokens"] == 0
+    assert responses == []
+
+
+@pytest.mark.parametrize(
+    "tool,args,body",
+    [
+        ("list_tags", {}, {"keys": [], "usage": {"keys_used": 0}, "scope": "account"}),
+        (
+            "list_tag_values",
+            {"key": "route /? # =", "prefix": "p"},
+            {
+                "key": "route /? # =",
+                "values": [],
+                "next_cursor": None,
+                "has_more": False,
+            },
+        ),
+    ],
+)
+def test_mcp_tag_discovery(monkeypatch, tool, args, body):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, responses = _install_http(
+        monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[key]
+    )
+    result = anyio.run(_call_tool, tool, args)
+    assert result.structuredContent["ok"]
+    assert requests[0][0] == "GET" and "/tags" in requests[0][1]
+    if tool == "list_tag_values":
+        assert requests[0][2]["query"] == {
+            "key": "route /? # =",
+            "q": "p",
+            "limit": "25",
+        }
+    assert responses == []
+
+
+def test_mcp_confirm_bad_uuid_rejected_before_network(monkeypatch):
+    requests, _, _ = _install_http(monkeypatch, responses=[], credentials=[])
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "res",
+            "call_id": "not-a-uuid",
+            "model": "gpt-4o",
+            "provider": "openai",
+        },
+    )
+    assert result.isError
+    assert requests == []
+
+
+def test_mcp_record_details_populate_top_level_counts(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(202, json={"ingested": 1})],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "record_call",
+        {
+            "model": "llama3",
+            "provider": "ollama",
+            "token_details": {"input_tokens": 12, "output_tokens": 3},
+        },
+    )
+    assert result.structuredContent["ok"]
+    assert requests[0][2]["json"][0]["input_tokens"] == 12
+    assert requests[0][2]["json"][0]["output_tokens"] == 3
+
+
+def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(204),
+            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+        ],
+        credentials=[key],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_confirm",
+        {
+            "reservation_id": "res",
+            "call_id": "12345678-1234-1234-1234-123456789abc",
+            "model": "gpt-4o",
+            "provider": "openai",
+        },
+    )
+    assert result.structuredContent["ok"]
+    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert len(requests) == 2
+
+
+def test_list_alert_events_project_key_and_filters(monkeypatch):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200,
+                json={
+                    "events": [ALERT_EVENT],
+                    "window": ALERT_WINDOW,
+                    "next_cursor": "next",
+                },
+            )
+        ],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(
+        _call_tool,
+        "list_alert_events",
+        {
+            "scope": "tag",
+            "rule_type": "scoped_budget",
+            "failed_only": True,
+            "cursor": "start",
+            "time_range": "7d",
+        },
+    )
+    assert not result.isError
+    assert (
+        result.structuredContent["data"]["events"][0]["delivery"]["status"] == "partial"
+    )
+    assert requests[0][:2] == ("GET", "/api/v1/projects/proj_alpha/alert-events")
+    assert requests[0][2]["query"] == {
+        "range": "7d",
+        "scope": "tag",
+        "rule_type": "scoped_budget",
+        "cursor": "start",
+    }
+
+
+def test_list_alert_events_bad_query(monkeypatch):
+    _install_http(
+        monkeypatch,
+        responses=[],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+    )
+    result = anyio.run(
+        _call_tool, "list_alert_events", {"from_": "2026-09-01T00:00:00Z"}
+    )
+    assert result.structuredContent["error"]["code"] == "invalid_alert_query"

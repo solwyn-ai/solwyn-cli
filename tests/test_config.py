@@ -282,6 +282,44 @@ def test_multi_field_update_preserves_unrelated_config(config_path: Path) -> Non
     assert load_config() == updated
 
 
+def test_clear_default_project_removes_only_a_matching_default(
+    config_path: Path,
+) -> None:
+    save_config(
+        Config(
+            api_url="https://staging.example.test",
+            default_project="proj_deleted",
+            format="json",
+        )
+    )
+
+    cleared = config_module.clear_default_project("proj_deleted")
+
+    assert cleared is True
+    assert load_config() == Config(
+        api_url="https://staging.example.test",
+        default_project=None,
+        format="json",
+    )
+    assert "default_project" not in config_path.read_text(encoding="utf-8")
+
+
+def test_clear_default_project_preserves_a_different_default_without_writing(
+    config_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save_config(Config(default_project="proj_keep", format="json"))
+    monkeypatch.setattr(
+        config_module,
+        "save_config",
+        lambda *_args, **_kwargs: pytest.fail("must not rewrite unrelated config"),
+    )
+
+    cleared = config_module.clear_default_project("proj_other")
+
+    assert cleared is False
+
+
 def test_concurrent_init_update_preserves_other_update_field(
     config_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

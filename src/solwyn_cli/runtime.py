@@ -3,11 +3,12 @@
 import os
 import sys
 from collections.abc import Mapping
+from typing import Literal
 
 import typer
 from pydantic import BaseModel, ConfigDict
 
-from solwyn_cli.config import Config, load_config
+from solwyn_cli.config import Config, ConfigLoadError, load_config
 from solwyn_cli.output import OutputEngine, OutputFormat, resolve_output_format
 
 
@@ -17,6 +18,8 @@ class CommandContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     api_url: str
+    api_url_source: Literal["cli", "environment", "config", "fallback"] = "config"
+    config_load_failed: bool = False
     project: str | None
     output_format: OutputFormat
     no_color: bool
@@ -30,15 +33,34 @@ def resolve_command_context(
     output_format: str | None,
     json_flag: bool,
     no_color: bool,
+    allow_config_error: bool = False,
     environ: Mapping[str, str] | None = None,
 ) -> CommandContext:
     """Resolve CLI, environment, config, and default precedence."""
     environment = os.environ if environ is None else environ
-    config = load_config()
-    resolved_api_url = api_url or environment.get("SOLWYN_API_URL") or config.api_url
+    config_load_failed = False
+    try:
+        config = load_config()
+    except ConfigLoadError:
+        if not allow_config_error:
+            raise
+        config_load_failed = True
+        config = Config()
+    environment_api_url = environment.get("SOLWYN_API_URL")
+    if api_url:
+        resolved_api_url = api_url
+        api_url_source: Literal["cli", "environment", "config", "fallback"] = "cli"
+    elif environment_api_url:
+        resolved_api_url = environment_api_url
+        api_url_source = "environment"
+    else:
+        resolved_api_url = config.api_url
+        api_url_source = "fallback" if config_load_failed else "config"
     validated_url = Config(api_url=resolved_api_url).api_url
     return CommandContext(
         api_url=validated_url,
+        api_url_source=api_url_source,
+        config_load_failed=config_load_failed,
         project=(
             project or environment.get("SOLWYN_PROJECT_ID") or config.default_project
         ),

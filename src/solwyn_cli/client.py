@@ -1,7 +1,8 @@
 """Synchronous authenticated HTTP client with bounded retries."""
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, cast
@@ -166,14 +167,25 @@ class SolwynClient:
         kwargs: dict[str, Any],
         retry_state: list[bool],
         retry_rate_limit: bool = True,
+        stream: bool = False,
     ) -> httpx.Response:
         """Send with the one shared bounded 429 retry budget."""
-        response = self._client.request(
-            method,
-            path,
-            headers=headers,
-            **kwargs,
-        )
+
+        def send() -> httpx.Response:
+            if not stream:
+                return self._client.request(method, path, headers=headers, **kwargs)
+            request = self._client.build_request(
+                method, path, headers=headers, **kwargs
+            )
+            response = self._client.send(request, stream=True)
+            if not response.is_success:
+                try:
+                    response.read()
+                finally:
+                    response.close()
+            return response
+
+        response = send()
         if retry_rate_limit and response.status_code == httpx.codes.TOO_MANY_REQUESTS:
             if retry_state[0]:
                 return response
@@ -182,12 +194,8 @@ class SolwynClient:
                 response.headers.get("Retry-After"), self._clock()
             )
             self._sleeper(delay)
-            response = self._client.request(
-                method,
-                path,
-                headers=headers,
-                **kwargs,
-            )
+            response.close()
+            response = send()
         return response
 
     @staticmethod
@@ -201,6 +209,8 @@ class SolwynClient:
         self,
         method: str,
         path: str,
+        *,
+        accepted_statuses: frozenset[int] = frozenset(),
         **kwargs: Any,
     ) -> httpx.Response:
         """Make a guarded request without resolving or sending credentials."""
@@ -221,7 +231,8 @@ class SolwynClient:
                 hint=None,
                 detail=None,
             ) from None
-        self._raise_for_unsuccessful_response(response)
+        if response.status_code not in accepted_statuses:
+            self._raise_for_unsuccessful_response(response)
         return response
 
     def request(
@@ -231,6 +242,7 @@ class SolwynClient:
         *,
         retry_rate_limit: bool = True,
         retry_auth: bool = True,
+        _stream: bool = False,
         **kwargs: Any,
     ) -> httpx.Response:
         """Make one logical request with bounded rate-limit and auth retries."""
@@ -252,6 +264,7 @@ class SolwynClient:
                 kwargs=kwargs,
                 retry_state=retry_state,
                 retry_rate_limit=retry_rate_limit,
+                stream=_stream,
             )
 
         try:
@@ -277,3 +290,24 @@ class SolwynClient:
 
         self._raise_for_unsuccessful_response(response)
         return response
+
+    @contextmanager
+    def stream(self, method: str, path: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        """Yield an unread successful response with the normal auth/retry policy.
+
+        Retries happen only before yielding bytes; an interrupted download is never
+        replayed into stdout. Error bodies are consumed for structured diagnostics.
+        """
+        response = self.request(method, path, _stream=True, **kwargs)
+        try:
+            yield response
+        except httpx.HTTPError:
+            raise ApiError(
+                status_code=None,
+                code="transport_error",
+                message="Download interrupted; output may be incomplete.",
+                hint=None,
+                detail=None,
+            ) from None
+        finally:
+            response.close()

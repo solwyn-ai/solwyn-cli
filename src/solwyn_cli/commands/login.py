@@ -68,7 +68,7 @@ def authenticate_with_password(
         response = client.request_unauthenticated(
             "POST",
             "/api/v1/auth/login",
-            json=request.model_dump(),
+            json=request.model_dump(exclude_none=True),
         )
     tokens = _LoginTokenResponse.model_validate(response.json())
     return store_jwt_pair(

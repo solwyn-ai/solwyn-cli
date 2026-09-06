@@ -98,6 +98,88 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "account",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "account"
+      ],
+      "summary": "Manage account settings."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "alert-email",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "account",
+        "alert-email"
+      ],
+      "summary": "Manage the account-wide alert-email override."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.alert-email.v1",
+      "name": "clear",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "alert-email",
+        "clear"
+      ],
+      "summary": "Remove the override and use the login email again (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.alert-email.v1",
+      "name": "set",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "email"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "email",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "account",
+        "alert-email",
+        "set"
+      ],
+      "summary": "Set the account-wide alert destination (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.alert-email.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "alert-email",
+        "show"
+      ],
+      "summary": "Show the override and effective alert destination."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": null,
       "name": "agent-context",
@@ -107,6 +189,695 @@
         "agent-context"
       ],
       "summary": "Print safe Solwyn budget guidance for coding agents."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.alerts.v1",
+      "name": "alerts",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "alerts"
+      ],
+      "summary": "Inspect alert history and delivery receipts."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "account",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "alerts",
+        "account"
+      ],
+      "summary": "Manage account spend alerts."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "alerts",
+        "account",
+        "delete"
+      ],
+      "summary": "Delete the account spend alert; succeeds when already absent."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "preview",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "alerts",
+        "account",
+        "preview"
+      ],
+      "summary": "Preview unsaved account routing; ungated and available to any member."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "set",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--spend"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "spend",
+          "required": true,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": "Repeat to replace channels; omit to preserve existing channels.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--enabled",
+            "--disabled"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "enabled",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "alerts",
+        "account",
+        "set"
+      ],
+      "summary": "Create or update the account spend alert (Production+; owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "alerts",
+        "account",
+        "show"
+      ],
+      "summary": "Show the configured account spend alert (404 if absent)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "snooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--until"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "until",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "alerts",
+        "account",
+        "snooze"
+      ],
+      "summary": "Snooze to an absolute timezone-aware timestamp (or +2h)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.account.v1",
+      "name": "unsnooze",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "alerts",
+        "account",
+        "unsnooze"
+      ],
+      "summary": "Clear the account spend alert snooze."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "export",
+      "output_kind": "stream",
+      "params": [
+        {
+          "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--format"
+          ],
+          "default": "csv",
+          "help": "csv or json (NDJSON).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "export_format",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "alerts",
+        "export"
+      ],
+      "summary": "Stream CSV or NDJSON (Production+). Delivery receipts are excluded. Window headers go to stderr."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--rule-type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_type",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": "Rule scope in metadata (for example tag), not project/account.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failed-only"
+          ],
+          "default": false,
+          "help": "Locally include partial and failed delivery rollups.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "failed_only",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": "Walk all cursor pages; Core pages contain at most 25 events.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_pages",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "alerts",
+        "list"
+      ],
+      "summary": "List history. Delivery is Core's worst-leg rollup; JSON includes every leg."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "event_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "event_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--rule-type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_type",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "alerts",
+        "show"
+      ],
+      "summary": "Find an event across list pages bounded by the requested window and show delivery legs."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "attest",
+      "output_kind": "stream",
+      "params": [
+        {
+          "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": "Export account-wide evidence (requires JWT).",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "Preset window; custom --from/--to replace it.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "json",
+            "csv"
+          ],
+          "cli_names": [
+            "--format"
+          ],
+          "default": "json",
+          "help": "Export format: json or csv.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "export_format",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "attest"
+      ],
+      "summary": "Stream a project or account spend-control attestation to stdout."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.audit.v1",
+      "name": "audit",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "Audit window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "range_",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--action"
+          ],
+          "default": null,
+          "help": "Exact audit action to match.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "action",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": "Opaque cursor from the preceding page.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": "Follow cursors until all remaining events are read.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "audit"
+      ],
+      "summary": "List account audit events newest first."
     },
     {
       "hidden": false,
@@ -124,6 +895,10 @@
       "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.budget-check.v1",
+      "json_schemas": [
+        "solwyn.budget-check.v1",
+        "solwyn.budget.check.batch.v1"
+      ],
       "name": "check",
       "output_kind": "json-envelope",
       "params": [
@@ -140,7 +915,7 @@
           "min": 0,
           "multiple": false,
           "name": "estimated_input_tokens",
-          "required": true,
+          "required": false,
           "type": "integer range"
         },
         {
@@ -154,7 +929,7 @@
           "kind": "option",
           "multiple": false,
           "name": "model",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -189,8 +964,52 @@
           "kind": "option",
           "multiple": false,
           "name": "provider",
-          "required": true,
+          "required": false,
           "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Verbatim key=value tag; repeatable. Flags override SOLWYN_TAGS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--estimated-output-tokens"
+          ],
+          "default": null,
+          "help": "Output upper bound for denial savings attribution.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "estimated_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--no-record"
+          ],
+          "default": false,
+          "help": "Skip the denial receipt.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_record",
+          "required": false,
+          "type": "boolean"
         },
         {
           "choices": [
@@ -376,6 +1195,20 @@
           "name": "is_estimated",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--batch"
+          ],
+          "default": null,
+          "help": "JSON array of check bodies from FILE or - for stdin; chunked at 32.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "batch",
+          "required": false,
+          "type": "text"
         }
       ],
       "path": [
@@ -453,6 +1286,106 @@
           "name": "provider",
           "required": true,
           "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--latency-ms"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "latency_ms",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": "success",
+          "help": "success or error.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--parent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "parent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--run-name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Verbatim key=value; repeatable; overrides SOLWYN_TAGS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--no-record"
+          ],
+          "default": false,
+          "help": "Settle without recording attribution.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_record",
+          "required": false,
+          "type": "boolean"
         },
         {
           "cli_names": [
@@ -751,6 +1684,662 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "restore-defaults",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "restore-defaults"
+      ],
+      "summary": "Restore threshold defaults, then read all retained rules."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "rule",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "rule"
+      ],
+      "summary": "Manage individual budget rules."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "add",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "budget_threshold",
+            "runaway_run",
+            "scoped_budget",
+            "forecast_overrun",
+            "daily_anomaly",
+            "unit_cost_anomaly"
+          ],
+          "cli_names": [
+            "--type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "kind",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "percent",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--spend"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "spend",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--calls"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "calls",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--window"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "window",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "model",
+            "provider",
+            "agent_run",
+            "tag"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--match"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "match",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--value"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "value",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--multiplier"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "multiplier",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--lookback"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "lookback",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channels",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "add"
+      ],
+      "summary": "Append a rule, preserving the complete project configuration."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "pause",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "pause"
+      ],
+      "summary": "Pause notifications and release rule enforcement."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_preview.v1",
+      "name": "preview",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channels",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "budget_threshold",
+            "runaway_run",
+            "scoped_budget",
+            "forecast_overrun",
+            "daily_anomaly",
+            "unit_cost_anomaly"
+          ],
+          "cli_names": [
+            "--type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "kind",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "percent",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--spend"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "spend",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--calls"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "calls",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "cli_names": [
+            "--window"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "window",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "model",
+            "provider",
+            "agent_run",
+            "tag"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--match"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "match",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--value"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "value",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--multiplier"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "multiplier",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "cli_names": [
+            "--lookback"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "lookback",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "preview"
+      ],
+      "summary": "Preview saved or draft rule routing without mutating configuration."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "remove",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "remove"
+      ],
+      "summary": "Remove a rule."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "resume",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "resume"
+      ],
+      "summary": "Resume notifications and rule enforcement."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "snooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--until"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "until",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "snooze"
+      ],
+      "summary": "Snooze notifications; hard-deny enforcement remains active."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "unsnooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "rule_key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "rule_key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "rule",
+        "unsnooze"
+      ],
+      "summary": "Clear a rule's notification snooze."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "rules",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "rules"
+      ],
+      "summary": "Inspect budget rules."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rules.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "rules",
+        "list"
+      ],
+      "summary": "List conditions, routing, and separate paused and snoozed states."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.budget-set.v1",
       "name": "set",
       "output_kind": "json-envelope",
@@ -842,6 +2431,435 @@
         "status"
       ],
       "summary": "Read current project budget status without authorizing spend."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "threshold",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "threshold"
+      ],
+      "summary": "Snooze threshold notifications by percentage."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "snooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "percent",
+          "required": true,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--until"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "until",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "budget",
+        "threshold",
+        "snooze"
+      ],
+      "summary": "Snooze a budget threshold's notifications."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.rule_action.v1",
+      "name": "unsnooze",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "percent"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "percent",
+          "required": true,
+          "type": "integer range"
+        }
+      ],
+      "path": [
+        "budget",
+        "threshold",
+        "unsnooze"
+      ],
+      "summary": "Clear a threshold's notification snooze."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "channels",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "channels"
+      ],
+      "summary": "Manage reusable account notification channels."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.v1",
+      "name": "create",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "slack",
+            "pagerduty",
+            "teams",
+            "discord",
+            "telegram"
+          ],
+          "cli_names": [
+            "--type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_type",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--secret-stdin"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--config-stdin"
+          ],
+          "default": false,
+          "help": "Read the type-specific config JSON object from stdin, including any optional secrets.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "config_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--secret-field"
+          ],
+          "default": null,
+          "help": "Secret field name only; defaults to the type's primary secret.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_field",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": "Slack destination ID for bot-token mode.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--chat-id"
+          ],
+          "default": null,
+          "help": "Telegram destination ID.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "chat_id",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "create"
+      ],
+      "summary": "Create an owner-managed channel using stdin or environment credentials."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.delete.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "delete"
+      ],
+      "summary": "Delete a channel and remove its project and rule routing references."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "channels",
+        "list"
+      ],
+      "summary": "List account channels with masked credentials."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "show"
+      ],
+      "summary": "Show a channel; secret fields retain only their final four characters."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.test.v1",
+      "name": "test",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "test"
+      ],
+      "summary": "Send a test through a stored channel (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.channels.v1",
+      "name": "update",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "channel_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--secret-stdin"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--config-stdin"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "config_stdin",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--secret-field"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_field",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--chat-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "chat_id",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "channels",
+        "update"
+      ],
+      "summary": "Update selected fields; Core retains masked secret values on write-back."
     },
     {
       "hidden": false,
@@ -940,23 +2958,1200 @@
     },
     {
       "hidden": false,
-      "is_group": false,
+      "is_group": true,
       "json_schema": "solwyn.costs.v1",
+      "json_schemas": [
+        "solwyn.costs.v1",
+        "solwyn.account_costs.v1"
+      ],
       "name": "costs",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--group-by"
+          ],
+          "default": "model",
+          "help": "Dimension from billing capabilities, or tag:<key> (Team+). Omit for raw export.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "group_by",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--account"
+          ],
+          "default": false,
+          "help": "Show the JWT-authenticated account rollup across projects.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "account",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs"
+      ],
+      "summary": "Show aggregate project costs; use subcommands for events, totals, and export."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.baseline.v1",
+      "name": "baseline",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--days"
+          ],
+          "default": 7,
+          "help": "Lookback days for the hourly baseline.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 30,
+          "min": 3,
+          "multiple": false,
+          "name": "days",
+          "required": false,
+          "type": "integer range"
+        }
+      ],
+      "path": [
+        "costs",
+        "baseline"
+      ],
+      "summary": "Show the hourly-refreshed daily spend baseline."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.drift.v1",
+      "name": "drift",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset analytics window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "drift"
+      ],
+      "summary": "Compare stored actual spend with pre-flight estimates."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.events.v1",
+      "name": "events",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": 25,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "events"
+      ],
+      "summary": "Show paginated events (Production+; limit 1 without cursor is an onboarding probe). Event rows omit call_id, provider fallback and failover reason; use raw export for failover detail."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": null,
+      "name": "export",
+      "output_kind": "stream",
+      "params": [
+        {
+          "cli_names": [
+            "--group-by"
+          ],
+          "default": null,
+          "help": "Dimension from billing capabilities, or tag:<key> (Team+). Omit for raw export.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "group_by",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--format"
+          ],
+          "default": "csv",
+          "help": "csv or json (newline-delimited JSON / NDJSON).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "export_format",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "export"
+      ],
+      "summary": "Stream CSV or NDJSON bytes to stdout. Raw export requires Team; aggregated export requires Production. Window and truncation headers go to stderr."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.priced-models.v1",
+      "name": "priced-models",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "costs",
+        "priced-models"
+      ],
+      "summary": "List exact models available to the current pricing catalog."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.simulation.v1",
+      "name": "simulate",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Exact model identifier from priced-models.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--region"
+          ],
+          "default": null,
+          "help": "Required with --service-tier for Bedrock.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Required with --region for Bedrock.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset analytics window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "simulate"
+      ],
+      "summary": "Replay historical usage against one current priced target."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.total.v1",
+      "name": "total",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Preset window; allowed ranges come from billing capabilities.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO start; requires --to and replaces --range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Timezone-aware ISO exclusive end; requires --from.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": "Filter by model.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": "Filter by provider.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--modality"
+          ],
+          "default": null,
+          "help": "Filter by modality.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": null,
+          "help": "Filter by status.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": "Filter by service tier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": "Filter by provider region.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run"
+          ],
+          "default": null,
+          "help": "Filter by agent run.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--failover-reason"
+          ],
+          "default": null,
+          "help": "Filter by failover reason.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "failover_reason",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--model-fallback",
+            "--no-model-fallback"
+          ],
+          "default": null,
+          "help": "Filter model fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "model_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--provider-fallback",
+            "--no-provider-fallback"
+          ],
+          "default": null,
+          "help": "Filter provider fallback calls.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_fallback",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Repeatable key=value filter (Team+); duplicate keys rejected.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "costs",
+        "total"
+      ],
+      "summary": "Show uncapped project cost totals."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.costs.unit-economics.v1",
+      "name": "unit-economics",
       "output_kind": "json-envelope",
       "params": [
         {
           "choices": [
             "7d",
             "30d",
-            "90d",
-            "365d"
+            "90d"
           ],
           "cli_names": [
             "--range"
           ],
-          "default": "7d",
-          "help": "Aggregation range.",
+          "default": "30d",
+          "help": "7d, 30d, or 90d.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
@@ -966,29 +4161,64 @@
           "type": "choice"
         },
         {
-          "choices": [
-            "day",
-            "model",
-            "provider"
-          ],
           "cli_names": [
-            "--group-by"
+            "--vs-prev",
+            "--no-vs-prev"
           ],
-          "default": "model",
-          "help": "Aggregation dimension.",
+          "default": true,
+          "help": "Compare with the preceding same-length window.",
           "hidden": false,
-          "is_flag": false,
+          "is_flag": true,
           "kind": "option",
           "multiple": false,
-          "name": "group_by",
+          "name": "vs_prev",
           "required": false,
-          "type": "choice"
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--cause"
+          ],
+          "default": false,
+          "help": "Include server-inferred cost drivers.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "cause",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
-        "costs"
+        "costs",
+        "unit-economics"
       ],
-      "summary": "Show aggregate project costs."
+      "summary": "Show unit-cost metrics and optional suspected causes."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.doctor.v1",
+      "name": "doctor",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "doctor"
+      ],
+      "summary": "Check local configuration, dependencies, credentials, and API metadata."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.forecast.v1",
+      "name": "forecast",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "forecast"
+      ],
+      "summary": "Show the month-to-date project spend forecast."
     },
     {
       "hidden": false,
@@ -1010,6 +4240,20 @@
           "name": "agents",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--run-cap"
+          ],
+          "default": null,
+          "help": "Create a wildcard per-run hard cap after project creation; caps every run at min(caps). ",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_cap",
+          "required": false,
+          "type": "float"
         }
       ],
       "path": [
@@ -1171,6 +4415,253 @@
       "hidden": false,
       "is_group": true,
       "json_schema": null,
+      "name": "notifications",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "notifications"
+      ],
+      "summary": "Manage project notification routing."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.notifications.v1",
+      "name": "set",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--channel"
+          ],
+          "default": null,
+          "help": "Channel ID; repeat to replace the reference list.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "channel",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--clear-channels"
+          ],
+          "default": false,
+          "help": "Remove every channel reference.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "clear_channels",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "choices": [
+            "info",
+            "low",
+            "warning",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "cli_names": [
+            "--severity"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "severity",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--event"
+          ],
+          "default": null,
+          "help": "Event type; repeat. Core accepts future event names.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "event",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all-events"
+          ],
+          "default": false,
+          "help": "Allow all event types.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_events",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--email",
+            "--no-email"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "email",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--sms",
+            "--no-sms"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "sms",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--reset-email"
+          ],
+          "default": false,
+          "help": "Reset email to its enabled default.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "reset_email",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--reset-sms"
+          ],
+          "default": false,
+          "help": "Reset SMS to its disabled default.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "reset_sms",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "notifications",
+        "set"
+      ],
+      "summary": "Change only the notification settings explicitly selected."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.notifications.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "notifications",
+        "show"
+      ],
+      "summary": "Show routing, delivery preferences and tier capabilities."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.notifications.test.v1",
+      "name": "test",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "slack",
+            "pagerduty",
+            "sms",
+            "email"
+          ],
+          "cli_names": [
+            "channel"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "channel",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--secret-stdin"
+          ],
+          "default": false,
+          "help": "Read Slack webhook URL or PagerDuty routing key from stdin.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_stdin",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "notifications",
+        "test"
+      ],
+      "summary": "Test delivery or SMS eligibility; failure exits 1, including HTTP 200 failures."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.overview.v1",
+      "name": "overview",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "overview"
+      ],
+      "summary": "Show calendar-month account spend and request totals."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.v1",
+      "name": "plan",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "plan"
+      ],
+      "summary": "Show the current plan, limits, and capabilities."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
       "name": "projects",
       "output_kind": "varies-by-subcommand",
       "params": [],
@@ -1293,6 +4784,48 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.projects-delete.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "project_id"
+          ],
+          "default": null,
+          "help": "Project identifier to archive.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the irreversible project deletion.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "projects",
+        "delete"
+      ],
+      "summary": "Irreversibly archive a project and revoke all of its keys."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.projects-list.v1",
       "name": "list",
       "output_kind": "json-envelope",
@@ -1302,6 +4835,48 @@
         "list"
       ],
       "summary": "List projects available to the logged-in user."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.projects-rename.v1",
+      "name": "rename",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "project_id"
+          ],
+          "default": null,
+          "help": "Project identifier to rename.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": "New project name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "projects",
+        "rename"
+      ],
+      "summary": "Rename a project as an account owner or admin."
     },
     {
       "hidden": false,
@@ -1318,15 +4893,1141 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "providers",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "providers"
+      ],
+      "summary": null
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.providers.failovers.v1",
+      "name": "failovers",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "24h",
+            "7d",
+            "30d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Failover aggregation range.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "providers",
+        "failovers"
+      ],
+      "summary": "Show recent provider and model failover groups."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.providers.untracked.v1",
+      "name": "untracked",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Observation range before retention clamp.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "providers",
+        "untracked"
+      ],
+      "summary": "Show advisory observations for unmetered provider surfaces."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.record.v1",
+      "name": "record",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--model"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "model",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "openai",
+            "anthropic",
+            "google",
+            "bedrock",
+            "xai",
+            "deepseek",
+            "mistral",
+            "qwen",
+            "groq",
+            "together",
+            "fireworks",
+            "perplexity",
+            "azure_openai",
+            "openrouter",
+            "zai",
+            "ollama",
+            "vllm",
+            "lmstudio",
+            "openai_compatible"
+          ],
+          "cli_names": [
+            "--provider"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--call-id"
+          ],
+          "default": null,
+          "help": "Canonical lowercase UUID; generated if omitted.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "call_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--batch"
+          ],
+          "default": null,
+          "help": "JSON array file or - for stdin; chunks at 1000 events.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "batch",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--latency-ms"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "latency_ms",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--status"
+          ],
+          "default": "success",
+          "help": "success or error.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "status",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--agent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "agent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--parent-run-id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "parent_run_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--run-name"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--tag"
+          ],
+          "default": null,
+          "help": "Verbatim key=value; repeatable; overrides SOLWYN_TAGS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "tag",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--provider-region"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "provider_region",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "auto",
+            "default",
+            "flex",
+            "scale",
+            "priority",
+            "standard",
+            "optimized"
+          ],
+          "cli_names": [
+            "--service-tier"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "service_tier",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "cli_names": [
+            "--modality"
+          ],
+          "default": "text",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--image-count"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "image_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--generation-count"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "generation_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--video-seconds"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "video_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--audio-seconds"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--input-characters"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "input_characters",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--resolution"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "resolution",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--quality"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "quality",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--output-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cached-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cached_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cache-creation-5m-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cache_creation_5m_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cache-creation-1h-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "cache_creation_1h_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--reasoning-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "reasoning_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--audio-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--audio-output-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--image-input-tokens"
+          ],
+          "default": 0,
+          "help": "Image input tokens, already counted within --input-tokens.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "image_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--image-output-tokens"
+          ],
+          "default": 0,
+          "help": "Image output tokens, already counted within --output-tokens.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "image_output_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--accepted-prediction-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "accepted_prediction_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--rejected-prediction-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "rejected_prediction_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--tool-use-input-tokens"
+          ],
+          "default": 0,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100000000,
+          "min": 0,
+          "multiple": false,
+          "name": "tool_use_input_tokens",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--is-estimated"
+          ],
+          "default": false,
+          "help": "Mark the token breakdown as estimated rather than provider-reported.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "is_estimated",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "record"
+      ],
+      "summary": "Record one completed call, or a batch, without reserving budget."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "runs",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "runs"
+      ],
+      "summary": "Inspect and control project agent runs."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.runs.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "7d",
+            "30d",
+            "90d",
+            "365d"
+          ],
+          "cli_names": [
+            "--range"
+          ],
+          "default": "7d",
+          "help": "Listing window.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--from"
+          ],
+          "default": null,
+          "help": "Lower-inclusive RFC 3339 custom bound.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "from_",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--to"
+          ],
+          "default": null,
+          "help": "Upper-exclusive RFC 3339 custom bound.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "to",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--q"
+          ],
+          "default": null,
+          "help": "Case-insensitive literal name substring.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "query",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--parent"
+          ],
+          "default": null,
+          "help": "Raw or storage parent run ID.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "parent",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "last_seen_at",
+            "total_cost",
+            "total_calls"
+          ],
+          "cli_names": [
+            "--sort"
+          ],
+          "default": "last_seen_at",
+          "help": "Descending sort key.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "sort",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": 25,
+          "help": "Runs per page.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": "Opaque next-page cursor.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "runs",
+        "list"
+      ],
+      "summary": "List recent project agent runs."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.runs.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "run"
+          ],
+          "default": null,
+          "help": "Storage ID or exact run name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "runs",
+        "show"
+      ],
+      "summary": "Show one project agent run."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.runs.stop.v1",
+      "name": "stop",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "run"
+          ],
+          "default": null,
+          "help": "Storage ID or exact run name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "runs",
+        "stop"
+      ],
+      "summary": "Stop future work for one project agent run."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.status.v1",
       "name": "status",
       "output_kind": "json-envelope",
-      "params": [],
+      "params": [
+        {
+          "cli_names": [
+            "--forecast"
+          ],
+          "default": false,
+          "help": "Include the month-to-date spend forecast.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_forecast",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--failovers"
+          ],
+          "default": false,
+          "help": "Include top failover groups for 7d.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_failovers",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
       "path": [
         "status"
       ],
       "summary": "Show project budget and provider health."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "tags",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "tags"
+      ],
+      "summary": "Browse account-scoped tag keys and values; retire keys."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.tags.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "tags",
+        "list"
+      ],
+      "summary": "List active keys across the account, including similar verbatim spellings."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.tags.v1",
+      "name": "retire",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "tags",
+        "retire"
+      ],
+      "summary": "Retire a key while retaining historical values."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.tags.values.v1",
+      "name": "values",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "key"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--prefix"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "prefix",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--limit"
+          ],
+          "default": 25,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": 100,
+          "min": 1,
+          "multiple": false,
+          "name": "limit",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "tags",
+        "values"
+      ],
+      "summary": "Read a page of values for one verbatim key."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "webhooks",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "webhooks"
+      ],
+      "summary": "Manage project webhook targets."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-create.v1",
+      "name": "create",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--url"
+          ],
+          "default": null,
+          "help": "Destination URI; Core requires public HTTPS.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "url",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--events"
+          ],
+          "default": "*",
+          "help": "Comma-separated event names, or * for all events.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "events",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "webhooks",
+        "create"
+      ],
+      "summary": "Create a webhook target and reveal its signing secret once."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-delete.v1",
+      "name": "delete",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "webhook_id"
+          ],
+          "default": null,
+          "help": "Webhook target identifier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "webhook_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "webhooks",
+        "delete"
+      ],
+      "summary": "Deactivate a webhook target."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "webhooks",
+        "list"
+      ],
+      "summary": "List active webhook targets with masked secret prefixes."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.webhooks-rotate.v1",
+      "name": "rotate",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "webhook_id"
+          ],
+          "default": null,
+          "help": "Webhook target identifier.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "webhook_id",
+          "required": true,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "webhooks",
+        "rotate"
+      ],
+      "summary": "Rotate a target's signing secret and reveal the replacement once."
     },
     {
       "hidden": false,
@@ -1377,24 +6078,151 @@
   "json_schemas": [
     {
       "keys": [
+        "effective_email",
+        "override",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.account.alert-email.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "analytics_withheld",
+        "group_by",
+        "groups",
+        "range",
+        "savings",
+        "schema",
+        "truncated",
+        "window"
+      ],
+      "optional_keys": [
+        "savings"
+      ],
+      "schema": "solwyn.account_costs.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "channel_ids",
+        "channels",
+        "created_at",
+        "deleted",
+        "email",
+        "enabled",
+        "muted",
+        "routing",
+        "schema",
+        "snoozed_until",
+        "source",
+        "spend_threshold_usd",
+        "updated_at",
+        "will_send"
+      ],
+      "optional_keys": [
+        "account_id",
+        "channel_ids",
+        "channels",
+        "created_at",
+        "deleted",
+        "email",
+        "enabled",
+        "muted",
+        "routing",
+        "snoozed_until",
+        "source",
+        "spend_threshold_usd",
+        "updated_at",
+        "will_send"
+      ],
+      "schema": "solwyn.alerts.account.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "delivery",
+        "emitted_at",
+        "event_type",
+        "events",
+        "id",
+        "linked_event_ids",
+        "metadata_json",
+        "next_cursor",
+        "period_key",
+        "project_id",
+        "rule_key",
+        "rule_type",
+        "schema",
+        "scope",
+        "threshold_at_event",
+        "value_at_event",
+        "window"
+      ],
+      "optional_keys": [
+        "account_id",
+        "delivery",
+        "emitted_at",
+        "event_type",
+        "events",
+        "id",
+        "linked_event_ids",
+        "metadata_json",
+        "next_cursor",
+        "period_key",
+        "project_id",
+        "rule_key",
+        "rule_type",
+        "scope",
+        "threshold_at_event",
+        "value_at_event",
+        "window"
+      ],
+      "schema": "solwyn.alerts.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "events",
+        "has_more",
+        "next_cursor",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.audit.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "allowed",
         "budget_limit",
+        "call_id",
         "current_usage",
         "denied_by_period",
         "mode",
         "price_hints",
         "project_id",
+        "reason",
+        "recorded",
         "remaining_budget",
         "reservation_id",
+        "run_control",
         "schema"
       ],
-      "optional_keys": [],
+      "optional_keys": [
+        "call_id",
+        "reason",
+        "recorded"
+      ],
       "schema": "solwyn.budget-check.v1",
       "universal_error_envelope": false
     },
     {
       "keys": [
         "call_id",
+        "recorded",
         "reservation_id",
         "schema"
       ],
@@ -1427,9 +6255,12 @@
         "budget_mode",
         "budget_period",
         "current_usage",
+        "lease_float_usd",
+        "outage_overspend_ceiling_usd",
         "project_id",
         "remaining_budget",
         "schema",
+        "thresholds",
         "utilization_pct"
       ],
       "optional_keys": [],
@@ -1438,14 +6269,240 @@
     },
     {
       "keys": [
+        "failed_chunk_start",
+        "results",
+        "schema",
+        "total_checks"
+      ],
+      "optional_keys": [
+        "failed_chunk_start",
+        "total_checks"
+      ],
+      "schema": "solwyn.budget.check.batch.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "deleted",
+        "paused",
+        "rule_key",
+        "schema",
+        "snoozed_until"
+      ],
+      "optional_keys": [
+        "deleted",
+        "paused",
+        "rule_key",
+        "snoozed_until"
+      ],
+      "schema": "solwyn.budget.rule_action.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "results",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget.rule_preview.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "project_id",
+        "rules",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget.rules.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "deleted",
+        "id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.delete.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "channels",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "message",
+        "schema",
+        "success"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.test.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "channel_type",
+        "created_at",
+        "discord_config",
+        "id",
+        "name",
+        "pagerduty_config",
+        "schema",
+        "slack_config",
+        "teams_config",
+        "telegram_config",
+        "updated_at"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.channels.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "armed",
+        "days_with_data",
+        "lookback_days",
+        "mean_daily_spend",
+        "project_id",
+        "schema",
+        "stdev_daily_spend"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.baseline.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "actual_total",
+        "caveats",
+        "difference",
+        "estimate_total",
+        "groups",
+        "included_event_count",
+        "missing_estimate_count",
+        "project_id",
+        "range",
+        "schema",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.drift.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "has_more",
+        "items",
+        "next_cursor",
+        "schema",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.events.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "models",
+        "pricing_version",
+        "project_id",
+        "provenance",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.priced-models.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "baseline_actual_cost",
+        "baseline_event_count",
+        "caveats",
+        "delta_cost",
+        "excluded",
+        "excluded_event_count",
+        "included_event_count",
+        "project_id",
+        "range",
+        "scanned_event_count",
+        "schema",
+        "simulated_cost",
+        "target",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.simulation.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "call_count",
+        "local_call_count",
+        "project_id",
+        "range",
+        "schema",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "unpriced_call_count",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.total.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "avg_prompt_tokens",
+        "cost_per_agent_run",
+        "cost_per_request",
+        "prev_window_end",
+        "prev_window_start",
+        "range",
+        "schema",
+        "suspected_cause",
+        "tokens_per_dollar",
+        "window_end",
+        "window_start"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.costs.unit-economics.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "group_by",
         "groups",
         "project_id",
         "range",
-        "schema"
+        "schema",
+        "truncated",
+        "window"
       ],
       "optional_keys": [],
       "schema": "solwyn.costs.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "authenticated_probe",
+        "config",
+        "keychain",
+        "readiness",
+        "schema",
+        "snapshot",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.doctor.v1",
       "universal_error_envelope": false
     },
     {
@@ -1459,6 +6516,25 @@
       "optional_keys": [],
       "schema": "solwyn.error.v1",
       "universal_error_envelope": true
+    },
+    {
+      "keys": [
+        "burn_rate_per_day",
+        "ci_high",
+        "ci_low",
+        "current_spend",
+        "days_elapsed",
+        "days_remaining",
+        "forecast_eom",
+        "insufficient_data",
+        "period_end",
+        "period_start",
+        "project_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.forecast.v1",
+      "universal_error_envelope": false
     },
     {
       "keys": [
@@ -1534,6 +6610,71 @@
     },
     {
       "keys": [
+        "message",
+        "schema",
+        "success"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.notifications.test.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "capabilities",
+        "channel_ids",
+        "channels",
+        "email",
+        "enabled_event_types",
+        "schema",
+        "severity_threshold",
+        "sms_config"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.notifications.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "current_requests",
+        "included_requests",
+        "period_end",
+        "period_start",
+        "project_count",
+        "quota_exceeded",
+        "savings",
+        "schema",
+        "total_requests",
+        "total_spend",
+        "trend_vs_last_period",
+        "window_end",
+        "window_start"
+      ],
+      "optional_keys": [
+        "current_requests",
+        "included_requests",
+        "savings",
+        "window_end",
+        "window_start"
+      ],
+      "schema": "solwyn.overview.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "billing_interval",
+        "capabilities",
+        "cta_path",
+        "limits",
+        "schema",
+        "status",
+        "tier"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "budget_limit",
         "budget_mode",
         "budget_period",
@@ -1551,6 +6692,17 @@
         "stored"
       ],
       "schema": "solwyn.projects-create.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "api_keys_revoked",
+        "archived",
+        "project_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.projects-delete.v1",
       "universal_error_envelope": false
     },
     {
@@ -1573,29 +6725,233 @@
         "schema"
       ],
       "optional_keys": [],
+      "schema": "solwyn.projects-rename.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget_limit",
+        "budget_mode",
+        "budget_period",
+        "created_at",
+        "id",
+        "name",
+        "schema"
+      ],
+      "optional_keys": [],
       "schema": "solwyn.projects-show.v1",
       "universal_error_envelope": false
     },
     {
       "keys": [
-        "budget",
+        "failovers",
         "project_id",
-        "providers",
+        "range",
         "schema"
       ],
       "optional_keys": [],
+      "schema": "solwyn.providers.failovers.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "data_retention_days",
+        "effective_window_days",
+        "project_id",
+        "requested_range",
+        "requested_window_days",
+        "schema",
+        "surfaces",
+        "window_source"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.providers.untracked.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "call_ids",
+        "duplicates",
+        "ingested",
+        "rejected",
+        "schema",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.record.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "already_stopped",
+        "enforcement_deadline",
+        "leases_revoked",
+        "project_id",
+        "run_id",
+        "run_name",
+        "schema",
+        "stopped_at"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.runs.stop.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "has_more",
+        "id",
+        "last_seen_at",
+        "name",
+        "next_cursor",
+        "parent_run_id",
+        "project_id",
+        "runs",
+        "schema",
+        "started_at",
+        "stoppable",
+        "stopped_at",
+        "stopped_by_user_id",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "window"
+      ],
+      "optional_keys": [
+        "has_more",
+        "id",
+        "last_seen_at",
+        "name",
+        "next_cursor",
+        "parent_run_id",
+        "project_id",
+        "runs",
+        "started_at",
+        "stoppable",
+        "stopped_at",
+        "stopped_by_user_id",
+        "total_calls",
+        "total_cost",
+        "total_denied_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "velocity_flags",
+        "window"
+      ],
+      "schema": "solwyn.runs.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "budget",
+        "failovers",
+        "forecast",
+        "project_id",
+        "providers",
+        "savings",
+        "schema"
+      ],
+      "optional_keys": [
+        "failovers",
+        "forecast",
+        "savings"
+      ],
       "schema": "solwyn.status.v1",
       "universal_error_envelope": false
     },
     {
       "keys": [
+        "key",
+        "keys",
+        "retired",
+        "schema",
+        "scope",
+        "usage"
+      ],
+      "optional_keys": [
+        "key",
+        "keys",
+        "retired",
+        "scope",
+        "usage"
+      ],
+      "schema": "solwyn.tags.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "has_more",
+        "key",
+        "next_cursor",
+        "schema",
+        "values"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.tags.values.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "created_at",
+        "events",
+        "id",
+        "is_active",
+        "schema",
+        "secret_prefix",
+        "signing_secret",
+        "url"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-create.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "deleted",
+        "project_id",
+        "schema",
+        "webhook_id"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-delete.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "schema",
+        "webhooks"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "id",
+        "key_version",
+        "schema",
+        "secret_prefix",
+        "signing_secret"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.webhooks-rotate.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
         "auth_source",
         "auth_type",
         "configured_project",
         "hint",
         "projects",
         "schema",
-        "user"
+        "seat_limit",
+        "seats_used",
+        "user",
+        "your_role"
       ],
       "optional_keys": [],
       "schema": "solwyn.whoami.v1",

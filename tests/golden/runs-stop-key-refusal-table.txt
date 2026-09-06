@@ -1,0 +1,3 @@
+Error [authentication_required]: Stopping a run requires login with budget.write
+permission.
+Hint: Unset SOLWYN_API_KEY, run solwyn login, then retry runs stop.

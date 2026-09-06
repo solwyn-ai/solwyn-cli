@@ -6,16 +6,34 @@ import typer
 from pydantic import ValidationError
 
 from solwyn_cli import __version__
+from solwyn_cli.commands.account import app as account_app
+from solwyn_cli.commands.channels import app as channels_app
+from solwyn_cli.commands.notifications import app as notifications_app
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
+from solwyn_cli.commands.attest import ATTEST_HELP, attest
+from solwyn_cli.commands.audit import AUDIT_HELP, audit
+from solwyn_cli.commands.overview import OVERVIEW_HELP, overview
 from solwyn_cli.commands.budget import app as budget_app
+from solwyn_cli.commands.alerts import app as alerts_app
+from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
-from solwyn_cli.commands.costs import COSTS_HELP, costs
+from solwyn_cli.commands.cost_analysis import register_cost_analysis_commands
+from solwyn_cli.commands.cost_pricing import register_cost_pricing_commands
+from solwyn_cli.commands.costs import app as costs_app
+from solwyn_cli.commands.forecast import FORECAST_HELP, forecast
+from solwyn_cli.commands.doctor import DOCTOR_HELP, doctor
 from solwyn_cli.commands.init import INIT_HELP, init
 from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
 from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
+from solwyn_cli.commands.plan import PLAN_HELP, plan
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
+from solwyn_cli.commands.providers import app as providers_app
+from solwyn_cli.commands.record import RECORD_HELP, record
+from solwyn_cli.commands.tags import app as tags_app
+from solwyn_cli.commands.runs import app as runs_app
 from solwyn_cli.commands.status import STATUS_HELP, status
+from solwyn_cli.commands.webhooks import app as webhooks_app
 from solwyn_cli.commands.whoami import WHOAMI_HELP, whoami
 from solwyn_cli.config import ConfigLoadError
 from solwyn_cli.help import help_contract
@@ -40,16 +58,34 @@ app = typer.Typer(
         ),
     ),
 )
+register_budget_rules(budget_app)
 app.add_typer(budget_app, name="budget")
+app.add_typer(account_app, name="account")
+app.add_typer(channels_app, name="channels")
+app.add_typer(notifications_app, name="notifications")
+app.add_typer(tags_app, name="tags")
 app.add_typer(config_app, name="config")
 app.add_typer(keys_app, name="keys")
 app.add_typer(projects_app, name="projects")
+app.add_typer(webhooks_app, name="webhooks")
+app.add_typer(runs_app, name="runs")
 app.command("agent-context", epilog=AGENT_CONTEXT_HELP)(agent_context)
-app.command("costs", epilog=COSTS_HELP)(costs)
+app.command("attest", epilog=ATTEST_HELP)(attest)
+register_cost_analysis_commands(costs_app)
+register_cost_pricing_commands(costs_app)
+app.add_typer(costs_app, name="costs")
+app.add_typer(providers_app, name="providers")
+app.command("forecast", epilog=FORECAST_HELP)(forecast)
+app.command("doctor", epilog=DOCTOR_HELP)(doctor)
+app.add_typer(alerts_app, name="alerts")
+app.command("audit", epilog=AUDIT_HELP)(audit)
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
 app.command("logout", epilog=LOGOUT_HELP)(logout)
 app.command("mcp", epilog=MCP_HELP)(mcp)
+app.command("record", epilog=RECORD_HELP)(record)
+app.command("plan", epilog=PLAN_HELP)(plan)
+app.command("overview", epilog=OVERVIEW_HELP)(overview)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 
@@ -109,6 +145,7 @@ def main(
             output_format=output_format,
             json_flag=json_output,
             no_color=no_color,
+            allow_config_error=context.invoked_subcommand == "doctor",
         )
     except OutputUsageError:
         raise typer.BadParameter(

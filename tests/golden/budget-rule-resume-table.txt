@@ -1,0 +1,4 @@
+Field     Value  
+rule_key  key-one
+paused    False  
+deleted   False  

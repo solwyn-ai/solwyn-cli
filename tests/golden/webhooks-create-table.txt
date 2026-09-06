@@ -1,0 +1,10 @@
+Field                                           Value
+ID                                           wh/alpha
+URL                  https://hooks.example.com/solwyn
+Events         budget_threshold,future.delivery_ready
+Active                                           true
+Secret prefix                             abababab...
+Created                          2026-08-31T14:30:00Z
+╭──────────────── One-time webhook signing secret ─────────────────╮
+│ abababababababababababababababababababababababababababababababab │
+╰──────────────────────────────────────────────────────────────────╯

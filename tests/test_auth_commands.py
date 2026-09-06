@@ -220,8 +220,6 @@ def test_tty_key_and_password_prompts_are_hidden_and_write_prompts_to_stderr(
     assert request[2]["json"] == {
         "email": "person@example.com",
         "password": "password-value",
-        "plan": None,
-        "billing_interval": None,
     }
     assert FakeClient.instances[0].api_url == "https://api.solwyn.ai"
     assert_matches_golden(result.stdout, GOLDEN_DIR / "login-jwt.json")
@@ -564,6 +562,18 @@ def test_whoami_jwt_fetches_and_validates_identity_and_projects(
         ),
         httpx.Response(
             200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "team",
+                "alert_email_override": None,
+                "seat_limit": 5,
+                "seats_used": 3,
+                "your_role": "admin",
+            },
+        ),
+        httpx.Response(
+            200,
             json=[
                 {
                     "id": "proj_alpha",
@@ -592,6 +602,7 @@ def test_whoami_jwt_fetches_and_validates_identity_and_projects(
     assert client.credential is credential
     assert [(method, path) for method, path, _ in client.requests] == [
         ("GET", "/api/v1/account/me"),
+        ("GET", "/api/v1/accounts/me"),
         ("GET", "/api/v1/projects"),
     ]
     assert_matches_golden(result.stdout, GOLDEN_DIR / "whoami-jwt.json")
@@ -644,6 +655,18 @@ def test_whoami_jwt_table_matches_golden(
         ),
         httpx.Response(
             200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "team",
+                "alert_email_override": None,
+                "seat_limit": 5,
+                "seats_used": 3,
+                "your_role": "admin",
+            },
+        ),
+        httpx.Response(
+            200,
             json=[
                 {
                     "id": "proj_alpha",
@@ -684,3 +707,46 @@ def test_whoami_table_and_no_color_match_golden(
     assert result.exit_code == 0
     assert_matches_golden(result.stdout, GOLDEN_DIR / "whoami-key-table.txt")
     assert "\x1b" not in result.stdout
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_whoami_production_tier(output_format, monkeypatch):
+    credential = auth.JwtCredential(
+        access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN
+    )
+    monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(whoami_module, "SolwynClient", FakeClient)
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "user_id": "user_123",
+                "email": "person@example.com",
+                "display_name": "Person Example",
+                "subscription_tier": "production",
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "production",
+                "alert_email_override": None,
+                "seat_limit": 2,
+                "seats_used": 1,
+                "your_role": "owner",
+            },
+        ),
+        httpx.Response(200, json=[]),
+    ]
+    result = runner.invoke(
+        app, [*(["--json"] if output_format == "json" else []), "whoami"]
+    )
+    assert result.exit_code == 0
+    assert "production" in result.stdout
+    assert_matches_golden(
+        result.stdout,
+        GOLDEN_DIR
+        / f"whoami-production-{output_format}.{'json' if output_format == 'json' else 'txt'}",
+    )

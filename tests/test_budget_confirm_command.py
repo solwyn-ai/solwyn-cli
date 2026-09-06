@@ -119,7 +119,10 @@ def _credential(source: str = "environment") -> auth.ProjectKeyCredential:
 
 
 def _queue_success(status_code: int = 204) -> None:
-    FakeClient.responses = [httpx.Response(status_code)]
+    FakeClient.responses = [
+        httpx.Response(status_code),
+        httpx.Response(202, json={"ingested": 1}),
+    ]
 
 
 def test_budget_group_registers_confirm_without_regressing_other_commands() -> None:
@@ -164,7 +167,7 @@ def test_budget_confirm_posts_every_token_detail_with_project_key(
     assert result.exit_code == 0
     client = FakeClient.instances[0]
     assert client.credential is credential
-    assert client.requests == [
+    assert client.requests[:1] == [
         (
             "POST",
             "/api/v1/budgets/confirm",
@@ -284,6 +287,13 @@ def test_budget_confirm_success_matches_golden(
             "schema": "solwyn.budget-confirm.v1",
             "reservation_id": "res_01JZEXAMPLE",
             "call_id": "12345678-1234-1234-1234-123456789abc",
+            "recorded": {
+                "status": "ingested",
+                "ingested": 1,
+                "rejected": [],
+                "duplicates": [],
+                "call_ids": ["12345678-1234-1234-1234-123456789abc"],
+            },
         }
 
 

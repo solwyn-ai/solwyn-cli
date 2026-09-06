@@ -1,0 +1,11 @@
+Field                                            Value
+Allowed                                             no
+Reservation ID                                       -
+Project                                         proj_1
+Budget mode                                  hard_deny
+Budget limit                                     10.00
+Current usage                                    10.00
+Remaining budget                                  0.00
+Denied by period                                   tag
+Call ID           12345678-1234-1234-1234-123456789abc
+Recorded                                      ingested

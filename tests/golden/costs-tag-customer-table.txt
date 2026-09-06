@@ -1,0 +1,2 @@
+Group    Provider      Cost  Input  Output  Calls  Unpriced  Local
+example  openai    2.500000   2400     680      8         0      2

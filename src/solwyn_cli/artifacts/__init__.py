@@ -98,7 +98,7 @@ def agent_guidance() -> str:
     """Return the canonical semantic source shared by every agent surface."""
     return """# Solwyn budget guardrails
 
-Use Solwyn to observe and guard AI-provider spend without exposing credentials or duplicating reservations.
+Use Solwyn to enforce and attribute caller-owned AI-provider spend without exposing credentials or duplicating reservations. This contract follows Solwyn SDK 0.6 semantics.
 
 ## Polling and reservations
 
@@ -107,6 +107,20 @@ Use Solwyn to observe and guard AI-provider spend without exposing credentials o
 - Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend.
 - Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm.
 - Do not create repeated unconfirmed checks. They temporarily hold budget and can cause self-denial.
+- Every check requests price hints. Treat table `rel. price` values and JSON `price_hints` as advisory relative price hints, not currency or permission to spend; the cheapest positively priced lane is `1`, and local zero-cost lanes are `0`.
+
+## Run identity and termination
+
+- Set `SOLWYN_AGENT_RUN_ID` once and pass that identity through the job's checks and attribution. Reuse one run ID for the entire job so enforcement and reporting stay grouped.
+- A denied check with `reason=run_terminated` is an operator stop. End the job and do not retry under a new run ID.
+- `solwyn runs stop RUN` stops future checks and lease renewals; in-flight requests finish. Its stderr notice says when the stop is fully effective, using the returned `enforcement_deadline` (or `stopped_at` when no deadline is returned).
+
+## Tags and attribution
+
+- Pass tags to check, confirm, or record with repeated `--tag key=value` flags or `SOLWYN_TAGS=key=value,key2=value2`. Environment entries split on the first `=`, do not trim whitespace, allow empty values, and the last duplicate key wins. Commas cannot appear in values; explicit flags override matching environment keys.
+- Use `solwyn record` only after the caller-made provider call when there was no reservation. Use one canonical lowercase UUID per logical call. Reuse that same call ID when retrying its recording.
+- `solwyn budget confirm` records attribution after settlement by default and reuses its `--call-id` for that record. Do not also run `solwyn record` for the same call.
+- Denied checks record a savings receipt by default; `--estimated-output-tokens` supplies its upper bound. Use `--no-record` on check or confirm only as an explicit attribution opt-out.
 
 ## Machine contract and free-tier backoff
 
@@ -118,6 +132,7 @@ Use Solwyn to observe and guard AI-provider spend without exposing credentials o
 
 - Keep Solwyn credentials only in the OS keychain. Never echo them or place them in config files or argv.
 - Solwyn must never collect, store, or proxy provider keys, prompts, or responses.
+- The CLI sends only your own spend events; `sdk_instance_id` is a random per-invocation id; no telemetry.
 - Do not add telemetry or update checks.
 """
 

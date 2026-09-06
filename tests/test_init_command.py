@@ -44,6 +44,7 @@ BUDGET = {
     "budget_period": "monthly",
     "budget_mode": "hard_deny",
     "period_date": "2026-07",
+    "outage_overspend_ceiling_usd": 0.0,
     "utilization_pct": 25.0,
     "thresholds": [],
     "constraints": {
@@ -1069,3 +1070,113 @@ def test_live_budget_failure_is_safe_and_contains_no_credentials(
     assert result.stdout == ""
     rendered = result.stderr + repr(result.exception)
     assert VALID_KEY not in rendered
+
+
+def test_init_run_cap_created_immediately_with_jwt(monkeypatch):
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    prompt_values = iter(["Created project", 100.0])
+    monkeypatch.setattr(
+        init_module.typer, "prompt", lambda *a, **kw: next(prompt_values)
+    )
+    monkeypatch.setattr(init_module, "store_project_key", lambda key: None)
+    created = {
+        **PROJECT,
+        "key": CREATED_KEY,
+        "key_prefix": CREATED_KEY[:24],
+        "scope": "full",
+    }
+    rule = {
+        "type": "runaway_run",
+        "spend_threshold_usd": 5,
+        "mode": "hard_deny",
+        "channel_ids": [],
+        "paused": False,
+        "snoozed_until": None,
+        "rule_key": "run-cap",
+        "routing": {
+            "will_send": False,
+            "channels": [],
+            "source": "project_default",
+            "muted": None,
+        },
+    }
+    capped = {**BUDGET, "thresholds": [rule]}
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=created),
+        httpx.Response(200, json=BUDGET),
+        httpx.Response(200, json=BUDGET),
+        httpx.Response(200, json=capped),
+        httpx.Response(200, json=capped),
+    ]
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "5"])
+    assert result.exit_code == 0, result.output
+    requests = FakeClient.instances[0].requests
+    assert [r[0] for r in requests] == ["GET", "POST", "GET", "GET", "PUT"]
+    cap = requests[-1][2]["json"]["thresholds"][0]
+    assert cap["type"] == "runaway_run" and cap["mode"] == "hard_deny"
+    assert cap["spend_threshold_usd"] == 5
+    assert "caps every run at min(caps)" in result.stderr
+
+
+def test_init_invalid_run_cap_does_not_create_project():
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "0.001"])
+    assert result.exit_code == 2
+    assert not FakeClient.instances
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (auth.AuthError("Authentication refresh failed."), "authentication_failed"),
+        (
+            auth.CredentialStorageError("Refreshed credentials could not be stored."),
+            "credential_storage_failed",
+        ),
+    ],
+)
+def test_init_run_cap_auth_failure_reports_created_project(
+    monkeypatch: pytest.MonkeyPatch,
+    error: auth.AuthError,
+    code: str,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    prompt_values = iter(["Created project", 100.0])
+    monkeypatch.setattr(
+        init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
+    )
+    monkeypatch.setattr(init_module, "store_project_key", lambda key: None)
+    created = {
+        **PROJECT,
+        "key": CREATED_KEY,
+        "key_prefix": CREATED_KEY[:24],
+        "scope": "full",
+    }
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=created),
+        error,
+    ]
+
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "5"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert (
+        "Project proj_alpha was created; review its budget rules before retrying "
+        "the run-cap setup."
+    ) in result.stderr
+    assert json.loads(result.stderr.splitlines()[-1])["code"] == code
+    requests = [
+        request for client in FakeClient.instances for request in client.requests
+    ]
+    assert [(method, path) for method, path, _ in requests] == [
+        ("GET", "/api/v1/projects"),
+        ("POST", "/api/v1/projects"),
+        ("GET", "/api/v1/projects/proj_alpha/budget"),
+    ]
+    assert not config_module.get_config_path().exists()
+    for secret in (CREATED_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
+        assert secret not in result.stdout + result.stderr + repr(result.exception)

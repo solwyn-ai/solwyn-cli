@@ -1,0 +1,4 @@
+Index  Outcome  Details                     Call ID                     Recorded
+0      denied   run stopped by an operator  12345678-1234-1234-1234-12  skipped 
+                — do not retry under a new  3456789abc                          
+                run id                                                          

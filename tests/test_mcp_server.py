@@ -39,8 +39,19 @@ _TOOL_NAMES = [
     "budget_check",
     "budget_confirm",
     "get_project_status",
+    "get_forecast",
     "get_costs",
     "list_projects",
+    "get_cost_total",
+    "list_budget_rules",
+    "record_call",
+    "list_tags",
+    "list_tag_values",
+    "list_agent_runs",
+    "get_agent_run",
+    "list_alert_events",
+    "budget_check_batch",
+    "get_overview",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,7 +117,7 @@ def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
         )
 
         with (tmp_path / "mcp-stderr.log").open("w+", encoding="utf-8") as stderr:
-            # Six complete tool schemas make startup sensitive to loaded CI hosts;
+            # Complete tool schemas make startup sensitive to loaded CI hosts;
             # 30 seconds remains a bounded protocol-stall and shutdown detector.
             with anyio.fail_after(30):
                 async with stdio_client(server, errlog=stderr) as streams:
@@ -153,6 +164,7 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
                 "budget_mode": "hard_deny",
                 "budget_period": "monthly",
                 "period_date": "2026-07",
+                "outage_overspend_ceiling_usd": 0.0,
                 "thresholds": [],
                 "sub_period": None,
                 "sub_limit": None,

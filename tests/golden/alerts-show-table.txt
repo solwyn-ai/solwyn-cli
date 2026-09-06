@@ -1,0 +1,2 @@
+channel  name        status  attempts  delivered at  error              
+slack    Operations  failed  3         —             Channel unavailable

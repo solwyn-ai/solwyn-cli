@@ -1,0 +1,3 @@
+Group       Provider      Cost  Input  Output  Calls  Unpriced  Local  Run name 
+gpt-5-mini  openai    2.500000   2400     680      8         0      2  Research 
+                                                                       job      
