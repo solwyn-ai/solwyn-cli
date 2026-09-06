@@ -391,7 +391,7 @@ class BudgetCheckBatchData(_BudgetCheckBatchResponse):
 
 BATCH_FAILURE_HINT = (
     "Completed results remain valid; do not replay completed checks. "
-    "The failed chunk may hold reservations that Core did not return; later chunks were not submitted."
+    "Reservation state within the failed chunk is unknown; later chunks were not submitted."
 )
 
 
@@ -566,7 +566,11 @@ def _check_batch_command(
             data=error.data,
             table=_batch_check_table(error.data),
         )
-        typer.echo(BATCH_FAILURE_HINT, err=True)
+        typer.echo(
+            f"Batch failed at input index {error.data.failed_chunk_start} "
+            f"of {error.data.total_checks} checks. {BATCH_FAILURE_HINT}",
+            err=True,
+        )
         if isinstance(error.cause, ApiError):
             exit_with_error(context, _read_only_key_hinted(error.cause))
         if isinstance(error.cause, AuthError):

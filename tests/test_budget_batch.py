@@ -330,6 +330,7 @@ def test_later_chunk_failure_preserves_completed_reservations(monkeypatch, inter
     if interface == "cli":
         assert result.exit_code == 1
         assert "do not replay" in result.stderr.lower()
+        assert "input index 32" in result.stderr
         data = payload
     else:
         assert payload["ok"] is False
