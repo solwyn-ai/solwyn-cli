@@ -1179,6 +1179,36 @@ def test_disallowed_capabilities_keep_core_400_message_and_show_current_choices(
     assert "Invalid group_by from Core" in result.stderr
 
 
+def test_account_project_grouping_never_gets_a_false_capability_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        costs_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token=ACCESS_TOKEN,
+            refresh_token=REFRESH_TOKEN,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        costs_module,
+        "get_capabilities",
+        lambda **kwargs: TierCapabilities.model_validate(BILLING["capabilities"]),
+    )
+    FakeClient.responses = [
+        error_from_response(httpx.Response(422, json={"detail": "Invalid window"}))
+    ]
+
+    result = runner.invoke(app, ["--json", "costs", "--account"])
+
+    assert result.exit_code == 2
+    error = json.loads(result.stderr)
+    assert error["message"] == "Invalid window"
+    assert error["hint"] is None
+    assert "Current plan groupings" not in result.stderr
+
+
 def test_parent_filters_are_not_silently_ignored_for_subcommands():
     result = runner.invoke(app, ["-p", "proj_alpha", "costs", "--model", "m", "total"])
     assert result.exit_code == 2

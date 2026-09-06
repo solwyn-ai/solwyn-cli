@@ -384,7 +384,8 @@ def _run(
                 # Entitlements distinguish allowed values from paid values, not
                 # invalid dimensions. Core must decide 400 versus 402.
                 if group_by is not None and not (
-                    group_by in analytics.allowed_group_by
+                    (account and group_by == "project")
+                    or group_by in analytics.allowed_group_by
                     or (group_by.startswith("tag:") and analytics.tags)
                 ):
                     entitlement_hints.append(
