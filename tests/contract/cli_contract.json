@@ -895,6 +895,10 @@
       "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.budget-check.v1",
+      "json_schemas": [
+        "solwyn.budget-check.v1",
+        "solwyn.budget.check.batch.v1"
+      ],
       "name": "check",
       "output_kind": "json-envelope",
       "params": [
@@ -911,7 +915,7 @@
           "min": 0,
           "multiple": false,
           "name": "estimated_input_tokens",
-          "required": true,
+          "required": false,
           "type": "integer range"
         },
         {
@@ -925,7 +929,7 @@
           "kind": "option",
           "multiple": false,
           "name": "model",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -960,7 +964,7 @@
           "kind": "option",
           "multiple": false,
           "name": "provider",
-          "required": true,
+          "required": false,
           "type": "choice"
         },
         {
@@ -1191,6 +1195,20 @@
           "name": "is_estimated",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--batch"
+          ],
+          "default": null,
+          "help": "JSON array of check bodies from FILE or - for stdin; chunked at 32.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "batch",
+          "required": false,
+          "type": "text"
         }
       ],
       "path": [
@@ -6200,6 +6218,20 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.budget-status.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "failed_chunk_start",
+        "results",
+        "schema",
+        "total_checks"
+      ],
+      "optional_keys": [
+        "failed_chunk_start",
+        "total_checks"
+      ],
+      "schema": "solwyn.budget.check.batch.v1",
       "universal_error_envelope": false
     },
     {

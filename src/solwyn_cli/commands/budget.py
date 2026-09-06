@@ -1,6 +1,10 @@
 """Project budget inspection and pre-flight guardrail commands."""
 
+import json
 import math
+import os
+import sys
+from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 from typing import Annotated, Literal
@@ -18,6 +22,7 @@ from pydantic import (
 
 from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
+    BudgetCheckBatchRequest,
     BudgetConfirmRequest,
     BudgetMode,
     BudgetPeriod,
@@ -42,7 +47,7 @@ from solwyn_cli.commands._record import (
     record_best_effort,
     validate_call_id,
 )
-from solwyn_cli.commands._tags import parse_tags
+from solwyn_cli.commands._tags import parse_tags, validate_tags
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
@@ -331,6 +336,13 @@ def request_budget_check(
         json=request.model_dump(mode="json", exclude_none=True),
     )
     data = _BudgetCheckData.model_validate(response.json())
+    return validate_check_directive(request=request, data=data)
+
+
+def validate_check_directive(
+    *, request: BudgetCheckRequest, data: BudgetCheckData
+) -> BudgetCheckData:
+    """Validate the same opt-in directive for single and batch admission."""
     if request.run_directive_version is not None:
         if data.denied_by_period == "run_stopped":
             if data.run_control is None:
@@ -341,6 +353,270 @@ def request_budget_check(
         elif data.run_control is not None:
             raise ValueError("Unexpected run-control directive")
     return data
+
+
+class BudgetCheckBatchItem(BaseModel):
+    """Batch envelopes retain nullable result/error fields unlike single checks."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    result: BudgetCheckData | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+    @model_validator(mode="after")
+    def validate_disposition(self) -> "BudgetCheckBatchItem":
+        if self.result is not None:
+            if self.error_code is not None or self.error_message is not None:
+                raise ValueError("Batch item mixes a result and an error")
+        elif not self.error_code or not self.error_message:
+            raise ValueError("Batch item requires a result or complete error")
+        return self
+
+
+class _BudgetCheckBatchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    results: list[BudgetCheckBatchItem]
+
+
+class BudgetCheckBatchData(_BudgetCheckBatchResponse):
+    failed_chunk_start: int | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    total_checks: int | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+
+BATCH_FAILURE_HINT = (
+    "Completed results remain valid; do not replay completed checks. "
+    "Reservation state within the failed chunk is unknown; later chunks were not submitted."
+)
+
+
+class BudgetCheckBatchFailure(Exception):
+    """Keep known reservations available when a later chunk fails."""
+
+    def __init__(self, cause: Exception, data: BudgetCheckBatchData) -> None:
+        super().__init__("Batch check failed after completed chunks")
+        self.cause = cause
+        self.data = data
+
+
+def prepare_batch_checks(checks: object) -> list[BudgetCheckRequest]:
+    """Validate the entire input before admitting any chunk."""
+    if not isinstance(checks, list) or not checks:
+        raise ValueError("Batch input must be a non-empty JSON array of check bodies")
+    prepared = []
+    for index, raw in enumerate(checks):
+        if not isinstance(raw, dict):
+            raise ValueError(f"Check {index} must be an object")
+        body = dict(raw)
+        if "agent_run_id" not in body:
+            body["agent_run_id"] = os.environ.get("SOLWYN_AGENT_RUN_ID")
+        body["tags"] = validate_tags(body["tags"]) if "tags" in body else parse_tags()
+        # Validate supplied versions before applying the CLI's opt-ins.
+        request = BudgetCheckRequest.model_validate(body)
+        if len(request.fallback_models) != len(request.fallback_providers):
+            raise ValueError(f"Check {index} fallback providers and models must align")
+        prepared.append(
+            request.model_copy(
+                update={
+                    "price_hints_version": "1",
+                    "run_directive_version": "1"
+                    if request.agent_run_id is not None
+                    else None,
+                }
+            )
+        )
+    return prepared
+
+
+def request_budget_check_batch(
+    *,
+    client: SolwynClient,
+    checks: list[BudgetCheckRequest],
+    no_record: bool = False,
+    estimated_output_tokens: int | None = None,
+) -> BudgetCheckBatchData:
+    """Admit chunks in order, then record each validated denial exactly once."""
+    invocation_id = str(uuid4())
+    results = []
+    for offset in range(0, len(checks), 32):
+        batch = BudgetCheckBatchRequest(checks=checks[offset : offset + 32])
+        try:
+            response = client.request(
+                "POST",
+                "/api/v1/budgets/check/batch",
+                json=batch.model_dump(mode="json", exclude_none=True),
+            )
+            data = _BudgetCheckBatchResponse.model_validate(response.json())
+            if len(data.results) != len(batch.checks):
+                raise ValueError("Batch result count does not match submitted checks")
+            # Validate the complete chunk before any receipt side effect.
+            for request, item in zip(batch.checks, data.results, strict=True):
+                if item.result is not None:
+                    item.result = validate_check_directive(
+                        request=request, data=item.result
+                    )
+        except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+            if results:
+                raise BudgetCheckBatchFailure(
+                    error,
+                    BudgetCheckBatchData(
+                        results=results,
+                        failed_chunk_start=offset,
+                        total_checks=len(checks),
+                    ),
+                ) from error
+            raise
+        for request, item in zip(batch.checks, data.results, strict=True):
+            if item.result is not None:
+                item.result = record_denial(
+                    client=client,
+                    request=request,
+                    data=item.result,
+                    sdk_instance_id=invocation_id,
+                    no_record=no_record,
+                    estimated_output_tokens=estimated_output_tokens,
+                )
+        results.extend(data.results)
+    return BudgetCheckBatchData(results=results)
+
+
+def _batch_check_table(data: BudgetCheckBatchData) -> TableData:
+    return TableData(
+        columns=(
+            "Index",
+            "Outcome",
+            "Details",
+            "Call ID",
+            "Recorded",
+        ),
+        rows=tuple(
+            (
+                index,
+                "allowed" if item.result.allowed else "denied",
+                item.result.reservation_id
+                or (
+                    "run stopped by an operator — do not retry under a new run id"
+                    if item.result.reason == "run_terminated"
+                    else item.result.denied_by_period or "fail-open"
+                ),
+                item.result.call_id or "-",
+                item.result.recorded.status if item.result.recorded else "-",
+            )
+            if item.result is not None
+            else (index, item.error_code, item.error_message, "-", "-")
+            for index, item in enumerate(data.results)
+        ),
+        fold_cells=True,
+    )
+
+
+def _check_batch_command(
+    context: typer.Context,
+    batch: str,
+    *,
+    no_record: bool,
+    estimated_output_tokens: int | None,
+) -> None:
+    try:
+        raw = (
+            sys.stdin.read()
+            if batch == "-"
+            else Path(batch).read_text(encoding="utf-8")
+        )
+        checks = prepare_batch_checks(json.loads(raw))
+    except (OSError, ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_budget_check_batch_request",
+                message="Batch input must be a non-empty JSON array of valid check bodies.",
+                hint="Check required fields, tag bounds and aligned fallback lists before retrying.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    credential = required_credential(context, resolve=resolve_credential)
+    if isinstance(credential, JwtCredential):
+        exit_with_error(
+            context,
+            OutputError(
+                code="project_key_required",
+                message="Budget checks require a project API key.",
+                hint="Set SOLWYN_API_KEY or store a project key with solwyn login --with-key.",
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
+    try:
+        with SolwynClient(
+            api_url=command_context(context).api_url, credential=credential
+        ) as client:
+            data = request_budget_check_batch(
+                client=client,
+                checks=checks,
+                no_record=no_record,
+                estimated_output_tokens=estimated_output_tokens,
+            )
+    except BudgetCheckBatchFailure as error:
+        output_engine(context).write_success(
+            schema="solwyn.budget.check.batch.v1",
+            data=error.data,
+            table=_batch_check_table(error.data),
+        )
+        typer.echo(
+            f"Batch failed at input index {error.data.failed_chunk_start} "
+            f"of {error.data.total_checks} checks. {BATCH_FAILURE_HINT}",
+            err=True,
+        )
+        if isinstance(error.cause, ApiError):
+            exit_with_error(context, _read_only_key_hinted(error.cause))
+        if isinstance(error.cause, AuthError):
+            exit_with_error(
+                context,
+                OutputError(code="authentication_failed", message=str(error.cause)),
+                semantic=ErrorSemantic.AUTH,
+            )
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_budget_check_batch_response",
+                message="The batch check response was invalid.",
+            ),
+        )
+    except ApiError as error:
+        exit_with_error(context, _read_only_key_hinted(error))
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValidationError, ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_budget_check_batch_response",
+                message="The batch check response was invalid.",
+            ),
+        )
+    output_engine(context).write_success(
+        schema="solwyn.budget.check.batch.v1",
+        data=data,
+        table=_batch_check_table(data),
+    )
+    typer.echo(
+        "Each allowed reservation must be confirmed after its provider call. Batch checks consume checks_per_minute per item; do not poll or replay to refresh reservations.",
+        err=True,
+    )
+    if any(
+        item.result is not None and not item.result.allowed for item in data.results
+    ):
+        raise typer.Exit(code=ExitCode.BUDGET_DENIED)
+    if any(item.error_code is not None for item in data.results):
+        raise typer.Exit(code=ExitCode.GENERIC_ERROR)
 
 
 def request_budget_confirm(
@@ -654,16 +930,17 @@ def _set_table(data: _BudgetSetData) -> TableData:
 @app.command(
     "check",
     epilog=help_contract(
-        endpoint="POST /api/v1/budgets/check",
+        endpoint="POST /api/v1/budgets/check; POST /api/v1/budgets/check/batch (--batch)",
         auth="key",
         exits=(
-            "0 allowed or fail-open; 1 generic/API; 2 usage; 3 auth; 4 budget denial"
+            "0 allowed or fail-open; 1 generic/API or item error; 2 usage; 3 auth; 4 budget denial; 5 not found"
         ),
-        schema="solwyn.budget-check.v1",
+        schema="solwyn.budget-check.v1; solwyn.budget.check.batch.v1 (--batch)",
         guidance=(
             "Run immediately before caller-made un-instrumented provider spend.",
             "Denied checks record a receipt by default; --no-record skips ingest. Copy the emitted call_id when referring to that attempt.",
             "Do not use with Solwyn SDK-instrumented calls. Do not poll with check.",
+            "--batch FILE|- reads a JSON array, validates all items, and chunks at 32. Each allowed item holds its own reservation; confirm each after its call. Rate limits count every item against checks_per_minute. Item errors exit 1; any denial takes precedence with exit 4.",
             "Set the media quantities for an image, video, audio, or speech call; "
             "the API prices the reservation from them instead of from tokens.",
         ),
@@ -672,21 +949,21 @@ def _set_table(data: _BudgetSetData) -> TableData:
 def check(
     context: typer.Context,
     estimated_input_tokens: Annotated[
-        int,
+        int | None,
         typer.Option(
             "--estimated-input-tokens",
             min=0,
             help="Estimated input tokens for the pending provider call.",
         ),
-    ],
+    ] = None,
     model: Annotated[
-        str,
+        str | None,
         typer.Option("--model", help="Primary provider model name."),
-    ],
+    ] = None,
     provider: Annotated[
-        ProviderName,
+        ProviderName | None,
         typer.Option("--provider", help="Primary provider."),
-    ],
+    ] = None,
     tag: Annotated[
         list[str] | None,
         typer.Option(
@@ -792,8 +1069,60 @@ def check(
             help="Mark the media quantities as estimates rather than measured.",
         ),
     ] = False,
+    batch: Annotated[
+        str | None,
+        typer.Option(
+            "--batch",
+            help="JSON array of check bodies from FILE or - for stdin; chunked at 32.",
+        ),
+    ] = None,
 ) -> None:
     """Reserve budget immediately before one un-instrumented provider call."""
+    if batch is not None:
+        single_options = (
+            estimated_input_tokens,
+            model,
+            provider,
+            tag,
+            fallback_providers,
+            fallback_models,
+            image_count,
+            generation_count,
+            video_seconds,
+            audio_seconds,
+            input_characters,
+            resolution,
+            quality,
+        )
+        if (
+            any(value is not None for value in single_options)
+            or is_estimated
+            or (context.get_parameter_source("agent_run_id").name == "COMMANDLINE")
+        ):
+            exit_with_error(
+                context,
+                OutputError(
+                    code="conflicting_batch_options",
+                    message="Put per-check inputs in the batch file; single-check flags cannot accompany --batch.",
+                ),
+                semantic=ErrorSemantic.USAGE,
+            )
+        _check_batch_command(
+            context,
+            batch,
+            no_record=no_record,
+            estimated_output_tokens=estimated_output_tokens,
+        )
+        return
+    if estimated_input_tokens is None or model is None or provider is None:
+        exit_with_error(
+            context,
+            OutputError(
+                code="missing_budget_check_options",
+                message="Single checks require --estimated-input-tokens, --model and --provider.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
     providers = fallback_providers or []
     models = fallback_models or []
     if len(providers) != len(models):

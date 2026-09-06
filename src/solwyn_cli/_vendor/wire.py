@@ -287,6 +287,10 @@ class BudgetCheckRequest(_WireModel):
     run_directive_version: Literal["1"] | None = None
 
 
+class BudgetCheckBatchRequest(_WireModel):
+    checks: Annotated[list[BudgetCheckRequest], Field(min_length=1, max_length=32)]
+
+
 class BudgetConfirmRequest(_WireModel):
     # Core requires exactly one of reservation_id / lease_id. The CLI owns no
     # lease plane: require a reservation and never emit lease_id.

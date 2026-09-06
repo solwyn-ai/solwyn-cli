@@ -32,6 +32,11 @@ from solwyn_cli.commands.alerts import (
 from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rules
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
+    BudgetCheckBatchData,
+    BudgetCheckBatchFailure,
+    BATCH_FAILURE_HINT,
+    prepare_batch_checks,
+    request_budget_check_batch,
     BudgetConfirmData,
     BudgetStatusData,
     request_budget_check,
@@ -103,6 +108,7 @@ TOOL_NAMES = (
     "list_agent_runs",
     "get_agent_run",
     "list_alert_events",
+    "budget_check_batch",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -242,6 +248,12 @@ class _BudgetCheckResult(_ToolResult[BudgetCheckData]):
     schema_name: Literal["solwyn.mcp.budget-check.v1"] = Field(
         default="solwyn.mcp.budget-check.v1",
         alias="schema",
+    )
+
+
+class _BudgetCheckBatchResult(_ToolResult[BudgetCheckBatchData]):
+    schema_name: Literal["solwyn.budget.check.batch.v1"] = Field(
+        default="solwyn.budget.check.batch.v1", alias="schema"
     )
 
 
@@ -692,6 +704,55 @@ def _budget_check_operation(
             _BudgetCheckResult,
             error,
             invalid_response_code="invalid_budget_check_response",
+        )
+
+
+def _budget_check_batch_operation(
+    *,
+    launch_options: McpLaunchOptions,
+    checks: list[dict[str, Any]],
+    no_record: bool,
+    estimated_output_tokens: int | None,
+) -> _BudgetCheckBatchResult:
+    try:
+        prepared = prepare_batch_checks(checks)
+    except (ValidationError, ValueError, TypeError):
+        return _error(
+            _BudgetCheckBatchResult,
+            code="invalid_budget_check_batch_request",
+            message="Batch input must be a non-empty array of valid check bodies.",
+        )
+    try:
+        with tool_call_client(launch_options) as (_, client):
+            auth_error = _require_project_key(
+                _BudgetCheckBatchResult, client.current_credential, "checks"
+            )
+            if auth_error is not None:
+                return auth_error
+            data = request_budget_check_batch(
+                client=client,
+                checks=prepared,
+                no_record=no_record,
+                estimated_output_tokens=estimated_output_tokens,
+            )
+        return _success(_BudgetCheckBatchResult, data)
+    except BudgetCheckBatchFailure as error:
+        failure = _operation_error(
+            _BudgetCheckBatchResult,
+            error.cause,
+            invalid_response_code="invalid_budget_check_batch_response",
+        )
+        tool_error = failure.error.model_copy(
+            update={
+                "hint": " ".join(filter(None, (failure.error.hint, BATCH_FAILURE_HINT)))
+            }
+        )
+        return _BudgetCheckBatchResult(ok=False, data=error.data, error=tool_error)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _BudgetCheckBatchResult,
+            error,
+            invalid_response_code="invalid_budget_check_batch_response",
         )
 
 
@@ -1571,6 +1632,38 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 failed_only=failed_only,
                 cursor=cursor,
                 all_pages=all_pages,
+            )
+        )
+
+    @server.tool(
+        name="budget_check_batch",
+        description=(
+            "Reserve budget immediately before multiple caller-made un-instrumented provider calls. "
+            "Checks are JSON check bodies, fully validated before submission and chunked at 32; "
+            "results preserve input order. Each allowed item holds its own reservation: confirm it "
+            "after its call. Unknown models return per-item errors; 404/503 fail the request. "
+            "Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. "
+            "Admission counts each item against checks_per_minute. Do not poll or replay to refresh reservations."
+        ),
+        structured_output=True,
+    )
+    async def budget_check_batch(
+        checks: Annotated[list[BudgetCheckRequest], Field(min_length=1)],
+        no_record: bool = False,
+        estimated_output_tokens: Annotated[
+            int | None, Field(ge=0, le=100_000_000)
+        ] = None,
+    ) -> _BudgetCheckBatchResult:
+        return await anyio.to_thread.run_sync(
+            partial(
+                _budget_check_batch_operation,
+                launch_options=launch,
+                checks=[
+                    check.model_dump(mode="json", exclude_unset=True)
+                    for check in checks
+                ],
+                no_record=no_record,
+                estimated_output_tokens=estimated_output_tokens,
             )
         )
 

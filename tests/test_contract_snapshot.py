@@ -17,11 +17,13 @@ unified-diff style. The live side is introspected, never transcribed:
 
 from __future__ import annotations
 
+import json
 from difflib import unified_diff
 
 from contract.builder import (
     ERROR_SCHEMA,
     EXIT_CODE_MEANINGS,
+    GOLDEN_DIR,
     SNAPSHOT_PATH,
     build_cli_contract,
     declared_schema_tokens,
@@ -30,6 +32,7 @@ from contract.builder import (
 )
 
 from solwyn_cli.exit_codes import ExitCode
+from solwyn_cli.commands.budget import BudgetCheckBatchData
 
 
 def test_cli_contract_snapshot_matches_the_live_cli() -> None:
@@ -120,3 +123,69 @@ def test_attestation_declares_stream_output_kind() -> None:
     )
     assert attestation["output_kind"] == "stream"
     assert attestation["json_schema"] is None
+
+
+def test_conditional_batch_schema_is_declared_and_captured() -> None:
+    batch_schema = "solwyn.budget.check.batch.v1"
+    assert batch_schema in declared_schema_tokens()
+    contract = build_cli_contract()
+    check = next(
+        command
+        for command in contract["commands"]
+        if command["path"] == ["budget", "check"]
+    )
+    assert check["json_schema"] == "solwyn.budget-check.v1"
+    assert check["json_schemas"] == ["solwyn.budget-check.v1", batch_schema]
+    assert check["output_kind"] == "json-envelope"
+    batch = next(
+        schema
+        for schema in contract["json_schemas"]
+        if schema["schema"] == batch_schema
+    )
+    assert batch == {
+        "schema": batch_schema,
+        "keys": ["failed_chunk_start", "results", "schema", "total_checks"],
+        "optional_keys": ["failed_chunk_start", "total_checks"],
+        "universal_error_envelope": False,
+    }
+
+
+def test_single_schema_command_contract_stays_unchanged() -> None:
+    contract = build_cli_contract()
+    confirm = next(
+        command
+        for command in contract["commands"]
+        if command["path"] == ["budget", "confirm"]
+    )
+    assert confirm["json_schema"] == "solwyn.budget-confirm.v1"
+    assert "json_schemas" not in confirm
+    assert confirm["output_kind"] == "json-envelope"
+
+
+def test_batch_item_contract_retains_nullable_result_and_error_lanes() -> None:
+    """The top-level contract's results correspond to the captured wire lanes."""
+    schema = BudgetCheckBatchData.model_json_schema()
+    assert schema["properties"]["results"]["items"] == {
+        "$ref": "#/$defs/BudgetCheckBatchItem"
+    }
+    item_schema = schema["$defs"]["BudgetCheckBatchItem"]
+    assert item_schema["additionalProperties"] is False
+    assert set(item_schema["properties"]) == {"result", "error_code", "error_message"}
+    for field in item_schema["properties"].values():
+        assert field["default"] is None
+        assert {"type": "null"} in field["anyOf"]
+    assert item_schema["properties"]["result"]["anyOf"][0] == {
+        "$ref": "#/$defs/_BudgetCheckData"
+    }
+    for field in ("error_code", "error_message"):
+        assert item_schema["properties"][field]["anyOf"] == [
+            {"type": "string"},
+            {"type": "null"},
+        ]
+    allowed = json.loads((GOLDEN_DIR / "budget-check-batch-allowed.json").read_text())
+    unknown = json.loads((GOLDEN_DIR / "budget-check-batch-unknown.json").read_text())
+    assert allowed["results"][0]["error_code"] is None
+    assert allowed["results"][0]["error_message"] is None
+    assert allowed["results"][0]["result"]["price_hints"] is None
+    assert unknown["results"][0]["result"] is None
+    assert unknown["results"][0]["error_code"] == "unknown_model"

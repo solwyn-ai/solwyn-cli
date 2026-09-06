@@ -1,0 +1,5 @@
+Index  Outcome        Details                 Call ID                   Recorded
+0      allowed        res_1                   -                         -       
+1      unknown_model  Model cannot be priced  -                         -       
+2      denied         monthly                 12345678-1234-1234-1234-  skipped 
+                                              123456789abc                      
