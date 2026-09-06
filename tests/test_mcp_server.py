@@ -51,6 +51,7 @@ _TOOL_NAMES = [
     "get_agent_run",
     "list_alert_events",
     "budget_check_batch",
+    "get_overview",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

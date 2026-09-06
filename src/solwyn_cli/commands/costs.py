@@ -7,13 +7,16 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 import typer
+import httpx
 from pydantic import ValidationError
 
-from solwyn_cli.auth import AuthError, resolve_credential
+from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands._cost_filters import cost_params, validate_group_by
 from solwyn_cli.commands._cost_models import (
+    AccountCostQueryResponse,
+    CostGroup,
     CostQueryResponse,
     CostEventsResponse,
     CostTotalResponse,
@@ -35,12 +38,16 @@ class CostRange(StrEnum):
 
 
 CostsData = CostQueryResponse
+AccountCostsData = AccountCostQueryResponse
 
 COSTS_HELP = help_contract(
-    endpoint="GET /api/v1/projects/{project}/costs",
-    auth="any",
+    endpoint=(
+        "GET /api/v1/projects/{project}/costs or, with --account, "
+        "GET /api/v1/account/costs"
+    ),
+    auth="project key or JWT; --account requires JWT",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
-    schema="solwyn.costs.v1",
+    schema="solwyn.costs.v1 or solwyn.account_costs.v1",
 )
 app = typer.Typer(invoke_without_command=True, no_args_is_help=False, epilog=COSTS_HELP)
 
@@ -79,6 +86,51 @@ def fetch_cost_total(
     if data.project_id != project_id:
         raise ValueError("Costs response project did not match the request.")
     return data
+
+
+def fetch_account_costs(
+    *,
+    client: SolwynClient,
+    time_range: str = "7d",
+    group_by: str = "project",
+    **filters: Any,
+) -> AccountCostsData:
+    """Read an account-wide cost rollup."""
+    data, _ = _request_account_costs(
+        client=client,
+        time_range=time_range,
+        group_by=group_by,
+        **filters,
+    )
+    return data
+
+
+def _request_account_costs(
+    *,
+    client: SolwynClient,
+    time_range: str = "7d",
+    group_by: str = "project",
+    **filters: Any,
+) -> tuple[AccountCostsData, httpx.Headers]:
+    """Read account costs and retain Core's effective-window headers."""
+    params = cost_params(time_range=time_range, **filters)
+    params["group_by"] = group_by
+    response = client.request("GET", "/api/v1/account/costs", params=params)
+    return AccountCostsData.model_validate(response.json()), response.headers
+
+
+def report_window_headers(headers: httpx.Headers) -> None:
+    """Print account-cost requested/effective window metadata when supplied."""
+    for suffix in (
+        "Requested-From",
+        "Requested-To",
+        "Effective-From",
+        "Effective-To",
+        "Retention-Clamped",
+    ):
+        name = f"X-Solwyn-{suffix}"
+        if name in headers:
+            typer.echo(f"{name}: {headers[name]}", err=True)
 
 
 def report_window(window: CostWindow) -> None:
@@ -142,6 +194,66 @@ def _table(data: CostsData) -> TableData:
     )
 
 
+def _sparkline(points: list[Any] | None) -> str:
+    if not points:
+        return "—"
+    levels = "▁▂▃▄▅▆▇█"
+    maximum = max(point.cost for point in points)
+    if maximum <= 0:
+        return levels[0] * len(points)
+    return "".join(
+        levels[min(len(levels) - 1, round(point.cost / maximum * (len(levels) - 1)))]
+        for point in points
+    )
+
+
+def _account_table(data: AccountCostsData) -> TableData:
+    if data.analytics_withheld:
+        return TableData(
+            columns=("Project", "Current period"),
+            rows=tuple(
+                (
+                    group.project_name or group.group_key or "—",
+                    "—"
+                    if group.current_period_cost is None
+                    else f"{group.current_period_cost:.6f}",
+                )
+                for group in data.groups
+            ),
+            right_align=("Current period",),
+        )
+    if data.group_by == "project":
+        return TableData(
+            columns=("Project", "Window cost", "Current period", "Calls", "Daily"),
+            rows=tuple(
+                (
+                    group.project_name or group.group_key or "—",
+                    f"{group.total_cost:.6f}",
+                    "—"
+                    if group.current_period_cost is None
+                    else f"{group.current_period_cost:.6f}",
+                    str(group.call_count),
+                    _sparkline(group.daily),
+                )
+                for group in data.groups
+            ),
+            right_align=("Window cost", "Current period", "Calls"),
+        )
+    return _table(
+        CostsData(
+            project_id="account",
+            range=data.range,
+            group_by=data.group_by,
+            groups=[
+                CostGroup.model_validate(group.model_dump()) for group in data.groups
+            ],
+            truncated=data.truncated,
+            savings=data.savings,
+            window=data.window,
+        )
+    )
+
+
 def _events_table(data: CostEventsResponse) -> TableData:
     return TableData(
         columns=(
@@ -198,10 +310,11 @@ def _run(
     limit: int = 25,
     cursor: str | None = None,
     export_format: str = "csv",
+    account: bool = False,
     **filters: Any,
 ) -> None:
     runtime = command_context(context)
-    if runtime.project is None:
+    if runtime.project is None and not account:
         exit_with_error(
             context,
             OutputError(
@@ -211,8 +324,39 @@ def _run(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    if account:
+        unsupported = next(
+            (
+                name
+                for name in (
+                    "status",
+                    "service_tier",
+                    "provider_region",
+                    "agent_run",
+                    "failover_reason",
+                    "model_fallback",
+                    "provider_fallback",
+                    "tag",
+                )
+                if filters.get(name) is not None
+            ),
+            None,
+        )
+        if unsupported is not None:
+            exit_with_error(
+                context,
+                OutputError(
+                    code="invalid_cost_query",
+                    message=(
+                        "Account costs support only model, provider, modality, "
+                        "group-by, and window filters."
+                    ),
+                ),
+                semantic=ErrorSemantic.USAGE,
+            )
     try:
-        validate_group_by(group_by)
+        if not account:
+            validate_group_by(group_by)
         params = cost_params(**filters)
     except ValueError as error:
         exit_with_error(
@@ -221,6 +365,16 @@ def _run(
             semantic=ErrorSemantic.USAGE,
         )
     credential = required_credential(context, resolve=resolve_credential)
+    if account and not isinstance(credential, JwtCredential):
+        exit_with_error(
+            context,
+            OutputError(
+                code="authentication_required",
+                message="Account costs require user login.",
+                hint="Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
     entitlement_hints: list[str] = []
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -230,7 +384,8 @@ def _run(
                 # Entitlements distinguish allowed values from paid values, not
                 # invalid dimensions. Core must decide 400 versus 402.
                 if group_by is not None and not (
-                    group_by in analytics.allowed_group_by
+                    (account and group_by == "project")
+                    or group_by in analytics.allowed_group_by
                     or (group_by.startswith("tag:") and analytics.tags)
                 ):
                     entitlement_hints.append(
@@ -248,14 +403,22 @@ def _run(
                         + ", ".join(analytics.allowed_ranges)
                         + ".",
                     )
-            path = f"/api/v1/projects/{quote(runtime.project, safe='')}/costs"
-            if operation == "export":
+            if account:
+                data, account_headers = _request_account_costs(
+                    client=client,
+                    group_by=group_by or "project",
+                    **filters,
+                )
+                table = _account_table(data)
+            else:
+                path = f"/api/v1/projects/{quote(runtime.project, safe='')}/costs"
+            if not account and operation == "export":
                 params["format"] = export_format
                 if group_by is not None:
                     params["group_by"] = group_by
                 stream_export(client=client, path=path + "/export", params=params)
                 return
-            if operation == "events":
+            if not account and operation == "events":
                 params["limit"] = limit
                 if cursor is not None:
                     params["cursor"] = cursor
@@ -265,12 +428,12 @@ def _run(
                 if any(item.project_id != runtime.project for item in data.items):
                     raise ValueError("Costs event project did not match the request.")
                 table = _events_table(data)
-            elif operation == "total":
+            elif not account and operation == "total":
                 data = fetch_cost_total(
                     client=client, project_id=runtime.project, **filters
                 )
                 table = _total_table(data)
-            else:
+            elif not account:
                 data = fetch_costs(
                     client=client,
                     project_id=runtime.project,
@@ -300,6 +463,8 @@ def _run(
             ),
         )
     report_window(data.window)
+    if account:
+        report_window_headers(account_headers)
     if (
         isinstance(data, CostEventsResponse)
         and data.has_more
@@ -316,7 +481,7 @@ def _run(
                 "More events are available, but Core returned no continuation cursor.",
                 err=True,
             )
-    if isinstance(data, CostsData) and data.truncated:
+    if isinstance(data, (CostsData, AccountCostsData)) and data.truncated:
         typer.echo("showing top 100 groups", err=True)
     if getattr(data, "savings", None) is not None:
         savings = data.savings
@@ -330,13 +495,26 @@ def _run(
             err=True,
         )
     schema = (
-        "solwyn.costs.v1"
-        if operation == "aggregate"
-        else f"solwyn.costs.{operation}.v1"
+        "solwyn.account_costs.v1"
+        if account
+        else (
+            "solwyn.costs.v1"
+            if operation == "aggregate"
+            else f"solwyn.costs.{operation}.v1"
+        )
     )
     payload = data.model_dump(mode="json")
     if payload.get("savings", False) is None:
         payload.pop("savings")
+    if account and data.analytics_withheld:
+        payload["groups"] = [
+            {
+                "group_key": group.group_key,
+                "project_name": group.project_name,
+                "current_period_cost": group.current_period_cost,
+            }
+            for group in data.groups
+        ]
     output_engine(context).write_success(schema=schema, data=payload, table=table)
 
 
@@ -344,12 +522,19 @@ def _run(
 def costs(
     context: typer.Context,
     group_by: Annotated[
-        str | None,
+        str,
         typer.Option(
             "--group-by",
             help="Dimension from billing capabilities, or tag:<key> (Team+). Omit for raw export.",
         ),
     ] = "model",
+    account: Annotated[
+        bool,
+        typer.Option(
+            "--account",
+            help="Show the JWT-authenticated account rollup across projects.",
+        ),
+    ] = False,
     time_range: Annotated[
         str,
         typer.Option(
@@ -423,10 +608,18 @@ def costs(
                 "Place cost filters after the subcommand (for example: costs total --model MODEL)."
             )
         return
+    effective_group_by = group_by
+    if (
+        account
+        and getattr(context.get_parameter_source("group_by"), "name", None)
+        != "COMMANDLINE"
+    ):
+        effective_group_by = "project"
     _run(
         context,
         "aggregate",
-        group_by=group_by,
+        group_by=effective_group_by,
+        account=account,
         time_range=time_range,
         from_=from_,
         to=to,

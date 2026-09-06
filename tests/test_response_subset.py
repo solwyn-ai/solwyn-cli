@@ -517,6 +517,45 @@ RESPONSE_READS = {
         "savings",
         "window",
     ),
+    "AccountCostQueryResponse": (
+        "range",
+        "group_by",
+        "groups",
+        "truncated",
+        "analytics_withheld",
+        "savings",
+        "window",
+    ),
+    "AccountCostGroup": (
+        "group_key",
+        "provider",
+        "modality",
+        "agent_run_name",
+        "total_cost",
+        "total_input_tokens",
+        "total_output_tokens",
+        "call_count",
+        "unpriced_call_count",
+        "local_call_count",
+        "project_name",
+        "current_period_cost",
+        "daily",
+    ),
+    "AccountCostDailyPoint": ("day", "cost"),
+    "OverviewResponse": (
+        "total_spend",
+        "total_requests",
+        "project_count",
+        "trend_vs_last_period",
+        "period_start",
+        "period_end",
+        "savings",
+        "quota_exceeded",
+        "included_requests",
+        "current_requests",
+        "window_start",
+        "window_end",
+    ),
     "CostGroup": (
         "group_key",
         "provider",
@@ -806,6 +845,12 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "AccountAlertSnoozeResponse",
     ),
+    ("GET", "/api/v1/account/costs"): (
+        "200",
+        "object",
+        "AccountCostQueryResponse",
+    ),
+    ("GET", "/api/v1/overview"): ("200", "object", "OverviewResponse"),
     ("GET", "/api/v1/projects/{project_id}/costs/events"): (
         "200",
         "object",
@@ -1182,6 +1227,72 @@ def _assert_nullable_component_ref(
     )
 
 
+def _assert_nullable_array_component_ref(
+    schema: dict[str, Any],
+    *,
+    expected_component: str,
+    context: str,
+) -> None:
+    branches = schema.get("anyOf")
+    assert isinstance(branches, list), f"{context}: expected nullable array union"
+    arrays = [
+        branch
+        for branch in branches
+        if isinstance(branch, dict) and branch.get("type") == "array"
+    ]
+    null_branches = [
+        branch
+        for branch in branches
+        if isinstance(branch, dict) and branch.get("type") == "null"
+    ]
+    assert len(arrays) == 1 and len(null_branches) == 1, (
+        f"{context}: expected one array branch and one null branch"
+    )
+    items = arrays[0].get("items")
+    assert isinstance(items, dict), f"{context}: array items schema is missing"
+    _assert_component_ref(
+        items,
+        expected_component=expected_component,
+        context=context,
+    )
+
+
+def assert_account_nested_response_bindings(snapshot: dict[str, Any]) -> None:
+    """Bind nested account-cost and overview components consumed by the CLI."""
+    schemas = snapshot["components"]["schemas"]
+    account_properties = schemas["AccountCostQueryResponse"]["properties"]
+
+    groups_items = account_properties["groups"].get("items")
+    assert isinstance(groups_items, dict), (
+        "AccountCostQueryResponse.groups: array items schema is missing"
+    )
+    _assert_component_ref(
+        groups_items,
+        expected_component="AccountCostGroup",
+        context="AccountCostQueryResponse.groups",
+    )
+    _assert_nullable_array_component_ref(
+        schemas["AccountCostGroup"]["properties"]["daily"],
+        expected_component="AccountCostDailyPoint",
+        context="AccountCostGroup.daily",
+    )
+    _assert_nullable_component_ref(
+        account_properties["savings"],
+        expected_component="SavingsSummary",
+        context="AccountCostQueryResponse.savings",
+    )
+    _assert_component_ref(
+        account_properties["window"],
+        expected_component="CostWindow",
+        context="AccountCostQueryResponse.window",
+    )
+    _assert_nullable_component_ref(
+        schemas["OverviewResponse"]["properties"]["savings"],
+        expected_component="SavingsSummary",
+        context="OverviewResponse.savings",
+    )
+
+
 def assert_budget_nested_response_bindings(snapshot: dict[str, Any]) -> None:
     """Bind every nested response component validated by the budget command."""
     schemas = snapshot["components"]["schemas"]
@@ -1295,6 +1406,7 @@ def assert_response_reads_exist(snapshot: dict[str, Any]) -> None:
             )
     assert_budget_nested_response_bindings(snapshot)
     assert_audit_nested_response_binding(snapshot)
+    assert_account_nested_response_bindings(snapshot)
 
 
 def assert_operation_response_bindings(snapshot: dict[str, Any]) -> None:
@@ -1800,6 +1912,57 @@ def test_consumed_nested_component_ref_mutation_trips_guard(
 
     with pytest.raises(AssertionError, match=rf"{parent}\.{field}"):
         assert_budget_nested_response_bindings(mutated)
+
+
+@pytest.mark.parametrize(
+    ("parent", "field", "shape", "expected_component"),
+    [
+        ("AccountCostQueryResponse", "groups", "array", "AccountCostGroup"),
+        (
+            "AccountCostGroup",
+            "daily",
+            "nullable_array",
+            "AccountCostDailyPoint",
+        ),
+        (
+            "AccountCostQueryResponse",
+            "savings",
+            "nullable",
+            "SavingsSummary",
+        ),
+        ("AccountCostQueryResponse", "window", "direct", "CostWindow"),
+        ("OverviewResponse", "savings", "nullable", "SavingsSummary"),
+    ],
+)
+@pytest.mark.parametrize("mutation", ["replace", "remove"])
+def test_account_nested_component_ref_mutation_trips_guard(
+    parent: str,
+    field: str,
+    shape: str,
+    expected_component: str,
+    mutation: str,
+) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    field_schema = mutated["components"]["schemas"][parent]["properties"][field]
+    if shape == "array":
+        target = field_schema["items"]
+    elif shape == "nullable_array":
+        array_branch = next(
+            branch for branch in field_schema["anyOf"] if branch.get("type") == "array"
+        )
+        target = array_branch["items"]
+    elif shape == "nullable":
+        target = next(branch for branch in field_schema["anyOf"] if "$ref" in branch)
+    else:
+        target = field_schema
+    assert target["$ref"] == f"#/components/schemas/{expected_component}"
+    if mutation == "replace":
+        target["$ref"] = "#/components/schemas/CostGroup"
+    else:
+        target.pop("$ref")
+
+    with pytest.raises(AssertionError, match=rf"{parent}\.{field}"):
+        assert_response_reads_exist(mutated)
 
 
 @pytest.mark.parametrize(

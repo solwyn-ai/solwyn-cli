@@ -67,6 +67,7 @@ from solwyn_cli.commands.costs import (
     CostTotalResponse,
 )
 from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
+from solwyn_cli.commands.overview import OverviewData, fetch_overview
 from solwyn_cli.commands.projects import ProjectsListData, fetch_projects
 from solwyn_cli.commands.runs import (
     AgentRunAmbiguousError,
@@ -109,6 +110,7 @@ TOOL_NAMES = (
     "get_agent_run",
     "list_alert_events",
     "budget_check_batch",
+    "get_overview",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -315,6 +317,12 @@ class _AgentRunResult(_ToolResult[AgentRunEntry]):
     schema_name: Literal["solwyn.mcp.agent-run.v1"] = Field(
         default="solwyn.mcp.agent-run.v1",
         alias="schema",
+    )
+
+
+class _OverviewResult(_ToolResult[OverviewData]):
+    schema_name: Literal["solwyn.mcp.overview.v1"] = Field(
+        default="solwyn.mcp.overview.v1", alias="schema"
     )
 
 
@@ -1171,6 +1179,26 @@ def _agent_run_operation(
         )
 
 
+def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
+    try:
+        with tool_call_client(launch_options) as (_, client):
+            if isinstance(client.current_credential, ProjectKeyCredential):
+                return _error(
+                    _OverviewResult,
+                    code="authentication_required",
+                    message="User login is required to read the account overview.",
+                    hint="Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+                )
+            data = fetch_overview(client=client)
+        return _success(_OverviewResult, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            _OverviewResult,
+            error,
+            invalid_response_code="invalid_overview_response",
+        )
+
+
 def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     """Build the stateless local MCP server and register the supported tools."""
     launch = launch_options or McpLaunchOptions()
@@ -1666,5 +1694,16 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 estimated_output_tokens=estimated_output_tokens,
             )
         )
+
+    @server.tool(
+        name="get_overview",
+        description=(
+            "Read calendar-month account spend, requests, trend, savings, and "
+            "free-tier quota metadata. Requires login/JWT authentication."
+        ),
+        structured_output=True,
+    )
+    async def get_overview() -> _OverviewResult:
+        return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
 
     return server

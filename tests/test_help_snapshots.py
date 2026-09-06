@@ -406,10 +406,13 @@ HELP_CONTRACTS = {
         "schema": "none (human confirmation on stderr)",
     },
     ("costs",): {
-        "endpoint": "GET /api/v1/projects/{project}/costs",
-        "auth": "any",
+        "endpoint": (
+            "GET /api/v1/projects/{project}/costs or, with --account, "
+            "GET /api/v1/account/costs"
+        ),
+        "auth": "project key or JWT; --account requires JWT",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
-        "schema": "solwyn.costs.v1",
+        "schema": "solwyn.costs.v1 or solwyn.account_costs.v1",
     },
     ("forecast",): {
         "endpoint": "GET /api/v1/projects/{project}/forecast",
@@ -556,12 +559,20 @@ HELP_CONTRACTS = {
         "schema": "solwyn.projects-rename.v1",
     },
     ("status",): {
-        "endpoint": "GET /api/v1/projects/{project}/budget and GET "
-        "/api/v1/projects/{project}/providers; optionally GET "
-        "forecast and provider failovers",
+        "endpoint": (
+            "GET /api/v1/projects/{project}/budget and GET "
+            "/api/v1/projects/{project}/providers; optionally GET forecast "
+            "and provider failovers; JWT also GET /api/v1/overview"
+        ),
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.status.v1",
+    },
+    ("overview",): {
+        "endpoint": "GET /api/v1/overview",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 3 auth",
+        "schema": "solwyn.overview.v1",
     },
     ("whoami",): {
         "endpoint": (
@@ -771,7 +782,7 @@ def test_mcp_help_names_the_exact_tool_surface() -> None:
     assert (
         "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
         "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
-        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch."
+        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview."
     ) in rendered
 
 

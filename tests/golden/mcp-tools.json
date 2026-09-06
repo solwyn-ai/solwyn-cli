@@ -7277,5 +7277,248 @@
     "annotations": null,
     "_meta": null,
     "execution": null
+  },
+  {
+    "name": "get_overview",
+    "title": null,
+    "description": "Read calendar-month account spend, requests, trend, savings, and free-tier quota metadata. Requires login/JWT authentication.",
+    "inputSchema": {
+      "properties": {},
+      "title": "get_overviewArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "OverviewResponse": {
+          "properties": {
+            "total_spend": {
+              "title": "Total Spend",
+              "type": "number"
+            },
+            "total_requests": {
+              "title": "Total Requests",
+              "type": "integer"
+            },
+            "project_count": {
+              "title": "Project Count",
+              "type": "integer"
+            },
+            "trend_vs_last_period": {
+              "title": "Trend Vs Last Period",
+              "type": "number"
+            },
+            "period_start": {
+              "format": "date",
+              "title": "Period Start",
+              "type": "string"
+            },
+            "period_end": {
+              "format": "date",
+              "title": "Period End",
+              "type": "string"
+            },
+            "savings": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SavingsSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "quota_exceeded": {
+              "title": "Quota Exceeded",
+              "type": "boolean"
+            },
+            "included_requests": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Included Requests"
+            },
+            "current_requests": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Requests"
+            },
+            "window_start": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window Start"
+            },
+            "window_end": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Window End"
+            }
+          },
+          "required": [
+            "total_spend",
+            "total_requests",
+            "project_count",
+            "trend_vs_last_period",
+            "period_start",
+            "period_end",
+            "quota_exceeded"
+          ],
+          "title": "OverviewResponse",
+          "type": "object"
+        },
+        "SavingsSummary": {
+          "properties": {
+            "saved_cost": {
+              "title": "Saved Cost",
+              "type": "number"
+            },
+            "saved_cost_upper": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Cost Upper"
+            },
+            "saved_input_tokens": {
+              "title": "Saved Input Tokens",
+              "type": "integer"
+            },
+            "blocked_call_count": {
+              "title": "Blocked Call Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "saved_cost",
+            "saved_cost_upper",
+            "saved_input_tokens",
+            "blocked_call_count"
+          ],
+          "title": "SavingsSummary",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.mcp.overview.v1",
+          "default": "solwyn.mcp.overview.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OverviewResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_OverviewResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "_meta": null,
+    "execution": null
   }
 ]

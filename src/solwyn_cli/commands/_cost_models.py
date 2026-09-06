@@ -1,5 +1,6 @@
 """Typed response fields adopted from the pinned Core contract."""
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -43,6 +44,27 @@ class CostQueryResponse(_Response):
     group_by: str
     groups: list[CostGroup]
     truncated: bool
+    savings: SavingsSummary | None = None
+    window: CostWindow
+
+
+class AccountCostDailyPoint(_Response):
+    day: date
+    cost: float
+
+
+class AccountCostGroup(CostGroup):
+    project_name: str | None = None
+    current_period_cost: float | None = None
+    daily: list[AccountCostDailyPoint] | None = None
+
+
+class AccountCostQueryResponse(_Response):
+    range: str
+    group_by: str
+    groups: list[AccountCostGroup]
+    truncated: bool
+    analytics_withheld: bool = False
     savings: SavingsSummary | None = None
     window: CostWindow
 

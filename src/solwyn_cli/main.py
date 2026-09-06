@@ -12,6 +12,7 @@ from solwyn_cli.commands.notifications import app as notifications_app
 from solwyn_cli.commands.agent_context import AGENT_CONTEXT_HELP, agent_context
 from solwyn_cli.commands.attest import ATTEST_HELP, attest
 from solwyn_cli.commands.audit import AUDIT_HELP, audit
+from solwyn_cli.commands.overview import OVERVIEW_HELP, overview
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.alerts import app as alerts_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
@@ -84,6 +85,7 @@ app.command("logout", epilog=LOGOUT_HELP)(logout)
 app.command("mcp", epilog=MCP_HELP)(mcp)
 app.command("record", epilog=RECORD_HELP)(record)
 app.command("plan", epilog=PLAN_HELP)(plan)
+app.command("overview", epilog=OVERVIEW_HELP)(overview)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)
 

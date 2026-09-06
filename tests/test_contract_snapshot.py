@@ -189,3 +189,28 @@ def test_batch_item_contract_retains_nullable_result_and_error_lanes() -> None:
     assert allowed["results"][0]["result"]["price_hints"] is None
     assert unknown["results"][0]["result"] is None
     assert unknown["results"][0]["error_code"] == "unknown_model"
+
+
+def test_account_costs_conditional_schema_is_declared_and_captured() -> None:
+    assert "solwyn.account_costs.v1" in declared_schema_tokens()
+    schemas = {entry["schema"] for entry in build_cli_contract()["json_schemas"]}
+    assert "solwyn.account_costs.v1" in schemas
+
+
+def test_combined_conditional_commands_retain_all_output_variants() -> None:
+    contract = build_cli_contract()
+    commands = {tuple(command["path"]): command for command in contract["commands"]}
+    schemas = {entry["schema"] for entry in contract["json_schemas"]}
+    expected = {
+        ("budget", "check"): [
+            "solwyn.budget-check.v1",
+            "solwyn.budget.check.batch.v1",
+        ],
+        ("costs",): ["solwyn.costs.v1", "solwyn.account_costs.v1"],
+    }
+    for path, variants in expected.items():
+        command = commands[path]
+        assert command["json_schema"] == variants[0]
+        assert command["json_schemas"] == variants
+        assert command["output_kind"] == "json-envelope"
+        assert set(variants) <= schemas

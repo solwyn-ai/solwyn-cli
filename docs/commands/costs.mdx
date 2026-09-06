@@ -6,8 +6,13 @@ title: Costs
 `--project` (or `SOLWYN_PROJECT_ID`) before `costs`. Project keys and user login
 both work. Use `--json` before `costs` for the `solwyn.costs.v1` envelope.
 
+Add `--account` to read one JWT-authenticated rollup across every active
+project. No project selection is required. Account output uses the
+`solwyn.account_costs.v1` envelope and defaults to `--group-by project`.
+
 ```sh
 solwyn --project proj_example costs --group-by day
+solwyn --json costs --account --group-by project --range 30d
 solwyn --json --project proj_example costs --group-by tag:customer --tag customer=example
 solwyn --project proj_example costs total --from 2026-08-01T00:00:00Z --to 2026-09-01T00:00:00Z
 solwyn --project proj_example costs events --limit 25 --cursor CURSOR
@@ -27,6 +32,12 @@ and repeatable `--tag key=value`. Tag filters split at the first `=` and preserv
 spaces and empty values; duplicate keys are rejected. Tag keys contain 1–64
 characters, values at most 256, and neither may contain NUL.
 
+Account costs accept model, provider, and modality filters plus the shared
+preset or paired custom window. Account grouping is limited by Core to
+`project`, `day`, `model`, or `provider`; unsupported values return a usage
+error. Project-only status, service-tier, provider-region, run, failover, and
+tag filters are rejected locally with exit 2 so they cannot be silently ignored.
+
 `--agent-run` accepts either the raw run identifier or the stored
 `run_<32 lowercase hex>` identifier and sends only the matching Core parameter.
 
@@ -44,6 +55,20 @@ for uncapped totals. JSON includes the requested and effective `window`; retenti
 clamp warnings go to stderr. `agent_run_name` is displayed when supplied. Missing
 savings are omitted from CLI JSON, and an unavailable savings upper bound is `—`
 in the human summary, never zero.
+
+For account project grouping, each row includes the project's current budget
+period cost and a chronological daily-spend sparkline. Empty daily data renders
+as `—`; an all-zero series renders at the lowest sparkline level. The account
+response also prints Core's requested/effective window headers to stderr when
+present.
+
+On a free account past its monthly request quota, Core returns
+`analytics_withheld=true` for project grouping. The CLI emits only project
+identity and current-period budget-gauge values in each row. It suppresses the
+wire's placeholder analytic zeros and empty daily list so withheld analytics
+can never be mistaken for zero spend. Savings remains visible when Core supplies
+it. Other account groupings can return Core's quota-exceeded 402 with its safe
+dashboard path.
 
 `costs events` emits `solwyn.costs.events.v1`, including `items`, `next_cursor`,
 `has_more`, and `window`. Table output prints a continuation notice and the next
