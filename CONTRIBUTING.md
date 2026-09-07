@@ -10,6 +10,12 @@ uv run ruff format --check .
 uv run pytest
 ```
 
+For deployed API validation, export a staging account JWT as `SOLWYN_JWT` and run
+`make smoke-cli` or `make smoke-mcp`. Each command creates a disposable project,
+records synthetic durable spend, tests budget enforcement and reporting, and
+archives the project afterward. See [staging smoke tests](docs/staging-smoke.md)
+for prerequisites, coverage, and dashboard inspection options.
+
 ## Command and output contracts
 
 Treat command names, flags, help text, exit codes, stdout/stderr behavior, and JSON schemas as
