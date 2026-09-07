@@ -392,8 +392,12 @@ def acceptance(
                         api, before, 1, lane=f"{lane} after validation"
                     )
                     api.mode = "auth"
+                    auth_before = len(api.requests)
                     auth = run_client(launch, cwd=root, env=environment, expected=1)
-                    assert auth["status"] == "execution_error"
+                    assert auth["status"] == "execution_error", (
+                        f"{lane} auth: expected execution_error, "
+                        f"HTTP request delta {len(api.requests) - auth_before}"
+                    )
                     # No auth replay.
                     assert_request_count(api, before, 2, lane=f"{lane} after auth")
                     api.mode = "success"
