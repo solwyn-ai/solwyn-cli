@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "solwyn-cli"
-version = "0.1.0"
+version = "0.2.0rc1"
 description = "Command-line client for Solwyn"
 readme = "README.md"
 requires-python = ">=3.11"

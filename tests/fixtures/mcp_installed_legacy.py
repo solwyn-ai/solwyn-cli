@@ -37,7 +37,7 @@ async def main() -> None:
                 hello = await client.initialize()
                 assert hello.protocolVersion == "2025-11-25"
                 assert hello.serverInfo.name == "solwyn"
-                assert hello.serverInfo.version == "0.1.0"
+                assert hello.serverInfo.version == "0.2.0rc1"
                 catalog = await client.list_tools()
                 assert len(catalog.tools) == 13
                 assert all(tool.annotations.readOnlyHint for tool in catalog.tools)
