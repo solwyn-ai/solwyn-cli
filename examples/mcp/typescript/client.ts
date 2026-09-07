@@ -54,6 +54,14 @@ export function serverEnvironment(): Record<string, string> {
   return environment;
 }
 
+export function createReadClient(mode: 'modern' | 'legacy'): Client {
+  return new Client({ name: 'solwyn-read-example', version: '0.0.0' }, {
+    // The disposable discovery probe inherits connect's caller timeout. A
+    // shorter fixed deadline can reject a slow Windows process before startup.
+    versionNegotiation: { mode: mode === 'legacy' ? 'legacy' : { pin: '2026-07-28' }, probe: { maxRetries: 0 } },
+  });
+}
+
 async function closeAndObserve(client: Client, transport: StdioClientTransport): Promise<void> {
   const pid = transport.pid; // Public SDK API, captured before close clears it.
   await client.close();
@@ -86,11 +94,7 @@ async function main(): Promise<number> {
   if (!executable || !isAbsolute(executable) || !statSync(executable).isFile() || !project || !projectPattern.test(project)) throw new Error('Invalid launch');
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Invalid API URL');
   if (!['modern', 'legacy'].includes(values.mode!) || !Number.isFinite(timeout) || timeout < 100 || timeout > 30_000) throw new Error('Invalid client options');
-  const client = new Client({ name: 'solwyn-read-example', version: '0.0.0' }, {
-    // SDK2 defaults to legacy. Pin modern explicitly and bound its disposable
-    // sibling discovery probe. Startup must have no spend/provider effects.
-    versionNegotiation: { mode: values.mode === 'legacy' ? 'legacy' : { pin: '2026-07-28' }, probe: { timeoutMs: 2_000, maxRetries: 0 } },
-  });
+  const client = createReadClient(values.mode === 'legacy' ? 'legacy' : 'modern');
   const transport = new StdioClientTransport({
     command: executable,
     args: ['--project', project, '--api-url', values['api-url']!, 'mcp', '--profile', 'read'],
