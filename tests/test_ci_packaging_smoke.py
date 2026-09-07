@@ -18,6 +18,9 @@ METADATA_2_5_INSPECTOR = (
     "hynek/build-and-inspect-python-package@"
     "2abe76da66d0a6a4a227101f9348ee855797cfa5 # v3.0.1"
 )
+METADATA_2_5_PUBLISHER = (
+    "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1"
+)
 RUNTIME_REQUIREMENTS = (
     "click>=8.1",
     "httpx>=0.27",
@@ -130,6 +133,12 @@ def test_publish_workflow_uses_metadata_2_5_compatible_inspector() -> None:
     workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
 
     assert METADATA_2_5_INSPECTOR in workflow
+
+
+def test_publish_workflow_uses_metadata_2_5_compatible_publisher() -> None:
+    workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert METADATA_2_5_PUBLISHER in workflow
 
 
 def test_publish_workflow_rejects_a_tag_that_differs_from_package_version() -> None:
