@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from solwyn_cli import auth
 from solwyn_cli.commands import _record, budget
 from solwyn_cli.mcp import server as mcp_server
+from mcp_batch_fixtures import ID, journal
 from test_mcp_conformance import (
     CHECK_RESPONSE,
     VALID_KEY,
@@ -257,50 +258,60 @@ def test_denial_and_fail_open_are_successful_decisions(monkeypatch, allowed):
 
 
 def test_later_batch_failure_retains_completed_reservations(monkeypatch):
-    completed = [
-        {"result": {**CHECK_RESPONSE, "reservation_id": f"res_{index}"}}
-        for index in range(32)
-    ]
-    requests, _, remaining = _install_http(
-        monkeypatch,
-        responses=[
-            httpx.Response(200, json={"results": completed}),
-            httpx.Response(503),
-        ],
-        credentials=[_key()],
+    body = journal([CHECK_RESPONSE] * 3, status="interrupted")
+    body["items"][1].update(
+        state="unknown",
+        result=None,
+        error_code="reservation_unknown",
+        reservation_expires_at=None,
     )
-    result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK] * 65})
+    body["items"][2].update(
+        state="unattempted",
+        result=None,
+        error_code=None,
+        checked_at=None,
+        reservation_expires_at=None,
+    )
+    requests, _, remaining = _install_http(
+        monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[_key()]
+    )
+    result = anyio.run(
+        _call_tool, "budget_check_batch", {"operation_id": ID, "checks": [CHECK] * 3}
+    )
     assert result.is_error is True
-    payload = result.structured_content
-    assert payload["ok"] is False
-    assert [
-        item["result"]["reservation_id"] for item in payload["data"]["results"]
-    ] == [f"res_{index}" for index in range(32)]
-    assert payload["data"]["failed_chunk_start"] == 32
-    assert payload["data"]["total_checks"] == 65
-    assert len(requests) == 2
-    assert remaining == []
+    data = result.structured_content["data"]
+    assert [item["state"] for item in data["items"]] == [
+        "completed",
+        "unknown",
+        "unattempted",
+    ]
+    assert (
+        data["results"][0]["result"]["reservation_id"]
+        == CHECK_RESPONSE["reservation_id"]
+    )
+    assert len(requests) == 1 and remaining == []
 
 
-def test_batch_item_error_is_private_and_retains_successes(monkeypatch, caplog, capsys):
-    body = {
-        "results": [
-            {"result": CHECK_RESPONSE},
-            {"error_code": CANARY, "error_message": CANARY},
-        ]
-    }
+def test_batch_item_error_is_private_and_retains_recovery_identity(
+    monkeypatch, caplog, capsys
+):
+    body = journal([CHECK_RESPONSE] * 2, status="interrupted")
+    body["items"][1].update(
+        state="failed", result=None, error_code=CANARY, reservation_expires_at=None
+    )
     requests, _, _ = _install_http(
         monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[_key()]
     )
-    result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK, CHECK]})
+    result = anyio.run(
+        _call_tool, "budget_check_batch", {"operation_id": ID, "checks": [CHECK, CHECK]}
+    )
     _assert_private(result, caplog, capsys)
     assert result.is_error is True
-    assert result.structured_content["ok"] is False
-    assert (
-        result.structured_content["data"]["results"][0]["result"]["reservation_id"]
-        == "res_01JZEXAMPLE"
-    )
-    assert result.structured_content["data"]["results"][1]["error_code"] == "api_error"
+    # A malformed journal is untrusted as a whole. Do not manufacture known
+    # admission from invalid server data; the caller can perform GET recovery.
+    assert result.structured_content["data"] is None
+    assert result.structured_content["recovery"]["operation_id"] == ID
+    assert result.structured_content["recovery"]["state"] == "unknown"
     assert len(requests) == 1
 
 
@@ -383,10 +394,10 @@ def test_settlement_survives_private_recording_validation_failure(
     _assert_private(result, caplog, capsys)
     assert result.is_error is True
     assert result.structured_content["ok"] is False
-    assert result.structured_content["error"]["code"] == "recording_failed"
+    assert result.structured_content["error"]["code"] == "recording_unknown"
     assert "settlement succeeded" in result.structured_content["error"]["message"]
     assert result.structured_content["data"]["reservation_id"] == "res_known"
-    assert result.structured_content["data"]["recorded"]["status"] == "failed"
+    assert result.structured_content["data"]["recorded"]["status"] == "unknown"
     assert result.structured_content["data"]["recorded"]["call_ids"] == [CALL_ID]
     assert [request[1] for request in requests] == [
         "/api/v1/budgets/confirm",
@@ -433,7 +444,7 @@ def test_unexpected_recording_exception_keeps_known_settlement(
     _assert_private(result, caplog, capsys)
     assert result.is_error is True
     assert result.structured_content["data"]["reservation_id"] == "res_known"
-    assert result.structured_content["data"]["recorded"]["status"] == "failed"
+    assert result.structured_content["data"]["recorded"]["status"] == "unknown"
     assert len(requests) == 1
 
 
@@ -502,90 +513,67 @@ def test_malformed_notification_is_private_and_session_remains_usable(
     assert CANARY not in captured.out + captured.err
 
 
-def test_unexpected_later_chunk_failure_preserves_completed_reservations(
-    monkeypatch, caplog, capsys
-):
-    requests = []
-    _install_http(monkeypatch, responses=[], credentials=[_key()])
-
-    def transport(self, request):
-        requests.append(request)
-        if len(requests) == 1:
-            return httpx.Response(
-                200,
-                json={
-                    "results": [
-                        {
-                            "result": {
-                                **CHECK_RESPONSE,
-                                "reservation_id": f"known_{index}",
-                            }
-                        }
-                        for index in range(32)
-                    ]
-                },
-            )
-        raise RuntimeError(CANARY)
-
-    monkeypatch.setattr(httpx.MockTransport, "handle_request", transport)
-    result = anyio.run(
-        _call_tool, "budget_check_batch", {"checks": [CHECK] * 65, "no_record": True}
-    )
-    _assert_private(result, caplog, capsys)
-    assert result.is_error is True
-    data = result.structured_content["data"]
-    assert data is not None
-    assert result.structured_content["error"]["code"] == "internal_error"
-    assert [item["result"]["reservation_id"] for item in data["results"]] == [
-        f"known_{index}" for index in range(32)
-    ]
-    assert data["failed_chunk_start"] == 32 and data["total_checks"] == 65
-    assert "unknown" in result.structured_content["error"]["hint"]
-    assert "do not replay" in result.structured_content["error"]["hint"]
-    assert len(requests) == 2
-
-
-def test_denial_receipt_exception_retains_entire_validated_chunk(
+def test_unexpected_ancillary_failure_preserves_all_completed_reservations(
     monkeypatch, caplog, capsys
 ):
     decisions = [
-        {"result": {**CHECK_RESPONSE, "reservation_id": f"known_{index}"}}
-        for index in range(32)
+        {**CHECK_RESPONSE, "reservation_id": f"known_{index}"} for index in range(32)
     ]
-    decisions[1] = {
-        "result": {**CHECK_RESPONSE, "allowed": False, "reservation_id": None}
-    }
+    decisions[1] = {**CHECK_RESPONSE, "allowed": False, "reservation_id": None}
     requests, _, _ = _install_http(
         monkeypatch,
-        responses=[httpx.Response(200, json={"results": decisions})],
+        responses=[httpx.Response(200, json=journal(decisions))],
+        credentials=[_key()],
+    )
+
+    def fail(**kwargs):
+        raise RuntimeError(CANARY)
+
+    monkeypatch.setattr(budget, "denial_event", fail)
+    result = anyio.run(
+        _call_tool, "budget_check_batch", {"operation_id": ID, "checks": [CHECK] * 32}
+    )
+    _assert_private(result, caplog, capsys)
+    assert result.is_error
+    data = result.structured_content["data"]
+    assert [entry["result"]["reservation_id"] for entry in data["items"]] == [
+        None if index == 1 else f"known_{index}" for index in range(32)
+    ]
+    assert data["operation_id"] == ID
+    assert len(requests) == 1
+
+
+def test_denial_receipt_exception_retains_entire_validated_batch(
+    monkeypatch, caplog, capsys
+):
+    decisions = [
+        {**CHECK_RESPONSE, "reservation_id": f"known_{index}"} for index in range(32)
+    ]
+    decisions[1] = {**CHECK_RESPONSE, "allowed": False, "reservation_id": None}
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=journal(decisions))],
         credentials=[_key()],
     )
     processed = []
 
     def receipt(**kwargs):
-        processed.append(kwargs["data"].reservation_id)
-        if not kwargs["data"].allowed:
-            raise RuntimeError(CANARY)
-        return kwargs["data"]
+        processed.append(kwargs["event"].call_id)
+        raise RuntimeError(CANARY)
 
-    monkeypatch.setattr(budget, "record_denial", receipt)
-    result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK] * 33})
+    monkeypatch.setattr(budget, "record_best_effort", receipt)
+    result = anyio.run(
+        _call_tool, "budget_check_batch", {"operation_id": ID, "checks": [CHECK] * 32}
+    )
     _assert_private(result, caplog, capsys)
-    assert result.is_error is True
+    assert result.is_error
     data = result.structured_content["data"]
-    assert data is not None
-    assert [item["result"]["reservation_id"] for item in data["results"]] == [
+    assert [entry["result"]["reservation_id"] for entry in data["items"]] == [
         None if index == 1 else f"known_{index}" for index in range(32)
     ]
-    assert data["failed_chunk_start"] == 0 and data["total_checks"] == 33
-    assert (
-        "reservation outcomes are known" in result.structured_content["error"]["hint"]
-    )
-    assert (
-        "later chunks were not submitted" in result.structured_content["error"]["hint"]
-    )
-    assert "do not replay" in result.structured_content["error"]["hint"]
-    assert processed == ["known_0", None]
+    retry = data["items"][1]["recording_retry"]
+    assert processed == [retry["event"]["call_id"]]
+    assert data["items"][1]["result"]["recorded"]["status"] == "unknown"
     assert len(requests) == 1
 
 

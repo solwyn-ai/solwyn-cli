@@ -1307,13 +1307,16 @@
             }
           },
           "422": {
-            "description": "Unknown model or request validation error",
+            "description": "Unknown model, unpriceable media configuration, or request validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/UnknownModelError422Response"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UnpriceableMediaError422Response"
                     },
                     {
                       "$ref": "#/components/schemas/HTTPValidationError"
@@ -1402,13 +1405,16 @@
             }
           },
           "422": {
-            "description": "Unknown served model or request validation error",
+            "description": "Unknown served model, unpriceable media, or request validation error",
             "content": {
               "application/json": {
                 "schema": {
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/UnknownModelError422Response"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UnpriceableMediaError422Response"
                     },
                     {
                       "$ref": "#/components/schemas/HTTPValidationError"
@@ -1989,6 +1995,217 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/budgets/check/batches": {
+      "post": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Create Batch",
+        "description": "Claim once; repeated POST only recovers. Never resumes an interrupted suffix.",
+        "operationId": "create_batch_api_v1_budgets_check_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverableBudgetCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverableBudgetCheckResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ],
+                  "title": "Response 422 Create Batch Api V1 Budgets Check Batches Post"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/budgets/check/batches/{operation_id}": {
+      "get": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Get Batch",
+        "description": "Historical lookup accepts same-project read-only or rotated project keys.",
+        "operationId": "get_batch_api_v1_budgets_check_batches__operation_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverableBudgetCheckResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BudgetBatchErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ],
+                  "title": "Response 422 Get Batch Api V1 Budgets Check Batches  Operation Id  Get"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
           }
         }
       }
@@ -11764,6 +11981,53 @@
         "title": "BreakerStateReport",
         "description": "One SDK instance's current provider circuit-breaker snapshot."
       },
+      "BudgetBatchErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "operation_expired",
+              "operation_not_found",
+              "operation_conflict",
+              "operation_in_future",
+              "outcome_unavailable",
+              "admission_failed",
+              "invalid_operation_id"
+            ],
+            "title": "Code"
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "BudgetBatchErrorDetail"
+      },
+      "BudgetBatchErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/BudgetBatchErrorDetail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "BudgetBatchErrorResponse"
+      },
       "BudgetCapabilities": {
         "properties": {
           "allowed_modes": {
@@ -11886,6 +12150,82 @@
         ],
         "title": "BudgetCheckBatchResponse",
         "description": "Index-aligned with ``BudgetCheckBatchRequest.checks``."
+      },
+      "BudgetCheckOutcome": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "maximum": 31.0,
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "failed",
+              "unattempted",
+              "unknown"
+            ],
+            "title": "State"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetCheckResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "check_failed",
+                  "reservation_unknown"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "reservation_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservation Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "state"
+        ],
+        "title": "BudgetCheckOutcome"
       },
       "BudgetCheckRequest": {
         "properties": {
@@ -17766,6 +18106,72 @@
         ],
         "title": "ReadinessResponse"
       },
+      "RecoverableBudgetCheckRequest": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Operation Id"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCheckRequest"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Checks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation_id",
+          "checks"
+        ],
+        "title": "RecoverableBudgetCheckRequest"
+      },
+      "RecoverableBudgetCheckResponse": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "finished",
+              "interrupted"
+            ],
+            "title": "Status"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCheckOutcome"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation_id",
+          "status",
+          "expires_at",
+          "items"
+        ],
+        "title": "RecoverableBudgetCheckResponse"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -19408,7 +19814,7 @@
             "maximum": 100000000,
             "minimum": 0.0,
             "title": "Audio Input Tokens",
-            "description": "Audio input tokens (OpenAI)",
+            "description": "Audio input tokens — a SUBSET of input_tokens (mirrors image ⊂ input). OpenAI reports audio_tokens inside prompt_tokens_details / input_token_details; Google reports the AUDIO modality bucket of prompt_token_count. The text side is the remainder, derived server-side; documented, not validator-enforced.",
             "default": 0
           },
           "audio_output_tokens": {
@@ -19416,7 +19822,7 @@
             "maximum": 100000000,
             "minimum": 0.0,
             "title": "Audio Output Tokens",
-            "description": "Audio output tokens (OpenAI)",
+            "description": "Audio output tokens — a SUBSET of output_tokens (mirrors reasoning ⊂ output). OpenAI reports audio_tokens inside completion_tokens_details / output_tokens_details; Google reports the AUDIO modality bucket of candidates_token_count. The text side is the remainder, derived server-side; documented, not validator-enforced.",
             "default": 0
           },
           "image_input_tokens": {
@@ -19469,7 +19875,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TokenDetails",
-        "description": "Normalized token usage breakdown for one LLM call.\n\nProvider adapters populate whichever fields their API exposes; the rest\nstay at 0.  The API uses this struct to compute exact costs rather than\ntrusting SDK-side estimates.\n\nNormalization contract: ``input_tokens`` includes uncached input, cached\ninput reads, and cache-creation writes.  PricingService subtracts cached\nbuckets from ``input_tokens`` to derive uncached input, so provider adapters\nmust not send \"uncached only\" input totals.\n\nNesting contract: ``image_input_tokens`` is a SUBSET of ``input_tokens`` and\n``image_output_tokens`` a SUBSET of ``output_tokens`` (probed live 2026-07-10:\nan images.edit response reported input_tokens=222 with image_tokens=194 in\n``input_tokens_details``). These mirror the existing ``reasoning_tokens`` ⊂\n``output_tokens`` relationship — DOCUMENTED semantics, NOT validator-enforced\n(reasoning is likewise unenforced). The only enforced subset invariant is the\ncache-bucket one below; image tokens deliberately do not participate in it."
+        "description": "Normalized token usage breakdown for one LLM call.\n\nProvider adapters populate whichever fields their API exposes; the rest\nstay at 0.  The API uses this struct to compute exact costs rather than\ntrusting SDK-side estimates.\n\nNormalization contract: ``input_tokens`` includes uncached input, cached\ninput reads, and cache-creation writes.  PricingService subtracts cached\nbuckets from ``input_tokens`` to derive uncached input, so provider adapters\nmust not send \"uncached only\" input totals.\n\nNesting contract: ``image_input_tokens`` and ``audio_input_tokens`` are\nSUBSETS of ``input_tokens``; ``image_output_tokens`` and\n``audio_output_tokens`` are SUBSETS of ``output_tokens`` (probed live\n2026-07-10: an images.edit response reported input_tokens=222 with\nimage_tokens=194 in ``input_tokens_details``; the audio buckets come from\nthe same per-modality sub-objects — OpenAI's\n``prompt_tokens_details.audio_tokens`` / ``completion_tokens_details.audio_tokens``\nand Google's AUDIO ``ModalityTokenCount`` entries). These mirror the existing\n``reasoning_tokens`` ⊂ ``output_tokens`` relationship — DOCUMENTED semantics,\nNOT validator-enforced (reasoning is likewise unenforced). The only enforced\nsubset invariant is the cache-bucket one below; image and audio tokens\ndeliberately do not participate in it.\n\nPricingService derives every text remainder from these subsets\n(``input_tokens − image_input_tokens − audio_input_tokens`` on the uncached\nslice, and the output mirror), so an adapter MUST report the inclusive\nchannel total. Sending an audio count beside a zeroed ``input_tokens`` /\n``output_tokens`` under-bills the call; sending it on top of a text-only\ntotal double-bills it."
       },
       "TokenResponse": {
         "properties": {
@@ -19787,6 +20193,51 @@
         ],
         "title": "UnknownNotificationChannelDetail",
         "description": "Body of a 422 raised when channel_ids are unknown or inaccessible."
+      },
+      "UnpriceableMediaError422Response": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UnpriceableMediaErrorDetail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "UnpriceableMediaError422Response",
+        "description": "OpenAPI envelope for the unpriceable-media 422 response."
+      },
+      "UnpriceableMediaErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "unsupported_modality",
+            "title": "Code",
+            "default": "unsupported_modality"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "provider",
+          "message"
+        ],
+        "title": "UnpriceableMediaErrorDetail",
+        "description": "Body of a 422 raised when a KNOWN model's CALL media config cannot be priced.\n\nDistinct from ``unknown_model``: the model itself carries a pricing card,\nbut this call's media configuration cannot select a rate from it (both a\nvideo and an audio duration, or selectors matching no variant in a gridded\ncard). The ``code`` is deliberately the SAME word ingest uses for the same\ncondition (``IngestRejectionCode.UNSUPPORTED_MODALITY``), so a client sees\none vocabulary across the telemetry and enforcement surfaces."
       },
       "UntrackedSurfaceAccepted": {
         "properties": {
@@ -20481,6 +20932,6 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-09-05",
-  "x-solwyn-core-ref": "690d61c0de1f11c6653f7a8a17800356f5009a8c"
+  "x-solwyn-snapshot-date": "2026-09-07",
+  "x-solwyn-core-ref": "5a0cd194ecc807a9dd7d1a4c7112b47e2a13f944"
 }

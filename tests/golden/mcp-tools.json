@@ -46,6 +46,26 @@
           "title": "BudgetPeriod",
           "type": "string"
         },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_AlertRouting": {
           "additionalProperties": false,
           "properties": {
@@ -831,6 +851,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1177,6 +1208,132 @@
           "title": "IngestRejection",
           "type": "object"
         },
+        "OperationRecovery": {
+          "additionalProperties": false,
+          "description": "Compact known identities, never a new grant of spend authority.",
+          "properties": {
+            "operation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Operation Id"
+            },
+            "state": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "running",
+                    "finished",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "State"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/RecoveryItem"
+              },
+              "maxItems": 32,
+              "title": "Items",
+              "type": "array"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "settlement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "confirmed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Settlement"
+            },
+            "recording": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "ingested",
+                    "deduplicated",
+                    "failed",
+                    "rejected",
+                    "skipped",
+                    "stopped"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording"
+            },
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "OperationRecovery",
+          "type": "object"
+        },
         "ProviderName": {
           "description": "Provider identifiers accepted by budget request endpoints.",
           "enum": [
@@ -1231,7 +1388,9 @@
                 "deduplicated",
                 "rejected",
                 "skipped",
-                "failed"
+                "failed",
+                "stopped",
+                "unknown"
               ],
               "title": "Status",
               "type": "string"
@@ -1249,6 +1408,98 @@
             "status"
           ],
           "title": "RecordingResult",
+          "type": "object"
+        },
+        "RecoveryItem": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "state": {
+              "enum": [
+                "completed",
+                "failed",
+                "unknown",
+                "unattempted"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recording_status": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording Status"
+            },
+            "checked_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Checked At"
+            },
+            "reservation_expires_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Expires At"
+            }
+          },
+          "required": [
+            "index",
+            "state"
+          ],
+          "title": "RecoveryItem",
           "type": "object"
         },
         "_BudgetCheckData": {
@@ -1483,6 +1734,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OperationRecovery"
             },
             {
               "type": "null"
@@ -1884,6 +2146,132 @@
           "title": "IngestRejection",
           "type": "object"
         },
+        "OperationRecovery": {
+          "additionalProperties": false,
+          "description": "Compact known identities, never a new grant of spend authority.",
+          "properties": {
+            "operation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Operation Id"
+            },
+            "state": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "running",
+                    "finished",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "State"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/RecoveryItem"
+              },
+              "maxItems": 32,
+              "title": "Items",
+              "type": "array"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "settlement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "confirmed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Settlement"
+            },
+            "recording": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "ingested",
+                    "deduplicated",
+                    "failed",
+                    "rejected",
+                    "skipped",
+                    "stopped"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording"
+            },
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "OperationRecovery",
+          "type": "object"
+        },
         "RecordingResult": {
           "additionalProperties": false,
           "properties": {
@@ -1912,7 +2300,9 @@
                 "deduplicated",
                 "rejected",
                 "skipped",
-                "failed"
+                "failed",
+                "stopped",
+                "unknown"
               ],
               "title": "Status",
               "type": "string"
@@ -1930,6 +2320,98 @@
             "status"
           ],
           "title": "RecordingResult",
+          "type": "object"
+        },
+        "RecoveryItem": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "state": {
+              "enum": [
+                "completed",
+                "failed",
+                "unknown",
+                "unattempted"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recording_status": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording Status"
+            },
+            "checked_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Checked At"
+            },
+            "reservation_expires_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Expires At"
+            }
+          },
+          "required": [
+            "index",
+            "state"
+          ],
+          "title": "RecoveryItem",
           "type": "object"
         },
         "_BudgetConfirmData": {
@@ -2040,6 +2522,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OperationRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2086,6 +2579,26 @@
     "execution": null,
     "outputSchema": {
       "$defs": {
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_BudgetSummary": {
           "properties": {
             "budget_limit": {
@@ -2315,6 +2828,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2425,6 +2949,26 @@
           "title": "ForecastData",
           "type": "object"
         },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_ToolError": {
           "additionalProperties": false,
           "description": "Safe structured MCP error with no raw server or credential material.",
@@ -2497,6 +3041,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
             },
             {
               "type": "null"
@@ -2914,6 +3469,26 @@
           "title": "CostWindow",
           "type": "object"
         },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "SavingsSummary": {
           "properties": {
             "saved_cost": {
@@ -3027,6 +3602,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -3058,6 +3644,26 @@
     "execution": null,
     "outputSchema": {
       "$defs": {
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_Project": {
           "properties": {
             "id": {
@@ -3186,6 +3792,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
             },
             {
               "type": "null"
@@ -3523,6 +4140,26 @@
           "title": "CostWindow",
           "type": "object"
         },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "SavingsSummary": {
           "properties": {
             "saved_cost": {
@@ -3636,6 +4273,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -3741,6 +4389,26 @@
             "rules"
           ],
           "title": "BudgetRulesData",
+          "type": "object"
+        },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
           "type": "object"
         },
         "_AlertRouting": {
@@ -4364,6 +5032,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -4932,6 +5611,132 @@
           "title": "IngestRejection",
           "type": "object"
         },
+        "OperationRecovery": {
+          "additionalProperties": false,
+          "description": "Compact known identities, never a new grant of spend authority.",
+          "properties": {
+            "operation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Operation Id"
+            },
+            "state": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "running",
+                    "finished",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "State"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/RecoveryItem"
+              },
+              "maxItems": 32,
+              "title": "Items",
+              "type": "array"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "settlement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "confirmed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Settlement"
+            },
+            "recording": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "ingested",
+                    "deduplicated",
+                    "failed",
+                    "rejected",
+                    "skipped",
+                    "stopped"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording"
+            },
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "OperationRecovery",
+          "type": "object"
+        },
         "RecordingResult": {
           "additionalProperties": false,
           "properties": {
@@ -4960,7 +5765,9 @@
                 "deduplicated",
                 "rejected",
                 "skipped",
-                "failed"
+                "failed",
+                "stopped",
+                "unknown"
               ],
               "title": "Status",
               "type": "string"
@@ -4978,6 +5785,98 @@
             "status"
           ],
           "title": "RecordingResult",
+          "type": "object"
+        },
+        "RecoveryItem": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "state": {
+              "enum": [
+                "completed",
+                "failed",
+                "unknown",
+                "unattempted"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recording_status": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording Status"
+            },
+            "checked_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Checked At"
+            },
+            "reservation_expires_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Expires At"
+            }
+          },
+          "required": [
+            "index",
+            "state"
+          ],
+          "title": "RecoveryItem",
           "type": "object"
         },
         "_ToolError": {
@@ -5058,6 +5957,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OperationRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -5104,6 +6014,26 @@
     "execution": null,
     "outputSchema": {
       "$defs": {
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "TagDiscoveryResponse": {
           "additionalProperties": false,
           "properties": {
@@ -5276,6 +6206,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -5367,6 +6308,26 @@
     "execution": null,
     "outputSchema": {
       "$defs": {
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "TagValueSummary": {
           "additionalProperties": false,
           "properties": {
@@ -5504,6 +6465,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
             },
             {
               "type": "null"
@@ -5665,6 +6637,26 @@
     "execution": null,
     "outputSchema": {
       "$defs": {
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_AgentRunEntry": {
           "additionalProperties": false,
           "properties": {
@@ -5938,6 +6930,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -5994,6 +6997,26 @@
     "execution": null,
     "outputSchema": {
       "$defs": {
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_AgentRunEntry": {
           "additionalProperties": false,
           "properties": {
@@ -6191,6 +7214,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -6316,7 +7350,7 @@
         },
         "all_pages": {
           "default": false,
-          "description": "True traverses successive history pages until exhaustion; false returns one page and its continuation cursor.",
+          "description": "True fetches at most 10 history pages within one 30-second/1 MiB response budget, counting empty filtered pages. A fixed limit error retains the cursor of the first unread page. False returns one page and its continuation cursor.",
           "title": "All Pages",
           "type": "boolean"
         }
@@ -6664,6 +7698,26 @@
           "title": "AlertEventWindow",
           "type": "object"
         },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "_ToolError": {
           "additionalProperties": false,
           "description": "Safe structured MCP error with no raw server or credential material.",
@@ -6742,6 +7796,17 @@
             }
           ],
           "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -6762,8 +7827,8 @@
   },
   {
     "name": "budget_check_batch",
-    "title": "Check and reserve a batch",
-    "description": "Reserve budget immediately before multiple caller-made un-instrumented provider calls. Checks are JSON check bodies, fully validated before submission and chunked at 32; results preserve input order. Each allowed item holds its own reservation: confirm it after its call. Unknown models return per-item errors; 404/503 fail the request. Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. Admission counts each item against checks_per_minute. Denial is a valid decision, not an execution error. Do not poll or replay to refresh reservations. This client currently uses the legacy batch API: an entirely lost response has no journal lookup here. Never automatically replay an ambiguous batch; retain all known reservation IDs and original indices. Requires a write-scoped project API key; writes use its project, not the selected read project.",
+    "title": "Check or recover a bounded batch",
+    "description": "Submit 1\u201332 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation. Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -6883,6 +7948,308 @@
           "title": "BudgetCheckRequest",
           "type": "object"
         },
+        "CallStatus": {
+          "enum": [
+            "success",
+            "error",
+            "budget_denied"
+          ],
+          "title": "CallStatus",
+          "type": "string"
+        },
+        "DenialRecordingRetry": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "description": "Original check index, 0\u201331, retained with its exact denial event.",
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "event": {
+              "$ref": "#/$defs/IngestMetadataEvent",
+              "description": "Exact recording_retry event returned by the original admission; preserve all fields, especially identity and timestamp. Never rebuild from ambient tags or run defaults."
+            }
+          },
+          "required": [
+            "index",
+            "event"
+          ],
+          "title": "DenialRecordingRetry",
+          "type": "object"
+        },
+        "DenySource": {
+          "enum": [
+            "server",
+            "sticky_replay",
+            "local_enforcement",
+            "lease_exhausted",
+            "local_velocity",
+            "run_terminated",
+            "aggregate_replay"
+          ],
+          "title": "DenySource",
+          "type": "string"
+        },
+        "IngestMetadataEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "description": "Original attempted model from the checked item, at most 2048 characters; preserve exactly.",
+              "maxLength": 2048,
+              "title": "Model",
+              "type": "string"
+            },
+            "provider": {
+              "$ref": "#/$defs/ProviderName",
+              "description": "Original attempted provider from the checked item; preserve exactly."
+            },
+            "input_tokens": {
+              "description": "Original estimated input-token count for the denied candidate; no provider call took place.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "description": "Original output-token count, zero for these denied candidates; preserve exactly.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "latency_ms": {
+              "description": "Original latency in milliseconds, zero for these denied candidates; preserve exactly.",
+              "title": "Latency Ms",
+              "type": "number"
+            },
+            "status": {
+              "$ref": "#/$defs/CallStatus",
+              "description": "Original budget_denied status; recording retry never changes the decision."
+            },
+            "is_model_fallback": {
+              "description": "Original fallback attribution flag, false for these denied candidates; preserve exactly.",
+              "title": "Is Model Fallback",
+              "type": "boolean"
+            },
+            "call_id": {
+              "description": "Original UUIDv5 derived from operation_id and the check index; preserve exactly for deduplication.",
+              "maxLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "title": "Call Id",
+              "type": "string"
+            },
+            "sdk_instance_id": {
+              "description": "Original batch operation UUIDv7; preserve exactly on every recording retry.",
+              "title": "Sdk Instance Id",
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Original timezone-aware checked_at timestamp from the journal; never regenerate on retry.",
+              "format": "date-time",
+              "title": "Timestamp",
+              "type": "string"
+            },
+            "modality": {
+              "$ref": "#/$defs/Modality",
+              "default": "text",
+              "description": "Original event modality; preserve the returned event without selecting a new modality."
+            },
+            "token_details": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenDetails"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original token detail buckets, if present; preserve without changing estimated or observed semantics."
+            },
+            "media_usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MediaUsage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original estimated media billing quantities and pricing variants from the denied candidate; no provider usage was observed."
+            },
+            "service_tier": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original service-tier selector, if present; preserve exactly without supplying a new default.",
+              "title": "Service Tier"
+            },
+            "provider_region": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original provider-region selector, if present; preserve exactly without supplying a new default.",
+              "title": "Provider Region"
+            },
+            "agent_run_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original caller run ID, if present; no ambient SOLWYN_AGENT_RUN_ID fallback is applied.",
+              "title": "Agent Run Id"
+            },
+            "parent_agent_run_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original parent caller run ID, if present; preserve exactly.",
+              "title": "Parent Agent Run Id"
+            },
+            "agent_run_name": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original human-readable run name, if present; preserve exactly.",
+              "title": "Agent Run Name"
+            },
+            "tags": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Exact original tag mapping, including null; no ambient SOLWYN_TAGS merge is performed on retry.",
+              "title": "Tags"
+            },
+            "deny_source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DenySource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original denial source, server for these batch events; preserve exactly."
+            },
+            "deny_reason": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original denial reason from the completed decision; preserve exactly.",
+              "title": "Deny Reason"
+            },
+            "denied_by_period": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original budget period or stopped-run reason; preserve exactly.",
+              "title": "Denied By Period"
+            },
+            "estimated_output_bound": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Original optional estimated output-token bound for denial attribution; preserve exactly.",
+              "title": "Estimated Output Bound"
+            },
+            "attempt_index": {
+              "default": 0,
+              "description": "Original primary attempt index, fixed at 0; no routing retry is created.",
+              "minimum": 0,
+              "title": "Attempt Index",
+              "type": "integer"
+            },
+            "is_provider_fallback": {
+              "default": false,
+              "description": "Original provider fallback flag, fixed false for this attribution-only CLI path.",
+              "title": "Is Provider Fallback",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "model",
+            "provider",
+            "input_tokens",
+            "output_tokens",
+            "latency_ms",
+            "status",
+            "is_model_fallback",
+            "call_id",
+            "sdk_instance_id",
+            "timestamp"
+          ],
+          "title": "IngestMetadataEvent",
+          "type": "object"
+        },
         "MediaUsage": {
           "additionalProperties": false,
           "properties": {
@@ -6994,6 +8361,17 @@
           "title": "MediaUsage",
           "type": "object"
         },
+        "Modality": {
+          "enum": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "title": "Modality",
+          "type": "string"
+        },
         "ProviderName": {
           "description": "Provider identifiers accepted by budget request endpoints.",
           "enum": [
@@ -7019,18 +8397,144 @@
           ],
           "title": "ProviderName",
           "type": "string"
+        },
+        "TokenDetails": {
+          "additionalProperties": false,
+          "properties": {
+            "input_tokens": {
+              "default": 0,
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "default": 0,
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "cached_input_tokens": {
+              "default": 0,
+              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cached Input Tokens",
+              "type": "integer"
+            },
+            "cache_creation_5m_tokens": {
+              "default": 0,
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 5M Tokens",
+              "type": "integer"
+            },
+            "cache_creation_1h_tokens": {
+              "default": 0,
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 1H Tokens",
+              "type": "integer"
+            },
+            "reasoning_tokens": {
+              "default": 0,
+              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Reasoning Tokens",
+              "type": "integer"
+            },
+            "audio_input_tokens": {
+              "default": 0,
+              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Input Tokens",
+              "type": "integer"
+            },
+            "audio_output_tokens": {
+              "default": 0,
+              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Output Tokens",
+              "type": "integer"
+            },
+            "image_input_tokens": {
+              "default": 0,
+              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Input Tokens",
+              "type": "integer"
+            },
+            "image_output_tokens": {
+              "default": 0,
+              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Output Tokens",
+              "type": "integer"
+            },
+            "accepted_prediction_tokens": {
+              "default": 0,
+              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Accepted Prediction Tokens",
+              "type": "integer"
+            },
+            "rejected_prediction_tokens": {
+              "default": 0,
+              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Rejected Prediction Tokens",
+              "type": "integer"
+            },
+            "tool_use_input_tokens": {
+              "default": 0,
+              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Tool Use Input Tokens",
+              "type": "integer"
+            },
+            "is_estimated": {
+              "default": false,
+              "description": "True when usage quantities are estimates rather than observed provider usage; false by default.",
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "TokenDetails",
+          "type": "object"
         }
       },
       "additionalProperties": false,
       "properties": {
         "checks": {
-          "description": "Non-empty ordered check bodies, validated before submission; currently sent in chunks of 32 to the legacy batch API. Preserve all returned results; never automatically replay an ambiguous batch.",
-          "items": {
-            "$ref": "#/$defs/BudgetCheckRequest"
-          },
-          "minItems": 1,
-          "title": "Checks",
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/BudgetCheckRequest"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1\u201332 ordered check bodies for one durable admission operation; omit entirely for recover_only or record_only. Validate before submission; never automatically replay unknown outcomes.",
+          "title": "Checks"
         },
         "no_record": {
           "default": false,
@@ -7052,57 +8556,52 @@
           "default": null,
           "description": "Optional output token bound, integer 0\u2013100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
           "title": "Estimated Output Tokens"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Caller-retained canonical UUIDv7. Prepare before submission to recover a wholly lost reply; expires 24 hours after its encoded creation time. Required for recover_only and record_only.",
+          "title": "Operation Id"
+        },
+        "recover_only": {
+          "default": false,
+          "description": "True performs only historical GET using operation_id; omit checks. It never resumes admission, records denial attribution or renews original reservation authority. Read-only key scope is accepted.",
+          "title": "Recover Only",
+          "type": "boolean"
+        },
+        "record_only": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/DenialRecordingRetry"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Explicit attribution-only retry: exact recording_retry entries from the original result, with the same operation_id, original index and event payload. Omit checks; never regenerates timestamps or identity from ambient settings.",
+          "title": "Record Only"
         }
       },
-      "required": [
-        "checks"
-      ],
       "title": "budget_check_batchArguments"
     },
     "execution": null,
     "outputSchema": {
       "$defs": {
-        "BudgetCheckBatchData": {
-          "additionalProperties": false,
-          "properties": {
-            "results": {
-              "items": {
-                "$ref": "#/$defs/BudgetCheckBatchItem"
-              },
-              "title": "Results",
-              "type": "array"
-            },
-            "failed_chunk_start": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Failed Chunk Start"
-            },
-            "total_checks": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Total Checks"
-            }
-          },
-          "required": [
-            "results"
-          ],
-          "title": "BudgetCheckBatchData",
-          "type": "object"
-        },
         "BudgetCheckBatchItem": {
           "additionalProperties": false,
           "description": "Batch envelopes retain nullable result/error fields unlike single checks.",
@@ -7155,6 +8654,51 @@
           "title": "BudgetMode",
           "type": "string"
         },
+        "CallStatus": {
+          "enum": [
+            "success",
+            "error",
+            "budget_denied"
+          ],
+          "title": "CallStatus",
+          "type": "string"
+        },
+        "DenialRecordingRetry": {
+          "additionalProperties": false,
+          "description": "Caller-retained exact denial event for a separate attribution-only retry.",
+          "properties": {
+            "index": {
+              "description": "Original check index, 0\u201331; preserve with its exact event payload.",
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "event": {
+              "$ref": "#/$defs/IngestMetadataEvent",
+              "description": "Exact original denial event returned as recording_retry; preserve timestamp, identity, usage and tags without rebuilding from ambient defaults."
+            }
+          },
+          "required": [
+            "index",
+            "event"
+          ],
+          "title": "DenialRecordingRetry",
+          "type": "object"
+        },
+        "DenySource": {
+          "enum": [
+            "server",
+            "sticky_replay",
+            "local_enforcement",
+            "lease_exhausted",
+            "local_velocity",
+            "run_terminated",
+            "aggregate_replay"
+          ],
+          "title": "DenySource",
+          "type": "string"
+        },
         "IngestDuplicate": {
           "additionalProperties": false,
           "properties": {
@@ -7182,6 +8726,240 @@
             "call_id"
           ],
           "title": "IngestDuplicate",
+          "type": "object"
+        },
+        "IngestMetadataEvent": {
+          "additionalProperties": false,
+          "description": "Caller-owned usage only; costs are computed by Core.",
+          "properties": {
+            "model": {
+              "maxLength": 2048,
+              "title": "Model",
+              "type": "string"
+            },
+            "provider": {
+              "$ref": "#/$defs/ProviderName"
+            },
+            "input_tokens": {
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "latency_ms": {
+              "title": "Latency Ms",
+              "type": "number"
+            },
+            "status": {
+              "$ref": "#/$defs/CallStatus"
+            },
+            "is_model_fallback": {
+              "title": "Is Model Fallback",
+              "type": "boolean"
+            },
+            "call_id": {
+              "maxLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "title": "Call Id",
+              "type": "string"
+            },
+            "sdk_instance_id": {
+              "title": "Sdk Instance Id",
+              "type": "string"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "title": "Timestamp",
+              "type": "string"
+            },
+            "modality": {
+              "$ref": "#/$defs/Modality",
+              "default": "text"
+            },
+            "token_details": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TokenDetails"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "media_usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MediaUsage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "service_tier": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Service Tier"
+            },
+            "provider_region": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Provider Region"
+            },
+            "agent_run_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Run Id"
+            },
+            "parent_agent_run_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent Agent Run Id"
+            },
+            "agent_run_name": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Run Name"
+            },
+            "tags": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tags"
+            },
+            "deny_source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DenySource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "deny_reason": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Deny Reason"
+            },
+            "denied_by_period": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Denied By Period"
+            },
+            "estimated_output_bound": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Estimated Output Bound"
+            },
+            "attempt_index": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Attempt Index",
+              "type": "integer"
+            },
+            "is_provider_fallback": {
+              "default": false,
+              "title": "Is Provider Fallback",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "model",
+            "provider",
+            "input_tokens",
+            "output_tokens",
+            "latency_ms",
+            "status",
+            "is_model_fallback",
+            "call_id",
+            "sdk_instance_id",
+            "timestamp"
+          ],
+          "title": "IngestMetadataEvent",
           "type": "object"
         },
         "IngestRejection": {
@@ -7219,6 +8997,247 @@
             "message"
           ],
           "title": "IngestRejection",
+          "type": "object"
+        },
+        "MediaUsage": {
+          "additionalProperties": false,
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
+          "properties": {
+            "image_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Image Count"
+            },
+            "generation_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Generation Count"
+            },
+            "video_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Video Seconds"
+            },
+            "audio_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Seconds"
+            },
+            "input_characters": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Input Characters"
+            },
+            "resolution": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Resolution"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Quality"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "MediaUsage",
+          "type": "object"
+        },
+        "Modality": {
+          "enum": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "title": "Modality",
+          "type": "string"
+        },
+        "OperationRecovery": {
+          "additionalProperties": false,
+          "description": "Compact known identities, never a new grant of spend authority.",
+          "properties": {
+            "operation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Operation Id"
+            },
+            "state": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "running",
+                    "finished",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "State"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/RecoveryItem"
+              },
+              "maxItems": 32,
+              "title": "Items",
+              "type": "array"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "settlement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "confirmed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Settlement"
+            },
+            "recording": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "not_submitted",
+                    "unknown",
+                    "ingested",
+                    "deduplicated",
+                    "failed",
+                    "rejected",
+                    "skipped",
+                    "stopped"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording"
+            },
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "OperationRecovery",
           "type": "object"
         },
         "ProviderName": {
@@ -7275,7 +9294,9 @@
                 "deduplicated",
                 "rejected",
                 "skipped",
-                "failed"
+                "failed",
+                "stopped",
+                "unknown"
               ],
               "title": "Status",
               "type": "string"
@@ -7293,6 +9314,365 @@
             "status"
           ],
           "title": "RecordingResult",
+          "type": "object"
+        },
+        "RecoverableBatchData": {
+          "additionalProperties": false,
+          "properties": {
+            "operation_id": {
+              "title": "Operation Id",
+              "type": "string"
+            },
+            "mode": {
+              "enum": [
+                "submit",
+                "recover",
+                "record_only"
+              ],
+              "title": "Mode",
+              "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "running",
+                    "finished",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            },
+            "expires_at": {
+              "format": "date-time",
+              "title": "Expires At",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/RecoverableBatchItem"
+              },
+              "maxItems": 32,
+              "title": "Items",
+              "type": "array"
+            },
+            "recordings": {
+              "items": {
+                "$ref": "#/$defs/RecordingResult"
+              },
+              "maxItems": 32,
+              "title": "Recordings",
+              "type": "array"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/BudgetCheckBatchItem"
+              },
+              "maxItems": 32,
+              "title": "Results",
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation_id",
+            "mode",
+            "status",
+            "expires_at",
+            "items"
+          ],
+          "title": "RecoverableBatchData",
+          "type": "object"
+        },
+        "RecoverableBatchItem": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "state": {
+              "enum": [
+                "completed",
+                "failed",
+                "unattempted",
+                "unknown"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/_BudgetCheckData"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "error_code": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "check_failed",
+                    "reservation_unknown"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Code"
+            },
+            "checked_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Checked At"
+            },
+            "reservation_expires_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Expires At"
+            },
+            "recording_retry": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DenialRecordingRetry"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "index",
+            "state"
+          ],
+          "title": "RecoverableBatchItem",
+          "type": "object"
+        },
+        "RecoveryItem": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "maximum": 31,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "state": {
+              "enum": [
+                "completed",
+                "failed",
+                "unknown",
+                "unattempted"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "reservation_id": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Id"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Call Id"
+            },
+            "recording_status": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Recording Status"
+            },
+            "checked_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Checked At"
+            },
+            "reservation_expires_at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reservation Expires At"
+            }
+          },
+          "required": [
+            "index",
+            "state"
+          ],
+          "title": "RecoveryItem",
+          "type": "object"
+        },
+        "TokenDetails": {
+          "additionalProperties": false,
+          "description": "Normalized provider token usage used to settle a reservation.",
+          "properties": {
+            "input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "cached_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cached Input Tokens",
+              "type": "integer"
+            },
+            "cache_creation_5m_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 5M Tokens",
+              "type": "integer"
+            },
+            "cache_creation_1h_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Cache Creation 1H Tokens",
+              "type": "integer"
+            },
+            "reasoning_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Reasoning Tokens",
+              "type": "integer"
+            },
+            "audio_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Input Tokens",
+              "type": "integer"
+            },
+            "audio_output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Audio Output Tokens",
+              "type": "integer"
+            },
+            "image_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Input Tokens",
+              "type": "integer"
+            },
+            "image_output_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Image Output Tokens",
+              "type": "integer"
+            },
+            "accepted_prediction_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Accepted Prediction Tokens",
+              "type": "integer"
+            },
+            "rejected_prediction_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Rejected Prediction Tokens",
+              "type": "integer"
+            },
+            "tool_use_input_tokens": {
+              "default": 0,
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Tool Use Input Tokens",
+              "type": "integer"
+            },
+            "is_estimated": {
+              "default": false,
+              "title": "Is Estimated",
+              "type": "boolean"
+            }
+          },
+          "title": "TokenDetails",
           "type": "object"
         },
         "_BudgetCheckData": {
@@ -7515,7 +9895,7 @@
         "data": {
           "anyOf": [
             {
-              "$ref": "#/$defs/BudgetCheckBatchData"
+              "$ref": "#/$defs/RecoverableBatchData"
             },
             {
               "type": "null"
@@ -7527,6 +9907,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OperationRecovery"
             },
             {
               "type": "null"
@@ -7670,6 +10061,26 @@
           "title": "OverviewResponse",
           "type": "object"
         },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
         "SavingsSummary": {
           "properties": {
             "saved_cost": {
@@ -7777,6 +10188,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
             },
             {
               "type": "null"

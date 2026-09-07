@@ -21,7 +21,8 @@ resolution or HTTP. A tool argument cannot switch profiles.
 | `budget_status`, `get_project_status`, `get_forecast`, `get_costs`, `get_cost_total`, `list_budget_rules`, `list_tags`, `list_tag_values`, `list_agent_runs`, `get_agent_run` | Both | Project API key or JWT with access to the selected project |
 | `list_alert_events` | Both | Project key or JWT for project history; `account=true` requires JWT and ignores `project_id` |
 | `list_projects`, `get_overview` | Both | JWT login |
-| `budget_check`, `budget_check_batch`, `budget_confirm`, `record_call` | `guardrails` | Write-scoped project API key |
+| `budget_check`, `budget_confirm`, `record_call` | `guardrails` | Write-scoped project API key |
+| `budget_check_batch` | `guardrails` | Project key; write scope for submit/record-only, read scope accepted for recovery-only |
 
 Tag discovery requires the Team plan. Core still checks project access, plan
 entitlements and key scope. A profile only reduces the exposed tool surface; it
@@ -62,7 +63,7 @@ credentials, or permits reusing a reservation. Tests exercise the actual SDK2
 discovery cache while rotating a synthetic key and then removing it; each call
 resolves credentials again.
 
-The compact UTF-8 tool-array regression budgets are 120 KiB for `guardrails` and
+The compact UTF-8 tool-array regression budgets are 152 KiB for `guardrails` and
 72 KiB for `read`, including output schemas. They allow measured growth while
 catching accidental schema/catalog duplication. This measures wire bytes, not
 tokens sent by a host to its model. Hosts can keep output schemas for validation
@@ -80,10 +81,10 @@ The caller owns the provider boundary. Check only immediately before a
 caller-owned uninstrumented call; never wrap an SDK-instrumented call with an
 additional MCP check/confirm or duplicate its attribution event. Keep a stable
 run ID and honor stop directives. Never automatically replay an ambiguous
-check: each invocation can create another reservation. The current MCP batch
-consumer uses the legacy batch endpoint, validates all inputs and submits chunks
-of 32. It preserves known outcomes but has no lookup for an entirely lost batch
-response. Do not infer journal recovery support from newer Core endpoints.
+check: each invocation can create another reservation. The MCP batch consumer submits at most 32 checks to the durable Core journal with
+a stable UUIDv7 operation ID. `recover_only` performs GET without admission or
+recording; it never renews a historical reservation. See [bounded work and batch
+recovery](mcp-bounded-work.md) for limits, indexed outcomes and explicit attribution retry.
 
 Confirm a non-null reservation after its provider call using actual served
 model, provider, region/tier and observed token counts. Token subset buckets are
@@ -110,3 +111,8 @@ while the identity is retained; a duplicate is an acknowledged no-op, not an
 update. Inspect ingested, rejected and duplicate result lanes. Omitting
 `record_call.call_id` generates a new ID per invocation and cannot protect a
 lost-response retry. Preserve settlement and recording state separately.
+
+MCP recording stays `unknown` after a lost/invalid ingest reply or a `legacy_key`
+acknowledgement: that duplicate lane alone cannot prove the intended call-ID ledger
+entry. Preserve the exact event and inspect attribution separately. An admission
+journal or settlement receipt does not establish recording durability.

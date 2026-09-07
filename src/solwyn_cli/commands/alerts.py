@@ -18,6 +18,7 @@ from solwyn_cli._vendor.wire import (
 )
 from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
+from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._cost_filters import window_params
 from solwyn_cli.commands._cost_models import CostWindow
 from solwyn_cli.commands._shared import exit_with_error, required_credential
@@ -190,6 +191,7 @@ def request_alert_events(
     events: list[AlertEventEntry] = []
     first_window = None
     while True:
+        operation.page(cursor)
         query = dict(params)
         if cursor is not None:
             if cursor in seen:
@@ -219,6 +221,12 @@ def request_alert_events(
         ]
         events.extend(selected)
         cursor = page.next_cursor
+        operation.retain(
+            AlertEventListResponse(
+                events=events, next_cursor=cursor, window=first_window
+            ),
+            cursor=cursor,
+        )
         if (
             not cursor
             or (event_id is not None and selected)

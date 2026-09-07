@@ -26,6 +26,7 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -207,6 +208,7 @@ def fetch_agent_runs(
     cursor: str | None = None,
 ) -> AgentRunListData:
     """Read and validate one page of project agent runs."""
+    operation.page(cursor)
     params: dict[str, str | int] = {
         "range": time_range.value,
         "sort": sort.value,
@@ -289,7 +291,14 @@ def _exact_named_runs(
 ) -> list[AgentRunEntry]:
     matches: dict[str, AgentRunEntry] = {}
     cursor: str | None = None
+    seen: set[str] = set()
     while True:
+        if cursor is not None:
+            if cursor in seen:
+                raise ValueError(
+                    "Run search repeated a cursor; use an exact storage ID."
+                )
+            seen.add(cursor)
         page = fetch_agent_runs(
             client=client,
             project_id=project_id,

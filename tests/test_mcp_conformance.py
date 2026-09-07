@@ -426,7 +426,7 @@ def _install_http(
     )
 
     def client_factory(
-        *, api_url: str, credential: auth.ResolvedCredential
+        *, api_url: str, credential: auth.ResolvedCredential, **operation_options
     ) -> RealSolwynClient:
         client = RealSolwynClient(
             api_url=api_url,
@@ -728,7 +728,14 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "cursor",
                     "all_pages",
                 },
-                {"checks", "no_record", "estimated_output_tokens"},
+                {
+                    "checks",
+                    "no_record",
+                    "estimated_output_tokens",
+                    "operation_id",
+                    "recover_only",
+                    "record_only",
+                },
                 set(),
             ]
 
@@ -1772,6 +1779,10 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
     )
 
     assert result.is_error is True
+    recovery = result.structured_content.pop("recovery")
+    assert recovery["reservation_id"] == "reservation"
+    assert recovery["call_id"] == "12345678-1234-1234-1234-123456789abc"
+    assert recovery["settlement"] == "unknown"
     assert result.structured_content == {
         "schema": "solwyn.mcp.budget-confirm.v1",
         "ok": False,
@@ -2027,7 +2038,9 @@ def test_record_call_preserves_dispositions(monkeypatch, status):
             "tags": {"env": "prod"},
         },
     )
-    assert result.structured_content["data"]["status"] == status
+    assert result.structured_content["data"]["status"] == (
+        "unknown" if status == "failed" else status
+    )
     assert result.is_error is (status in {"rejected", "failed"})
     assert result.structured_content["ok"] is (status not in {"rejected", "failed"})
     assert requests[0][1] == "/api/v1/metadata/ingest"
@@ -2191,14 +2204,14 @@ def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
     )
     assert result.is_error is True
     assert result.structured_content["ok"] is False
-    assert result.structured_content["error"]["code"] == "recording_failed"
+    assert result.structured_content["error"]["code"] == "recording_unknown"
     assert "settlement succeeded" in result.structured_content["error"]["message"]
     assert result.structured_content["data"]["reservation_id"] == "res"
     assert (
         result.structured_content["data"]["call_id"]
         == "12345678-1234-1234-1234-123456789abc"
     )
-    assert result.structured_content["data"]["recorded"]["status"] == "failed"
+    assert result.structured_content["data"]["recorded"]["status"] == "unknown"
     assert len(requests) == 2
 
 

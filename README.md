@@ -174,14 +174,16 @@ exit 1. A request-level 404 or 503 fails the chunk. If an earlier chunk complete
 its results and reservation IDs remain in output, alongside `failed_chunk_start`
 and `total_checks`; later chunks were not submitted. Reservation state inside a
 503-failed chunk is unknown. Do not replay completed checks or assume rollback.
-The matching MCP tool is `budget_check_batch`, including the same validation,
-chunking, recording and partial-failure behavior.
+The MCP `budget_check_batch` tool submits at most 32 checks to Core’s durable
+journal with a caller-retained UUIDv7. Recovery uses GET only; explicit denial
+attribution retry preserves its exact event. See [bounded MCP work and recovery](docs/mcp-bounded-work.md)
+for limits, required Core rollout, indexed outcomes and recording uncertainty.
 
 ## Trust posture
 
 Solwyn CLI:
 
-- sends only your own spend events; `sdk_instance_id` is a random per-invocation ID; no telemetry;
+- sends only your own spend events; `sdk_instance_id` is an invocation ID (the retained operation UUID for recoverable MCP batches); no telemetry;
 
 - never captures, logs, or transmits prompts or responses;
 - never collects, stores, or proxies provider API keys;

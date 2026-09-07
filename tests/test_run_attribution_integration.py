@@ -111,7 +111,10 @@ def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
         data = payload["data"]
     assert data["reason"] == "run_terminated"
     assert data["run_control"] == STOPPED["run_control"]
-    assert data["recorded"]["status"] == recording
+    expected_recording = (
+        "unknown" if interface == "mcp" and recording == "failed" else recording
+    )
+    assert data["recorded"]["status"] == expected_recording
     assert data["call_id"] == data["recorded"]["call_ids"][0]
     check = requests[0][2]["json"]
     assert check["run_directive_version"] == "1"

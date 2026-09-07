@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from functools import partial
 from typing import Any, Annotated, Generic, Literal, TypeVar
 
-import anyio
 from mcp import MCPError, types
 from mcp.server import Server, ServerRequestContext
 from mcp.server.context import CallNext, HandlerResult
@@ -20,11 +19,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from solwyn_cli import __version__, auth, runtime
 from solwyn_cli.mcp.declarations import ToolDeclaration
+from solwyn_cli import _mcp_operation as operation
+from solwyn_cli._vendor.batch import new_operation_id, operation_expiry
 from solwyn_cli.mcp.parameters import (
     BudgetCheckRequest,
     MediaUsage,
     TokenDetails,
     parameter_descriptions,
+    DenialRecordingRetry,
 )
 from solwyn_cli._vendor.wire import (
     CALL_ID_PATTERN,
@@ -45,9 +47,9 @@ from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rul
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
     BudgetCheckBatchData,
-    BudgetCheckBatchFailure,
     prepare_batch_checks,
-    request_budget_check_batch,
+    request_recoverable_budget_batch,
+    RecoverableBatchData,
     BudgetConfirmData,
     BudgetStatusData,
     request_budget_check,
@@ -134,6 +136,13 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
         "invalid_project",
         "invalid_token",
         "not_found",
+        "operation_expired",
+        "operation_not_found",
+        "operation_conflict",
+        "operation_in_future",
+        "outcome_unavailable",
+        "admission_failed",
+        "invalid_operation_id",
         "project_limit_reached",
         "project_not_found",
         "quota_exceeded",
@@ -289,48 +298,101 @@ class _ToolCatalog:
         tool = self.tools.get(params.name)
         if tool is None:
             raise MCPError(code=-32602, message="Unknown tool")
+        control = None
+        try:
+            async with operation.operation_scope() as control:
+                if params.name == "budget_check_batch":
+                    arguments = params.arguments or {}
+                    identifier = arguments.get("operation_id")
+                    if (
+                        identifier is None
+                        and arguments.get("checks") is not None
+                        and not arguments.get("recover_only")
+                        and arguments.get("record_only") is None
+                    ):
+                        identifier = new_operation_id()
+                    if isinstance(identifier, str):
+                        try:
+                            operation_expiry(identifier)
+                        except (ValueError, OverflowError):
+                            pass
+                        else:
+                            control.remember(
+                                operation_id=identifier, state="not_submitted"
+                            )
+                result = await self._call_tool(ctx, params)
+                # Serialization is CPU work too; the same deadline owns it.
+                return await operation.run_sync(
+                    partial(_bounded_protocol_result, result, control)
+                )
+        except (operation.OperationLimit, TimeoutError) as error:
+            code = (
+                error.code
+                if isinstance(error, operation.OperationLimit)
+                else "operation_deadline"
+            )
+            result = _error(
+                tool.output_model,
+                code=code,
+                message="The tool reached its fixed work limit.",
+                hint="Preserve known identities and the continuation cursor. Recover batch outcomes with the same operation_id; never replay an ambiguous write.",
+            )
+            return _bounded_protocol_result(result, control)
+
+    async def _call_tool(
+        self, ctx: ServerRequestContext, params: types.CallToolRequestParams
+    ) -> "_ToolResult":
+        tool = self.tools.get(params.name)
+        if tool is None:
+            raise MCPError(code=-32602, message="Unknown tool")
         arguments = params.arguments or {}
         result_type = tool.output_model
         try:
             # Retain the SDK's existing JSON-string compatibility and defaults.
-            parsed = tool.parse_json_arguments(arguments)
-            inputs = tool.input_model.model_validate(parsed)
-        except ValidationError as error:
-            return _protocol_result(
-                _error(
-                    result_type,
-                    code="invalid_arguments",
-                    message="The tool arguments are invalid.",
-                    hint=_validation_hint(error, tool.definition.input_schema),
+            inputs = await operation.run_sync(
+                lambda: tool.input_model.model_validate(
+                    tool.parse_json_arguments(arguments)
                 )
             )
+        except ValidationError as error:
+            return _error(
+                result_type,
+                code="invalid_arguments",
+                message="The tool arguments are invalid.",
+                hint=await operation.run_sync(
+                    partial(_validation_hint, error, tool.definition.input_schema)
+                ),
+            )
+        except (operation.OperationLimit, TimeoutError):
+            raise
         except Exception:
-            return _protocol_result(
-                _error(
-                    result_type,
-                    code="invalid_arguments",
-                    message="The tool arguments are invalid.",
-                    hint="Check the declared input fields and their types in list_tools.",
-                )
+            return _error(
+                result_type,
+                code="invalid_arguments",
+                message="The tool arguments are invalid.",
+                hint="Check the declared input fields and their types in list_tools.",
             )
 
         try:
             result = await tool.fn(
                 **{name: getattr(inputs, name) for name in type(inputs).model_fields}
             )
-            result = result_type.model_validate(result)
-            return _protocol_result(_execution_outcome(result))
+            result = await operation.run_sync(
+                lambda: result_type.model_validate(result)
+            )
+            return _execution_outcome(result)
+        except (operation.OperationLimit, TimeoutError):
+            raise
         except Exception:
             # Never interpolate, log, or attach a traceback from an operation or
             # output validation failure. The exception may contain private data.
-            return _protocol_result(
-                _error(
-                    result_type,
-                    code="internal_error",
-                    message="The tool could not complete the operation.",
-                    hint="Inspect known operation state before retrying a write; its outcome may be unknown.",
-                )
+            failure = _error(
+                result_type,
+                code="internal_error",
+                message="The tool could not complete the operation.",
+                hint="Inspect known operation state before retrying a write; its outcome may be unknown.",
             )
+            return failure
 
 
 class McpLaunchOptions(BaseModel):
@@ -363,6 +425,9 @@ class _ToolResult(BaseModel, Generic[DataT]):
     ok: bool
     data: DataT | None = None
     error: _ToolError | None = None
+    recovery: operation.ReadRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def validate_outcome(self) -> "_ToolResult[DataT]":
@@ -372,6 +437,9 @@ class _ToolResult(BaseModel, Generic[DataT]):
 
 
 class _RecordResult(_ToolResult[RecordingResult]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.mcp.record.v1"] = Field(
         default="solwyn.mcp.record.v1", alias="schema"
     )
@@ -408,19 +476,28 @@ class _BudgetRulesResult(_ToolResult[BudgetRulesData]):
 
 
 class _BudgetCheckResult(_ToolResult[BudgetCheckData]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.mcp.budget-check.v1"] = Field(
         default="solwyn.mcp.budget-check.v1",
         alias="schema",
     )
 
 
-class _BudgetCheckBatchResult(_ToolResult[BudgetCheckBatchData]):
+class _BudgetCheckBatchResult(_ToolResult[RecoverableBatchData]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.budget.check.batch.v1"] = Field(
         default="solwyn.budget.check.batch.v1", alias="schema"
     )
 
 
 class _BudgetConfirmResult(_ToolResult[BudgetConfirmData]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.mcp.budget-confirm.v1"] = Field(
         default="solwyn.mcp.budget-confirm.v1",
         alias="schema",
@@ -500,12 +577,19 @@ def tool_call_client(
         json_flag=False,
         no_color=True,
     )
+    operation.checkpoint()
     credential = auth.resolve_credential()
+    operation.checkpoint()
     if credential is None:
         raise AuthError("Authentication required. Configure credentials and retry.")
     with SolwynClient(
         api_url=command_runtime.api_url,
         credential=credential,
+        **(
+            {"transport": control.transport(), "sleeper": control.sleep}
+            if (control := operation.current())
+            else {}
+        ),
     ) as client:
         yield command_runtime, client
 
@@ -681,7 +765,12 @@ def _execution_outcome(result: ResultT) -> ResultT:
     )
     # A valid denial remains a successful decision even if its optional receipt
     # failed. Standalone recording and confirmation report incomplete execution.
-    if recorded is not None and recorded.status in {"rejected", "failed"}:
+    if recorded is not None and recorded.status in {
+        "rejected",
+        "failed",
+        "unknown",
+        "stopped",
+    }:
         settled = isinstance(result.data, BudgetConfirmData)
         return result.model_copy(
             update={
@@ -689,6 +778,10 @@ def _execution_outcome(result: ResultT) -> ResultT:
                 "error": _ToolError(
                     code="recording_rejected"
                     if recorded.status == "rejected"
+                    else "recording_unknown"
+                    if recorded.status == "unknown"
+                    else "recording_stopped"
+                    if recorded.status == "stopped"
                     else "recording_failed",
                     message=(
                         "Reservation settlement succeeded, but attribution recording did not complete."
@@ -709,6 +802,58 @@ def _protocol_result(result: _ToolResult) -> types.CallToolResult:
         structured_content=payload,
         is_error=not result.ok,
     )
+
+
+def _bounded_protocol_result(
+    result: _ToolResult, control: operation.OperationControl | None
+) -> types.CallToolResult:
+    snapshot = control.snapshot() if control is not None else None
+    if snapshot is not None:
+        recovery = snapshot.recovery
+        if not isinstance(
+            result,
+            (
+                _RecordResult,
+                _BudgetCheckResult,
+                _BudgetCheckBatchResult,
+                _BudgetConfirmResult,
+            ),
+        ):
+            recovery = operation.ReadRecovery(cursor=recovery.cursor)
+        if any(
+            value is not None and value != []
+            for value in recovery.model_dump().values()
+        ):
+            result = result.model_copy(update={"recovery": recovery})
+        elif isinstance(result.recovery, operation.OperationRecovery):
+            result = result.model_copy(update={"recovery": None})
+        if not result.ok and result.data is None and snapshot.data is not None:
+            result = type(result).model_validate(
+                {**result.model_dump(), "data": snapshot.data}
+            )
+    wire = _protocol_result(result)
+    if (
+        len(wire.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8"))
+        + operation.RESULT_METADATA_ALLOWANCE
+        <= operation.MAX_RESULT_BYTES
+    ):
+        return wire
+    compact = result.model_copy(
+        update={
+            "ok": False,
+            "data": None,
+            "error": _ToolError(
+                code="result_size_limit",
+                message="The result exceeded the fixed MCP response limit.",
+                hint="Preserve the compact known identities and cursor; do not replay an ambiguous mutation.",
+            ),
+        }
+    )
+    if snapshot is not None and isinstance(compact.recovery, operation.ReadRecovery):
+        compact = compact.model_copy(
+            update={"recovery": operation.ReadRecovery(cursor=snapshot.initial_cursor)}
+        )
+    return _protocol_result(compact)
 
 
 def _operation_error(
@@ -1005,17 +1150,52 @@ def _budget_check_operation(
 def _budget_check_batch_operation(
     *,
     launch_options: McpLaunchOptions,
-    checks: list[dict[str, Any]],
+    checks: list[dict[str, Any]] | None,
+    operation_id: str | None,
+    recover_only: bool,
+    record_only: list[DenialRecordingRetry] | None,
     no_record: bool,
     estimated_output_tokens: int | None,
 ) -> _BudgetCheckBatchResult:
     try:
-        prepared = prepare_batch_checks(checks)
+        if recover_only or record_only is not None:
+            if (
+                operation_id is None
+                or checks is not None
+                or (recover_only and record_only is not None)
+            ):
+                raise ValueError(
+                    "Recovery and recording require only their retained identity"
+                )
+            if record_only is not None and (
+                no_record or estimated_output_tokens is not None
+            ):
+                raise ValueError(
+                    "Recording retry requires its unchanged retained payload"
+                )
+            prepared = None
+        else:
+            prepared = prepare_batch_checks(checks)
+            if len(prepared) > 32:
+                raise ValueError("At most 32 checks")
+        control = operation.current()
+        identifier = (
+            operation_id
+            or (control.recovery().operation_id if control else None)
+            or new_operation_id()
+        )
+        operation_expiry(identifier)
+        if record_only is not None:
+            if len({receipt.index for receipt in record_only}) != len(record_only):
+                raise ValueError("Recording indices must be unique")
+            for receipt in record_only:
+                receipt.validate_identity(identifier)
+        operation.remember(operation_id=identifier, state="not_submitted")
     except (ValidationError, ValueError, TypeError):
         return _error(
             _BudgetCheckBatchResult,
             code="invalid_budget_check_batch_request",
-            message="Batch input must be a non-empty array of valid check bodies.",
+            message="Provide 1–32 checks, or only the retained operation_id with recover_only or record_only.",
         )
     try:
         with tool_call_client(launch_options) as (_, client):
@@ -1024,23 +1204,36 @@ def _budget_check_batch_operation(
             )
             if auth_error is not None:
                 return auth_error
-            data = request_budget_check_batch(
+            data = request_recoverable_budget_batch(
                 client=client,
                 checks=prepared,
+                operation_id=identifier,
+                recover_only=recover_only,
+                record_only=record_only,
                 no_record=no_record,
                 estimated_output_tokens=estimated_output_tokens,
             )
+        if data.mode == "record_only" and any(
+            item.status in {"failed", "rejected", "unknown", "stopped"}
+            for item in data.recordings
+        ):
+            return _error(
+                _BudgetCheckBatchResult,
+                code="recording_unknown"
+                if any(item.status == "unknown" for item in data.recordings)
+                else "recording_failed",
+                message="Attribution retry did not complete; admission was not retried.",
+            ).model_copy(update={"data": data})
+        failed = any(item.state != "completed" for item in data.items)
+        if failed:
+            failure = _error(
+                _BudgetCheckBatchResult,
+                code="batch_check_failed",
+                message="The batch contains incomplete admission outcomes.",
+                hint="Recover with the same operation_id. Never replay unknown or unattempted items automatically.",
+            )
+            return failure.model_copy(update={"data": data})
         return _success(_BudgetCheckBatchResult, data)
-    except BudgetCheckBatchFailure as error:
-        failure = _operation_error(
-            _BudgetCheckBatchResult,
-            error.cause,
-            invalid_response_code="invalid_budget_check_batch_response",
-        )
-        tool_error = failure.error.model_copy(
-            update={"hint": " ".join(filter(None, (failure.error.hint, error.hint)))}
-        )
-        return _BudgetCheckBatchResult(ok=False, data=error.data, error=tool_error)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
             _BudgetCheckBatchResult,
@@ -1281,6 +1474,7 @@ def _record_operation(
             if auth_error is not None:
                 return auth_error
             data = request_ingest(client=client, events=[event])
+            operation.retain(data, call_id=event.call_id, recording=data.status)
         return _success(_RecordResult, data)
     except (ApiError, AuthError, ValueError, TypeError) as error:
         result = _operation_error(
@@ -1317,6 +1511,7 @@ def _tags_operation(
     try:
         if key is not None:
             validate_tags({key: prefix or ""})
+            operation.page(cursor)
     except ValueError:
         return _error(
             result_class, code="invalid_tag_query", message="Invalid tag key or prefix."
@@ -1504,7 +1699,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     async def budget_status(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetStatusResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_budget_status_operation, project_id, launch)
         )
 
@@ -1536,7 +1731,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         ] = None,
         no_record: bool = False,
     ) -> _BudgetCheckResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _budget_check_operation,
                 launch_options=launch,
@@ -1607,7 +1802,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         tags: dict[str, str] | None = None,
         no_record: bool = False,
     ) -> _BudgetConfirmResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _budget_confirm_operation,
                 launch_options=launch,
@@ -1650,7 +1845,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     async def get_project_status(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ProjectStatusResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_project_status_operation, project_id, launch)
         )
 
@@ -1662,7 +1857,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     async def get_forecast(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ForecastResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_forecast_operation, project_id, launch)
         )
 
@@ -1689,7 +1884,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         provider_fallback: bool | None = None,
         tag: list[str] | None = None,
     ) -> _CostsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _costs_operation,
                 launch_options=launch,
@@ -1719,7 +1914,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description=PROJECTS_DESCRIPTION,
     )
     async def list_projects() -> _ProjectsResult:
-        return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
+        return await operation.run_sync(partial(_projects_operation, launch))
 
     @catalog.tool(
         name="get_cost_total",
@@ -1743,7 +1938,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         provider_fallback: bool | None = None,
         tag: list[str] | None = None,
     ) -> _CostTotalResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _cost_total_operation,
                 launch_options=launch,
@@ -1773,7 +1968,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     async def list_budget_rules(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetRulesResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_budget_rules_operation, project_id, launch)
         )
 
@@ -1823,7 +2018,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
             agent_run_name=agent_run_name,
             tags=tags,
         )
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_record_operation, launch_options=launch, inputs=inputs)
         )
 
@@ -1835,7 +2030,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     async def list_tags(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _TagsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_tags_operation, launch_options=launch, project_id=project_id)
         )
 
@@ -1851,7 +2046,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         limit: Annotated[int, Field(ge=1, le=100)] = 25,
         cursor: str | None = None,
     ) -> _TagValuesResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _tags_operation,
                 launch_options=launch,
@@ -1879,7 +2074,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         limit: Annotated[int, Field(ge=1, le=100)] = 25,
         cursor: str | None = None,
     ) -> _AgentRunsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _agent_runs_operation,
                 launch_options=launch,
@@ -1904,7 +2099,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         run: Annotated[str, Field(min_length=1, max_length=255)],
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _AgentRunResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _agent_run_operation,
                 launch_options=launch,
@@ -1931,7 +2126,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         cursor: str | None = None,
         all_pages: bool = False,
     ) -> _AlertEventsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _alert_events_operation,
                 project_id,
@@ -1950,35 +2145,43 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
 
     @catalog.tool(
         name="budget_check_batch",
-        title="Check and reserve a batch",
+        title="Check or recover a bounded batch",
         read_only=False,
         credential_requirement="project_key",
+        credential_note="Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
         description=(
-            "Reserve budget immediately before multiple caller-made un-instrumented provider calls. "
-            "Checks are JSON check bodies, fully validated before submission and chunked at 32; "
-            "results preserve input order. Each allowed item holds its own reservation: confirm it "
-            "after its call. Unknown models return per-item errors; 404/503 fail the request. "
-            "Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. "
-            "Admission counts each item against checks_per_minute. Denial is a valid decision, not an execution error. Do not poll or replay to refresh reservations. This client currently uses the legacy batch API: an entirely lost response has no journal lookup here. Never automatically replay an ambiguous batch; retain all known reservation IDs and original indices."
+            "Submit 1–32 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation."
         ),
     )
     async def budget_check_batch(
-        checks: Annotated[list[BudgetCheckRequest], Field(min_length=1)],
+        checks: Annotated[
+            list[BudgetCheckRequest] | None, Field(min_length=1, max_length=32)
+        ] = None,
         no_record: bool = False,
         estimated_output_tokens: Annotated[
             int | None, Field(ge=0, le=100_000_000)
         ] = None,
+        operation_id: Annotated[str | None, Field(min_length=36, max_length=36)] = None,
+        recover_only: bool = False,
+        record_only: Annotated[
+            list[DenialRecordingRetry] | None, Field(min_length=1, max_length=32)
+        ] = None,
     ) -> _BudgetCheckBatchResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _budget_check_batch_operation,
                 launch_options=launch,
                 checks=[
                     check.model_dump(mode="json", exclude_unset=True)
                     for check in checks
-                ],
+                ]
+                if checks is not None
+                else None,
                 no_record=no_record,
                 estimated_output_tokens=estimated_output_tokens,
+                operation_id=operation_id,
+                recover_only=recover_only,
+                record_only=record_only,
             )
         )
 
@@ -1992,7 +2195,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         ),
     )
     async def get_overview() -> _OverviewResult:
-        return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
+        return await operation.run_sync(partial(_overview_operation, launch))
 
     return catalog
 

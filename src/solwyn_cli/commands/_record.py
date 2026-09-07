@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent, TokenDetails
 from solwyn_cli.client import SolwynClient
+from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._tags import validate_tags
 
 CALL_ID_HINT = "Use a canonical lowercase UUID: uuidgen | tr A-F a-f"
@@ -52,7 +53,15 @@ class IngestResponse(BaseModel):
 
 
 class RecordingResult(IngestResponse):
-    status: Literal["ingested", "deduplicated", "rejected", "skipped", "failed"]
+    status: Literal[
+        "ingested",
+        "deduplicated",
+        "rejected",
+        "skipped",
+        "failed",
+        "stopped",
+        "unknown",
+    ]
     call_ids: list[str] = Field(default_factory=list)
 
 
@@ -94,6 +103,9 @@ def request_ingest(
     *, client: SolwynClient, events: list[IngestMetadataEvent]
 ) -> RecordingResult:
     """Post one batch through the client's bounded 429 retry path."""
+    operation.checkpoint()
+    if len(events) == 1:
+        operation.remember(call_id=events[0].call_id, recording="unknown")
     response = client.request(
         "POST",
         "/api/v1/metadata/ingest",
@@ -136,7 +148,7 @@ def request_ingest(
             err=True,
         )
     status = (
-        "failed"
+        ("unknown" if operation.current() else "failed")
         if legacy
         else "rejected"
         if data.rejected
@@ -144,6 +156,7 @@ def request_ingest(
         if data.duplicates
         else "ingested"
     )
+    operation.remember(recording=status)
     return RecordingResult(
         **data.model_dump(), status=status, call_ids=[event.call_id for event in events]
     )
@@ -154,15 +167,21 @@ def record_best_effort(
 ) -> RecordingResult:
     """Recording must never undo successful settlement or the denial decision."""
     if no_record:
+        operation.remember(recording="skipped")
         return RecordingResult(status="skipped", ingested=0, call_ids=[event.call_id])
     try:
         result = request_ingest(client=client, events=[event])
-        if result.status in ("rejected", "failed"):
+        if result.status in ("rejected", "failed", "unknown"):
             typer.echo(
-                "Warning: attribution was not recorded; the budget outcome is unchanged.",
+                "Warning: attribution acknowledgement is unknown; the budget outcome is unchanged."
+                if result.status == "unknown"
+                else "Warning: attribution was not recorded; the budget outcome is unchanged.",
                 err=True,
             )
+        operation.remember(recording=result.status)
         return result
+    except operation.OperationLimit:
+        raise
     except Exception:
         # Settlement/denial already succeeded. Preserve that known state even on
         # an unexpected recording failure, without printing its private details.
@@ -170,4 +189,8 @@ def record_best_effort(
             "Warning: attribution recording failed; preserve the call identity for recovery.",
             err=True,
         )
-        return RecordingResult(status="failed", ingested=0, call_ids=[event.call_id])
+        return RecordingResult(
+            status="unknown" if operation.current() else "failed",
+            ingested=0,
+            call_ids=[event.call_id],
+        )

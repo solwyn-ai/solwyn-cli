@@ -9,6 +9,7 @@ from copy import copy
 from pydantic import BaseModel, create_model
 
 from solwyn_cli._vendor import wire
+from solwyn_cli.commands.budget import DenialRecordingRetry as _DenialRecordingRetry
 
 PROJECT = "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project."
 TAGS = "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved."
@@ -80,7 +81,10 @@ SPECIFIC = {
         "no_record": "True skips denial attribution ingest only; the reservation decision still runs. False records denied calls by default.",
     },
     "budget_check_batch": {
-        "checks": "Non-empty ordered check bodies, validated before submission; currently sent in chunks of 32 to the legacy batch API. Preserve all returned results; never automatically replay an ambiguous batch.",
+        "operation_id": "Caller-retained canonical UUIDv7. Prepare before submission to recover a wholly lost reply; expires 24 hours after its encoded creation time. Required for recover_only and record_only.",
+        "recover_only": "True performs only historical GET using operation_id; omit checks. It never resumes admission, records denial attribution or renews original reservation authority. Read-only key scope is accepted.",
+        "record_only": "Explicit attribution-only retry: exact recording_retry entries from the original result, with the same operation_id, original index and event payload. Omit checks; never regenerates timestamps or identity from ambient settings.",
+        "checks": "1–32 ordered check bodies for one durable admission operation; omit entirely for recover_only or record_only. Validate before submission; never automatically replay unknown outcomes.",
         "no_record": "True skips denial attribution for every item only; checks still run and allowed items may reserve budget.",
     },
     "budget_confirm": {
@@ -119,7 +123,7 @@ SPECIFIC = {
         "rule_type": "Filter by alert rule type, at most 32 characters and no NUL; omit to include all types.",
         "scope": "Filter by rule scope, at most 32 characters and no NUL; this is not project/account selection (use account).",
         "failed_only": "True keeps only partial/failed delivery rollups using a local filter; a page can be empty while next_cursor remains present.",
-        "all_pages": "True traverses successive history pages until exhaustion; false returns one page and its continuation cursor.",
+        "all_pages": "True fetches at most 10 history pages within one 30-second/1 MiB response budget, counting empty filtered pages. A fixed limit error retains the cursor of the first unread page. False returns one page and its continuation cursor.",
     },
 }
 
@@ -175,4 +179,48 @@ BudgetCheckRequest = _described_model(
         "run_directive_version": "Optional input version, only '1' or null accepted; after validation the CLI sends '1' when agent_run_id is non-null, otherwise null. Honor returned stop directives.",
     },
     annotations={"estimated_media": MediaUsage | None},
+)
+
+
+_DenialEvent = _described_model(
+    wire.IngestMetadataEvent,
+    {
+        "model": "Original attempted model from the checked item, at most 2048 characters; preserve exactly.",
+        "provider": "Original attempted provider from the checked item; preserve exactly.",
+        "input_tokens": "Original estimated input-token count for the denied candidate; no provider call took place.",
+        "output_tokens": "Original output-token count, zero for these denied candidates; preserve exactly.",
+        "latency_ms": "Original latency in milliseconds, zero for these denied candidates; preserve exactly.",
+        "status": "Original budget_denied status; recording retry never changes the decision.",
+        "is_model_fallback": "Original fallback attribution flag, false for these denied candidates; preserve exactly.",
+        "call_id": "Original UUIDv5 derived from operation_id and the check index; preserve exactly for deduplication.",
+        "sdk_instance_id": "Original batch operation UUIDv7; preserve exactly on every recording retry.",
+        "timestamp": "Original timezone-aware checked_at timestamp from the journal; never regenerate on retry.",
+        "modality": "Original event modality; preserve the returned event without selecting a new modality.",
+        "token_details": "Original token detail buckets, if present; preserve without changing estimated or observed semantics.",
+        "media_usage": "Original estimated media billing quantities and pricing variants from the denied candidate; no provider usage was observed.",
+        "service_tier": "Original service-tier selector, if present; preserve exactly without supplying a new default.",
+        "provider_region": "Original provider-region selector, if present; preserve exactly without supplying a new default.",
+        "agent_run_id": "Original caller run ID, if present; no ambient SOLWYN_AGENT_RUN_ID fallback is applied.",
+        "parent_agent_run_id": "Original parent caller run ID, if present; preserve exactly.",
+        "agent_run_name": "Original human-readable run name, if present; preserve exactly.",
+        "tags": "Exact original tag mapping, including null; no ambient SOLWYN_TAGS merge is performed on retry.",
+        "deny_source": "Original denial source, server for these batch events; preserve exactly.",
+        "deny_reason": "Original denial reason from the completed decision; preserve exactly.",
+        "denied_by_period": "Original budget period or stopped-run reason; preserve exactly.",
+        "estimated_output_bound": "Original optional estimated output-token bound for denial attribution; preserve exactly.",
+        "attempt_index": "Original primary attempt index, fixed at 0; no routing retry is created.",
+        "is_provider_fallback": "Original provider fallback flag, fixed false for this attribution-only CLI path.",
+    },
+    annotations={
+        "token_details": TokenDetails | None,
+        "media_usage": MediaUsage | None,
+    },
+)
+DenialRecordingRetry = _described_model(
+    _DenialRecordingRetry,
+    {
+        "index": "Original check index, 0–31, retained with its exact denial event.",
+        "event": "Exact recording_retry event returned by the original admission; preserve all fields, especially identity and timestamp. Never rebuild from ambient tags or run defaults.",
+    },
+    annotations={"event": _DenialEvent},
 )
