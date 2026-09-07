@@ -1,6 +1,9 @@
 """Run the local Solwyn MCP server over stdio."""
 
+import anyio
 import typer
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
 
 from solwyn_cli.help import help_contract
 from solwyn_cli.mcp.server import McpLaunchOptions, TOOL_NAMES, create_server
@@ -25,4 +28,9 @@ def mcp(context: typer.Context) -> None:
     launch_options = (
         context.obj if isinstance(context.obj, McpLaunchOptions) else McpLaunchOptions()
     )
-    create_server(launch_options=launch_options).run(transport="stdio")
+    anyio.run(_serve_stdio, create_server(launch_options=launch_options))
+
+
+async def _serve_stdio(server: Server) -> None:
+    async with stdio_server() as streams:
+        await server.run(*streams, server.create_initialization_options())

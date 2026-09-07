@@ -11,9 +11,9 @@ from threading import Thread
 
 import anyio
 import pytest
-from mcp import ClientSession, McpError, types
+from mcp import ClientSession, MCPError
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import Client
 from typer.testing import CliRunner
 
 from solwyn_cli import auth, runtime
@@ -87,10 +87,11 @@ def test_malformed_stdio_input_keeps_fixed_private_diagnostics(
     )
     assert process.returncode == 0
     assert "SYNTHETIC_PRIVATE_STDIO_842b" not in process.stdout + process.stderr
-    assert "MCP protocol diagnostic" in process.stderr
+    # SDK 2 drops pre-request malformed frames quietly at its default level.
+    assert process.stderr == ""
 
 
-def test_private_fastmcp_seam_is_exactly_version_pinned_and_tool_only() -> None:
+def test_public_sdk_is_exactly_version_pinned() -> None:
     project = tomllib.loads(
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
@@ -103,31 +104,24 @@ def test_private_fastmcp_seam_is_exactly_version_pinned_and_tool_only() -> None:
         package for package in lock["package"] if package["name"] == "mcp"
     )
 
-    assert "mcp==1.28.1" in dependencies
+    assert "mcp==2.1.1" in dependencies
     assert (
         next(
             requirement
             for requirement in root_package["metadata"]["requires-dist"]
             if requirement["name"] == "mcp"
         )["specifier"]
-        == "==1.28.1"
+        == "==2.1.1"
     )
-    assert mcp_package["version"] == "1.28.1"
-
-    server = mcp_server.create_server()
-    assert set(server._mcp_server.request_handlers) == {
-        types.PingRequest,
-        types.ListToolsRequest,
-        types.CallToolRequest,
-    }
+    assert mcp_package["version"] == "2.1.1"
 
 
-def test_fastmcp_server_initializes_and_lists_tools_in_process() -> None:
+def test_public_server_discovers_and_lists_tools_in_process() -> None:
     async def exercise_protocol() -> None:
         server = mcp_server.create_server()
 
-        async with create_connected_server_and_client_session(server) as session:
-            capabilities = session.get_server_capabilities()
+        async with Client(server, cache=None) as session:
+            capabilities = session.server_capabilities
             tools = await session.list_tools()
 
         assert capabilities.tools is not None
@@ -157,17 +151,17 @@ def test_stdio_entrypoint_has_clean_protocol_and_guardrail_instructions(
                 async with stdio_client(server, errlog=stderr) as streams:
                     async with ClientSession(*streams) as session:
                         initialized = await session.initialize()
-                        capabilities = session.get_server_capabilities()
+                        capabilities = session.server_capabilities
                         tools = await session.list_tools()
-                        with pytest.raises(McpError):
+                        with pytest.raises(MCPError):
                             await session.list_prompts()
-                        with pytest.raises(McpError):
+                        with pytest.raises(MCPError):
                             await session.list_resources()
                         await session.send_ping()
             stderr.seek(0)
             stderr_output = stderr.read()
 
-        assert initialized.serverInfo.name == "solwyn"
+        assert initialized.server_info.name == "solwyn"
         assert capabilities.tools is not None
         assert capabilities.prompts is None
         assert capabilities.resources is None
@@ -254,9 +248,9 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
                         result = await session.call_tool("budget_status", {})
             stderr.seek(0)
             assert stderr.read() == ""
-        assert result.isError is False
-        assert result.structuredContent["ok"] is True
-        assert result.structuredContent["data"]["project_id"] == "proj_override"
+        assert result.is_error is False
+        assert result.structured_content["ok"] is True
+        assert result.structured_content["data"]["project_id"] == "proj_override"
 
     try:
         anyio.run(exercise_stdio_entrypoint)
@@ -414,8 +408,11 @@ def test_mcp_command_dispatches_stdio_without_eager_auth(
     launches: list[object] = []
 
     class FakeServer:
-        def run(self, *, transport: str) -> None:
-            transports.append(transport)
+        pass
+
+    async def fake_serve_stdio(server: FakeServer) -> None:
+        assert isinstance(server, FakeServer)
+        transports.append("stdio")
 
     def fake_create_server(*, launch_options: object) -> FakeServer:
         launches.append(launch_options)
@@ -425,6 +422,7 @@ def test_mcp_command_dispatches_stdio_without_eager_auth(
         raise AssertionError("mcp startup must not resolve per-call state")
 
     monkeypatch.setattr(mcp_command, "create_server", fake_create_server)
+    monkeypatch.setattr(mcp_command, "_serve_stdio", fake_serve_stdio)
     monkeypatch.setattr(main_module, "resolve_command_context", unexpected_call)
     monkeypatch.setattr(auth, "resolve_credential", unexpected_call)
 

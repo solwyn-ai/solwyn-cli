@@ -60,7 +60,7 @@ def invoke(
         result = anyio.run(
             _call_tool, "budget_check_batch", {"checks": checks, "no_record": no_record}
         )
-        payload = result.structuredContent
+        payload = result.structured_content
     else:
         args = ["--format", fmt, "budget", "check", "--batch", "-", *extra]
         if no_record:
@@ -94,7 +94,7 @@ def test_batch_mixed_dispositions_keep_order_and_single_denial_receipt(
         data = payload
         assert data["schema"] == "solwyn.budget.check.batch.v1"
     else:
-        assert result.isError is True
+        assert result.is_error is True
         assert payload["ok"] is False
         assert payload["error"]["code"] == "batch_check_failed"
         data = payload["data"]
@@ -136,7 +136,7 @@ def test_all_inputs_validate_before_any_network(monkeypatch, interface, checks):
     if interface == "cli":
         assert result.exit_code == 2
     else:
-        assert result.isError or payload["ok"] is False
+        assert result.is_error or payload["ok"] is False
     assert not requests
 
 

@@ -16,7 +16,7 @@ RUNTIME_REQUIREMENTS = (
     "click>=8.1",
     "httpx>=0.27",
     "keyring>=25",
-    "mcp==1.28.1",
+    "mcp==2.1.1",
     "platformdirs>=4",
     "pydantic>=2",
     "rich>=13",

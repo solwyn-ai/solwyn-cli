@@ -7,8 +7,10 @@ import logging
 import anyio
 import httpx
 import pytest
-from mcp import McpError, types
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import MCPError, types
+from mcp import Client
+from typing import ClassVar
+
 from pydantic import BaseModel
 
 from solwyn_cli import auth
@@ -37,9 +39,9 @@ def _key():
 def _assert_private(result, caplog, capsys):
     # Check all representations independently, including captured stderr and log args.
     assert CANARY not in result.model_dump_json(by_alias=True)
-    assert CANARY not in json.dumps(result.structuredContent)
+    assert CANARY not in json.dumps(result.structured_content)
     assert CANARY not in " ".join(item.text for item in result.content)
-    assert json.loads(result.content[0].text) == result.structuredContent
+    assert json.loads(result.content[0].text) == result.structured_content
     assert CANARY not in caplog.text
     assert CANARY not in repr([(r.msg, r.args, r.exc_info) for r in caplog.records])
     captured = capsys.readouterr()
@@ -103,10 +105,10 @@ def test_invalid_arguments_are_private_and_stop_before_auth(
     result = anyio.run(_call_tool, tool, arguments)
     _assert_private(result, caplog, capsys)
     assert calls == []
-    assert result.isError is True
-    assert result.structuredContent["ok"] is False
-    assert result.structuredContent["error"]["code"] == "invalid_arguments"
-    assert path in result.structuredContent["error"]["hint"]
+    assert result.is_error is True
+    assert result.structured_content["ok"] is False
+    assert result.structured_content["error"]["code"] == "invalid_arguments"
+    assert path in result.structured_content["error"]["hint"]
 
 
 def test_published_inputs_are_closed_and_tag_keys_remain_open():
@@ -131,9 +133,9 @@ def test_unexpected_exception_is_private_in_wire_and_logs(monkeypatch, caplog, c
     caplog.set_level(logging.DEBUG, logger="mcp.server.lowlevel.server")
     result = anyio.run(_call_tool, "budget_status", {})
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["error"]["code"] == "internal_error"
-    assert result.structuredContent["schema"] == "solwyn.mcp.budget-status.v1"
+    assert result.is_error is True
+    assert result.structured_content["error"]["code"] == "internal_error"
+    assert result.structured_content["schema"] == "solwyn.mcp.budget-status.v1"
 
 
 def test_validation_canary_is_private_with_sdk_debug_logging(
@@ -145,21 +147,30 @@ def test_validation_canary_is_private_with_sdk_debug_logging(
         _call_tool, "budget_check", {**CHECK, "estimated_input_tokens": CANARY}
     )
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
+    assert result.is_error is True
 
 
 def test_unknown_tool_name_is_not_reflected(monkeypatch, caplog, capsys):
     monkeypatch.setattr(auth, "resolve_credential", lambda: None)
-    result = anyio.run(_call_tool, CANARY, {})
-    _assert_private(result, caplog, capsys)
-    assert result.isError is True
+
+    async def exercise():
+        async with Client(mcp_server.create_server(), cache=None) as client:
+            with pytest.raises(MCPError) as raised:
+                await client.call_tool(CANARY, {})
+            assert raised.value.code == -32602
+            assert str(raised.value) == "Unknown tool"
+
+    anyio.run(exercise)
+    assert CANARY not in caplog.text
+    captured = capsys.readouterr()
+    assert CANARY not in captured.out + captured.err
 
 
 def test_missing_auth_sets_protocol_error(monkeypatch):
     requests, _, _ = _install_http(monkeypatch, responses=[], credentials=[None])
     result = anyio.run(_call_tool, "budget_status", {})
-    assert result.isError is True
-    assert result.structuredContent["error"]["code"] == "authentication_required"
+    assert result.is_error is True
+    assert result.structured_content["error"]["code"] == "authentication_required"
     assert requests == []
 
 
@@ -177,8 +188,8 @@ def test_query_errors_are_private_execution_errors(
     requests, _, _ = _install_http(monkeypatch, responses=[], credentials=[_key()])
     result = anyio.run(_call_tool, tool, arguments)
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["error"]["code"] == code
+    assert result.is_error is True
+    assert result.structured_content["error"]["code"] == code
     assert requests == []
 
 
@@ -197,9 +208,9 @@ def test_api_failures_set_protocol_error(monkeypatch, caplog, capsys, status, co
     )
     result = anyio.run(_call_tool, "get_costs", {})
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["error"]["code"] == code
-    assert result.structuredContent["error"]["status_code"] == status
+    assert result.is_error is True
+    assert result.structured_content["error"]["code"] == code
+    assert result.structured_content["error"]["status_code"] == status
     assert remaining == []
     assert len(requests) == (2 if status == 429 else 1)
 
@@ -216,9 +227,9 @@ def test_transport_failure_sets_protocol_error(monkeypatch, caplog, capsys):
     )
     result = anyio.run(_call_tool, "budget_status", {})
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["error"]["code"] == "api_error"
-    assert result.structuredContent["error"]["status_code"] is None
+    assert result.is_error is True
+    assert result.structured_content["error"]["code"] == "api_error"
+    assert result.structured_content["error"]["status_code"] is None
 
 
 @pytest.mark.parametrize("allowed", [False, True])
@@ -234,12 +245,12 @@ def test_denial_and_fail_open_are_successful_decisions(monkeypatch, allowed):
         "budget_check",
         {**CHECK, "no_record": True, "tags": {"caller-defined": "ok"}},
     )
-    assert result.isError is False
-    assert result.structuredContent["ok"] is True
-    assert result.structuredContent["data"]["allowed"] is allowed
-    assert result.structuredContent["data"]["reservation_id"] is None
+    assert result.is_error is False
+    assert result.structured_content["ok"] is True
+    assert result.structured_content["data"]["allowed"] is allowed
+    assert result.structured_content["data"]["reservation_id"] is None
     if not allowed:
-        assert result.structuredContent["data"]["recorded"]["status"] == "skipped"
+        assert result.structured_content["data"]["recorded"]["status"] == "skipped"
     assert len(requests) == 1
     assert requests[0][2]["json"]["tags"] == {"caller-defined": "ok"}
     assert remaining == []
@@ -259,8 +270,8 @@ def test_later_batch_failure_retains_completed_reservations(monkeypatch):
         credentials=[_key()],
     )
     result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK] * 65})
-    assert result.isError is True
-    payload = result.structuredContent
+    assert result.is_error is True
+    payload = result.structured_content
     assert payload["ok"] is False
     assert [
         item["result"]["reservation_id"] for item in payload["data"]["results"]
@@ -283,13 +294,13 @@ def test_batch_item_error_is_private_and_retains_successes(monkeypatch, caplog, 
     )
     result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK, CHECK]})
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["ok"] is False
+    assert result.is_error is True
+    assert result.structured_content["ok"] is False
     assert (
-        result.structuredContent["data"]["results"][0]["result"]["reservation_id"]
+        result.structured_content["data"]["results"][0]["result"]["reservation_id"]
         == "res_01JZEXAMPLE"
     )
-    assert result.structuredContent["data"]["results"][1]["error_code"] == "api_error"
+    assert result.structured_content["data"]["results"][1]["error_code"] == "api_error"
     assert len(requests) == 1
 
 
@@ -332,10 +343,10 @@ def test_record_disposition_and_rejection_privacy(
         {"model": "gpt-4o", "provider": "openai", "call_id": CALL_ID},
     )
     _assert_private(result, caplog, capsys)
-    assert result.isError is (status == "rejected")
-    assert result.structuredContent["ok"] is (status != "rejected")
-    assert result.structuredContent["data"]["status"] == status
-    assert result.structuredContent["data"]["call_ids"] == [CALL_ID]
+    assert result.is_error is (status == "rejected")
+    assert result.structured_content["ok"] is (status != "rejected")
+    assert result.structured_content["data"]["status"] == status
+    assert result.structured_content["data"]["call_ids"] == [CALL_ID]
     assert len(requests) == 1
 
 
@@ -352,11 +363,11 @@ def test_successful_settlement_preserves_recording_state(
     result = anyio.run(
         _call_tool, "budget_confirm", {**CONFIRM, "no_record": no_record}
     )
-    assert result.isError is False
-    assert result.structuredContent["ok"] is True
-    assert result.structuredContent["data"]["reservation_id"] == "res_known"
-    assert result.structuredContent["data"]["call_id"] == CALL_ID
-    assert result.structuredContent["data"]["recorded"]["status"] == status
+    assert result.is_error is False
+    assert result.structured_content["ok"] is True
+    assert result.structured_content["data"]["reservation_id"] == "res_known"
+    assert result.structured_content["data"]["call_id"] == CALL_ID
+    assert result.structured_content["data"]["recorded"]["status"] == status
     assert len(requests) == (1 if no_record else 2)
 
 
@@ -370,13 +381,13 @@ def test_settlement_survives_private_recording_validation_failure(
     )
     result = anyio.run(_call_tool, "budget_confirm", CONFIRM)
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["ok"] is False
-    assert result.structuredContent["error"]["code"] == "recording_failed"
-    assert "settlement succeeded" in result.structuredContent["error"]["message"]
-    assert result.structuredContent["data"]["reservation_id"] == "res_known"
-    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
-    assert result.structuredContent["data"]["recorded"]["call_ids"] == [CALL_ID]
+    assert result.is_error is True
+    assert result.structured_content["ok"] is False
+    assert result.structured_content["error"]["code"] == "recording_failed"
+    assert "settlement succeeded" in result.structured_content["error"]["message"]
+    assert result.structured_content["data"]["reservation_id"] == "res_known"
+    assert result.structured_content["data"]["recorded"]["status"] == "failed"
+    assert result.structured_content["data"]["recorded"]["call_ids"] == [CALL_ID]
     assert [request[1] for request in requests] == [
         "/api/v1/budgets/confirm",
         "/api/v1/metadata/ingest",
@@ -402,9 +413,9 @@ def test_denial_recording_error_is_private_and_keeps_valid_decision(
     )
     result = anyio.run(_call_tool, "budget_check", CHECK)
     _assert_private(result, caplog, capsys)
-    assert result.isError is False
-    assert result.structuredContent["data"]["allowed"] is False
-    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert result.is_error is False
+    assert result.structured_content["data"]["allowed"] is False
+    assert result.structured_content["data"]["recorded"]["status"] == "failed"
     assert len(requests) == 1
 
 
@@ -420,13 +431,14 @@ def test_unexpected_recording_exception_keeps_known_settlement(
     )
     result = anyio.run(_call_tool, "budget_confirm", CONFIRM)
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    assert result.structuredContent["data"]["reservation_id"] == "res_known"
-    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert result.is_error is True
+    assert result.structured_content["data"]["reservation_id"] == "res_known"
+    assert result.structured_content["data"]["recorded"]["status"] == "failed"
     assert len(requests) == 1
 
 
 class _RawProtocolCall(BaseModel):
+    name_param: ClassVar[None] = None
     method: str = "tools/call"
     params: dict
 
@@ -445,16 +457,14 @@ def test_malformed_tool_envelope_has_safe_protocol_error_and_diagnostics(
     monkeypatch.setattr(auth, "resolve_credential", lambda: calls.append("auth"))
 
     async def exercise():
-        async with create_connected_server_and_client_session(
-            mcp_server.create_server()
-        ) as session:
+        async with Client(mcp_server.create_server(), cache=None) as session:
             caplog.set_level(logging.DEBUG)
             logging.warning("An unrelated diagnostic remains available.")
-            with pytest.raises(McpError) as raised:
-                await session.send_request(
+            with pytest.raises(MCPError) as raised:
+                await session.session.send_request(
                     _RawProtocolCall(params=params), types.CallToolResult
                 )
-            assert raised.value.error.code == types.INVALID_PARAMS
+            assert raised.value.code == types.INVALID_PARAMS
             assert CANARY not in str(raised.value)
             assert len((await session.list_tools()).tools) == 17
 
@@ -462,7 +472,7 @@ def test_malformed_tool_envelope_has_safe_protocol_error_and_diagnostics(
     assert calls == []
     assert CANARY not in caplog.text
     assert CANARY not in repr([(r.msg, r.args, r.exc_info) for r in caplog.records])
-    assert "MCP protocol diagnostic" in caplog.text
+    # SDK 2 may reject these envelopes without emitting a diagnostic.
     assert "An unrelated diagnostic remains available." in caplog.text
     captured = capsys.readouterr()
     assert CANARY not in captured.out + captured.err
@@ -474,11 +484,9 @@ def test_malformed_notification_is_private_and_session_remains_usable(
     monkeypatch.setattr(auth, "resolve_credential", lambda: None)
 
     async def exercise():
-        async with create_connected_server_and_client_session(
-            mcp_server.create_server()
-        ) as session:
+        async with Client(mcp_server.create_server(), cache=None) as session:
             caplog.set_level(logging.DEBUG)
-            await session.send_notification(
+            await session.session.send_notification(
                 _RawProtocolCall(
                     method="notifications/cancelled",
                     params={"requestId": {CANARY: CANARY}},
@@ -489,7 +497,7 @@ def test_malformed_notification_is_private_and_session_remains_usable(
     anyio.run(exercise)
     assert CANARY not in caplog.text
     assert CANARY not in repr([(r.msg, r.args, r.exc_info) for r in caplog.records])
-    assert "MCP protocol diagnostic" in caplog.text
+    # SDK 2 may reject these envelopes without emitting a diagnostic.
     captured = capsys.readouterr()
     assert CANARY not in captured.out + captured.err
 
@@ -524,16 +532,16 @@ def test_unexpected_later_chunk_failure_preserves_completed_reservations(
         _call_tool, "budget_check_batch", {"checks": [CHECK] * 65, "no_record": True}
     )
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    data = result.structuredContent["data"]
+    assert result.is_error is True
+    data = result.structured_content["data"]
     assert data is not None
-    assert result.structuredContent["error"]["code"] == "internal_error"
+    assert result.structured_content["error"]["code"] == "internal_error"
     assert [item["result"]["reservation_id"] for item in data["results"]] == [
         f"known_{index}" for index in range(32)
     ]
     assert data["failed_chunk_start"] == 32 and data["total_checks"] == 65
-    assert "unknown" in result.structuredContent["error"]["hint"]
-    assert "do not replay" in result.structuredContent["error"]["hint"]
+    assert "unknown" in result.structured_content["error"]["hint"]
+    assert "do not replay" in result.structured_content["error"]["hint"]
     assert len(requests) == 2
 
 
@@ -563,18 +571,20 @@ def test_denial_receipt_exception_retains_entire_validated_chunk(
     monkeypatch.setattr(budget, "record_denial", receipt)
     result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK] * 33})
     _assert_private(result, caplog, capsys)
-    assert result.isError is True
-    data = result.structuredContent["data"]
+    assert result.is_error is True
+    data = result.structured_content["data"]
     assert data is not None
     assert [item["result"]["reservation_id"] for item in data["results"]] == [
         None if index == 1 else f"known_{index}" for index in range(32)
     ]
     assert data["failed_chunk_start"] == 0 and data["total_checks"] == 33
-    assert "reservation outcomes are known" in result.structuredContent["error"]["hint"]
     assert (
-        "later chunks were not submitted" in result.structuredContent["error"]["hint"]
+        "reservation outcomes are known" in result.structured_content["error"]["hint"]
     )
-    assert "do not replay" in result.structuredContent["error"]["hint"]
+    assert (
+        "later chunks were not submitted" in result.structured_content["error"]["hint"]
+    )
+    assert "do not replay" in result.structured_content["error"]["hint"]
     assert processed == ["known_0", None]
     assert len(requests) == 1
 

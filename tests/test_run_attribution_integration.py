@@ -57,7 +57,7 @@ def _check(
         if not from_environment:
             arguments["agent_run_id"] = RUN_ID
         result = anyio.run(_call_tool, "budget_check", arguments)
-        payload = result.structuredContent
+        payload = result.structured_content
     else:
         arguments = [
             "--json",

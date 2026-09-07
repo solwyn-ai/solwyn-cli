@@ -10,8 +10,8 @@ from typing import Any
 import anyio
 import httpx
 import pytest
-from mcp import McpError
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import MCPError
+from mcp import Client
 
 from test_alerts_command import EVENT as ALERT_EVENT, WINDOW as ALERT_WINDOW
 from solwyn_cli import auth, runtime
@@ -268,9 +268,7 @@ MCP_TOOLS_GOLDEN = Path(__file__).parent / "golden" / "mcp-tools.json"
 
 
 async def _listed_tool_contract() -> list[dict[str, Any]]:
-    async with create_connected_server_and_client_session(
-        mcp_server.create_server()
-    ) as session:
+    async with Client(mcp_server.create_server(), cache=None) as session:
         tools = (await session.list_tools()).tools
     return [tool.model_dump(mode="json", by_alias=True) for tool in tools]
 
@@ -444,9 +442,7 @@ def _install_http(
 
 
 async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
-    async with create_connected_server_and_client_session(
-        mcp_server.create_server()
-    ) as session:
+    async with Client(mcp_server.create_server(), cache=None) as session:
         return await session.call_tool(name, arguments)
 
 
@@ -462,7 +458,7 @@ def test_get_overview_requires_jwt_before_http(
 
     result = anyio.run(_call_tool, "get_overview", {})
 
-    assert result.structuredContent["error"] == {
+    assert result.structured_content["error"] == {
         "code": "authentication_required",
         "message": "User login is required to read the account overview.",
         "hint": "Unset SOLWYN_API_KEY and run solwyn login, then retry.",
@@ -485,9 +481,9 @@ def test_get_overview_reads_typed_account_summary_with_jwt(
 
     result = anyio.run(_call_tool, "get_overview", {})
 
-    assert result.structuredContent["ok"] is True
-    assert result.structuredContent["schema"] == "solwyn.mcp.overview.v1"
-    assert result.structuredContent["data"] == OVERVIEW_RESPONSE
+    assert result.structured_content["ok"] is True
+    assert result.structured_content["schema"] == "solwyn.mcp.overview.v1"
+    assert result.structured_content["data"] == OVERVIEW_RESPONSE
     assert _wire_requests(requests) == [
         ("GET", "/api/v1/overview", {}, None),
     ]
@@ -507,13 +503,13 @@ def test_get_overview_invalid_response_is_fixed_and_secret_safe(
 
     result = anyio.run(_call_tool, "get_overview", {})
 
-    assert result.structuredContent["error"] == {
+    assert result.structured_content["error"] == {
         "code": "invalid_overview_response",
         "message": "The Solwyn API response was invalid.",
         "hint": None,
         "status_code": None,
     }
-    assert JWT_ACCESS not in json.dumps(result.structuredContent)
+    assert JWT_ACCESS not in json.dumps(result.structured_content)
     assert _wire_requests(requests) == [("GET", "/api/v1/overview", {}, None)]
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
@@ -583,22 +579,22 @@ def test_exact_tool_contract_and_mocked_http_conformance(
 
     async def exercise_protocol() -> None:
         server = mcp_server.create_server()
-        async with create_connected_server_and_client_session(server) as session:
-            capabilities = session.get_server_capabilities()
+        async with Client(server, cache=None) as session:
+            capabilities = session.server_capabilities
             tools = (await session.list_tools()).tools
             assert [tool.name for tool in tools] == TOOL_NAMES
             assert capabilities.prompts is None
             assert capabilities.resources is None
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await session.list_prompts()
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await session.list_resources()
             assert [
                 tool.name for tool in (await session.list_tools()).tools
             ] == TOOL_NAMES
             assert all(tool.description for tool in tools)
-            assert all(tool.outputSchema is not None for tool in tools)
-            assert [set(tool.inputSchema["properties"]) for tool in tools] == [
+            assert all(tool.output_schema is not None for tool in tools)
+            assert [set(tool.input_schema["properties"]) for tool in tools] == [
                 {"project_id"},
                 {
                     "estimated_input_tokens",
@@ -787,12 +783,14 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 await session.call_tool("get_overview", {}),
             ]
 
-        assert all(call.isError is False for call in calls)
-        assert all(call.structuredContent is not None for call in calls)
-        assert [call.structuredContent["ok"] for call in calls] == [True] * 10
-        assert calls[0].structuredContent["data"]["project_id"] == "proj_alpha"
-        assert calls[1].structuredContent["data"]["reservation_id"] == "res_01JZEXAMPLE"
-        assert calls[2].structuredContent["data"] == {
+        assert all(call.is_error is False for call in calls)
+        assert all(call.structured_content is not None for call in calls)
+        assert [call.structured_content["ok"] for call in calls] == [True] * 10
+        assert calls[0].structured_content["data"]["project_id"] == "proj_alpha"
+        assert (
+            calls[1].structured_content["data"]["reservation_id"] == "res_01JZEXAMPLE"
+        )
+        assert calls[2].structured_content["data"] == {
             "reservation_id": "res_01JZEXAMPLE",
             "call_id": "12345678-1234-1234-1234-123456789abc",
             "recorded": {
@@ -803,13 +801,13 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 "call_ids": ["12345678-1234-1234-1234-123456789abc"],
             },
         }
-        assert calls[3].structuredContent["data"]["providers"] == PROVIDERS_RESPONSE
-        assert calls[4].structuredContent["data"]["forecast_eom"] == 75.0
-        assert calls[5].structuredContent["data"]["groups"] == COSTS_RESPONSE["groups"]
-        assert calls[6].structuredContent["data"]["projects"] == PROJECTS_RESPONSE
-        assert calls[7].structuredContent["data"]["runs"] == [RUN_RESPONSE]
-        assert calls[8].structuredContent["data"] == RUN_RESPONSE
-        assert calls[9].structuredContent["data"] == OVERVIEW_RESPONSE
+        assert calls[3].structured_content["data"]["providers"] == PROVIDERS_RESPONSE
+        assert calls[4].structured_content["data"]["forecast_eom"] == 75.0
+        assert calls[5].structured_content["data"]["groups"] == COSTS_RESPONSE["groups"]
+        assert calls[6].structured_content["data"]["projects"] == PROJECTS_RESPONSE
+        assert calls[7].structured_content["data"]["runs"] == [RUN_RESPONSE]
+        assert calls[8].structured_content["data"] == RUN_RESPONSE
+        assert calls[9].structured_content["data"] == OVERVIEW_RESPONSE
 
     anyio.run(exercise_protocol)
 
@@ -905,9 +903,7 @@ def test_budget_descriptions_are_live_views_of_canonical_guidance(
     }
 
     async def list_descriptions() -> dict[str, str]:
-        async with create_connected_server_and_client_session(
-            mcp_server.create_server()
-        ) as session:
+        async with Client(mcp_server.create_server(), cache=None) as session:
             return {
                 tool.name: tool.description or ""
                 for tool in (await session.list_tools()).tools
@@ -960,9 +956,7 @@ def test_auth_and_client_are_fresh_per_call_without_server_restart(
     )
 
     async def two_calls_one_server() -> list[Any]:
-        async with create_connected_server_and_client_session(
-            mcp_server.create_server()
-        ) as session:
+        async with Client(mcp_server.create_server(), cache=None) as session:
             return [
                 await session.call_tool("budget_status", {}),
                 await session.call_tool("budget_status", {}),
@@ -970,7 +964,7 @@ def test_auth_and_client_are_fresh_per_call_without_server_restart(
 
     results = anyio.run(two_calls_one_server)
 
-    assert all(result.structuredContent["ok"] for result in results)
+    assert all(result.structured_content["ok"] for result in results)
     assert _wire_requests(requests) == [
         ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
         ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
@@ -1012,9 +1006,9 @@ def test_local_preconditions_return_structured_errors_without_http(
 
     result = anyio.run(_call_tool, "budget_status", {})
 
-    assert result.isError is True
-    assert result.structuredContent["ok"] is False
-    assert result.structuredContent["error"]["code"] == expected_code
+    assert result.is_error is True
+    assert result.structured_content["ok"] is False
+    assert result.structured_content["error"]["code"] == expected_code
     assert requests == []
     assert responses == []
     assert len(clients) == expected_clients
@@ -1057,8 +1051,8 @@ def test_key_only_tools_reject_jwt_without_http(
 
     result = anyio.run(_call_tool, tool_name, arguments)
 
-    assert result.isError is True
-    assert result.structuredContent == {
+    assert result.is_error is True
+    assert result.structured_content == {
         "schema": f"solwyn.mcp.{tool_name.replace('_', '-')}.v1",
         "ok": False,
         "data": None,
@@ -1092,11 +1086,11 @@ def test_list_projects_returns_structured_jwt_remediation_under_project_key(
 
     result = anyio.run(_call_tool, "list_projects", {})
 
-    assert result.isError is True
-    assert result.structuredContent["ok"] is False
-    assert result.structuredContent["error"]["code"] == "authentication_required"
-    assert "solwyn login" in result.structuredContent["error"]["hint"]
-    assert "JWT" in result.structuredContent["error"]["hint"]
+    assert result.is_error is True
+    assert result.structured_content["ok"] is False
+    assert result.structured_content["error"]["code"] == "authentication_required"
+    assert "solwyn login" in result.structured_content["error"]["hint"]
+    assert "JWT" in result.structured_content["error"]["hint"]
     assert requests == []
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
@@ -1121,8 +1115,8 @@ def test_budget_status_reads_every_threshold_rule_type(
 
     result = anyio.run(_call_tool, "budget_status", {})
 
-    assert result.structuredContent["ok"] is True
-    thresholds = result.structuredContent["data"]["thresholds"]
+    assert result.structured_content["ok"] is True
+    thresholds = result.structured_content["data"]["thresholds"]
     assert [rule["type"] for rule in thresholds] == [
         "budget_threshold",
         "forecast_overrun",
@@ -1162,9 +1156,9 @@ def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
         {"estimated_input_tokens": 1, "model": "m", "provider": "openai"},
     )
 
-    assert result.structuredContent["ok"] is True
-    assert result.structuredContent["data"]["allowed"] is True
-    assert result.structuredContent["data"]["reservation_id"] is None
+    assert result.structured_content["ok"] is True
+    assert result.structured_content["data"]["allowed"] is True
+    assert result.structured_content["data"]["reservation_id"] is None
     assert _wire_requests(requests) == [
         (
             "POST",
@@ -1212,7 +1206,7 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
         {"time_range": "7d", "group_by": "model"},
     )
 
-    error = result.structuredContent["error"]
+    error = result.structured_content["error"]
     assert error == {
         "code": "upgrade_required",
         "message": "The Solwyn API rejected the request.",
@@ -1342,14 +1336,14 @@ def test_remote_error_fields_never_reflect_untrusted_secret_material(
         assert secret not in rendered
         assert secret not in captured.out
         assert secret not in captured.err
-    assert result.structuredContent["error"]["code"] == expected_code
-    assert result.structuredContent["error"]["status_code"] == 402
+    assert result.structured_content["error"]["code"] == expected_code
+    assert result.structured_content["error"]["status_code"] == 402
     if expected_code == "upgrade_required":
-        assert result.structuredContent["error"]["hint"] == (
+        assert result.structured_content["error"]["hint"] == (
             "Review upgrade options in the dashboard: /billing"
         )
     else:
-        assert result.structuredContent["error"]["hint"] is None
+        assert result.structured_content["error"]["hint"] is None
     assert _wire_requests(requests) == [
         (
             "GET",
@@ -1408,7 +1402,7 @@ def test_read_only_key_403_keeps_its_code_and_points_agents_at_key_scope(
 
     result = anyio.run(_call_tool, tool, arguments)
 
-    error = result.structuredContent["error"]
+    error = result.structured_content["error"]
     assert error == {
         "code": "read_only_key",
         "message": "The Solwyn API rejected the request.",
@@ -1442,7 +1436,7 @@ def test_plain_403_still_collapses_to_forbidden_without_a_key_scope_claim(
         {"estimated_input_tokens": 1200, "model": "gpt-5", "provider": "openai"},
     )
 
-    error = result.structuredContent["error"]
+    error = result.structured_content["error"]
     assert error["code"] == "forbidden"
     assert error["status_code"] == 403
     assert error["hint"] == "Check account access for this operation, then retry."
@@ -1477,7 +1471,7 @@ def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
         {"time_range": "30d"},
     )
 
-    assert result.structuredContent["error"] == {
+    assert result.structured_content["error"] == {
         "code": "upgrade_required",
         "message": "Range '30d' is not available on your tier.",
         "hint": "Allowed values: 7d, 90d. Review upgrade options in the dashboard: /billing",
@@ -1527,7 +1521,7 @@ def test_agent_runs_custom_window_gate_does_not_blame_default_preset(
         },
     )
 
-    error = result.structuredContent["error"]
+    error = result.structured_content["error"]
     assert error == {
         "code": "upgrade_required",
         "message": "Custom windows longer than 7 days are not available on your tier.",
@@ -1576,7 +1570,7 @@ def test_agent_runs_rejects_non_rfc3339_custom_window_before_auth(
         {"from_time": from_time, "to_time": to_time},
     )
 
-    assert result.structuredContent["error"] == {
+    assert result.structured_content["error"] == {
         "code": "custom_window_invalid",
         "message": "The custom run window is invalid.",
         "hint": (
@@ -1616,7 +1610,7 @@ def test_budget_check_puts_agent_run_id_on_the_wire_only_when_supplied(
         },
     )
 
-    assert result.structuredContent["ok"] is True
+    assert result.structured_content["ok"] is True
     (_, _, _, body) = _wire_requests(requests)[0]
     if expected_run_id is None:
         assert "agent_run_id" not in body
@@ -1673,7 +1667,7 @@ def test_budget_check_puts_estimated_media_on_the_wire_only_when_supplied(
         },
     )
 
-    assert result.structuredContent["ok"] is True
+    assert result.structured_content["ok"] is True
     (_, _, _, body) = _wire_requests(requests)[0]
     if expected_media is None:
         assert "estimated_media" not in body
@@ -1704,7 +1698,7 @@ def test_budget_check_rejects_an_out_of_contract_media_quantity(
         },
     )
 
-    assert result.isError is True
+    assert result.is_error is True
     assert requests == []
     assert response_queue == []
 
@@ -1728,7 +1722,7 @@ def test_budget_check_honors_exactly_one_429_retry(
         {"estimated_input_tokens": 1, "model": "m", "provider": "openai"},
     )
 
-    assert result.structuredContent["ok"] is True
+    assert result.structured_content["ok"] is True
     expected_request = (
         "POST",
         "/api/v1/budgets/check",
@@ -1774,8 +1768,8 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
         },
     )
 
-    assert result.isError is True
-    assert result.structuredContent == {
+    assert result.is_error is True
+    assert result.structured_content == {
         "schema": "solwyn.mcp.budget-confirm.v1",
         "ok": False,
         "data": None,
@@ -1854,7 +1848,7 @@ def test_shared_client_honors_one_jwt_refresh_and_retry(
 
     result = anyio.run(_call_tool, "list_projects", {})
 
-    assert result.structuredContent["ok"] is True
+    assert result.structured_content["ok"] is True
     assert _wire_requests(requests) == [
         ("GET", "/api/v1/projects", {}, None),
         (
@@ -1913,7 +1907,7 @@ def test_cost_tools_forward_complete_filters(monkeypatch, tool):
         "tag": ["x=a=b"],
     }
     result = anyio.run(_call_tool, tool, args)
-    assert result.structuredContent["ok"] is True
+    assert result.structured_content["ok"] is True
     query = requests[0][2]["query"]
     assert "range" not in query
     assert query["agent_run_id"] == "run_" + "a" * 32
@@ -1944,8 +1938,8 @@ def test_invalid_local_cost_queries_have_safe_actionable_errors(
         ],
     )
     result = anyio.run(_call_tool, tool, arguments)
-    error = result.structuredContent["error"]
-    assert result.structuredContent["ok"] is False
+    error = result.structured_content["error"]
+    assert result.structured_content["ok"] is False
     assert error["code"] == "invalid_cost_query"
     assert error["message"] == "The cost query was invalid."
     assert "from_" in error["hint"] and "to" in error["hint"]
@@ -1966,7 +1960,7 @@ def test_invalid_cost_responses_are_not_mislabeled_as_query_errors(monkeypatch, 
         ],
     )
     result = anyio.run(_call_tool, tool, {})
-    assert result.structuredContent["error"]["code"] == "invalid_costs_response"
+    assert result.structured_content["error"]["code"] == "invalid_costs_response"
     assert len(requests) == 1
 
 
@@ -1983,9 +1977,9 @@ def test_list_budget_rules_is_read_only_with_project_key(monkeypatch):
         ],
     )
     result = anyio.run(_call_tool, "list_budget_rules", {})
-    assert not result.isError
-    assert result.structuredContent["schema"] == "solwyn.budget.rules.v1"
-    assert len(result.structuredContent["data"]["rules"]) == 6
+    assert not result.is_error
+    assert result.structured_content["schema"] == "solwyn.budget.rules.v1"
+    assert len(result.structured_content["data"]["rules"]) == 6
     assert [r[:2] for r in requests] == [("GET", "/api/v1/projects/proj_alpha/budget")]
 
 
@@ -2030,9 +2024,9 @@ def test_record_call_preserves_dispositions(monkeypatch, status):
             "tags": {"env": "prod"},
         },
     )
-    assert result.structuredContent["data"]["status"] == status
-    assert result.isError is (status in {"rejected", "failed"})
-    assert result.structuredContent["ok"] is (status not in {"rejected", "failed"})
+    assert result.structured_content["data"]["status"] == status
+    assert result.is_error is (status in {"rejected", "failed"})
+    assert result.structured_content["ok"] is (status not in {"rejected", "failed"})
     assert requests[0][1] == "/api/v1/metadata/ingest"
     event = requests[0][2]["json"][0]
     assert event["call_id"] == call_id and event["tags"] == {"env": "prod"}
@@ -2059,8 +2053,8 @@ def test_mcp_confirm_records_same_call_id_by_default(monkeypatch):
             "agent_run_id": "job",
         },
     )
-    assert result.structuredContent["ok"]
-    assert result.structuredContent["data"]["recorded"]["status"] == "ingested"
+    assert result.structured_content["ok"]
+    assert result.structured_content["data"]["recorded"]["status"] == "ingested"
     assert requests[0][2]["json"]["call_id"] == requests[1][2]["json"][0]["call_id"]
     assert requests[1][2]["json"][0]["agent_run_id"] == "job"
     assert "tags" not in requests[0][2]["json"]
@@ -2094,7 +2088,7 @@ def test_mcp_denial_receipt(monkeypatch):
             "tags": {"env": "prod"},
         },
     )
-    data = result.structuredContent["data"]
+    data = result.structured_content["data"]
     assert data["allowed"] is False and data["recorded"]["status"] == "ingested"
     event = requests[1][2]["json"][0]
     assert event["call_id"] == data["call_id"] and event["estimated_output_bound"] == 30
@@ -2124,7 +2118,7 @@ def test_mcp_tag_discovery(monkeypatch, tool, args, body):
         monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[key]
     )
     result = anyio.run(_call_tool, tool, args)
-    assert result.structuredContent["ok"]
+    assert result.structured_content["ok"]
     assert requests[0][0] == "GET" and "/tags" in requests[0][1]
     if tool == "list_tag_values":
         assert requests[0][2]["query"] == {
@@ -2147,7 +2141,7 @@ def test_mcp_confirm_bad_uuid_rejected_before_network(monkeypatch):
             "provider": "openai",
         },
     )
-    assert result.isError
+    assert result.is_error
     assert requests == []
 
 
@@ -2167,7 +2161,7 @@ def test_mcp_record_details_populate_top_level_counts(monkeypatch):
             "token_details": {"input_tokens": 12, "output_tokens": 3},
         },
     )
-    assert result.structuredContent["ok"]
+    assert result.structured_content["ok"]
     assert requests[0][2]["json"][0]["input_tokens"] == 12
     assert requests[0][2]["json"][0]["output_tokens"] == 3
 
@@ -2192,16 +2186,16 @@ def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
             "provider": "openai",
         },
     )
-    assert result.isError is True
-    assert result.structuredContent["ok"] is False
-    assert result.structuredContent["error"]["code"] == "recording_failed"
-    assert "settlement succeeded" in result.structuredContent["error"]["message"]
-    assert result.structuredContent["data"]["reservation_id"] == "res"
+    assert result.is_error is True
+    assert result.structured_content["ok"] is False
+    assert result.structured_content["error"]["code"] == "recording_failed"
+    assert "settlement succeeded" in result.structured_content["error"]["message"]
+    assert result.structured_content["data"]["reservation_id"] == "res"
     assert (
-        result.structuredContent["data"]["call_id"]
+        result.structured_content["data"]["call_id"]
         == "12345678-1234-1234-1234-123456789abc"
     )
-    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert result.structured_content["data"]["recorded"]["status"] == "failed"
     assert len(requests) == 2
 
 
@@ -2233,9 +2227,10 @@ def test_list_alert_events_project_key_and_filters(monkeypatch):
             "time_range": "7d",
         },
     )
-    assert not result.isError
+    assert not result.is_error
     assert (
-        result.structuredContent["data"]["events"][0]["delivery"]["status"] == "partial"
+        result.structured_content["data"]["events"][0]["delivery"]["status"]
+        == "partial"
     )
     assert requests[0][:2] == ("GET", "/api/v1/projects/proj_alpha/alert-events")
     assert requests[0][2]["query"] == {
@@ -2257,4 +2252,4 @@ def test_list_alert_events_bad_query(monkeypatch):
     result = anyio.run(
         _call_tool, "list_alert_events", {"from_": "2026-09-01T00:00:00Z"}
     )
-    assert result.structuredContent["error"]["code"] == "invalid_alert_query"
+    assert result.structured_content["error"]["code"] == "invalid_alert_query"

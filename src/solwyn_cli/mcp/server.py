@@ -1,4 +1,4 @@
-"""FastMCP stdio server and the supported Solwyn tool surface."""
+"""Public MCP SDK server and the supported Solwyn tool surface."""
 
 import json
 import logging
@@ -9,13 +9,16 @@ from functools import partial
 from typing import Any, Annotated, Generic, Literal, TypeVar
 
 import anyio
-from mcp import types
-from mcp.server.fastmcp import FastMCP
-from mcp.server.lowlevel import server as sdk_server
-from mcp.shared import session as sdk_session
+from mcp import MCPError, types
+from mcp.server import Server, ServerRequestContext
+from mcp.server.context import CallNext, HandlerResult
+from mcp.server import runner as sdk_runner
+from mcp.shared import jsonrpc_dispatcher as sdk_dispatcher
+from mcp.shared import direct_dispatcher as sdk_direct_dispatcher
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from solwyn_cli import auth, runtime
+from solwyn_cli import __version__, auth, runtime
+from solwyn_cli.mcp.declarations import ToolDeclaration
 from solwyn_cli._vendor.wire import (
     CALL_ID_PATTERN,
     Modality,
@@ -171,10 +174,9 @@ class _PrivateMcpDiagnostics(logging.Filter):
     """Redact SDK transport/session diagnostics before any handler captures them."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if record.pathname in {sdk_server.__file__, sdk_session.__file__}:
-            # The 1.x session emits validation errors directly through root,
-            # while the server emits stream exceptions through its own logger.
-            # Both may include whole requests and Pydantic input/traceback data.
+        if record.pathname in _SDK_DIAGNOSTIC_PATHS:
+            # SDK 2 runner and dispatchers may log raw frames, method names,
+            # or transport exceptions before the Solwyn callback is reached.
             record.msg = "MCP protocol diagnostic."
             record.args = ()
             record.exc_info = None
@@ -185,72 +187,84 @@ class _PrivateMcpDiagnostics(logging.Filter):
         return True
 
 
-class _ToolOnlyFastMCP(FastMCP):
-    """FastMCP 1.28.1 server that registers only the supported tool handlers."""
+# Narrow source allowlist for the pinned SDK's stdio/legacy/current emitters.
+# No application logger is disabled and severity remains unchanged.
+_SDK_DIAGNOSTIC_MODULES = (sdk_runner, sdk_dispatcher, sdk_direct_dispatcher)
+_SDK_DIAGNOSTIC_PATHS = frozenset(module.__file__ for module in _SDK_DIAGNOSTIC_MODULES)
 
-    def _setup_handlers(self) -> None:
-        # Capabilities derive from the low-level handler registry. Registering only
-        # these two handlers prevents unsupported prompt/resource advertisement.
-        self._mcp_server.list_tools()(self.list_tools)
-        # The 1.x decorator can reflect invalid inputs, outputs and unknown names.
-        # Keep validation, dispatch and serialization inside our safe boundary.
-        self._mcp_server.request_handlers[types.CallToolRequest] = (
-            self._call_tool_request
-        )
-        # Logger filters run before handlers, including DEBUG/captured handlers.
-        # Root filters do not apply to propagated records, so cover both emitters.
-        for sdk_logger in (logging.getLogger(), logging.getLogger(sdk_server.__name__)):
-            if not any(
-                isinstance(item, _PrivateMcpDiagnostics) for item in sdk_logger.filters
-            ):
-                sdk_logger.addFilter(_PrivateMcpDiagnostics())
 
-    async def _call_tool_request(
-        self, request: types.CallToolRequest
-    ) -> types.ServerResult:
-        return types.ServerResult(
-            await self.call_tool(request.params.name, request.params.arguments or {})
-        )
+async def _private_protocol_errors(
+    ctx: ServerRequestContext, call_next: CallNext
+) -> HandlerResult:
+    """Keep SDK lookup errors useful without reflecting arbitrary method text."""
+    try:
+        return await call_next(ctx)
+    except MCPError as error:
+        if error.code == types.METHOD_NOT_FOUND:
+            raise MCPError(
+                code=types.METHOD_NOT_FOUND, message="Method not found"
+            ) from None
+        raise
 
-    def close_inputs(self) -> None:
-        """Apply the same strict argument model at discovery and execution."""
-        for tool in self._tool_manager.list_tools():
-            argument_model = tool.fn_metadata.arg_model
-            argument_model.model_config.update(
-                extra="forbid", hide_input_in_errors=True
+
+def _configure_private_server(server: Server) -> None:
+    """Adapt only this newly constructed low-level SDK 2.1.1 server."""
+    # Public but provisional across 2.x minor releases: retain the exact pin.
+    # The low-level server installs only inbound telemetry by default. Clear it
+    # before adding any Solwyn middleware; never reset the host tracer/propagator.
+    # Replies only: outbound MCP requests have separate SDK instrumentation.
+    server.middleware.clear()
+    # Public middleware wraps lookup before the tool callback in both eras.
+    server.middleware.append(_private_protocol_errors)
+    for module in _SDK_DIAGNOSTIC_MODULES:
+        sdk_logger = logging.getLogger(module.__name__)
+        if not any(
+            isinstance(item, _PrivateMcpDiagnostics) for item in sdk_logger.filters
+        ):
+            sdk_logger.addFilter(_PrivateMcpDiagnostics())
+
+
+class _ToolCatalog:
+    """One ordered declaration set for public discovery and safe invocation."""
+
+    def __init__(self) -> None:
+        self.tools: dict[str, ToolDeclaration] = {}
+
+    def tool(self, *, name: str, description: str):
+        def register(fn):
+            self.tools[name] = ToolDeclaration.from_function(
+                fn, name=name, description=description
             )
-            argument_model.model_rebuild(force=True)
-            tool.parameters = argument_model.model_json_schema(by_alias=True)
+            return fn
+
+        return register
+
+    async def list_tools(
+        self, ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+    ) -> types.ListToolsResult:
+        return types.ListToolsResult(
+            tools=[tool.definition for tool in self.tools.values()]
+        )
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any]
+        self, ctx: ServerRequestContext, params: types.CallToolRequestParams
     ) -> types.CallToolResult:
-        tool = self._tool_manager.get_tool(name)
+        tool = self.tools.get(params.name)
         if tool is None:
-            return _protocol_result(
-                _ToolResult[BaseModel](
-                    schema="solwyn.mcp.error.v1",
-                    ok=False,
-                    error=_ToolError(
-                        code="unknown_tool",
-                        message="The requested tool is unavailable.",
-                        hint="Call list_tools to inspect the available tools.",
-                    ),
-                )
-            )
-
-        result_type = tool.fn_metadata.output_model
+            raise MCPError(code=-32602, message="Unknown tool")
+        arguments = params.arguments or {}
+        result_type = tool.output_model
         try:
             # Retain the SDK's existing JSON-string compatibility and defaults.
-            parsed = tool.fn_metadata.pre_parse_json(arguments)
-            inputs = tool.fn_metadata.arg_model.model_validate(parsed)
+            parsed = tool.parse_json_arguments(arguments)
+            inputs = tool.input_model.model_validate(parsed)
         except ValidationError as error:
             return _protocol_result(
                 _error(
                     result_type,
                     code="invalid_arguments",
                     message="The tool arguments are invalid.",
-                    hint=_validation_hint(error, tool.parameters),
+                    hint=_validation_hint(error, tool.definition.input_schema),
                 )
             )
         except Exception:
@@ -264,7 +278,9 @@ class _ToolOnlyFastMCP(FastMCP):
             )
 
         try:
-            result = await tool.fn(**inputs.model_dump_one_level())
+            result = await tool.fn(
+                **{name: getattr(inputs, name) for name in type(inputs).model_fields}
+            )
             result = result_type.model_validate(result)
             return _protocol_result(_execution_outcome(result))
         except Exception:
@@ -652,8 +668,8 @@ def _protocol_result(result: _ToolResult) -> types.CallToolResult:
     payload = result.model_dump(mode="json", by_alias=True)
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(payload))],
-        structuredContent=payload,
-        isError=not result.ok,
+        structured_content=payload,
+        is_error=not result.ok,
     )
 
 
@@ -1435,30 +1451,17 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
         )
 
 
-def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
+def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
     """Build the stateless local MCP server and register the supported tools."""
     launch = launch_options or McpLaunchOptions()
-    server = _ToolOnlyFastMCP(
-        name="solwyn",
-        instructions=(
-            "Use Solwyn tools for explicit project and budget operations. "
-            "Budget status is a pure read and the only polling surface. "
-            "Budget check creates a reservation only immediately before caller-made "
-            "un-instrumented provider spend. "
-            "Budget confirm settles a non-null reservation after that spend. "
-            "Never wrap Solwyn SDK-instrumented calls with budget check or confirm. "
-            "When check returns a null reservation, skip confirm."
-        ),
-        log_level="ERROR",
-    )
+    catalog = _ToolCatalog()
     status_description, check_description, confirm_description = (
         _budget_tool_descriptions()
     )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[0],
         description=status_description,
-        structured_output=True,
     )
     async def budget_status(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1467,10 +1470,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             partial(_budget_status_operation, project_id, launch)
         )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[1],
         description=check_description,
-        structured_output=True,
     )
     async def budget_check(
         estimated_input_tokens: Annotated[int, Field(ge=0)],
@@ -1517,10 +1519,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[2],
         description=confirm_description,
-        structured_output=True,
     )
     async def budget_confirm(
         reservation_id: Annotated[str, Field(min_length=1)],
@@ -1597,10 +1598,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[3],
         description=PROJECT_STATUS_DESCRIPTION,
-        structured_output=True,
     )
     async def get_project_status(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1609,10 +1609,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             partial(_project_status_operation, project_id, launch)
         )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[4],
         description=FORECAST_DESCRIPTION,
-        structured_output=True,
     )
     async def get_forecast(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1621,10 +1620,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             partial(_forecast_operation, project_id, launch)
         )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[5],
         description=COSTS_DESCRIPTION,
-        structured_output=True,
     )
     async def get_costs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1667,18 +1665,16 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name=TOOL_NAMES[6],
         description=PROJECTS_DESCRIPTION,
-        structured_output=True,
     )
     async def list_projects() -> _ProjectsResult:
         return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
 
-    @server.tool(
+    @catalog.tool(
         name="get_cost_total",
         description="Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
-        structured_output=True,
     )
     async def get_cost_total(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1719,10 +1715,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_budget_rules",
         description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
-        structured_output=True,
     )
     async def list_budget_rules(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1731,10 +1726,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             partial(_budget_rules_operation, project_id, launch)
         )
 
-    @server.tool(
+    @catalog.tool(
         name="record_call",
         description="Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
-        structured_output=True,
     )
     async def record_call(
         model: BudgetCheckModel,
@@ -1779,10 +1773,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             partial(_record_operation, launch_options=launch, inputs=inputs)
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_tags",
         description="List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
-        structured_output=True,
     )
     async def list_tags(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1791,10 +1784,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             partial(_tags_operation, launch_options=launch, project_id=project_id)
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_tag_values",
         description="Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
-        structured_output=True,
     )
     async def list_tag_values(
         key: Annotated[str, Field(min_length=1, max_length=64)],
@@ -1815,10 +1807,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_agent_runs",
         description=AGENT_RUNS_DESCRIPTION,
-        structured_output=True,
     )
     async def list_agent_runs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1847,10 +1838,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="get_agent_run",
         description=AGENT_RUN_DESCRIPTION,
-        structured_output=True,
     )
     async def get_agent_run_tool(
         run: Annotated[str, Field(min_length=1, max_length=255)],
@@ -1865,10 +1855,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_alert_events",
         description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
-        structured_output=True,
     )
     async def list_alert_events(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1899,7 +1888,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="budget_check_batch",
         description=(
             "Reserve budget immediately before multiple caller-made un-instrumented provider calls. "
@@ -1909,7 +1898,6 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             "Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. "
             "Admission counts each item against checks_per_minute. Do not poll or replay to refresh reservations."
         ),
-        structured_output=True,
     )
     async def budget_check_batch(
         checks: Annotated[list[BudgetCheckRequest], Field(min_length=1)],
@@ -1931,16 +1919,31 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="get_overview",
         description=(
             "Read calendar-month account spend, requests, trend, savings, and "
             "free-tier quota metadata. Requires login/JWT authentication."
         ),
-        structured_output=True,
     )
     async def get_overview() -> _OverviewResult:
         return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
 
-    server.close_inputs()
+    server = Server(
+        "solwyn",
+        title="Solwyn",
+        version=__version__,
+        instructions=(
+            "Use Solwyn tools for explicit project and budget operations. "
+            "Budget status is a pure read and the only polling surface. "
+            "Budget check creates a reservation only immediately before caller-made "
+            "un-instrumented provider spend. "
+            "Budget confirm settles a non-null reservation after that spend. "
+            "Never wrap Solwyn SDK-instrumented calls with budget check or confirm. "
+            "When check returns a null reservation, skip confirm."
+        ),
+        on_list_tools=catalog.list_tools,
+        on_call_tool=catalog.call_tool,
+    )
+    _configure_private_server(server)
     return server
