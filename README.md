@@ -43,6 +43,8 @@ solwyn status         # project budget and provider health at a glance
 | `projects create` / `list` / `show` | Manage projects; `create --scope` mints the first key with an explicit scope. |
 | `keys show` / `rotate` / `revoke` | Inspect key metadata (including its scope), rotate with `--scope` to change it, or hard-revoke. |
 | `mcp` | Serve Solwyn tools to agents over local MCP stdio. |
+| `mcp-config` | Generate an offline command/args descriptor; defaults to the read profile. |
+| `doctor --mcp` | Check MCP discovery, selected project/key context and an authenticated read when supported. |
 | `agent-context` | Print safe Solwyn budget guidance for coding agents. |
 | `config` | Inspect and update local configuration. |
 
@@ -77,9 +79,15 @@ Use `budget status` to poll; `check` is for the moment immediately before spend.
 
 ## For coding agents
 
+Start with the [MCP quickstart](docs/mcp-quickstart.md): install the local wheel,
+generate a read-first descriptor, diagnose credentials, and run the tested
+Python or TypeScript client. The [release checklist](docs/mcp-release.md) and
+Registry metadata are unpublished preparation.
+
 `solwyn mcp` serves read, guardrail, and attribution tools over stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
-Use `solwyn --project proj_your_project mcp --profile read` for the 13 read tools;
+Use `solwyn --project proj_0123456789abcdef01234567 mcp --profile read` for the 13 read tools
+(replace the synthetic ID with your project);
 the default `guardrails` profile keeps all 17. Profiles are fixed at launch and
 never grant permissions. See [MCP profiles and tool contracts](docs/mcp-profiles.md)
 for authentication, discovery caching, and operation-specific replay rules.

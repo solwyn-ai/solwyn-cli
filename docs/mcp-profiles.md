@@ -3,9 +3,11 @@
 Launch a fixed read surface with an installed executable:
 
 ```sh
-/absolute/path/to/solwyn --project proj_your_project mcp --profile read
+/absolute/path/to/solwyn --project proj_0123456789abcdef01234567 mcp --profile read
 ```
 
+Replace the synthetic ID with your actual project. The [quickstart](mcp-quickstart.md)
+covers installation, generated descriptors and tested client examples.
 Global `--project` and `--api-url` options precede `mcp`. Its `--profile`
 option follows `mcp`. Credentials belong in the existing keychain workflow or
 the subprocess's `SOLWYN_API_KEY` environment, never in argv or repository JSON.

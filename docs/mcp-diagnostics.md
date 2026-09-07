@@ -5,8 +5,8 @@ has not been assumed to exist on PyPI. These commands do not install a package,
 modify a host's configuration, or store credentials.
 
 ```sh
-solwyn --json --project proj_example mcp-config
-solwyn --json --project proj_example doctor --mcp
+solwyn --json --project proj_0123456789abcdef01234567 mcp-config
+solwyn --json --project proj_0123456789abcdef01234567 doctor --mcp
 ```
 
 `mcp-config` is offline. It resolves this interpreter's installed `solwyn` console
@@ -100,7 +100,12 @@ its leader has already exited; no general descendant guarantee is made. Isolated
 mode also does not make an environment-level `sitecustomize` or `.pth` tracing
 bootstrap trustworthy. Use a controlled installed Python environment.
 
+See the [quickstart](mcp-quickstart.md) for the tested clients and wheel acceptance
+command. The wheel CI matrix executes this packaged doctor on Linux/macOS/Windows
+with Python3.11; local observations so far cover macOS.
+
 The local tests exercise macOS process behavior and Windows pipe-adapter branches.
 The adapter uses documented Win32 anonymous-pipe APIs compatible with Python
-3.11; branch tests do not prove Windows OS behavior. Actual Linux/Windows CI and
-broader host integration examples are separate verification work.
+3.11; branch tests do not prove Windows OS behavior. Actual Linux/Windows CI
+results remain pending until the jobs run; particular desktop host versions have
+not been exercised.

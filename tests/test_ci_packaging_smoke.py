@@ -86,13 +86,22 @@ def test_packaging_smoke_job_tests_the_wheel_not_the_source_tree() -> None:
     job = _job_block(workflow, "packaging-smoke")
 
     assert "uv sync --locked --all-groups" in job
-    assert "uv build --clear" in job
-    assert "wheels=(dist/*.whl)" in job
-    assert '"${#wheels[@]}" -ne 1' in job
-    assert 'uvx --from "$wheel" solwyn --version' in job
-    assert 'uvx --from "$wheel" solwyn-cli --version' in job
-    assert re.search(r'mktemp -d.+cd "\$smoke_dir"', job, flags=re.DOTALL)
+    assert "scripts/mcp_wheel_smoke.py --python" in job
+    assert "ubuntu-latest, macos-latest, windows-latest" in job
+    assert 'python-version: ["3.11"]' in job
+    assert 'node-version: "24"' in job
     assert not re.search(r"\buv run(?:\s+--\S+)*\s+solwyn(?:-cli)?\b", job)
+
+
+def test_protected_job_names_and_real_legacy_client_stay_maintained():
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "name: Quality\n" in _job_block(workflow, "quality")
+    tests = _job_block(workflow, "tests")
+    assert "name: Tests (Python ${{ matrix.python-version }})" in tests
+    for version in ("3.11", "3.12", "3.13"):
+        assert f'- "{version}"' in tests
+    assert "SOLWYN_TEST_LEGACY_PYTHON:" in tests
+    assert "--require-hashes scripts/locks/mcp-legacy.txt" in tests
 
 
 def test_packaging_smoke_job_pins_actions_and_inspects_distribution() -> None:
@@ -104,7 +113,8 @@ def test_packaging_smoke_job_pins_actions_and_inspects_distribution() -> None:
     assert any("astral-sh/setup-uv@" in line for line in action_lines)
     assert action_lines
     assert all(ACTION_PIN.match(line) for line in action_lines)
-    assert "scripts/inspect_wheel.py" in job
+    runner = Path("scripts/mcp_wheel_smoke.py").read_text()
+    assert "scripts/inspect_wheel.py" in runner
 
 
 def test_wheel_inspector_accepts_complete_distribution(tmp_path: Path) -> None:
