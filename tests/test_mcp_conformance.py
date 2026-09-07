@@ -911,7 +911,10 @@ def test_budget_descriptions_are_live_views_of_canonical_guidance(
 
     descriptions = anyio.run(list_descriptions)
     polling = next(line for line in canonical_lines if "for polling" in line)
-    assert descriptions["budget_status"] == polling
+    assert descriptions["budget_status"] == (
+        polling
+        + " Accepts a project API key or login/JWT with access to the selected project."
+    )
     assert descriptions["budget_check"].startswith("Reserve budget only immediately")
     assert descriptions["budget_confirm"].startswith(
         "Settle only a non-null reservation"

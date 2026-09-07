@@ -312,9 +312,11 @@ def test_legacy_json_preparsing_and_numeric_coercion(monkeypatch):
 )
 def test_safe_tool_boundary_preserves_control_exceptions(exception_type):
     # Test the exact callback without letting SystemExit terminate pytest's loop.
-    catalog = mcp_server._ToolCatalog()
+    catalog = mcp_server._ToolCatalog("guardrails")
 
-    @catalog.tool(name="control", description="Test control flow")
+    @catalog.tool(
+        name="control", title="Test control flow", description="Test control flow"
+    )
     async def operation() -> mcp_server._BudgetStatusResult:
         raise exception_type()
 
@@ -449,7 +451,8 @@ async def telemetry_probe():
     not os.environ.get("SOLWYN_TEST_LEGACY_PYTHON"),
     reason="Set SOLWYN_TEST_LEGACY_PYTHON to a separate mcp==1.28.1 environment",
 )
-def test_actual_pre_v2_client_against_stdio(tmp_path):
+@pytest.mark.parametrize("profile", ["guardrails", "read"])
+def test_actual_pre_v2_client_against_stdio(tmp_path, profile):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             assert self.headers["Authorization"] == f"Bearer {VALID_KEY}"
@@ -484,6 +487,7 @@ def test_actual_pre_v2_client_against_stdio(tmp_path):
                     str(Path(__file__).with_name("mcp_legacy_probe.py")),
                     executable,
                     f"http://127.0.0.1:{server.server_port}",
+                    profile,
                 ],
                 cwd=tmp_path,
                 capture_output=True,

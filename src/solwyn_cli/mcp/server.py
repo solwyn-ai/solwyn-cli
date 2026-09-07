@@ -1,6 +1,7 @@
 """Public MCP SDK server and the supported Solwyn tool surface."""
 
 import json
+import inspect
 import logging
 import os
 from collections.abc import Iterator
@@ -19,15 +20,18 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from solwyn_cli import __version__, auth, runtime
 from solwyn_cli.mcp.declarations import ToolDeclaration
+from solwyn_cli.mcp.parameters import (
+    BudgetCheckRequest,
+    MediaUsage,
+    TokenDetails,
+    parameter_descriptions,
+)
 from solwyn_cli._vendor.wire import (
     CALL_ID_PATTERN,
     Modality,
-    BudgetCheckRequest,
     BudgetConfirmRequest,
-    MediaUsage,
     ProviderName,
     ServiceTier,
-    TokenDetails,
 )
 from solwyn_cli.artifacts import agent_guidance
 from solwyn_cli.auth import AuthError, JwtCredential, ProjectKeyCredential
@@ -227,13 +231,44 @@ def _configure_private_server(server: Server) -> None:
 class _ToolCatalog:
     """One ordered declaration set for public discovery and safe invocation."""
 
-    def __init__(self) -> None:
+    def __init__(self, profile: Literal["read", "guardrails"]) -> None:
         self.tools: dict[str, ToolDeclaration] = {}
+        self._profile = profile
 
-    def tool(self, *, name: str, description: str):
+    def tool(
+        self,
+        *,
+        name: str,
+        title: str,
+        description: str,
+        read_only: bool = True,
+        credential_requirement: Literal["jwt", "project_key", "either"] = "either",
+        credential_note: str | None = None,
+    ):
         def register(fn):
+            if self._profile == "read" and not read_only:
+                return fn
+            note = (
+                credential_note
+                or {
+                    "jwt": "Requires login/JWT; a configured project key takes precedence over stored login.",
+                    "project_key": "Requires a write-scoped project API key; writes use its project, not the selected read project.",
+                    "either": "Accepts a project API key or login/JWT with access to the selected project.",
+                }[credential_requirement]
+            )
+            if name in self.tools:
+                raise ValueError("Duplicate tool declaration")
             self.tools[name] = ToolDeclaration.from_function(
-                fn, name=name, description=description
+                fn,
+                name=name,
+                title=title,
+                description=description,
+                parameters=parameter_descriptions(
+                    name, list(inspect.signature(fn).parameters)
+                ),
+                read_only=read_only,
+                credential_requirement=credential_requirement,
+                credential_note=note,
             )
             return fn
 
@@ -243,7 +278,9 @@ class _ToolCatalog:
         self, ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
     ) -> types.ListToolsResult:
         return types.ListToolsResult(
-            tools=[tool.definition for tool in self.tools.values()]
+            tools=[tool.definition for tool in self.tools.values()],
+            ttl_ms=60_000,
+            cache_scope="private",
         )
 
     async def call_tool(
@@ -303,6 +340,7 @@ class McpLaunchOptions(BaseModel):
 
     api_url: str | None = None
     project_id: str | None = None
+    profile: Literal["read", "guardrails"] = "guardrails"
 
 
 class _ToolError(BaseModel):
@@ -513,9 +551,9 @@ def _budget_tool_descriptions() -> tuple[str, str, str]:
     shared_sharp_edges = " ".join((check, sdk, fail_open, unconfirmed))
     return (
         status,
-        "Reserve budget only immediately before the caller-made spend. Denials record attribution by default; no_record skips ingest. "
+        "Reserve budget only immediately before the caller-made spend. Denial is a successful decision with allowed=false, not an execution error. Denials record attribution by default; no_record skips ingest. Never automatically replay an ambiguous check: each invocation can create a new reservation. "
         f"{shared_sharp_edges}",
-        "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. "
+        "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. Core retains a project-bound settlement receipt for 3600 seconds; retry only the identical reservation, call identity and usage within that window. The receipt is not a payload correction mechanism. After known settlement success, retry failed recording separately using record_call with the same call_id and attempt_index=0; never reserve again for a completed call. "
         f"{shared_sharp_edges}",
     )
 
@@ -1451,16 +1489,16 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
         )
 
 
-def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
-    """Build the stateless local MCP server and register the supported tools."""
-    launch = launch_options or McpLaunchOptions()
-    catalog = _ToolCatalog()
+def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
+    """Construct declarations without resolving configuration or credentials."""
+    catalog = _ToolCatalog(launch.profile)
     status_description, check_description, confirm_description = (
         _budget_tool_descriptions()
     )
 
     @catalog.tool(
-        name=TOOL_NAMES[0],
+        name="budget_status",
+        title="Read budget status",
         description=status_description,
     )
     async def budget_status(
@@ -1471,7 +1509,10 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
         )
 
     @catalog.tool(
-        name=TOOL_NAMES[1],
+        name="budget_check",
+        title="Check and reserve budget",
+        read_only=False,
+        credential_requirement="project_key",
         description=check_description,
     )
     async def budget_check(
@@ -1520,7 +1561,10 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
         )
 
     @catalog.tool(
-        name=TOOL_NAMES[2],
+        name="budget_confirm",
+        title="Confirm usage and record attribution",
+        read_only=False,
+        credential_requirement="project_key",
         description=confirm_description,
     )
     async def budget_confirm(
@@ -1599,7 +1643,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
         )
 
     @catalog.tool(
-        name=TOOL_NAMES[3],
+        name="get_project_status",
+        title="Read project health",
         description=PROJECT_STATUS_DESCRIPTION,
     )
     async def get_project_status(
@@ -1610,7 +1655,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
         )
 
     @catalog.tool(
-        name=TOOL_NAMES[4],
+        name="get_forecast",
+        title="Read spend forecast",
         description=FORECAST_DESCRIPTION,
     )
     async def get_forecast(
@@ -1621,7 +1667,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
         )
 
     @catalog.tool(
-        name=TOOL_NAMES[5],
+        name="get_costs",
+        title="Read grouped costs",
         description=COSTS_DESCRIPTION,
     )
     async def get_costs(
@@ -1666,7 +1713,9 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
         )
 
     @catalog.tool(
-        name=TOOL_NAMES[6],
+        name="list_projects",
+        title="List account projects",
+        credential_requirement="jwt",
         description=PROJECTS_DESCRIPTION,
     )
     async def list_projects() -> _ProjectsResult:
@@ -1674,6 +1723,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="get_cost_total",
+        title="Read cost total",
         description="Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
     )
     async def get_cost_total(
@@ -1717,6 +1767,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="list_budget_rules",
+        title="List budget rules",
         description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
     )
     async def list_budget_rules(
@@ -1728,7 +1779,10 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="record_call",
-        description="Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
+        title="Record completed call attribution",
+        read_only=False,
+        credential_requirement="project_key",
+        description="Record one caller-owned completed call without reserving or settling budget, including a record-only retry after known settlement success. Do not duplicate SDK events. Persist call_id before sending and reuse it with unchanged payload and attempt_index=0 on retries; omission generates a new ID per call. Core deduplicates the project/call_id/attempt_index identity while retained; this is not an update mechanism. Costs are server-priced. Inspect status, rejected and duplicates even when transport succeeds.",
     )
     async def record_call(
         model: BudgetCheckModel,
@@ -1775,6 +1829,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="list_tags",
+        title="List attribution tag keys",
         description="List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
     )
     async def list_tags(
@@ -1786,6 +1841,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="list_tag_values",
+        title="List attribution tag values",
         description="Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
     )
     async def list_tag_values(
@@ -1809,6 +1865,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="list_agent_runs",
+        title="List agent runs",
         description=AGENT_RUNS_DESCRIPTION,
     )
     async def list_agent_runs(
@@ -1840,6 +1897,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="get_agent_run",
+        title="Read agent run",
         description=AGENT_RUN_DESCRIPTION,
     )
     async def get_agent_run_tool(
@@ -1857,6 +1915,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="list_alert_events",
+        title="Read alert history",
+        credential_note="Project history accepts a project key or JWT; account=true requires login/JWT and ignores project_id.",
         description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
     )
     async def list_alert_events(
@@ -1890,13 +1950,16 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="budget_check_batch",
+        title="Check and reserve a batch",
+        read_only=False,
+        credential_requirement="project_key",
         description=(
             "Reserve budget immediately before multiple caller-made un-instrumented provider calls. "
             "Checks are JSON check bodies, fully validated before submission and chunked at 32; "
             "results preserve input order. Each allowed item holds its own reservation: confirm it "
             "after its call. Unknown models return per-item errors; 404/503 fail the request. "
             "Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. "
-            "Admission counts each item against checks_per_minute. Do not poll or replay to refresh reservations."
+            "Admission counts each item against checks_per_minute. Denial is a valid decision, not an execution error. Do not poll or replay to refresh reservations. This client currently uses the legacy batch API: an entirely lost response has no journal lookup here. Never automatically replay an ambiguous batch; retain all known reservation IDs and original indices."
         ),
     )
     async def budget_check_batch(
@@ -1921,6 +1984,8 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
 
     @catalog.tool(
         name="get_overview",
+        title="Read account overview",
+        credential_requirement="jwt",
         description=(
             "Read calendar-month account spend, requests, trend, savings, and "
             "free-tier quota metadata. Requires login/JWT authentication."
@@ -1929,6 +1994,25 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
     async def get_overview() -> _OverviewResult:
         return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
 
+    return catalog
+
+
+def get_tool_catalog(
+    *,
+    profile: Literal["read", "guardrails"] = "guardrails",
+) -> tuple[ToolDeclaration, ...]:
+    """Return fresh ordered declarations for local diagnostics, without auth/I/O.
+
+    Credential requirements describe operations; they never enforce permissions.
+    Each call builds independent definitions, not the running server's catalog.
+    """
+    return tuple(_create_catalog(McpLaunchOptions(profile=profile)).tools.values())
+
+
+def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
+    """Build the stateless local MCP server with one fixed launch profile."""
+    launch = launch_options or McpLaunchOptions()
+    catalog = _create_catalog(launch)
     server = Server(
         "solwyn",
         title="Solwyn",

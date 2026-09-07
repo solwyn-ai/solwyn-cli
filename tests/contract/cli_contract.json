@@ -4405,7 +4405,26 @@
       "json_schema": null,
       "name": "mcp",
       "output_kind": "mcp-stdio",
-      "params": [],
+      "params": [
+        {
+          "choices": [
+            "read",
+            "guardrails"
+          ],
+          "cli_names": [
+            "--profile"
+          ],
+          "default": "guardrails",
+          "help": "Fixed tool surface for this launch.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "profile",
+          "required": false,
+          "type": "choice"
+        }
+      ],
       "path": [
         "mcp"
       ],

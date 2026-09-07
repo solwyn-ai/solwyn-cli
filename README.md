@@ -79,6 +79,11 @@ Use `budget status` to poll; `check` is for the moment immediately before spend.
 
 `solwyn mcp` serves read, guardrail, and attribution tools over stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
+Use `solwyn --project proj_your_project mcp --profile read` for the 13 read tools;
+the default `guardrails` profile keeps all 17. Profiles are fixed at launch and
+never grant permissions. See [MCP profiles and tool contracts](docs/mcp-profiles.md)
+for authentication, discovery caching, and operation-specific replay rules.
+
 ## Scripting
 
 All commands support `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, and not-found failures. Global flags select the project (`--project`), API base URL (`--api-url`), and output format.

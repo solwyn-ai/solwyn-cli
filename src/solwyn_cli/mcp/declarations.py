@@ -3,10 +3,10 @@
 from collections.abc import Awaitable, Callable
 import inspect
 import json
-from typing import Any, get_type_hints
+from typing import Annotated, Any, Literal, get_type_hints
 
-from mcp.types import Tool
-from pydantic import BaseModel, ConfigDict, create_model
+from mcp.types import Tool, ToolAnnotations
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 
 class ToolDeclaration(BaseModel):
@@ -18,13 +18,30 @@ class ToolDeclaration(BaseModel):
     input_model: type[BaseModel]
     output_model: type[BaseModel]
     definition: Tool
+    credential_requirement: Literal["jwt", "project_key", "either"]
+    credential_note: str
 
     @classmethod
-    def from_function(cls, fn, *, name: str, description: str) -> "ToolDeclaration":
+    def from_function(
+        cls,
+        fn,
+        *,
+        name: str,
+        title: str,
+        description: str,
+        parameters: dict[str, str],
+        read_only: bool,
+        credential_requirement: Literal["jwt", "project_key", "either"],
+        credential_note: str,
+    ) -> "ToolDeclaration":
         hints = get_type_hints(fn, include_extras=True)
+        if set(parameters) != set(inspect.signature(fn).parameters):
+            raise ValueError("Tool parameter descriptions must match its signature")
         fields = {
             parameter.name: (
-                hints[parameter.name],
+                Annotated[
+                    hints[parameter.name], Field(description=parameters[parameter.name])
+                ],
                 ...
                 if parameter.default is inspect.Parameter.empty
                 else parameter.default,
@@ -41,9 +58,18 @@ class ToolDeclaration(BaseModel):
             fn=fn,
             input_model=inputs,
             output_model=output,
+            credential_requirement=credential_requirement,
+            credential_note=credential_note,
             definition=Tool(
                 name=name,
-                description=description,
+                title=title,
+                description=f"{description} {credential_note}",
+                annotations=ToolAnnotations(
+                    read_only_hint=read_only,
+                    destructive_hint=not read_only,
+                    idempotent_hint=read_only,
+                    open_world_hint=True,
+                ),
                 input_schema=inputs.model_json_schema(by_alias=True),
                 output_schema=output.model_json_schema(by_alias=True),
             ),
