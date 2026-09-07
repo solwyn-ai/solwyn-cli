@@ -42,10 +42,10 @@ jobs:
         with:
           name: Packages
           path: dist
-      - name: Install built package and test dependencies
+      - name: Install locked test dependencies
         run: |
-          uv venv --python "${{ matrix.python-version }}"
-          uv pip install --python .venv/bin/python dist/*.whl pytest
+          uv sync --locked --all-groups --no-install-project --python "${{ matrix.python-version }}"
+          uv pip install --python .venv/bin/python --no-deps dist/*.whl
       - name: Test built package
         run: uv run --no-project --python .venv/bin/python pytest tests/ -v --tb=short
 

@@ -139,6 +139,14 @@ def test_publish_workflow_rejects_a_tag_that_differs_from_package_version() -> N
     assert 'if [[ "v${PACKAGE_VERSION}" != "${GITHUB_REF_NAME}" ]]; then' in workflow
 
 
+def test_publish_workflow_tests_wheel_with_all_locked_test_dependencies() -> None:
+    workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    job = _job_block(workflow, "test")
+
+    assert "uv sync --locked --all-groups --no-install-project" in job
+    assert "uv pip install --python .venv/bin/python --no-deps dist/*.whl" in job
+
+
 def test_wheel_inspector_accepts_complete_distribution(tmp_path: Path) -> None:
     wheel = tmp_path / f"solwyn_cli-{PACKAGE_VERSION}-py3-none-any.whl"
     _write_wheel(wheel)
