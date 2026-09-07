@@ -4359,9 +4359,60 @@
       "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.doctor.v1",
+      "json_schemas": [
+        "solwyn.doctor.v1",
+        "solwyn.doctor.mcp.v1"
+      ],
       "name": "doctor",
       "output_kind": "json-envelope",
-      "params": [],
+      "params": [
+        {
+          "cli_names": [
+            "--mcp"
+          ],
+          "default": false,
+          "help": "Check MCP discovery and captured-credential reads.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "mcp",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--executable"
+          ],
+          "default": null,
+          "help": "Installed Solwyn executable for --mcp.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "executable",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "choices": [
+            "read",
+            "guardrails"
+          ],
+          "cli_names": [
+            "--profile"
+          ],
+          "default": "read",
+          "help": "MCP tool profile for --mcp.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "profile",
+          "required": false,
+          "type": "choice"
+        }
+      ],
       "path": [
         "doctor"
       ],
@@ -4588,6 +4639,51 @@
         "mcp"
       ],
       "summary": "Serve Solwyn tools over local MCP stdio."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.mcp-config.v1",
+      "name": "mcp-config",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--executable"
+          ],
+          "default": null,
+          "help": "Explicit installed Solwyn executable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "executable",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "choices": [
+            "read",
+            "guardrails"
+          ],
+          "cli_names": [
+            "--profile"
+          ],
+          "default": "read",
+          "help": "Tool profile to include in the descriptor.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "profile",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "path": [
+        "mcp-config"
+      ],
+      "summary": "Print an offline command and argument array for an installed MCP server."
     },
     {
       "hidden": false,
@@ -6673,6 +6769,28 @@
     },
     {
       "keys": [
+        "authority_note",
+        "cli_version",
+        "config",
+        "credential",
+        "executable",
+        "http_read",
+        "key_context",
+        "mcp",
+        "mcp_read",
+        "profile",
+        "project_source",
+        "schema",
+        "selected_project",
+        "status",
+        "tools"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.doctor.mcp.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "authenticated_probe",
         "config",
         "keychain",
@@ -6786,6 +6904,16 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.logout.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "args",
+        "command",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.mcp-config.v1",
       "universal_error_envelope": false
     },
     {

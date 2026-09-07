@@ -28,6 +28,13 @@ EXPECTED_PACKAGE_FILES = (
     "solwyn_cli/artifacts/__init__.py",
     "solwyn_cli/help.py",
     "solwyn_cli/mcp/server.py",
+    "solwyn_cli/_mcp_launch.py",
+    "solwyn_cli/_mcp_doctor_helper.py",
+    "solwyn_cli/_mcp_doctor_ipc.py",
+    "solwyn_cli/_mcp_doctor_pipe.py",
+    "solwyn_cli/_mcp_doctor_process.py",
+    "solwyn_cli/commands/mcp_config.py",
+    "solwyn_cli/commands/mcp_doctor.py",
 )
 
 
@@ -160,3 +167,18 @@ def test_wheel_inspector_rejects_path_dependency_leakage(tmp_path: Path) -> None
 
     assert result.returncode == 1
     assert "path or workspace dependency" in result.stderr
+
+
+def test_wheel_inspector_requires_the_isolated_doctor_helper(tmp_path):
+    wheel = tmp_path / "solwyn_cli-0.1.0-py3-none-any.whl"
+    _write_wheel(
+        wheel,
+        package_files=tuple(
+            path
+            for path in EXPECTED_PACKAGE_FILES
+            if path != "solwyn_cli/_mcp_doctor_helper.py"
+        ),
+    )
+    result = _inspect(wheel)
+    assert result.returncode == 1
+    assert "missing expected package file" in result.stderr

@@ -4,7 +4,7 @@ import json
 import re
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -19,6 +19,8 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands.mcp import McpProfile
+from solwyn_cli.commands.mcp_doctor import doctor_mcp
 from solwyn_cli.errors import ApiError
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import TableData
@@ -29,7 +31,10 @@ DOCTOR_HELP = help_contract(
     endpoint="GET /health/ready plus one credential-specific authenticated probe",
     auth="optional; JWT or project key enables the authenticated probe",
     exits="0 all checks pass; 1 diagnostic failure; 2 usage",
-    schema="solwyn.doctor.v1",
+    schema="solwyn.doctor.v1; with --mcp: solwyn.doctor.mcp.v1",
+    guidance=(
+        "Use --mcp for isolated discovery and captured-credential read diagnostics. No refresh or mutation. --profile defaults to read; --executable selects the installed server.",
+    ),
 )
 
 _SNAPSHOT_PATH = Path(__file__).resolve().parents[1] / "spec" / "openapi_snapshot.json"
@@ -420,8 +425,30 @@ def _table(data: _DoctorData) -> TableData:
     )
 
 
-def doctor(context: typer.Context) -> None:
+def doctor(
+    context: typer.Context,
+    mcp: Annotated[
+        bool,
+        typer.Option(
+            "--mcp", help="Check MCP discovery and captured-credential reads."
+        ),
+    ] = False,
+    executable: Annotated[
+        Path | None, typer.Option(help="Installed Solwyn executable for --mcp.")
+    ] = None,
+    profile: Annotated[
+        McpProfile, typer.Option(help="MCP tool profile for --mcp.")
+    ] = McpProfile.READ,
+) -> None:
     """Check local configuration, dependencies, credentials, and API metadata."""
+    if mcp:
+        doctor_mcp(context, executable, profile.value)
+        return
+    profile_source = context.get_parameter_source("profile")
+    if executable is not None or (
+        profile_source is not None and profile_source.name == "COMMANDLINE"
+    ):
+        raise typer.BadParameter("--executable and --profile require --mcp.")
     runtime = command_context(context)
     config = _config_diagnostic()
     keychain = _keychain_diagnostic()

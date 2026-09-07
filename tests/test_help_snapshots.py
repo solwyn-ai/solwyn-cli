@@ -424,7 +424,7 @@ HELP_CONTRACTS = {
         "endpoint": "GET /health/ready plus one credential-specific authenticated probe",
         "auth": "optional; JWT or project key enables the authenticated probe",
         "exits": "0 all checks pass; 1 diagnostic failure; 2 usage",
-        "schema": "solwyn.doctor.v1",
+        "schema": "solwyn.doctor.v1; with --mcp: solwyn.doctor.mcp.v1",
     },
     ("init",): {
         "endpoint": "composite onboarding workflow",
@@ -467,6 +467,12 @@ HELP_CONTRACTS = {
         "auth": "local (none)",
         "exits": "0 success; 2 usage; 3 credential storage",
         "schema": "solwyn.logout.v1",
+    },
+    ("mcp-config",): {
+        "endpoint": "none (offline)",
+        "auth": "none; no credential lookup",
+        "exits": "0 descriptor emitted; 1 executable unavailable; 2 usage",
+        "schema": "solwyn.mcp-config.v1",
     },
     ("mcp",): {
         "endpoint": "local stdio MCP server",
