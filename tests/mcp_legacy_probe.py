@@ -42,7 +42,7 @@ async def main():
                     assert initialized.protocolVersion == "2025-11-25"
                     assert initialized.serverInfo.name == "solwyn"
                     assert initialized.serverInfo.title == "Solwyn"
-                    assert initialized.serverInfo.version == "0.1.0"
+                    assert initialized.serverInfo.version == "0.2.0rc1"
                     assert initialized.capabilities.resources is None
                     assert initialized.capabilities.prompts is None
                     assert len(catalog.tools) == count

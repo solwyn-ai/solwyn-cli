@@ -10,8 +10,14 @@ import pytest
 
 
 WORKFLOW_PATH = Path(".github/workflows/ci.yml")
+PUBLISH_WORKFLOW_PATH = Path(".github/workflows/publish.yml")
 INSPECTOR_PATH = Path("scripts/inspect_wheel.py")
 ACTION_PIN = re.compile(r"^\s*- uses: [^@\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+PACKAGE_VERSION = "0.2.0rc1"
+METADATA_2_5_INSPECTOR = (
+    "hynek/build-and-inspect-python-package@"
+    "2abe76da66d0a6a4a227101f9348ee855797cfa5 # v3.0.1"
+)
 RUNTIME_REQUIREMENTS = (
     "click>=8.1",
     "httpx>=0.27",
@@ -48,9 +54,9 @@ def _job_block(workflow: str, job_name: str) -> str:
 
 def _metadata(requirements: tuple[str, ...] = RUNTIME_REQUIREMENTS) -> str:
     lines = [
-        "Metadata-Version: 2.4",
+        "Metadata-Version: 2.5",
         "Name: solwyn-cli",
-        "Version: 0.1.0",
+        f"Version: {PACKAGE_VERSION}",
         "License-File: LICENSE",
         *(f"Requires-Dist: {requirement}" for requirement in requirements),
     ]
@@ -65,7 +71,10 @@ def _write_wheel(
     extra_files: tuple[str, ...] = (),
 ) -> None:
     with zipfile.ZipFile(path, "w") as wheel:
-        wheel.writestr("solwyn_cli-0.1.0.dist-info/METADATA", metadata or _metadata())
+        wheel.writestr(
+            f"solwyn_cli-{PACKAGE_VERSION}.dist-info/METADATA",
+            metadata or _metadata(),
+        )
         for package_file in package_files:
             wheel.writestr(package_file, "")
         for extra_file in extra_files:
@@ -117,8 +126,21 @@ def test_packaging_smoke_job_pins_actions_and_inspects_distribution() -> None:
     assert "scripts/inspect_wheel.py" in runner
 
 
+def test_publish_workflow_uses_metadata_2_5_compatible_inspector() -> None:
+    workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert METADATA_2_5_INSPECTOR in workflow
+
+
+def test_publish_workflow_rejects_a_tag_that_differs_from_package_version() -> None:
+    workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "PACKAGE_VERSION: ${{ steps.package.outputs.package_version }}" in workflow
+    assert 'if [[ "v${PACKAGE_VERSION}" != "${GITHUB_REF_NAME}" ]]; then' in workflow
+
+
 def test_wheel_inspector_accepts_complete_distribution(tmp_path: Path) -> None:
-    wheel = tmp_path / "solwyn_cli-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / f"solwyn_cli-{PACKAGE_VERSION}-py3-none-any.whl"
     _write_wheel(wheel)
 
     result = _inspect(wheel)
@@ -154,7 +176,7 @@ def test_wheel_inspector_rejects_incomplete_or_private_contents(
     extra_files: tuple[str, ...],
     message: str,
 ) -> None:
-    wheel = tmp_path / "solwyn_cli-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / f"solwyn_cli-{PACKAGE_VERSION}-py3-none-any.whl"
     _write_wheel(wheel, package_files=package_files, extra_files=extra_files)
 
     result = _inspect(wheel)
@@ -164,7 +186,7 @@ def test_wheel_inspector_rejects_incomplete_or_private_contents(
 
 
 def test_wheel_inspector_rejects_path_dependency_leakage(tmp_path: Path) -> None:
-    wheel = tmp_path / "solwyn_cli-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / f"solwyn_cli-{PACKAGE_VERSION}-py3-none-any.whl"
     requirements = tuple(
         "mcp @ file:///workspace/mcp"
         if requirement.startswith("mcp==")
@@ -180,7 +202,7 @@ def test_wheel_inspector_rejects_path_dependency_leakage(tmp_path: Path) -> None
 
 
 def test_wheel_inspector_requires_the_isolated_doctor_helper(tmp_path):
-    wheel = tmp_path / "solwyn_cli-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / f"solwyn_cli-{PACKAGE_VERSION}-py3-none-any.whl"
     _write_wheel(
         wheel,
         package_files=tuple(

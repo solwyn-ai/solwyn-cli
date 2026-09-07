@@ -1,6 +1,6 @@
 # Connect a harness to Solwyn MCP
 
-Solwyn 0.1.0 is **pre-release, private and not published to PyPI**. Start from an
+Solwyn 0.2.0rc1 is **pre-release, private and not published to PyPI**. Start from an
 authorized source checkout or a wheel built from it. This guide uses local stdio;
 there is no hosted MCP endpoint. Account/project access is a separate prerequisite.
 
@@ -11,7 +11,7 @@ From the authorized CLI checkout:
 ```sh
 uv sync --locked --all-groups
 uv build --wheel
-uv tool install --python 3.11 dist/solwyn_cli-0.1.0-py3-none-any.whl
+uv tool install --python 3.11 dist/solwyn_cli-0.2.0rc1-py3-none-any.whl
 uv tool dir --bin
 solwyn --version
 solwyn login --with-key

@@ -12,7 +12,16 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-      - uses: hynek/build-and-inspect-python-package@d44ca7d91762de7a7d5436ddae667c6da6d1c3df # v2
+      - id: package
+        uses: hynek/build-and-inspect-python-package@2abe76da66d0a6a4a227101f9348ee855797cfa5 # v3.0.1
+      - name: Verify release tag matches package version
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.package_version }}
+        run: |
+          if [[ "v${PACKAGE_VERSION}" != "${GITHUB_REF_NAME}" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package version ${PACKAGE_VERSION}. Expected v${PACKAGE_VERSION}."
+            exit 1
+          fi
 
   test:
     name: Test built package
