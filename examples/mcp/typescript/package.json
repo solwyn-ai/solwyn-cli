@@ -1,0 +1,20 @@
+{
+  "name": "solwyn-mcp-client-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/client.js",
+    "test": "node --test dist/client.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/core": "2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "24.13.3"
+  }
+}

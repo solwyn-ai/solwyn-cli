@@ -6,7 +6,10 @@ import os
 import sys
 
 
-_LIBC = ctypes.CDLL(None, use_errno=True)
+# CDLL(None) is a POSIX process-library lookup, unavailable on Windows.
+_LIBC = (
+    ctypes.CDLL(None, use_errno=True) if sys.platform in {"linux", "darwin"} else None
+)
 _LINUX_NOREPLACE = 1
 _LINUX_EXCHANGE = 2
 _MACOS_SWAP = 0x00000002

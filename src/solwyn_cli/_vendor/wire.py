@@ -11,7 +11,6 @@ from pydantic import (
     HttpUrl,
     SecretStr,
     field_serializer,
-    field_validator,
     model_validator,
 )
 
@@ -201,11 +200,11 @@ class MediaUsage(_WireModel):
     would claim the call billed none of it.
     """
 
-    image_count: Annotated[int, Field(ge=0)] | None = None
-    generation_count: Annotated[int, Field(ge=0)] | None = None
-    video_seconds: Annotated[float, Field(ge=0)] | None = None
-    audio_seconds: Annotated[float, Field(ge=0)] | None = None
-    input_characters: Annotated[int, Field(ge=0)] | None = None
+    image_count: Annotated[int, Field(ge=0, le=100_000_000)] | None = None
+    generation_count: Annotated[int, Field(ge=0, le=100_000_000)] | None = None
+    video_seconds: Annotated[float, Field(ge=0, le=100_000_000)] | None = None
+    audio_seconds: Annotated[float, Field(ge=0, le=100_000_000)] | None = None
+    input_characters: Annotated[int, Field(ge=0, le=100_000_000)] | None = None
     resolution: Annotated[str, Field(max_length=32)] | None = None
     quality: Annotated[str, Field(max_length=32)] | None = None
     is_estimated: bool = False
@@ -300,6 +299,7 @@ class BudgetConfirmRequest(_WireModel):
     is_provider_fallback: bool = False
     call_id: Annotated[str, Field(max_length=36, pattern=CALL_ID_PATTERN)]
     token_details: TokenDetails
+    media_usage: MediaUsage | None = None
     provider_region: Annotated[str, Field(max_length=32)] | None = None
     service_tier: ServiceTier | None = None
 
@@ -372,20 +372,6 @@ class IngestMetadataEvent(_WireModel):
     estimated_output_bound: Annotated[int, Field(ge=0, le=100_000_000)] | None = None
     attempt_index: Annotated[int, Field(ge=0)] = 0
     is_provider_fallback: bool = False
-
-    @field_validator("attempt_index")
-    @classmethod
-    def primary_attempt_only(cls, value: int) -> int:
-        if value != 0:
-            raise ValueError("CLI recording supports attempt_index=0 only.")
-        return value
-
-    @field_validator("is_provider_fallback")
-    @classmethod
-    def no_provider_routing(cls, value: bool) -> bool:
-        if value:
-            raise ValueError("CLI recording does not implement provider routing.")
-        return value
 
 
 class AccountAlertUpdateRequest(BaseModel):

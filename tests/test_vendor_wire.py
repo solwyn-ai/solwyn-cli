@@ -73,6 +73,7 @@ from solwyn_cli._vendor.wire import (
                 "is_provider_fallback",
                 "call_id",
                 "token_details",
+                "media_usage",
                 "provider_region",
                 "service_tier",
             },

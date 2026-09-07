@@ -1,0 +1,2 @@
+# Separate compatibility client only; never a Solwyn runtime dependency.
+mcp==1.28.1

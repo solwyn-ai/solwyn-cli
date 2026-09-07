@@ -21,6 +21,7 @@ class CommandContext(BaseModel):
     api_url_source: Literal["cli", "environment", "config", "fallback"] = "config"
     config_load_failed: bool = False
     project: str | None
+    project_source: Literal["cli", "environment", "config", "none"] = "none"
     output_format: OutputFormat
     no_color: bool
     environment_no_color: bool
@@ -63,6 +64,15 @@ def resolve_command_context(
         config_load_failed=config_load_failed,
         project=(
             project or environment.get("SOLWYN_PROJECT_ID") or config.default_project
+        ),
+        project_source=(
+            "cli"
+            if project
+            else "environment"
+            if environment.get("SOLWYN_PROJECT_ID")
+            else "config"
+            if config.default_project
+            else "none"
         ),
         output_format=resolve_output_format(
             explicit_format=output_format,

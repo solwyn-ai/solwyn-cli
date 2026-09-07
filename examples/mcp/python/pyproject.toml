@@ -1,0 +1,8 @@
+[project]
+name = "solwyn-mcp-client-example"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = ["mcp==2.1.1", "pydantic==2.13.4"]
+
+[tool.uv]
+package = false

@@ -1,6 +1,7 @@
 """Budget confirmation guardrail command contract tests."""
 
 import json
+from datetime import UTC, datetime
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -269,6 +270,16 @@ def test_budget_confirm_success_matches_golden(
     output_format: str,
 ) -> None:
     monkeypatch.setattr(budget_module, "resolve_credential", _credential, raising=False)
+    prepare = budget_module.confirm_event
+    monkeypatch.setattr(
+        budget_module,
+        "confirm_event",
+        lambda **kwargs: prepare(
+            **kwargs,
+            timestamp=datetime(2026, 9, 6, 12, tzinfo=UTC),
+            sdk_instance_id="confirmation-golden-instance",
+        ),
+    )
     _queue_success()
     output_options = ["--json"] if output_format == "json" else ["--no-color"]
 
@@ -283,10 +294,15 @@ def test_budget_confirm_success_matches_golden(
     )
     if output_format == "json":
         payload = json.loads(result.stdout)
+        retry = payload.pop("recording_retry")
+        assert retry["timestamp"] == "2026-09-06T12:00:00Z"
+        assert retry["sdk_instance_id"] == "confirmation-golden-instance"
+        assert retry["call_id"] == payload["call_id"]
         assert payload == {
             "schema": "solwyn.budget-confirm.v1",
             "reservation_id": "res_01JZEXAMPLE",
             "call_id": "12345678-1234-1234-1234-123456789abc",
+            "settlement": "confirmed",
             "recorded": {
                 "status": "ingested",
                 "ingested": 1,
@@ -412,7 +428,7 @@ def test_budget_confirm_expired_or_consumed_404_is_actionable_and_not_retried(
         result.stderr,
         GOLDEN_DIR / f"budget-confirm-expired-{output_format}.{suffix}",
     )
-    assert "fresh check" in result.stderr
+    assert "Do not reserve" in " ".join(result.stderr.split())
     if output_format == "json":
         error = json.loads(result.stderr)
         assert error["code"] == "reservation_not_found"

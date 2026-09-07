@@ -355,7 +355,8 @@ def test_confirm_rejection_remains_successful_with_warning(transport):
     )
     result = runner.invoke(app, ["--json", *CONFIRM])
     assert result.exit_code == 0
-    assert "Specific Core guidance." in result.stderr and "Warning" in result.stderr
+    assert "Use the exact model name." in result.stderr and "Warning" in result.stderr
+    assert "Specific Core guidance." not in result.stdout + result.stderr
     assert json.loads(result.stdout)["recorded"]["status"] == "rejected"
 
 

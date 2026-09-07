@@ -13,6 +13,13 @@ EXPECTED_PACKAGE_FILES = {
     "solwyn_cli/artifacts/__init__.py",
     "solwyn_cli/help.py",
     "solwyn_cli/mcp/server.py",
+    "solwyn_cli/_mcp_launch.py",
+    "solwyn_cli/_mcp_doctor_helper.py",
+    "solwyn_cli/_mcp_doctor_ipc.py",
+    "solwyn_cli/_mcp_doctor_pipe.py",
+    "solwyn_cli/_mcp_doctor_process.py",
+    "solwyn_cli/commands/mcp_config.py",
+    "solwyn_cli/commands/mcp_doctor.py",
 }
 EXPECTED_RUNTIME_REQUIREMENTS = {
     "click",

@@ -1,10 +1,34 @@
 """Platform dispatch tests for artifact atomic rename operations."""
 
 import errno
+import ctypes
+import importlib.util
 
 import pytest
 
 from solwyn_cli.artifacts import _atomic
+
+
+@pytest.mark.parametrize("platform", ["win32", "freebsd13"])
+def test_unsupported_platform_import_does_not_load_posix_library(
+    monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    def unavailable_library(*args, **kwargs):
+        raise AssertionError("Unsupported platform must not load the POSIX library")
+
+    spec = importlib.util.spec_from_file_location(
+        "atomic_import_probe", _atomic.__file__
+    )
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setattr(_atomic.sys, "platform", platform)
+    monkeypatch.setattr(ctypes, "CDLL", unavailable_library)
+
+    spec.loader.exec_module(module)
+
+    for operation in (module.atomic_exchange, module.atomic_noreplace):
+        with pytest.raises(OSError) as captured:
+            operation("stage", "target", 17)
+        assert captured.value.errno == errno.ENOTSUP
 
 
 @pytest.mark.parametrize(

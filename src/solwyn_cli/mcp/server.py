@@ -1,25 +1,40 @@
-"""FastMCP stdio server and the supported Solwyn tool surface."""
+"""Public MCP SDK server and the supported Solwyn tool surface."""
 
+import json
+import inspect
+import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
 from typing import Any, Annotated, Generic, Literal, TypeVar
 
-import anyio
-from mcp.server.fastmcp import FastMCP
+from mcp import MCPError, types
+from mcp.server import Server, ServerRequestContext
+from mcp.server.context import CallNext, HandlerResult
+from mcp.server import runner as sdk_runner
+from mcp.shared import jsonrpc_dispatcher as sdk_dispatcher
+from mcp.shared import direct_dispatcher as sdk_direct_dispatcher
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from solwyn_cli import auth, runtime
+from solwyn_cli import __version__, auth, runtime
+from solwyn_cli.mcp.declarations import ToolDeclaration
+from solwyn_cli import _mcp_operation as operation
+from solwyn_cli._vendor.batch import new_operation_id, operation_expiry
+from solwyn_cli.mcp.parameters import (
+    BudgetCheckRequest,
+    MediaUsage,
+    TokenDetails,
+    parameter_descriptions,
+    DenialRecordingRetry,
+    ConfirmationRecordingRetry,
+)
 from solwyn_cli._vendor.wire import (
     CALL_ID_PATTERN,
     Modality,
-    BudgetCheckRequest,
     BudgetConfirmRequest,
-    MediaUsage,
     ProviderName,
     ServiceTier,
-    TokenDetails,
 )
 from solwyn_cli.artifacts import agent_guidance
 from solwyn_cli.auth import AuthError, JwtCredential, ProjectKeyCredential
@@ -33,15 +48,16 @@ from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rul
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
     BudgetCheckBatchData,
-    BudgetCheckBatchFailure,
-    BATCH_FAILURE_HINT,
     prepare_batch_checks,
-    request_budget_check_batch,
+    request_recoverable_budget_batch,
+    RecoverableBatchData,
     BudgetConfirmData,
     BudgetStatusData,
     request_budget_check,
     confirm_and_record,
     confirm_event,
+    prepare_confirm_recording_retry,
+    record_confirm_only,
     record_denial,
     request_budget_status,
 )
@@ -123,6 +139,13 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
         "invalid_project",
         "invalid_token",
         "not_found",
+        "operation_expired",
+        "operation_not_found",
+        "operation_conflict",
+        "operation_in_future",
+        "outcome_unavailable",
+        "admission_failed",
+        "invalid_operation_id",
         "project_limit_reached",
         "project_not_found",
         "quota_exceeded",
@@ -163,14 +186,228 @@ _SAFE_CTA_PATHS = frozenset({"/billing"})
 _DEFAULT_CTA_PATH = "/billing"
 
 
-class _ToolOnlyFastMCP(FastMCP):
-    """FastMCP 1.28.1 server that registers only the supported tool handlers."""
+class _PrivateMcpDiagnostics(logging.Filter):
+    """Redact SDK transport/session diagnostics before any handler captures them."""
 
-    def _setup_handlers(self) -> None:
-        # Capabilities derive from the low-level handler registry. Registering only
-        # these two handlers prevents unsupported prompt/resource advertisement.
-        self._mcp_server.list_tools()(self.list_tools)
-        self._mcp_server.call_tool(validate_input=False)(self.call_tool)
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.pathname in _SDK_DIAGNOSTIC_PATHS:
+            # SDK 2 runner and dispatchers may log raw frames, method names,
+            # or transport exceptions before the Solwyn callback is reached.
+            record.msg = "MCP protocol diagnostic."
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+            if hasattr(record, "message"):
+                record.message = record.msg
+        return True
+
+
+# Narrow source allowlist for the pinned SDK's stdio/legacy/current emitters.
+# No application logger is disabled and severity remains unchanged.
+_SDK_DIAGNOSTIC_MODULES = (sdk_runner, sdk_dispatcher, sdk_direct_dispatcher)
+_SDK_DIAGNOSTIC_PATHS = frozenset(module.__file__ for module in _SDK_DIAGNOSTIC_MODULES)
+
+
+async def _private_protocol_errors(
+    ctx: ServerRequestContext, call_next: CallNext
+) -> HandlerResult:
+    """Keep SDK lookup errors useful without reflecting arbitrary method text."""
+    try:
+        return await call_next(ctx)
+    except MCPError as error:
+        if error.code == types.METHOD_NOT_FOUND:
+            raise MCPError(
+                code=types.METHOD_NOT_FOUND, message="Method not found"
+            ) from None
+        raise
+
+
+def _configure_private_server(server: Server) -> None:
+    """Adapt only this newly constructed low-level SDK 2.1.1 server."""
+    # Public but provisional across 2.x minor releases: retain the exact pin.
+    # The low-level server installs only inbound telemetry by default. Clear it
+    # before adding any Solwyn middleware; never reset the host tracer/propagator.
+    # Replies only: outbound MCP requests have separate SDK instrumentation.
+    server.middleware.clear()
+    # Public middleware wraps lookup before the tool callback in both eras.
+    server.middleware.append(_private_protocol_errors)
+    for module in _SDK_DIAGNOSTIC_MODULES:
+        sdk_logger = logging.getLogger(module.__name__)
+        if not any(
+            isinstance(item, _PrivateMcpDiagnostics) for item in sdk_logger.filters
+        ):
+            sdk_logger.addFilter(_PrivateMcpDiagnostics())
+
+
+class _ToolCatalog:
+    """One ordered declaration set for public discovery and safe invocation."""
+
+    def __init__(self, profile: Literal["read", "guardrails"]) -> None:
+        self.tools: dict[str, ToolDeclaration] = {}
+        self._profile = profile
+
+    def tool(
+        self,
+        *,
+        name: str,
+        title: str,
+        description: str,
+        read_only: bool = True,
+        credential_requirement: Literal["jwt", "project_key", "either"] = "either",
+        credential_note: str | None = None,
+    ):
+        def register(fn):
+            if self._profile == "read" and not read_only:
+                return fn
+            note = (
+                credential_note
+                or {
+                    "jwt": "Requires login/JWT; a configured project key takes precedence over stored login.",
+                    "project_key": "Requires a write-scoped project API key; writes use its project, not the selected read project.",
+                    "either": "Accepts a project API key or login/JWT with access to the selected project.",
+                }[credential_requirement]
+            )
+            if name in self.tools:
+                raise ValueError("Duplicate tool declaration")
+            self.tools[name] = ToolDeclaration.from_function(
+                fn,
+                name=name,
+                title=title,
+                description=description,
+                parameters=parameter_descriptions(
+                    name, list(inspect.signature(fn).parameters)
+                ),
+                read_only=read_only,
+                credential_requirement=credential_requirement,
+                credential_note=note,
+            )
+            return fn
+
+        return register
+
+    async def list_tools(
+        self, ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+    ) -> types.ListToolsResult:
+        return types.ListToolsResult(
+            tools=[tool.definition for tool in self.tools.values()],
+            ttl_ms=60_000,
+            cache_scope="private",
+        )
+
+    async def call_tool(
+        self, ctx: ServerRequestContext, params: types.CallToolRequestParams
+    ) -> types.CallToolResult:
+        tool = self.tools.get(params.name)
+        if tool is None:
+            raise MCPError(code=-32602, message="Unknown tool")
+        control = None
+        try:
+            async with operation.operation_scope() as control:
+                if params.name == "budget_check_batch":
+                    arguments = params.arguments or {}
+                    identifier = arguments.get("operation_id")
+                    if (
+                        identifier is None
+                        and arguments.get("checks") is not None
+                        and not arguments.get("recover_only")
+                        and arguments.get("record_only") is None
+                    ):
+                        identifier = new_operation_id()
+                    if isinstance(identifier, str):
+                        try:
+                            operation_expiry(identifier)
+                        except (ValueError, OverflowError):
+                            pass
+                        else:
+                            control.remember(
+                                operation_id=identifier, state="not_submitted"
+                            )
+                result = await self._call_tool(ctx, params)
+                # Serialization is CPU work too; the same deadline owns it.
+                return await operation.run_sync(
+                    partial(_bounded_protocol_result, result, control)
+                )
+        except (operation.OperationLimit, TimeoutError) as error:
+            code = (
+                error.code
+                if isinstance(error, operation.OperationLimit)
+                else "operation_deadline"
+            )
+            result = _error(
+                tool.output_model,
+                code=code,
+                message="The tool reached its fixed work limit.",
+                hint="Preserve known identities and the continuation cursor. Recover batch outcomes with the same operation_id; never replay an ambiguous write.",
+            )
+            return _bounded_protocol_result(result, control)
+
+    async def _call_tool(
+        self, ctx: ServerRequestContext, params: types.CallToolRequestParams
+    ) -> "_ToolResult":
+        tool = self.tools.get(params.name)
+        if tool is None:
+            raise MCPError(code=-32602, message="Unknown tool")
+        arguments = params.arguments or {}
+        result_type = tool.output_model
+        try:
+            # Retain the SDK's existing JSON-string compatibility and defaults.
+            inputs = await operation.run_sync(
+                lambda: tool.input_model.model_validate(
+                    tool.parse_json_arguments(arguments)
+                )
+            )
+        except ValidationError as error:
+            return _error(
+                result_type,
+                code="invalid_arguments",
+                message="The tool arguments are invalid.",
+                hint=await operation.run_sync(
+                    partial(_validation_hint, error, tool.definition.input_schema)
+                ),
+            )
+        except (operation.OperationLimit, TimeoutError):
+            raise
+        except Exception:
+            return _error(
+                result_type,
+                code="invalid_arguments",
+                message="The tool arguments are invalid.",
+                hint="Check the declared input fields and their types in list_tools.",
+            )
+
+        if (
+            params.name == "budget_confirm"
+            and inputs.record_only is not None
+            and inputs.model_fields_set != {"record_only"}
+        ):
+            return _error(
+                result_type,
+                code="invalid_budget_confirm_request",
+                message="Use record_only without other confirmation arguments.",
+                hint="Supply only the exact recording_retry event from the original result.",
+            )
+
+        try:
+            result = await tool.fn(
+                **{name: getattr(inputs, name) for name in type(inputs).model_fields}
+            )
+            result = await operation.run_sync(
+                lambda: result_type.model_validate(result)
+            )
+            return _execution_outcome(result)
+        except (operation.OperationLimit, TimeoutError):
+            raise
+        except Exception:
+            # Never interpolate, log, or attach a traceback from an operation or
+            # output validation failure. The exception may contain private data.
+            failure = _error(
+                result_type,
+                code="internal_error",
+                message="The tool could not complete the operation.",
+                hint="Inspect known operation state before retrying a write; its outcome may be unknown.",
+            )
+            return failure
 
 
 class McpLaunchOptions(BaseModel):
@@ -180,6 +417,7 @@ class McpLaunchOptions(BaseModel):
 
     api_url: str | None = None
     project_id: str | None = None
+    profile: Literal["read", "guardrails"] = "guardrails"
 
 
 class _ToolError(BaseModel):
@@ -202,6 +440,9 @@ class _ToolResult(BaseModel, Generic[DataT]):
     ok: bool
     data: DataT | None = None
     error: _ToolError | None = None
+    recovery: operation.ReadRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def validate_outcome(self) -> "_ToolResult[DataT]":
@@ -211,6 +452,9 @@ class _ToolResult(BaseModel, Generic[DataT]):
 
 
 class _RecordResult(_ToolResult[RecordingResult]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.mcp.record.v1"] = Field(
         default="solwyn.mcp.record.v1", alias="schema"
     )
@@ -247,19 +491,28 @@ class _BudgetRulesResult(_ToolResult[BudgetRulesData]):
 
 
 class _BudgetCheckResult(_ToolResult[BudgetCheckData]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.mcp.budget-check.v1"] = Field(
         default="solwyn.mcp.budget-check.v1",
         alias="schema",
     )
 
 
-class _BudgetCheckBatchResult(_ToolResult[BudgetCheckBatchData]):
+class _BudgetCheckBatchResult(_ToolResult[RecoverableBatchData]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.budget.check.batch.v1"] = Field(
         default="solwyn.budget.check.batch.v1", alias="schema"
     )
 
 
 class _BudgetConfirmResult(_ToolResult[BudgetConfirmData]):
+    recovery: operation.OperationRecovery | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schema_name: Literal["solwyn.mcp.budget-confirm.v1"] = Field(
         default="solwyn.mcp.budget-confirm.v1",
         alias="schema",
@@ -339,12 +592,19 @@ def tool_call_client(
         json_flag=False,
         no_color=True,
     )
+    operation.checkpoint()
     credential = auth.resolve_credential()
+    operation.checkpoint()
     if credential is None:
         raise AuthError("Authentication required. Configure credentials and retry.")
     with SolwynClient(
         api_url=command_runtime.api_url,
         credential=credential,
+        **(
+            {"transport": control.transport(), "sleeper": control.sleep}
+            if (control := operation.current())
+            else {}
+        ),
     ) as client:
         yield command_runtime, client
 
@@ -390,9 +650,9 @@ def _budget_tool_descriptions() -> tuple[str, str, str]:
     shared_sharp_edges = " ".join((check, sdk, fail_open, unconfirmed))
     return (
         status,
-        "Reserve budget only immediately before the caller-made spend. Denials record attribution by default; no_record skips ingest. "
+        "Reserve budget only immediately before the caller-made spend. Denial is a successful decision with allowed=false, not an execution error. Denials record attribution by default; no_record skips ingest. Never automatically replay an ambiguous check: each invocation can create a new reservation. "
         f"{shared_sharp_edges}",
-        "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. "
+        "Settle a non-null reservation after caller-made spend using observed token/media usage and actual served provider/model. Records attribution with the same call_id and attempt_index; no_record skips ingest. Recording failure does not undo settlement. Save the FIRST recording_retry event. After known settlement success, use only record_only=FIRST event to retry ingest; this reports settlement=not_submitted. After a lost 204, within Core's project-bound 3600-second receipt window replay identical settlement inputs with no_record=true. After a known 204, submit only record_only=FIRST event; never replace it with the replay's unused new event. Ordinary fresh-confirm replay regenerates timestamp/SDK identity and rereads ambient tags. An event never returned cannot be reconstructed. The receipt cannot correct successful settlement. Missing-media 422 permits corrected quantities under the retained funding ID; never reserve again for completed provider work. "
         f"{shared_sharp_edges}",
     )
 
@@ -430,6 +690,194 @@ def _error(
     )
 
 
+def _schema_choices(
+    schema: dict[str, Any], root: dict[str, Any]
+) -> Iterator[dict[str, Any]]:
+    if "$ref" in schema:
+        yield from _schema_choices(
+            root["$defs"][schema["$ref"].rsplit("/", 1)[-1]], root
+        )
+    elif "anyOf" in schema:
+        for choice in schema["anyOf"]:
+            yield from _schema_choices(choice, root)
+    else:
+        yield schema
+
+
+def _validation_hint(error: ValidationError, schema: dict[str, Any]) -> str:
+    """Build correction paths solely from declared schema names, never input keys."""
+    paths = set()
+    for issue in error.errors(
+        include_input=False, include_context=False, include_url=False
+    ):
+        choices = list(_schema_choices(schema, schema))
+        path = ""
+        for part in issue["loc"]:
+            next_schema = None
+            for choice in choices:
+                if isinstance(part, int) and "items" in choice:
+                    next_schema = choice["items"]
+                    path += "[]"
+                    break
+                if isinstance(part, str) and part in choice.get("properties", {}):
+                    next_schema = choice["properties"][part]
+                    path += ("." if path else "") + part
+                    break
+            if next_schema is None:
+                # Unknown properties and arbitrary dictionary keys stop at their
+                # declared parent; even their names may contain private values.
+                break
+            choices = list(_schema_choices(next_schema, schema))
+        paths.add(path or "arguments")
+    return (
+        "Check fields: "
+        + ", ".join(sorted(paths))
+        + ". Use only declared fields and their documented types."
+    )
+
+
+def _execution_outcome(result: ResultT) -> ResultT:
+    """Retain completed data while exposing execution and recording failures."""
+    if isinstance(result.data, BudgetCheckBatchData):
+        items = []
+        has_errors = False
+        for item in result.data.results:
+            if item.error_code is not None:
+                has_errors = True
+                item = item.model_copy(
+                    update={
+                        "error_code": item.error_code
+                        if item.error_code in _SAFE_REMOTE_ERROR_CODES
+                        else "api_error",
+                        "error_message": "The Solwyn API could not complete this check.",
+                    }
+                )
+            items.append(item)
+        data = result.data.model_copy(update={"results": items})
+        return result.model_copy(
+            update={
+                "data": data,
+                "ok": result.ok and not has_errors,
+                "error": result.error
+                or (
+                    _ToolError(
+                        code="batch_check_failed",
+                        message="One or more budget checks failed.",
+                        hint="Completed results remain valid; do not replay completed checks.",
+                    )
+                    if has_errors
+                    else None
+                ),
+            }
+        )
+
+    recorded = (
+        result.data
+        if isinstance(result.data, RecordingResult)
+        else result.data.recorded
+        if isinstance(result.data, BudgetConfirmData)
+        else None
+    )
+    # A valid denial remains a successful decision even if its optional receipt
+    # failed. Standalone recording and confirmation report incomplete execution.
+    if recorded is not None and recorded.status in {
+        "rejected",
+        "failed",
+        "unknown",
+        "stopped",
+    }:
+        settled = (
+            isinstance(result.data, BudgetConfirmData)
+            and result.data.settlement == "confirmed"
+        )
+        return result.model_copy(
+            update={
+                "ok": False,
+                "error": _ToolError(
+                    code="recording_rejected"
+                    if recorded.status == "rejected"
+                    else "recording_unknown"
+                    if recorded.status == "unknown"
+                    else "recording_stopped"
+                    if recorded.status == "stopped"
+                    else "recording_failed",
+                    message=(
+                        "Reservation settlement succeeded, but attribution recording did not complete."
+                        if settled
+                        else "Attribution recording did not complete."
+                    ),
+                    hint=(
+                        "After known settlement success, use budget_confirm record_only with the FIRST retained recording_retry; never replace it with a settlement-only replay's unused new event. Keep the earlier settlement state separately and do not reserve again."
+                        if isinstance(result.data, BudgetConfirmData)
+                        else "Preserve the call identity and retry attribution with the same call_id and attempt; do not reserve again."
+                    ),
+                ),
+            }
+        )
+    return result
+
+
+def _protocol_result(result: _ToolResult) -> types.CallToolResult:
+    payload = result.model_dump(mode="json", by_alias=True)
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=json.dumps(payload))],
+        structured_content=payload,
+        is_error=not result.ok,
+    )
+
+
+def _bounded_protocol_result(
+    result: _ToolResult, control: operation.OperationControl | None
+) -> types.CallToolResult:
+    snapshot = control.snapshot() if control is not None else None
+    if snapshot is not None:
+        recovery = snapshot.recovery
+        if not isinstance(
+            result,
+            (
+                _RecordResult,
+                _BudgetCheckResult,
+                _BudgetCheckBatchResult,
+                _BudgetConfirmResult,
+            ),
+        ):
+            recovery = operation.ReadRecovery(cursor=recovery.cursor)
+        if any(
+            value is not None and value != []
+            for value in recovery.model_dump().values()
+        ):
+            result = result.model_copy(update={"recovery": recovery})
+        elif isinstance(result.recovery, operation.OperationRecovery):
+            result = result.model_copy(update={"recovery": None})
+        if not result.ok and result.data is None and snapshot.data is not None:
+            result = type(result).model_validate(
+                {**result.model_dump(), "data": snapshot.data}
+            )
+    wire = _protocol_result(result)
+    if (
+        len(wire.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8"))
+        + operation.RESULT_METADATA_ALLOWANCE
+        <= operation.MAX_RESULT_BYTES
+    ):
+        return wire
+    compact = result.model_copy(
+        update={
+            "ok": False,
+            "data": None,
+            "error": _ToolError(
+                code="result_size_limit",
+                message="The result exceeded the fixed MCP response limit.",
+                hint="Preserve the compact known identities and cursor; do not replay an ambiguous mutation.",
+            ),
+        }
+    )
+    if snapshot is not None and isinstance(compact.recovery, operation.ReadRecovery):
+        compact = compact.model_copy(
+            update={"recovery": operation.ReadRecovery(cursor=snapshot.initial_cursor)}
+        )
+    return _protocol_result(compact)
+
+
 def _operation_error(
     result_type: type[ResultT],
     error: Exception,
@@ -453,7 +901,7 @@ def _operation_error(
             result_type,
             code="ambiguous_agent_run",
             message="More than one run has that exact name.",
-            hint="Candidates: " + ", ".join(error.candidate_ids),
+            hint="Call list_agent_runs to inspect visible run names and IDs, then retry with an exact ID.",
         )
     if isinstance(error, AgentRunNotFoundError):
         return _error(
@@ -491,6 +939,12 @@ def _operation_error(
             hint=(
                 "Set SOLWYN_PROJECT_ID, configure default_project, or pass project_id."
             ),
+        )
+    if not isinstance(error, (ValidationError, ValueError, TypeError)):
+        return _error(
+            result_type,
+            code="internal_error",
+            message="The tool could not complete the operation.",
         )
     return _error(
         result_type,
@@ -718,17 +1172,52 @@ def _budget_check_operation(
 def _budget_check_batch_operation(
     *,
     launch_options: McpLaunchOptions,
-    checks: list[dict[str, Any]],
+    checks: list[dict[str, Any]] | None,
+    operation_id: str | None,
+    recover_only: bool,
+    record_only: list[DenialRecordingRetry] | None,
     no_record: bool,
     estimated_output_tokens: int | None,
 ) -> _BudgetCheckBatchResult:
     try:
-        prepared = prepare_batch_checks(checks)
+        if recover_only or record_only is not None:
+            if (
+                operation_id is None
+                or checks is not None
+                or (recover_only and record_only is not None)
+            ):
+                raise ValueError(
+                    "Recovery and recording require only their retained identity"
+                )
+            if record_only is not None and (
+                no_record or estimated_output_tokens is not None
+            ):
+                raise ValueError(
+                    "Recording retry requires its unchanged retained payload"
+                )
+            prepared = None
+        else:
+            prepared = prepare_batch_checks(checks)
+            if len(prepared) > 32:
+                raise ValueError("At most 32 checks")
+        control = operation.current()
+        identifier = (
+            operation_id
+            or (control.recovery().operation_id if control else None)
+            or new_operation_id()
+        )
+        operation_expiry(identifier)
+        if record_only is not None:
+            if len({receipt.index for receipt in record_only}) != len(record_only):
+                raise ValueError("Recording indices must be unique")
+            for receipt in record_only:
+                receipt.validate_identity(identifier)
+        operation.remember(operation_id=identifier, state="not_submitted")
     except (ValidationError, ValueError, TypeError):
         return _error(
             _BudgetCheckBatchResult,
             code="invalid_budget_check_batch_request",
-            message="Batch input must be a non-empty array of valid check bodies.",
+            message="Provide 1–32 checks, or only the retained operation_id with recover_only or record_only.",
         )
     try:
         with tool_call_client(launch_options) as (_, client):
@@ -737,25 +1226,36 @@ def _budget_check_batch_operation(
             )
             if auth_error is not None:
                 return auth_error
-            data = request_budget_check_batch(
+            data = request_recoverable_budget_batch(
                 client=client,
                 checks=prepared,
+                operation_id=identifier,
+                recover_only=recover_only,
+                record_only=record_only,
                 no_record=no_record,
                 estimated_output_tokens=estimated_output_tokens,
             )
+        if data.mode == "record_only" and any(
+            item.status in {"failed", "rejected", "unknown", "stopped"}
+            for item in data.recordings
+        ):
+            return _error(
+                _BudgetCheckBatchResult,
+                code="recording_unknown"
+                if any(item.status == "unknown" for item in data.recordings)
+                else "recording_failed",
+                message="Attribution retry did not complete; admission was not retried.",
+            ).model_copy(update={"data": data})
+        failed = any(item.state != "completed" for item in data.items)
+        if failed:
+            failure = _error(
+                _BudgetCheckBatchResult,
+                code="batch_check_failed",
+                message="The batch contains incomplete admission outcomes.",
+                hint="Recover with the same operation_id. Never replay unknown or unattempted items automatically.",
+            )
+            return failure.model_copy(update={"data": data})
         return _success(_BudgetCheckBatchResult, data)
-    except BudgetCheckBatchFailure as error:
-        failure = _operation_error(
-            _BudgetCheckBatchResult,
-            error.cause,
-            invalid_response_code="invalid_budget_check_batch_response",
-        )
-        tool_error = failure.error.model_copy(
-            update={
-                "hint": " ".join(filter(None, (failure.error.hint, BATCH_FAILURE_HINT)))
-            }
-        )
-        return _BudgetCheckBatchResult(ok=False, data=error.data, error=tool_error)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
             _BudgetCheckBatchResult,
@@ -767,10 +1267,10 @@ def _budget_check_batch_operation(
 def _budget_confirm_operation(
     *,
     launch_options: McpLaunchOptions,
-    reservation_id: str,
-    call_id: str,
-    model: str,
-    provider: ProviderName,
+    reservation_id: str | None,
+    call_id: str | None,
+    model: str | None,
+    provider: ProviderName | None,
     is_provider_fallback: bool,
     provider_region: str | None,
     service_tier: ServiceTier | None,
@@ -788,6 +1288,10 @@ def _budget_confirm_operation(
     rejected_prediction_tokens: int,
     tool_use_input_tokens: int,
     is_estimated: bool,
+    media_usage: MediaUsage | None = None,
+    modality: Modality = Modality.TEXT,
+    attempt_index: int = 0,
+    record_only: ConfirmationRecordingRetry | None = None,
     latency_ms: float = 0,
     status: str = "success",
     agent_run_id: str | None = None,
@@ -797,42 +1301,49 @@ def _budget_confirm_operation(
     no_record: bool = False,
 ) -> _BudgetConfirmResult:
     try:
-        request = BudgetConfirmRequest(
-            reservation_id=reservation_id,
-            call_id=call_id,
-            model=model,
-            provider=provider,
-            is_provider_fallback=is_provider_fallback,
-            provider_region=provider_region,
-            service_tier=service_tier,
-            token_details=TokenDetails(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cached_input_tokens=cached_input_tokens,
-                cache_creation_5m_tokens=cache_creation_5m_tokens,
-                cache_creation_1h_tokens=cache_creation_1h_tokens,
-                reasoning_tokens=reasoning_tokens,
-                audio_input_tokens=audio_input_tokens,
-                audio_output_tokens=audio_output_tokens,
-                image_input_tokens=image_input_tokens,
-                image_output_tokens=image_output_tokens,
-                accepted_prediction_tokens=accepted_prediction_tokens,
-                rejected_prediction_tokens=rejected_prediction_tokens,
-                tool_use_input_tokens=tool_use_input_tokens,
-                is_estimated=is_estimated,
-            ),
-        )
-        event = confirm_event(
-            request=request,
-            latency_ms=latency_ms,
-            status=status,
-            agent_run_id=agent_run_id
-            if agent_run_id is not None
-            else os.environ.get("SOLWYN_AGENT_RUN_ID"),
-            parent_agent_run_id=parent_run_id,
-            agent_run_name=run_name,
-            tags=_tool_tags(tags),
-        )
+        if record_only is not None:
+            event = prepare_confirm_recording_retry(record_only)
+            request = None
+        else:
+            request = BudgetConfirmRequest(
+                reservation_id=reservation_id,
+                call_id=call_id,
+                model=model,
+                provider=provider,
+                is_provider_fallback=is_provider_fallback,
+                provider_region=provider_region,
+                service_tier=service_tier,
+                media_usage=media_usage,
+                token_details=TokenDetails(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_input_tokens=cached_input_tokens,
+                    cache_creation_5m_tokens=cache_creation_5m_tokens,
+                    cache_creation_1h_tokens=cache_creation_1h_tokens,
+                    reasoning_tokens=reasoning_tokens,
+                    audio_input_tokens=audio_input_tokens,
+                    audio_output_tokens=audio_output_tokens,
+                    image_input_tokens=image_input_tokens,
+                    image_output_tokens=image_output_tokens,
+                    accepted_prediction_tokens=accepted_prediction_tokens,
+                    rejected_prediction_tokens=rejected_prediction_tokens,
+                    tool_use_input_tokens=tool_use_input_tokens,
+                    is_estimated=is_estimated,
+                ),
+            )
+            event = confirm_event(
+                request=request,
+                modality=modality,
+                attempt_index=attempt_index,
+                latency_ms=latency_ms,
+                status=status,
+                agent_run_id=agent_run_id
+                if agent_run_id is not None
+                else os.environ.get("SOLWYN_AGENT_RUN_ID"),
+                parent_agent_run_id=parent_run_id,
+                agent_run_name=run_name,
+                tags=_tool_tags(tags),
+            )
     except (ValidationError, ValueError):
         return _error(
             _BudgetConfirmResult,
@@ -847,19 +1358,39 @@ def _budget_confirm_operation(
             )
             if auth_error is not None:
                 return auth_error
-            data = confirm_and_record(
-                client=client, request=request, event=event, no_record=no_record
+            data = (
+                record_confirm_only(client=client, event=event)
+                if request is None
+                else confirm_and_record(
+                    client=client, request=request, event=event, no_record=no_record
+                )
             )
         return _success(
             _BudgetConfirmResult,
             data,
         )
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
-        return _operation_error(
+        failure = _operation_error(
             _BudgetConfirmResult,
             error,
             invalid_response_code="invalid_budget_confirm_response",
         )
+        if (
+            request is not None
+            and isinstance(error, ApiError)
+            and error.code == "transport_error"
+            and failure.error is not None
+        ):
+            return failure.model_copy(
+                update={
+                    "error": failure.error.model_copy(
+                        update={
+                            "hint": "Settlement may have applied. Save the FIRST recording_retry if returned. Within Core's 3600-second receipt window, replay identical settlement inputs with no_record=true; after a known 204 use record_only with the FIRST event, never the replay's unused new event. An unseen event cannot be reconstructed; do not reserve again."
+                        }
+                    )
+                }
+            )
+        return failure
 
 
 def _project_status_operation(
@@ -996,6 +1527,7 @@ def _record_operation(
             if auth_error is not None:
                 return auth_error
             data = request_ingest(client=client, events=[event])
+            operation.retain(data, call_id=event.call_id, recording=data.status)
         return _success(_RecordResult, data)
     except (ApiError, AuthError, ValueError, TypeError) as error:
         result = _operation_error(
@@ -1032,6 +1564,7 @@ def _tags_operation(
     try:
         if key is not None:
             validate_tags({key: prefix or ""})
+            operation.page(cursor)
     except ValueError:
         return _error(
             result_class, code="invalid_tag_query", message="Invalid tag key or prefix."
@@ -1076,7 +1609,12 @@ def _agent_runs_operation(
     except ValueError as error:
         return _error(
             _AgentRunsResult,
-            code=str(error),
+            code=(
+                str(error)
+                if str(error)
+                in {"custom_window_pair_required", "custom_window_invalid"}
+                else "custom_window_invalid"
+            ),
             message="The custom run window is invalid.",
             hint="Provide both timezone-aware bounds with to_time later than from_time.",
         )
@@ -1199,42 +1737,31 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
         )
 
 
-def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
-    """Build the stateless local MCP server and register the supported tools."""
-    launch = launch_options or McpLaunchOptions()
-    server = _ToolOnlyFastMCP(
-        name="solwyn",
-        instructions=(
-            "Use Solwyn tools for explicit project and budget operations. "
-            "Budget status is a pure read and the only polling surface. "
-            "Budget check creates a reservation only immediately before caller-made "
-            "un-instrumented provider spend. "
-            "Budget confirm settles a non-null reservation after that spend. "
-            "Never wrap Solwyn SDK-instrumented calls with budget check or confirm. "
-            "When check returns a null reservation, skip confirm."
-        ),
-        log_level="ERROR",
-    )
+def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
+    """Construct declarations without resolving configuration or credentials."""
+    catalog = _ToolCatalog(launch.profile)
     status_description, check_description, confirm_description = (
         _budget_tool_descriptions()
     )
 
-    @server.tool(
-        name=TOOL_NAMES[0],
+    @catalog.tool(
+        name="budget_status",
+        title="Read budget status",
         description=status_description,
-        structured_output=True,
     )
     async def budget_status(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetStatusResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_budget_status_operation, project_id, launch)
         )
 
-    @server.tool(
-        name=TOOL_NAMES[1],
+    @catalog.tool(
+        name="budget_check",
+        title="Check and reserve budget",
+        read_only=False,
+        credential_requirement="project_key",
         description=check_description,
-        structured_output=True,
     )
     async def budget_check(
         estimated_input_tokens: Annotated[int, Field(ge=0)],
@@ -1257,7 +1784,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         ] = None,
         no_record: bool = False,
     ) -> _BudgetCheckResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _budget_check_operation,
                 launch_options=launch,
@@ -1281,29 +1808,35 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
-        name=TOOL_NAMES[2],
+    @catalog.tool(
+        name="budget_confirm",
+        title="Confirm usage and record attribution",
+        read_only=False,
+        credential_requirement="project_key",
         description=confirm_description,
-        structured_output=True,
     )
     async def budget_confirm(
-        reservation_id: Annotated[str, Field(min_length=1)],
+        reservation_id: Annotated[str | None, Field(min_length=1)] = None,
         call_id: Annotated[
-            str,
+            str | None,
             Field(
                 min_length=1,
                 max_length=36,
                 pattern=CALL_ID_PATTERN,
                 description=CALL_ID_HINT,
             ),
-        ],
-        model: Annotated[str, Field(min_length=1, max_length=2048)],
-        provider: ProviderName,
+        ] = None,
+        model: Annotated[str | None, Field(min_length=1, max_length=2048)] = None,
+        provider: ProviderName | None = None,
         is_provider_fallback: bool = False,
         provider_region: Annotated[
             str | None, Field(min_length=1, max_length=32)
         ] = None,
         service_tier: ServiceTier | None = None,
+        media_usage: MediaUsage | None = None,
+        modality: Modality = Modality.TEXT,
+        attempt_index: Annotated[int, Field(ge=0)] = 0,
+        record_only: ConfirmationRecordingRetry | None = None,
         input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         cached_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
@@ -1326,7 +1859,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         tags: dict[str, str] | None = None,
         no_record: bool = False,
     ) -> _BudgetConfirmResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _budget_confirm_operation,
                 launch_options=launch,
@@ -1337,6 +1870,10 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
                 is_provider_fallback=is_provider_fallback,
                 provider_region=provider_region,
                 service_tier=service_tier,
+                media_usage=media_usage,
+                modality=modality,
+                attempt_index=attempt_index,
+                record_only=record_only,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,
@@ -1361,34 +1898,34 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
-        name=TOOL_NAMES[3],
+    @catalog.tool(
+        name="get_project_status",
+        title="Read project health",
         description=PROJECT_STATUS_DESCRIPTION,
-        structured_output=True,
     )
     async def get_project_status(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ProjectStatusResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_project_status_operation, project_id, launch)
         )
 
-    @server.tool(
-        name=TOOL_NAMES[4],
+    @catalog.tool(
+        name="get_forecast",
+        title="Read spend forecast",
         description=FORECAST_DESCRIPTION,
-        structured_output=True,
     )
     async def get_forecast(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ForecastResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_forecast_operation, project_id, launch)
         )
 
-    @server.tool(
-        name=TOOL_NAMES[5],
+    @catalog.tool(
+        name="get_costs",
+        title="Read grouped costs",
         description=COSTS_DESCRIPTION,
-        structured_output=True,
     )
     async def get_costs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1408,7 +1945,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         provider_fallback: bool | None = None,
         tag: list[str] | None = None,
     ) -> _CostsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _costs_operation,
                 launch_options=launch,
@@ -1431,18 +1968,19 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
-        name=TOOL_NAMES[6],
+    @catalog.tool(
+        name="list_projects",
+        title="List account projects",
+        credential_requirement="jwt",
         description=PROJECTS_DESCRIPTION,
-        structured_output=True,
     )
     async def list_projects() -> _ProjectsResult:
-        return await anyio.to_thread.run_sync(partial(_projects_operation, launch))
+        return await operation.run_sync(partial(_projects_operation, launch))
 
-    @server.tool(
+    @catalog.tool(
         name="get_cost_total",
+        title="Read cost total",
         description="Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
-        structured_output=True,
     )
     async def get_cost_total(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1461,7 +1999,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         provider_fallback: bool | None = None,
         tag: list[str] | None = None,
     ) -> _CostTotalResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _cost_total_operation,
                 launch_options=launch,
@@ -1483,22 +2021,24 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_budget_rules",
+        title="List budget rules",
         description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
-        structured_output=True,
     )
     async def list_budget_rules(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetRulesResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_budget_rules_operation, project_id, launch)
         )
 
-    @server.tool(
+    @catalog.tool(
         name="record_call",
-        description="Record one caller-owned completed call without a reservation. Do not duplicate SDK events. Reuse call_id on retries; costs are server-priced. Inspect status/rejected/duplicates even when transport succeeds.",
-        structured_output=True,
+        title="Record completed call attribution",
+        read_only=False,
+        credential_requirement="project_key",
+        description="Record one caller-owned completed call without reserving or settling budget, including a record-only retry after known settlement success. Do not duplicate SDK events. Persist call_id before sending and reuse it with unchanged payload and attempt_index=0 on retries; omission generates a new ID per call. Core deduplicates the project/call_id/attempt_index identity while retained; this is not an update mechanism. Costs are server-priced. Inspect status, rejected and duplicates even when transport succeeds.",
     )
     async def record_call(
         model: BudgetCheckModel,
@@ -1539,26 +2079,26 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             agent_run_name=agent_run_name,
             tags=tags,
         )
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_record_operation, launch_options=launch, inputs=inputs)
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_tags",
+        title="List attribution tag keys",
         description="List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
-        structured_output=True,
     )
     async def list_tags(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _TagsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(_tags_operation, launch_options=launch, project_id=project_id)
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_tag_values",
+        title="List attribution tag values",
         description="Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
-        structured_output=True,
     )
     async def list_tag_values(
         key: Annotated[str, Field(min_length=1, max_length=64)],
@@ -1567,7 +2107,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         limit: Annotated[int, Field(ge=1, le=100)] = 25,
         cursor: str | None = None,
     ) -> _TagValuesResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _tags_operation,
                 launch_options=launch,
@@ -1579,10 +2119,10 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_agent_runs",
+        title="List agent runs",
         description=AGENT_RUNS_DESCRIPTION,
-        structured_output=True,
     )
     async def list_agent_runs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1595,7 +2135,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         limit: Annotated[int, Field(ge=1, le=100)] = 25,
         cursor: str | None = None,
     ) -> _AgentRunsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _agent_runs_operation,
                 launch_options=launch,
@@ -1611,16 +2151,16 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="get_agent_run",
+        title="Read agent run",
         description=AGENT_RUN_DESCRIPTION,
-        structured_output=True,
     )
     async def get_agent_run_tool(
         run: Annotated[str, Field(min_length=1, max_length=255)],
         project_id: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _AgentRunResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _agent_run_operation,
                 launch_options=launch,
@@ -1629,10 +2169,11 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="list_alert_events",
+        title="Read alert history",
+        credential_note="Project history accepts a project key or JWT; account=true requires login/JWT and ignores project_id.",
         description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
-        structured_output=True,
     )
     async def list_alert_events(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -1646,7 +2187,7 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
         cursor: str | None = None,
         all_pages: bool = False,
     ) -> _AlertEventsResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _alert_events_operation,
                 project_id,
@@ -1663,47 +2204,94 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="budget_check_batch",
+        title="Check or recover a bounded batch",
+        read_only=False,
+        credential_requirement="project_key",
+        credential_note="Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
         description=(
-            "Reserve budget immediately before multiple caller-made un-instrumented provider calls. "
-            "Checks are JSON check bodies, fully validated before submission and chunked at 32; "
-            "results preserve input order. Each allowed item holds its own reservation: confirm it "
-            "after its call. Unknown models return per-item errors; 404/503 fail the request. "
-            "Denials record one receipt unless no_record; stopped runs must not retry under a new run ID. "
-            "Admission counts each item against checks_per_minute. Do not poll or replay to refresh reservations."
+            "Submit 1–32 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation."
         ),
-        structured_output=True,
     )
     async def budget_check_batch(
-        checks: Annotated[list[BudgetCheckRequest], Field(min_length=1)],
+        checks: Annotated[
+            list[BudgetCheckRequest] | None, Field(min_length=1, max_length=32)
+        ] = None,
         no_record: bool = False,
         estimated_output_tokens: Annotated[
             int | None, Field(ge=0, le=100_000_000)
         ] = None,
+        operation_id: Annotated[str | None, Field(min_length=36, max_length=36)] = None,
+        recover_only: bool = False,
+        record_only: Annotated[
+            list[DenialRecordingRetry] | None, Field(min_length=1, max_length=32)
+        ] = None,
     ) -> _BudgetCheckBatchResult:
-        return await anyio.to_thread.run_sync(
+        return await operation.run_sync(
             partial(
                 _budget_check_batch_operation,
                 launch_options=launch,
                 checks=[
                     check.model_dump(mode="json", exclude_unset=True)
                     for check in checks
-                ],
+                ]
+                if checks is not None
+                else None,
                 no_record=no_record,
                 estimated_output_tokens=estimated_output_tokens,
+                operation_id=operation_id,
+                recover_only=recover_only,
+                record_only=record_only,
             )
         )
 
-    @server.tool(
+    @catalog.tool(
         name="get_overview",
+        title="Read account overview",
+        credential_requirement="jwt",
         description=(
             "Read calendar-month account spend, requests, trend, savings, and "
             "free-tier quota metadata. Requires login/JWT authentication."
         ),
-        structured_output=True,
     )
     async def get_overview() -> _OverviewResult:
-        return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
+        return await operation.run_sync(partial(_overview_operation, launch))
 
+    return catalog
+
+
+def get_tool_catalog(
+    *,
+    profile: Literal["read", "guardrails"] = "guardrails",
+) -> tuple[ToolDeclaration, ...]:
+    """Return fresh ordered declarations for local diagnostics, without auth/I/O.
+
+    Credential requirements describe operations; they never enforce permissions.
+    Each call builds independent definitions, not the running server's catalog.
+    """
+    return tuple(_create_catalog(McpLaunchOptions(profile=profile)).tools.values())
+
+
+def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
+    """Build the stateless local MCP server with one fixed launch profile."""
+    launch = launch_options or McpLaunchOptions()
+    catalog = _create_catalog(launch)
+    server = Server(
+        "solwyn",
+        title="Solwyn",
+        version=__version__,
+        instructions=(
+            "Use Solwyn tools for explicit project and budget operations. "
+            "Budget status is a pure read and the only polling surface. "
+            "Budget check creates a reservation only immediately before caller-made "
+            "un-instrumented provider spend. "
+            "Budget confirm settles a non-null reservation after that spend. "
+            "Never wrap Solwyn SDK-instrumented calls with budget check or confirm. "
+            "When check returns a null reservation, skip confirm."
+        ),
+        on_list_tools=catalog.list_tools,
+        on_call_tool=catalog.call_tool,
+    )
+    _configure_private_server(server)
     return server

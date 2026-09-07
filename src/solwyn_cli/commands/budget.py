@@ -5,7 +5,7 @@ import math
 import os
 import sys
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -20,6 +20,13 @@ from pydantic import (
     model_validator,
 )
 
+from solwyn_cli._vendor.batch import (
+    BudgetCheckOutcome,
+    RecoverableBudgetCheckRequest,
+    RecoverableBudgetCheckResponse,
+    operation_expiry,
+)
+from solwyn_cli import _mcp_operation as operation
 from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
     BudgetCheckBatchRequest,
@@ -28,6 +35,7 @@ from solwyn_cli._vendor.wire import (
     BudgetPeriod,
     BudgetUpdateRequest,
     MediaUsage,
+    Modality,
     IngestMetadataEvent,
     ProviderName,
     ServiceTier,
@@ -72,7 +80,9 @@ app = typer.Typer(
 
 _FAIL_OPEN_NOTICE = "fail-open, unreserved — skip confirm"
 _CONFIRM_NOT_FOUND_HINT = (
-    "Expired or already consumed. Run a fresh check before spend; confirm once."
+    "Reservation and settlement receipt are unavailable. Preserve the completed call's "
+    "identity and usage; inspect settlement and attribution separately. Do not reserve "
+    "again for a completed provider call."
 )
 # Budget check and confirm are the only CLI surfaces the API can reject for key
 # scope, so the hint lives with them rather than in the shared error machinery.
@@ -312,8 +322,17 @@ class _RunControlDirective(BaseModel):
 class _BudgetConfirmData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    reservation_id: str
+    reservation_id: str | None
     call_id: str
+    settlement: Literal["not_submitted", "unknown", "confirmed"] = Field(
+        default="confirmed",
+        description="Settlement observed by this invocation; record-only reports not_submitted and cannot verify a prior settlement.",
+    )
+    recording_retry: IngestMetadataEvent | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Event prepared by this invocation. Keep the FIRST recording_retry for recovery; never replace it with a no_record replay's unused new event. Preserve every field. This event is not a settlement receipt.",
+    )
     recorded: RecordingResult | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -335,8 +354,11 @@ def request_budget_check(
         # that do not opt in keep posting the exact body they post today.
         json=request.model_dump(mode="json", exclude_none=True),
     )
-    data = _BudgetCheckData.model_validate(response.json())
-    return validate_check_directive(request=request, data=data)
+    data = validate_check_directive(
+        request=request, data=_BudgetCheckData.model_validate(response.json())
+    )
+    operation.retain(data, reservation_id=data.reservation_id)
+    return data
 
 
 def validate_check_directive(
@@ -393,15 +415,30 @@ BATCH_FAILURE_HINT = (
     "Completed results remain valid; do not replay completed checks. "
     "Reservation state within the failed chunk is unknown; later chunks were not submitted."
 )
+_BATCH_ATTRIBUTION_FAILURE_HINT = (
+    "All returned reservation outcomes are known; do not replay these checks. "
+    "Unfinished attribution outcomes may be unknown; later chunks were not submitted."
+)
 
 
 class BudgetCheckBatchFailure(Exception):
     """Keep known reservations available when a later chunk fails."""
 
-    def __init__(self, cause: Exception, data: BudgetCheckBatchData) -> None:
+    def __init__(
+        self,
+        cause: Exception,
+        data: BudgetCheckBatchData,
+        *,
+        attribution_failed: bool = False,
+    ) -> None:
         super().__init__("Batch check failed after completed chunks")
         self.cause = cause
         self.data = data
+        self.hint = (
+            _BATCH_ATTRIBUTION_FAILURE_HINT
+            if attribution_failed
+            else BATCH_FAILURE_HINT
+        )
 
 
 def prepare_batch_checks(checks: object) -> list[BudgetCheckRequest]:
@@ -444,8 +481,8 @@ def request_budget_check_batch(
     invocation_id = str(uuid4())
     results = []
     for offset in range(0, len(checks), 32):
-        batch = BudgetCheckBatchRequest(checks=checks[offset : offset + 32])
         try:
+            batch = BudgetCheckBatchRequest(checks=checks[offset : offset + 32])
             response = client.request(
                 "POST",
                 "/api/v1/budgets/check/batch",
@@ -460,7 +497,9 @@ def request_budget_check_batch(
                     item.result = validate_check_directive(
                         request=request, data=item.result
                     )
-        except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        except Exception as error:
+            # Ordinary unexpected failures can follow known reservations too.
+            # Cancellation and process-control BaseExceptions must still escape.
             if results:
                 raise BudgetCheckBatchFailure(
                     error,
@@ -471,18 +510,239 @@ def request_budget_check_batch(
                     ),
                 ) from error
             raise
-        for request, item in zip(batch.checks, data.results, strict=True):
-            if item.result is not None:
-                item.result = record_denial(
-                    client=client,
-                    request=request,
-                    data=item.result,
-                    sdk_instance_id=invocation_id,
-                    no_record=no_record,
-                    estimated_output_tokens=estimated_output_tokens,
-                )
+        # Retain the entire validated chunk before optional receipt side effects.
+        # A receipt failure must not hide later known results in this same chunk.
         results.extend(data.results)
+        try:
+            for request, item in zip(batch.checks, data.results, strict=True):
+                if item.result is not None:
+                    item.result = record_denial(
+                        client=client,
+                        request=request,
+                        data=item.result,
+                        sdk_instance_id=invocation_id,
+                        no_record=no_record,
+                        estimated_output_tokens=estimated_output_tokens,
+                    )
+        except Exception as error:
+            raise BudgetCheckBatchFailure(
+                error,
+                BudgetCheckBatchData(
+                    results=results,
+                    failed_chunk_start=offset,
+                    total_checks=len(checks),
+                ),
+                attribution_failed=True,
+            ) from error
     return BudgetCheckBatchData(results=results)
+
+
+class DenialRecordingRetry(BaseModel):
+    """Caller-retained exact denial event for a separate attribution-only retry."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    index: int = Field(
+        ge=0,
+        le=31,
+        strict=True,
+        description="Original check index, 0–31; preserve with its exact event payload.",
+    )
+    event: IngestMetadataEvent = Field(
+        description="Exact original denial event returned as recording_retry; preserve timestamp, identity, usage and tags without rebuilding from ambient defaults."
+    )
+
+    def validate_identity(self, operation_id: str) -> None:
+        if (
+            self.event.call_id != str(uuid5(UUID(operation_id), f"denial:{self.index}"))
+            or self.event.sdk_instance_id != operation_id
+            or self.event.status != "budget_denied"
+            or self.event.attempt_index != 0
+            or self.event.timestamp.tzinfo is None
+        ):
+            raise ValueError("Recording retry does not match its operation and index")
+
+
+class _JournalBudgetDecision(BudgetCheckData):
+    @model_validator(mode="before")
+    @classmethod
+    def admission_only(cls, value):
+        if isinstance(value, dict) and any(
+            name in value for name in ("call_id", "recorded", "reason")
+        ):
+            raise ValueError("The admission journal cannot assert attribution receipts")
+        return value
+
+
+class RecoverableBatchItem(BudgetCheckOutcome[BudgetCheckData]):
+    recording_retry: DenialRecordingRetry | None = None
+
+
+class RecoverableBatchData(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    operation_id: str
+    mode: Literal["submit", "recover", "record_only"]
+    status: Literal["running", "finished", "interrupted"] | None
+    expires_at: datetime
+    items: list[RecoverableBatchItem] = Field(max_length=32)
+    recordings: list[RecordingResult] = Field(default_factory=list, max_length=32)
+
+    results: list[BudgetCheckBatchItem] = Field(default_factory=list, max_length=32)
+
+    def sync_results(self) -> None:
+        """Keep the prior ordered application result field, with honest errors."""
+        self.results = [
+            BudgetCheckBatchItem(result=item.result)
+            if item.result is not None
+            else BudgetCheckBatchItem(
+                error_code=item.error_code or "unattempted",
+                error_message="This check has no completed admission outcome.",
+            )
+            for item in self.items
+        ]
+
+
+def _retain_batch(data: RecoverableBatchData) -> None:
+    data.sync_results()
+    operation.retain(
+        data,
+        operation_id=data.operation_id,
+        state=data.status or "unknown",
+        items=[
+            operation.RecoveryItem(
+                index=item.index,
+                state=item.state,
+                reservation_id=item.result.reservation_id if item.result else None,
+                call_id=item.result.call_id if item.result else None,
+                recording_status=item.result.recorded.status
+                if item.result and item.result.recorded
+                else None,
+                checked_at=item.checked_at.isoformat() if item.checked_at else None,
+                reservation_expires_at=item.reservation_expires_at.isoformat()
+                if item.reservation_expires_at
+                else None,
+            )
+            for item in data.items
+        ],
+    )
+
+
+def request_recoverable_budget_batch(
+    *,
+    client: SolwynClient,
+    checks: list[BudgetCheckRequest] | None,
+    operation_id: str,
+    recover_only: bool = False,
+    record_only: list[DenialRecordingRetry] | None = None,
+    no_record: bool = False,
+    estimated_output_tokens: int | None = None,
+) -> RecoverableBatchData:
+    """One admission POST, historical GET, or explicit identical-event ingest."""
+    expiry = operation_expiry(operation_id)
+    operation.checkpoint()
+    if record_only is not None:
+        if len({entry.index for entry in record_only}) != len(record_only):
+            raise ValueError("Recording indices must be unique")
+        for entry in record_only:
+            entry.validate_identity(operation_id)
+        data = RecoverableBatchData(
+            operation_id=operation_id,
+            mode="record_only",
+            status=None,
+            expires_at=expiry,
+            items=[],
+        )
+        for entry in record_only:
+            operation.retain(
+                data, call_id=entry.event.call_id, recording="not_submitted"
+            )
+            recorded = record_best_effort(client=client, event=entry.event)
+            data.recordings.append(recorded)
+            operation.retain(
+                data, call_id=entry.event.call_id, recording=recorded.status
+            )
+        return data
+    if recover_only:
+        response = client.request(
+            "GET", f"/api/v1/budgets/check/batches/{operation_id}"
+        )
+    else:
+        body = RecoverableBudgetCheckRequest(operation_id=operation_id, checks=checks)
+        operation.remember(state="unknown")
+        response = client.request(
+            "POST",
+            "/api/v1/budgets/check/batches",
+            json=body.model_dump(mode="json", exclude_none=True),
+            retry_rate_limit=False,
+            retry_auth=False,
+        )
+    snapshot = RecoverableBudgetCheckResponse[_JournalBudgetDecision].model_validate(
+        response.json()
+    )
+    if snapshot.operation_id != operation_id or (
+        checks is not None and len(snapshot.items) != len(checks)
+    ):
+        raise ValueError("Journal identity or item count does not match")
+    if checks is not None:
+        for item in snapshot.items:
+            if item.result is not None:
+                item.result = validate_check_directive(
+                    request=checks[item.index], data=item.result
+                )
+    data = RecoverableBatchData(
+        operation_id=operation_id,
+        mode="recover" if recover_only else "submit",
+        status=snapshot.status,
+        expires_at=snapshot.expires_at,
+        items=[
+            RecoverableBatchItem.model_validate(item.model_dump())
+            for item in snapshot.items
+        ],
+    )
+    _retain_batch(data)
+    if recover_only:
+        return data
+    # The journal records admission only. Prepare exact stable attribution before
+    # each send and retain every known reservation before any optional recording.
+    for item in data.items:
+        if item.result is None or item.result.allowed:
+            continue
+        request = checks[item.index]
+        event = denial_event(
+            request=request,
+            data=item.result,
+            call_id=str(uuid5(UUID(operation_id), f"denial:{item.index}")),
+            sdk_instance_id=operation_id,
+            timestamp=item.checked_at,
+            estimated_output_tokens=estimated_output_tokens,
+        )
+        item.recording_retry = DenialRecordingRetry(index=item.index, event=event)
+        item.result = item.result.model_copy(
+            update={
+                "call_id": event.call_id,
+                "recorded": RecordingResult(
+                    status="skipped" if no_record else "stopped",
+                    ingested=0,
+                    call_ids=[event.call_id],
+                ),
+            }
+        )
+        _retain_batch(data)
+        if not no_record:
+            operation.checkpoint()
+            # Once attribution is handed off, an interrupted reply cannot prove
+            # it was never sent. Keep that uncertainty in every retained view.
+            item.result = item.result.model_copy(
+                update={
+                    "recorded": RecordingResult(
+                        status="unknown", ingested=0, call_ids=[event.call_id]
+                    )
+                }
+            )
+            _retain_batch(data)
+        recorded = record_best_effort(client=client, event=event, no_record=no_record)
+        item.result = item.result.model_copy(update={"recorded": recorded})
+        _retain_batch(data)
+    return data
 
 
 def _batch_check_table(data: BudgetCheckBatchData) -> TableData:
@@ -568,7 +828,7 @@ def _check_batch_command(
         )
         typer.echo(
             f"Batch failed at input index {error.data.failed_chunk_start} "
-            f"of {error.data.total_checks} checks. {BATCH_FAILURE_HINT}",
+            f"of {error.data.total_checks} checks. {error.hint}",
             err=True,
         )
         if isinstance(error.cause, ApiError):
@@ -654,6 +914,38 @@ def record_denial(
     if data.allowed:
         return data
     call_id = str(uuid4())
+    operation.retain(data, call_id=call_id, recording="not_submitted")
+    try:
+        event = denial_event(
+            request=request,
+            data=data,
+            call_id=call_id,
+            sdk_instance_id=sdk_instance_id,
+            estimated_output_tokens=estimated_output_tokens,
+        )
+        recorded = record_best_effort(client=client, event=event, no_record=no_record)
+    except operation.OperationLimit:
+        raise
+    except Exception:
+        typer.echo(
+            "Warning: denial attribution failed; the budget decision is unchanged.",
+            err=True,
+        )
+        recorded = RecordingResult(status="failed", ingested=0, call_ids=[call_id])
+    data = data.model_copy(update={"call_id": call_id, "recorded": recorded})
+    operation.retain(data, call_id=call_id, recording=recorded.status)
+    return data
+
+
+def denial_event(
+    *,
+    request: BudgetCheckRequest,
+    data: BudgetCheckData,
+    call_id: str,
+    sdk_instance_id: str | None = None,
+    timestamp: datetime | None = None,
+    estimated_output_tokens: int | None = None,
+) -> IngestMetadataEvent:
     inputs = dict(
         model=request.model,
         provider=request.provider,
@@ -672,13 +964,9 @@ def record_denial(
     )
     if sdk_instance_id is not None:
         inputs["sdk_instance_id"] = sdk_instance_id
-    try:
-        event = build_event(**inputs)
-        recorded = record_best_effort(client=client, event=event, no_record=no_record)
-    except (ValueError, TypeError) as error:
-        typer.echo(f"Warning: denial attribution failed: {error}", err=True)
-        recorded = RecordingResult(status="failed", ingested=0, call_ids=[call_id])
-    return data.model_copy(update={"call_id": call_id, "recorded": recorded})
+    if timestamp is not None:
+        inputs["timestamp"] = timestamp
+    return build_event(**inputs)
 
 
 def confirm_event(
@@ -690,10 +978,12 @@ def confirm_event(
         model=request.model,
         provider=request.provider,
         token_details=request.token_details,
+        media_usage=request.media_usage,
         input_tokens=request.token_details.input_tokens,
         output_tokens=request.token_details.output_tokens,
         provider_region=request.provider_region,
         service_tier=request.service_tier,
+        is_provider_fallback=request.is_provider_fallback,
         **attribution,
     )
 
@@ -705,9 +995,59 @@ def confirm_and_record(
     event: IngestMetadataEvent,
     no_record: bool = False,
 ) -> BudgetConfirmData:
-    data = request_budget_confirm(client=client, request=request)
+    data = BudgetConfirmData(
+        reservation_id=request.reservation_id,
+        call_id=request.call_id,
+        settlement="unknown",
+        recording_retry=event,
+    )
+    operation.retain(
+        data,
+        reservation_id=request.reservation_id,
+        call_id=request.call_id,
+        settlement="unknown",
+        recording="not_submitted",
+    )
+    request_budget_confirm(client=client, request=request)
+    data = data.model_copy(update={"settlement": "confirmed"})
+    operation.retain(data, settlement="confirmed")
     recorded = record_best_effort(client=client, event=event, no_record=no_record)
-    return data.model_copy(update={"recorded": recorded})
+    data = data.model_copy(update={"recorded": recorded})
+    operation.retain(data, recording=recorded.status)
+    return data
+
+
+def prepare_confirm_recording_retry(event: IngestMetadataEvent) -> IngestMetadataEvent:
+    """Validate a retained completed event without ambient defaults or new identity."""
+    if event.status not in {"success", "error"}:
+        raise ValueError("Confirmation recording requires a completed provider call.")
+    # All fields, including timestamp and sdk_instance_id, are supplied. The
+    # shared builder checks totals, tags and latency without replacing those IDs.
+    return build_event(**event.model_dump())
+
+
+def record_confirm_only(
+    *, client: SolwynClient, event: IngestMetadataEvent
+) -> BudgetConfirmData:
+    """Retry attribution only; a caller-supplied event proves no settlement state."""
+    event = prepare_confirm_recording_retry(event)
+    data = BudgetConfirmData(
+        reservation_id=None,
+        call_id=event.call_id,
+        settlement="not_submitted",
+        recording_retry=event,
+    )
+    operation.retain(
+        data,
+        reservation_id=None,
+        call_id=event.call_id,
+        settlement="not_submitted",
+        recording="not_submitted",
+    )
+    recorded = record_best_effort(client=client, event=event)
+    data = data.model_copy(update={"recorded": recorded})
+    operation.retain(data, recording=recorded.status)
+    return data
 
 
 def _table(data: _BudgetStatusOutput) -> TableData:
@@ -817,8 +1157,9 @@ def _confirm_table(data: _BudgetConfirmData) -> TableData:
     return TableData(
         columns=("Field", "Value"),
         rows=(
-            ("Reservation ID", data.reservation_id),
+            ("Reservation ID", data.reservation_id or "-"),
             ("Call ID", data.call_id),
+            ("Settlement", data.settlement),
             ("Recorded", data.recorded.status if data.recorded else "-"),
         ),
         right_align=("Value",),
@@ -1253,7 +1594,7 @@ def check(
 @app.command(
     "confirm",
     epilog=help_contract(
-        endpoint="POST /api/v1/budgets/confirm",
+        endpoint="POST /api/v1/budgets/confirm then POST /api/v1/metadata/ingest; --record-only ingests only",
         auth="key",
         exits=("0 success; 1 generic/API; 2 usage; 3 auth; 5 reservation not found"),
         schema="solwyn.budget-confirm.v1",
@@ -1261,23 +1602,26 @@ def check(
             "Settle only when check returned a non-null reservation after the call.",
             "Skip confirm when the reservation is null.",
             "Records attribution with the same call ID by default; --no-record skips ingest. Recording failure warns without undoing settlement.",
+            "Use observed media quantities and actual served provider/model. Retain the FIRST recording_retry; --record-only FILE ingests that exact event without confirmation or ambient defaults.",
+            "After a lost 204, replay identical settlement inputs with --no-record inside Core's 3600-second receipt window. After a known 204, use --record-only with the FIRST retained event; never replace it with the replay's unused new event.",
+            "CLI transport errors do not return the prepared event. Original flags cannot reconstruct an unseen timestamp or SDK instance; the MCP recovery sequence requires the FIRST event to have been returned. Never reserve again for a completed call.",
         ),
     ),
 )
 def confirm(
     context: typer.Context,
     call_id: Annotated[
-        str,
+        str | None,
         typer.Option("--call-id", help="Unique identifier for the provider call."),
-    ],
+    ] = None,
     model: Annotated[
-        str,
+        str | None,
         typer.Option("--model", help="Model that actually served the call."),
-    ],
+    ] = None,
     provider: Annotated[
-        ProviderName,
+        ProviderName | None,
         typer.Option("--provider", help="Provider that actually served the call."),
-    ],
+    ] = None,
     latency_ms: Annotated[float, typer.Option("--latency-ms", min=0)] = 0,
     status: Annotated[
         str, typer.Option("--status", help="success or error.")
@@ -1294,8 +1638,27 @@ def confirm(
         ),
     ] = None,
     no_record: Annotated[
-        bool, typer.Option("--no-record", help="Settle without recording attribution.")
+        bool,
+        typer.Option(
+            "--no-record",
+            help="Settle without ingest; use for explicit settlement replay after a lost 204.",
+        ),
     ] = False,
+    record_only: Annotated[
+        Path | None,
+        typer.Option(
+            "--record-only",
+            help="JSON file containing the exact FIRST retained recording_retry event; ingest only, with no other confirm flags.",
+        ),
+    ] = None,
+    attempt_index: Annotated[
+        int,
+        typer.Option(
+            "--attempt-index",
+            min=0,
+            help="Observed attempt index; keep identical on recording retry.",
+        ),
+    ] = 0,
     reservation_id: Annotated[
         str | None,
         typer.Option(
@@ -1317,6 +1680,59 @@ def confirm(
     service_tier: Annotated[
         ServiceTier | None,
         typer.Option("--service-tier", help="Provider service tier used for the call."),
+    ] = None,
+    modality: Annotated[
+        Modality,
+        typer.Option(
+            "--modality", help="Actual completed call modality for attribution."
+        ),
+    ] = Modality.TEXT,
+    image_count: Annotated[
+        int | None,
+        typer.Option(
+            "--image-count",
+            min=0,
+            help="Observed billed images; omit when unobservable, use 0 for none.",
+        ),
+    ] = None,
+    generation_count: Annotated[
+        int | None,
+        typer.Option(
+            "--generation-count",
+            min=0,
+            help="Observed billed generations; omit when unobservable.",
+        ),
+    ] = None,
+    video_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--video-seconds",
+            min=0,
+            help="Observed billed video seconds; omit when unobservable.",
+        ),
+    ] = None,
+    audio_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--audio-seconds",
+            min=0,
+            help="Observed billed audio seconds; omit when unobservable.",
+        ),
+    ] = None,
+    input_characters: Annotated[
+        int | None,
+        typer.Option(
+            "--input-characters",
+            min=0,
+            help="Observed billed input character count; no content is sent.",
+        ),
+    ] = None,
+    resolution: Annotated[
+        str | None,
+        typer.Option("--resolution", help="Observed pricing resolution selector."),
+    ] = None,
+    quality: Annotated[
+        str | None, typer.Option("--quality", help="Observed pricing quality selector.")
     ] = None,
     input_tokens: Annotated[
         int,
@@ -1384,12 +1800,12 @@ def confirm(
         bool,
         typer.Option(
             "--is-estimated",
-            help="Mark the token breakdown as estimated rather than provider-reported.",
+            help="Mark supplied token and media quantities as estimated rather than provider-reported.",
         ),
     ] = False,
 ) -> None:
     """Settle one reservation after an un-instrumented provider call."""
-    if reservation_id is None:
+    if record_only is None and reservation_id is None:
         exit_with_error(
             context,
             OutputError(
@@ -1399,7 +1815,7 @@ def confirm(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    if not reservation_id.strip():
+    if record_only is None and not reservation_id.strip():
         exit_with_error(
             context,
             OutputError(
@@ -1409,9 +1825,12 @@ def confirm(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    if (
-        not call_id.strip()
+    if record_only is None and (
+        not call_id
+        or not call_id.strip()
+        or not model
         or not model.strip()
+        or provider is None
         or (provider_region is not None and not provider_region.strip())
     ):
         exit_with_error(
@@ -1424,51 +1843,86 @@ def confirm(
             semantic=ErrorSemantic.USAGE,
         )
     try:
-        validate_call_id(call_id)
-        if status not in ("success", "error"):
-            raise ValueError("Status must be success or error.")
-        token_details = TokenDetails(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_input_tokens=cached_input_tokens,
-            cache_creation_5m_tokens=cache_creation_5m_tokens,
-            cache_creation_1h_tokens=cache_creation_1h_tokens,
-            reasoning_tokens=reasoning_tokens,
-            audio_input_tokens=audio_input_tokens,
-            audio_output_tokens=audio_output_tokens,
-            image_input_tokens=image_input_tokens,
-            image_output_tokens=image_output_tokens,
-            accepted_prediction_tokens=accepted_prediction_tokens,
-            rejected_prediction_tokens=rejected_prediction_tokens,
-            tool_use_input_tokens=tool_use_input_tokens,
-            is_estimated=is_estimated,
-        )
-        request = BudgetConfirmRequest(
-            reservation_id=reservation_id,
-            call_id=call_id,
-            model=model,
-            provider=provider,
-            is_provider_fallback=is_provider_fallback,
-            provider_region=provider_region,
-            service_tier=service_tier.value if service_tier is not None else None,
-            token_details=token_details,
-        )
-        event = confirm_event(
-            request=request,
-            latency_ms=latency_ms,
-            status=status,
-            agent_run_id=agent_run_id,
-            parent_agent_run_id=parent_run_id,
-            agent_run_name=run_name,
-            tags=parse_tags(tag),
-        )
-    except (ValidationError, ValueError) as error:
+        if record_only is not None:
+            if any(
+                name != "record_only"
+                and context.get_parameter_source(name).name == "COMMANDLINE"
+                for name in context.params
+            ):
+                raise ValueError("Use --record-only without other confirm flags.")
+            event = prepare_confirm_recording_retry(
+                IngestMetadataEvent.model_validate_json(
+                    record_only.read_text(encoding="utf-8")
+                )
+            )
+            request = None
+        else:
+            validate_call_id(call_id)
+            if status not in ("success", "error"):
+                raise ValueError("Status must be success or error.")
+            token_details = TokenDetails(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+                cache_creation_5m_tokens=cache_creation_5m_tokens,
+                cache_creation_1h_tokens=cache_creation_1h_tokens,
+                reasoning_tokens=reasoning_tokens,
+                audio_input_tokens=audio_input_tokens,
+                audio_output_tokens=audio_output_tokens,
+                image_input_tokens=image_input_tokens,
+                image_output_tokens=image_output_tokens,
+                accepted_prediction_tokens=accepted_prediction_tokens,
+                rejected_prediction_tokens=rejected_prediction_tokens,
+                tool_use_input_tokens=tool_use_input_tokens,
+                is_estimated=is_estimated,
+            )
+            quantities = dict(
+                image_count=image_count,
+                generation_count=generation_count,
+                video_seconds=video_seconds,
+                audio_seconds=audio_seconds,
+                input_characters=input_characters,
+                resolution=resolution,
+                quality=quality,
+            )
+            media = (
+                MediaUsage(**quantities, is_estimated=is_estimated)
+                if any(value is not None for value in quantities.values())
+                else None
+            )
+            request = BudgetConfirmRequest(
+                reservation_id=reservation_id,
+                call_id=call_id,
+                model=model,
+                provider=provider,
+                is_provider_fallback=is_provider_fallback,
+                provider_region=provider_region,
+                service_tier=service_tier.value if service_tier is not None else None,
+                token_details=token_details,
+                media_usage=media,
+            )
+            event = confirm_event(
+                request=request,
+                modality=modality,
+                attempt_index=attempt_index,
+                latency_ms=latency_ms,
+                status=status,
+                agent_run_id=agent_run_id,
+                parent_agent_run_id=parent_run_id,
+                agent_run_name=run_name,
+                tags=parse_tags(tag),
+            )
+    except (ValidationError, ValueError, OSError):
         exit_with_error(
             context,
             OutputError(
                 code="invalid_budget_confirm_request",
                 message="The budget confirmation request is invalid.",
-                hint=f"{error}. {CALL_ID_HINT}",
+                hint=(
+                    "Check completed-call fields, quantity bounds, token totals and tags. "
+                    "For --record-only, supply only the exact original event file. "
+                    f"{CALL_ID_HINT}"
+                ),
             ),
             semantic=ErrorSemantic.USAGE,
         )
@@ -1508,8 +1962,12 @@ def confirm(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            data = confirm_and_record(
-                client=client, request=request, event=event, no_record=no_record
+            data = (
+                record_confirm_only(client=client, event=event)
+                if request is None
+                else confirm_and_record(
+                    client=client, request=request, event=event, no_record=no_record
+                )
             )
     except ApiError as error:
         if error.status_code == 404:

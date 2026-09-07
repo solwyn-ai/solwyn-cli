@@ -43,6 +43,8 @@ solwyn status         # project budget and provider health at a glance
 | `projects create` / `list` / `show` | Manage projects; `create --scope` mints the first key with an explicit scope. |
 | `keys show` / `rotate` / `revoke` | Inspect key metadata (including its scope), rotate with `--scope` to change it, or hard-revoke. |
 | `mcp` | Serve Solwyn tools to agents over local MCP stdio. |
+| `mcp-config` | Generate an offline command/args descriptor; defaults to the read profile. |
+| `doctor --mcp` | Check MCP discovery, selected project/key context and an authenticated read when supported. |
 | `agent-context` | Print safe Solwyn budget guidance for coding agents. |
 | `config` | Inspect and update local configuration. |
 
@@ -77,7 +79,18 @@ Use `budget status` to poll; `check` is for the moment immediately before spend.
 
 ## For coding agents
 
+Start with the [MCP quickstart](docs/mcp-quickstart.md): install the local wheel,
+generate a read-first descriptor, diagnose credentials, and run the tested
+Python or TypeScript client. The [release checklist](docs/mcp-release.md) and
+Registry metadata are unpublished preparation.
+
 `solwyn mcp` serves read, guardrail, and attribution tools over stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
+
+Use `solwyn --project proj_0123456789abcdef01234567 mcp --profile read` for the 13 read tools
+(replace the synthetic ID with your project);
+the default `guardrails` profile keeps all 17. Profiles are fixed at launch and
+never grant permissions. See [MCP profiles and tool contracts](docs/mcp-profiles.md)
+for authentication, discovery caching, and operation-specific replay rules.
 
 ## Scripting
 
@@ -169,14 +182,16 @@ exit 1. A request-level 404 or 503 fails the chunk. If an earlier chunk complete
 its results and reservation IDs remain in output, alongside `failed_chunk_start`
 and `total_checks`; later chunks were not submitted. Reservation state inside a
 503-failed chunk is unknown. Do not replay completed checks or assume rollback.
-The matching MCP tool is `budget_check_batch`, including the same validation,
-chunking, recording and partial-failure behavior.
+The MCP `budget_check_batch` tool submits at most 32 checks to Core’s durable
+journal with a caller-retained UUIDv7. Recovery uses GET only; explicit denial
+attribution retry preserves its exact event. See [bounded MCP work and recovery](docs/mcp-bounded-work.md)
+for limits, required Core rollout, indexed outcomes and recording uncertainty.
 
 ## Trust posture
 
 Solwyn CLI:
 
-- sends only your own spend events; `sdk_instance_id` is a random per-invocation ID; no telemetry;
+- sends only your own spend events; `sdk_instance_id` is an invocation ID (the retained operation UUID for recoverable MCP batches); no telemetry;
 
 - never captures, logs, or transmits prompts or responses;
 - never collects, stores, or proxies provider API keys;
