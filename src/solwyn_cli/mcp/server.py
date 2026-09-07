@@ -1,5 +1,7 @@
 """FastMCP stdio server and the supported Solwyn tool surface."""
 
+import json
+import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -7,7 +9,10 @@ from functools import partial
 from typing import Any, Annotated, Generic, Literal, TypeVar
 
 import anyio
+from mcp import types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel import server as sdk_server
+from mcp.shared import session as sdk_session
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from solwyn_cli import auth, runtime
@@ -34,7 +39,6 @@ from solwyn_cli.commands.budget import (
     BudgetCheckData,
     BudgetCheckBatchData,
     BudgetCheckBatchFailure,
-    BATCH_FAILURE_HINT,
     prepare_batch_checks,
     request_budget_check_batch,
     BudgetConfirmData,
@@ -163,6 +167,24 @@ _SAFE_CTA_PATHS = frozenset({"/billing"})
 _DEFAULT_CTA_PATH = "/billing"
 
 
+class _PrivateMcpDiagnostics(logging.Filter):
+    """Redact SDK transport/session diagnostics before any handler captures them."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.pathname in {sdk_server.__file__, sdk_session.__file__}:
+            # The 1.x session emits validation errors directly through root,
+            # while the server emits stream exceptions through its own logger.
+            # Both may include whole requests and Pydantic input/traceback data.
+            record.msg = "MCP protocol diagnostic."
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+            if hasattr(record, "message"):
+                record.message = record.msg
+        return True
+
+
 class _ToolOnlyFastMCP(FastMCP):
     """FastMCP 1.28.1 server that registers only the supported tool handlers."""
 
@@ -170,7 +192,92 @@ class _ToolOnlyFastMCP(FastMCP):
         # Capabilities derive from the low-level handler registry. Registering only
         # these two handlers prevents unsupported prompt/resource advertisement.
         self._mcp_server.list_tools()(self.list_tools)
-        self._mcp_server.call_tool(validate_input=False)(self.call_tool)
+        # The 1.x decorator can reflect invalid inputs, outputs and unknown names.
+        # Keep validation, dispatch and serialization inside our safe boundary.
+        self._mcp_server.request_handlers[types.CallToolRequest] = (
+            self._call_tool_request
+        )
+        # Logger filters run before handlers, including DEBUG/captured handlers.
+        # Root filters do not apply to propagated records, so cover both emitters.
+        for sdk_logger in (logging.getLogger(), logging.getLogger(sdk_server.__name__)):
+            if not any(
+                isinstance(item, _PrivateMcpDiagnostics) for item in sdk_logger.filters
+            ):
+                sdk_logger.addFilter(_PrivateMcpDiagnostics())
+
+    async def _call_tool_request(
+        self, request: types.CallToolRequest
+    ) -> types.ServerResult:
+        return types.ServerResult(
+            await self.call_tool(request.params.name, request.params.arguments or {})
+        )
+
+    def close_inputs(self) -> None:
+        """Apply the same strict argument model at discovery and execution."""
+        for tool in self._tool_manager.list_tools():
+            argument_model = tool.fn_metadata.arg_model
+            argument_model.model_config.update(
+                extra="forbid", hide_input_in_errors=True
+            )
+            argument_model.model_rebuild(force=True)
+            tool.parameters = argument_model.model_json_schema(by_alias=True)
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any]
+    ) -> types.CallToolResult:
+        tool = self._tool_manager.get_tool(name)
+        if tool is None:
+            return _protocol_result(
+                _ToolResult[BaseModel](
+                    schema="solwyn.mcp.error.v1",
+                    ok=False,
+                    error=_ToolError(
+                        code="unknown_tool",
+                        message="The requested tool is unavailable.",
+                        hint="Call list_tools to inspect the available tools.",
+                    ),
+                )
+            )
+
+        result_type = tool.fn_metadata.output_model
+        try:
+            # Retain the SDK's existing JSON-string compatibility and defaults.
+            parsed = tool.fn_metadata.pre_parse_json(arguments)
+            inputs = tool.fn_metadata.arg_model.model_validate(parsed)
+        except ValidationError as error:
+            return _protocol_result(
+                _error(
+                    result_type,
+                    code="invalid_arguments",
+                    message="The tool arguments are invalid.",
+                    hint=_validation_hint(error, tool.parameters),
+                )
+            )
+        except Exception:
+            return _protocol_result(
+                _error(
+                    result_type,
+                    code="invalid_arguments",
+                    message="The tool arguments are invalid.",
+                    hint="Check the declared input fields and their types in list_tools.",
+                )
+            )
+
+        try:
+            result = await tool.fn(**inputs.model_dump_one_level())
+            result = result_type.model_validate(result)
+            return _protocol_result(_execution_outcome(result))
+        except Exception:
+            # Never interpolate, log, or attach a traceback from an operation or
+            # output validation failure. The exception may contain private data.
+            return _protocol_result(
+                _error(
+                    result_type,
+                    code="internal_error",
+                    message="The tool could not complete the operation.",
+                    hint="Inspect known operation state before retrying a write; its outcome may be unknown.",
+                )
+            )
 
 
 class McpLaunchOptions(BaseModel):
@@ -430,6 +537,126 @@ def _error(
     )
 
 
+def _schema_choices(
+    schema: dict[str, Any], root: dict[str, Any]
+) -> Iterator[dict[str, Any]]:
+    if "$ref" in schema:
+        yield from _schema_choices(
+            root["$defs"][schema["$ref"].rsplit("/", 1)[-1]], root
+        )
+    elif "anyOf" in schema:
+        for choice in schema["anyOf"]:
+            yield from _schema_choices(choice, root)
+    else:
+        yield schema
+
+
+def _validation_hint(error: ValidationError, schema: dict[str, Any]) -> str:
+    """Build correction paths solely from declared schema names, never input keys."""
+    paths = set()
+    for issue in error.errors(
+        include_input=False, include_context=False, include_url=False
+    ):
+        choices = list(_schema_choices(schema, schema))
+        path = ""
+        for part in issue["loc"]:
+            next_schema = None
+            for choice in choices:
+                if isinstance(part, int) and "items" in choice:
+                    next_schema = choice["items"]
+                    path += "[]"
+                    break
+                if isinstance(part, str) and part in choice.get("properties", {}):
+                    next_schema = choice["properties"][part]
+                    path += ("." if path else "") + part
+                    break
+            if next_schema is None:
+                # Unknown properties and arbitrary dictionary keys stop at their
+                # declared parent; even their names may contain private values.
+                break
+            choices = list(_schema_choices(next_schema, schema))
+        paths.add(path or "arguments")
+    return (
+        "Check fields: "
+        + ", ".join(sorted(paths))
+        + ". Use only declared fields and their documented types."
+    )
+
+
+def _execution_outcome(result: ResultT) -> ResultT:
+    """Retain completed data while exposing execution and recording failures."""
+    if isinstance(result.data, BudgetCheckBatchData):
+        items = []
+        has_errors = False
+        for item in result.data.results:
+            if item.error_code is not None:
+                has_errors = True
+                item = item.model_copy(
+                    update={
+                        "error_code": item.error_code
+                        if item.error_code in _SAFE_REMOTE_ERROR_CODES
+                        else "api_error",
+                        "error_message": "The Solwyn API could not complete this check.",
+                    }
+                )
+            items.append(item)
+        data = result.data.model_copy(update={"results": items})
+        return result.model_copy(
+            update={
+                "data": data,
+                "ok": result.ok and not has_errors,
+                "error": result.error
+                or (
+                    _ToolError(
+                        code="batch_check_failed",
+                        message="One or more budget checks failed.",
+                        hint="Completed results remain valid; do not replay completed checks.",
+                    )
+                    if has_errors
+                    else None
+                ),
+            }
+        )
+
+    recorded = (
+        result.data
+        if isinstance(result.data, RecordingResult)
+        else result.data.recorded
+        if isinstance(result.data, BudgetConfirmData)
+        else None
+    )
+    # A valid denial remains a successful decision even if its optional receipt
+    # failed. Standalone recording and confirmation report incomplete execution.
+    if recorded is not None and recorded.status in {"rejected", "failed"}:
+        settled = isinstance(result.data, BudgetConfirmData)
+        return result.model_copy(
+            update={
+                "ok": False,
+                "error": _ToolError(
+                    code="recording_rejected"
+                    if recorded.status == "rejected"
+                    else "recording_failed",
+                    message=(
+                        "Reservation settlement succeeded, but attribution recording did not complete."
+                        if settled
+                        else "Attribution recording did not complete."
+                    ),
+                    hint="Preserve the call identity and retry attribution with the same call_id and attempt; do not reserve again.",
+                ),
+            }
+        )
+    return result
+
+
+def _protocol_result(result: _ToolResult) -> types.CallToolResult:
+    payload = result.model_dump(mode="json", by_alias=True)
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=json.dumps(payload))],
+        structuredContent=payload,
+        isError=not result.ok,
+    )
+
+
 def _operation_error(
     result_type: type[ResultT],
     error: Exception,
@@ -453,7 +680,7 @@ def _operation_error(
             result_type,
             code="ambiguous_agent_run",
             message="More than one run has that exact name.",
-            hint="Candidates: " + ", ".join(error.candidate_ids),
+            hint="Call list_agent_runs to inspect visible run names and IDs, then retry with an exact ID.",
         )
     if isinstance(error, AgentRunNotFoundError):
         return _error(
@@ -491,6 +718,12 @@ def _operation_error(
             hint=(
                 "Set SOLWYN_PROJECT_ID, configure default_project, or pass project_id."
             ),
+        )
+    if not isinstance(error, (ValidationError, ValueError, TypeError)):
+        return _error(
+            result_type,
+            code="internal_error",
+            message="The tool could not complete the operation.",
         )
     return _error(
         result_type,
@@ -751,9 +984,7 @@ def _budget_check_batch_operation(
             invalid_response_code="invalid_budget_check_batch_response",
         )
         tool_error = failure.error.model_copy(
-            update={
-                "hint": " ".join(filter(None, (failure.error.hint, BATCH_FAILURE_HINT)))
-            }
+            update={"hint": " ".join(filter(None, (failure.error.hint, error.hint)))}
         )
         return _BudgetCheckBatchResult(ok=False, data=error.data, error=tool_error)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
@@ -1076,7 +1307,12 @@ def _agent_runs_operation(
     except ValueError as error:
         return _error(
             _AgentRunsResult,
-            code=str(error),
+            code=(
+                str(error)
+                if str(error)
+                in {"custom_window_pair_required", "custom_window_invalid"}
+                else "custom_window_invalid"
+            ),
             message="The custom run window is invalid.",
             hint="Provide both timezone-aware bounds with to_time later than from_time.",
         )
@@ -1706,4 +1942,5 @@ def create_server(*, launch_options: McpLaunchOptions | None = None) -> FastMCP:
     async def get_overview() -> _OverviewResult:
         return await anyio.to_thread.run_sync(partial(_overview_operation, launch))
 
+    server.close_inputs()
     return server

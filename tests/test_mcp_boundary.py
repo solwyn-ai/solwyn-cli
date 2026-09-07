@@ -1,0 +1,607 @@
+"""Execution errors, strict input intent, and privacy at the MCP wire boundary."""
+
+import asyncio
+import json
+import logging
+
+import anyio
+import httpx
+import pytest
+from mcp import McpError, types
+from mcp.shared.memory import create_connected_server_and_client_session
+from pydantic import BaseModel
+
+from solwyn_cli import auth
+from solwyn_cli.commands import _record, budget
+from solwyn_cli.mcp import server as mcp_server
+from test_mcp_conformance import (
+    CHECK_RESPONSE,
+    VALID_KEY,
+    _call_tool,
+    _install_http,
+    _listed_tool_contract,
+)
+
+
+CANARY = "SYNTHETIC_PRIVATE_BOUNDARY_91a5"
+CHECK = {"estimated_input_tokens": 12, "model": "gpt-4o", "provider": "openai"}
+CALL_ID = "12345678-1234-1234-1234-123456789abc"
+CONFIRM = {"reservation_id": "res_known", "call_id": CALL_ID, **CHECK}
+CONFIRM.pop("estimated_input_tokens")
+
+
+def _key():
+    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+
+
+def _assert_private(result, caplog, capsys):
+    # Check all representations independently, including captured stderr and log args.
+    assert CANARY not in result.model_dump_json(by_alias=True)
+    assert CANARY not in json.dumps(result.structuredContent)
+    assert CANARY not in " ".join(item.text for item in result.content)
+    assert json.loads(result.content[0].text) == result.structuredContent
+    assert CANARY not in caplog.text
+    assert CANARY not in repr([(r.msg, r.args, r.exc_info) for r in caplog.records])
+    captured = capsys.readouterr()
+    assert CANARY not in captured.err + captured.out
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "path"),
+    [
+        ("budget_status", {"projectid": CANARY}, "arguments"),
+        ("budget_check", {**CHECK, "noRecord": True}, "arguments"),
+        ("budget_check", {**CHECK, CANARY: CANARY}, "arguments"),
+        (
+            "budget_check",
+            {**CHECK, "estimated_input_tokens": CANARY},
+            "estimated_input_tokens",
+        ),
+        ("budget_check", {**CHECK, "provider": CANARY}, "provider"),
+        ("budget_check", {**CHECK, "tags": {CANARY: {"secret": CANARY}}}, "tags"),
+        (
+            "budget_check_batch",
+            {"checks": [{**CHECK, "estimated_media": {"audioSecond": CANARY}}]},
+            "checks[].estimated_media",
+        ),
+        (
+            "budget_check_batch",
+            {"checks": [{**CHECK, "estimated_media": {"audio_seconds": CANARY}}]},
+            "checks[].estimated_media.audio_seconds",
+        ),
+        ("budget_check_batch", {"checks": [{**CHECK, CANARY: CANARY}]}, "checks[]"),
+        (
+            "record_call",
+            {
+                "model": "gpt-4o",
+                "provider": "openai",
+                "token_details": {"inputTokens": CANARY},
+            },
+            "token_details",
+        ),
+        (
+            "record_call",
+            {
+                "model": "gpt-4o",
+                "provider": "openai",
+                "media_usage": {"audio_seconds": CANARY},
+            },
+            "media_usage.audio_seconds",
+        ),
+    ],
+)
+def test_invalid_arguments_are_private_and_stop_before_auth(
+    monkeypatch, caplog, capsys, tool, arguments, path
+):
+    calls = []
+
+    def unexpected_auth():
+        calls.append("auth")
+        raise RuntimeError(CANARY)
+
+    monkeypatch.setattr(auth, "resolve_credential", unexpected_auth)
+    result = anyio.run(_call_tool, tool, arguments)
+    _assert_private(result, caplog, capsys)
+    assert calls == []
+    assert result.isError is True
+    assert result.structuredContent["ok"] is False
+    assert result.structuredContent["error"]["code"] == "invalid_arguments"
+    assert path in result.structuredContent["error"]["hint"]
+
+
+def test_published_inputs_are_closed_and_tag_keys_remain_open():
+    catalog = anyio.run(_listed_tool_contract)
+    for tool in catalog:
+        schema = tool["inputSchema"]
+        assert schema["additionalProperties"] is False
+        for definition in schema.get("$defs", {}).values():
+            if definition.get("type") == "object":
+                assert definition["additionalProperties"] is False
+    check = next(tool for tool in catalog if tool["name"] == "budget_check")
+    assert check["inputSchema"]["properties"]["tags"]["anyOf"][0][
+        "additionalProperties"
+    ] == {"type": "string"}
+
+
+def test_unexpected_exception_is_private_in_wire_and_logs(monkeypatch, caplog, capsys):
+    def unexpected(*args, **kwargs):
+        raise RuntimeError(CANARY)
+
+    monkeypatch.setattr(mcp_server, "_budget_status_operation", unexpected)
+    caplog.set_level(logging.DEBUG, logger="mcp.server.lowlevel.server")
+    result = anyio.run(_call_tool, "budget_status", {})
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["error"]["code"] == "internal_error"
+    assert result.structuredContent["schema"] == "solwyn.mcp.budget-status.v1"
+
+
+def test_validation_canary_is_private_with_sdk_debug_logging(
+    monkeypatch, caplog, capsys
+):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    caplog.set_level(logging.DEBUG, logger="mcp.server.lowlevel.server")
+    result = anyio.run(
+        _call_tool, "budget_check", {**CHECK, "estimated_input_tokens": CANARY}
+    )
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+
+
+def test_unknown_tool_name_is_not_reflected(monkeypatch, caplog, capsys):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    result = anyio.run(_call_tool, CANARY, {})
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+
+
+def test_missing_auth_sets_protocol_error(monkeypatch):
+    requests, _, _ = _install_http(monkeypatch, responses=[], credentials=[None])
+    result = anyio.run(_call_tool, "budget_status", {})
+    assert result.isError is True
+    assert result.structuredContent["error"]["code"] == "authentication_required"
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    "tool,arguments,code",
+    [
+        ("get_costs", {"from_": CANARY}, "invalid_cost_query"),
+        ("list_alert_events", {"from_": CANARY}, "invalid_alert_query"),
+        ("list_agent_runs", {"from_time": CANARY}, "custom_window_pair_required"),
+    ],
+)
+def test_query_errors_are_private_execution_errors(
+    monkeypatch, caplog, capsys, tool, arguments, code
+):
+    requests, _, _ = _install_http(monkeypatch, responses=[], credentials=[_key()])
+    result = anyio.run(_call_tool, tool, arguments)
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["error"]["code"] == code
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    "status,code",
+    [(402, "upgrade_required"), (403, "forbidden"), (429, "rate_limited")],
+)
+def test_api_failures_set_protocol_error(monkeypatch, caplog, capsys, status, code):
+    responses = [
+        httpx.Response(status, json={"detail": {"code": code, "message": CANARY}})
+    ]
+    if status == 429:
+        responses *= 2
+    requests, _, remaining = _install_http(
+        monkeypatch, responses=responses, credentials=[_key()]
+    )
+    result = anyio.run(_call_tool, "get_costs", {})
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["error"]["code"] == code
+    assert result.structuredContent["error"]["status_code"] == status
+    assert remaining == []
+    assert len(requests) == (2 if status == 429 else 1)
+
+
+def test_transport_failure_sets_protocol_error(monkeypatch, caplog, capsys):
+    def disconnected(request):
+        raise httpx.ConnectError(CANARY, request=request)
+
+    _install_http(monkeypatch, responses=[], credentials=[_key()])
+    monkeypatch.setattr(
+        httpx.MockTransport,
+        "handle_request",
+        lambda self, request: disconnected(request),
+    )
+    result = anyio.run(_call_tool, "budget_status", {})
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["error"]["code"] == "api_error"
+    assert result.structuredContent["error"]["status_code"] is None
+
+
+@pytest.mark.parametrize("allowed", [False, True])
+def test_denial_and_fail_open_are_successful_decisions(monkeypatch, allowed):
+    response = {**CHECK_RESPONSE, "allowed": allowed, "reservation_id": None}
+    requests, _, remaining = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json=response)],
+        credentials=[_key()],
+    )
+    result = anyio.run(
+        _call_tool,
+        "budget_check",
+        {**CHECK, "no_record": True, "tags": {"caller-defined": "ok"}},
+    )
+    assert result.isError is False
+    assert result.structuredContent["ok"] is True
+    assert result.structuredContent["data"]["allowed"] is allowed
+    assert result.structuredContent["data"]["reservation_id"] is None
+    if not allowed:
+        assert result.structuredContent["data"]["recorded"]["status"] == "skipped"
+    assert len(requests) == 1
+    assert requests[0][2]["json"]["tags"] == {"caller-defined": "ok"}
+    assert remaining == []
+
+
+def test_later_batch_failure_retains_completed_reservations(monkeypatch):
+    completed = [
+        {"result": {**CHECK_RESPONSE, "reservation_id": f"res_{index}"}}
+        for index in range(32)
+    ]
+    requests, _, remaining = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(200, json={"results": completed}),
+            httpx.Response(503),
+        ],
+        credentials=[_key()],
+    )
+    result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK] * 65})
+    assert result.isError is True
+    payload = result.structuredContent
+    assert payload["ok"] is False
+    assert [
+        item["result"]["reservation_id"] for item in payload["data"]["results"]
+    ] == [f"res_{index}" for index in range(32)]
+    assert payload["data"]["failed_chunk_start"] == 32
+    assert payload["data"]["total_checks"] == 65
+    assert len(requests) == 2
+    assert remaining == []
+
+
+def test_batch_item_error_is_private_and_retains_successes(monkeypatch, caplog, capsys):
+    body = {
+        "results": [
+            {"result": CHECK_RESPONSE},
+            {"error_code": CANARY, "error_message": CANARY},
+        ]
+    }
+    requests, _, _ = _install_http(
+        monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[_key()]
+    )
+    result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK, CHECK]})
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["ok"] is False
+    assert (
+        result.structuredContent["data"]["results"][0]["result"]["reservation_id"]
+        == "res_01JZEXAMPLE"
+    )
+    assert result.structuredContent["data"]["results"][1]["error_code"] == "api_error"
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "body,status",
+    [
+        ({"ingested": 1}, "ingested"),
+        (
+            {
+                "ingested": 0,
+                "duplicates": [{"index": 0, "reason": "call_id", "call_id": CALL_ID}],
+            },
+            "deduplicated",
+        ),
+        (
+            {
+                "ingested": 0,
+                "rejected": [
+                    {
+                        "index": 0,
+                        "code": "unknown_model",
+                        "model": CANARY,
+                        "message": CANARY,
+                    }
+                ],
+            },
+            "rejected",
+        ),
+    ],
+)
+def test_record_disposition_and_rejection_privacy(
+    monkeypatch, caplog, capsys, body, status
+):
+    requests, _, _ = _install_http(
+        monkeypatch, responses=[httpx.Response(202, json=body)], credentials=[_key()]
+    )
+    result = anyio.run(
+        _call_tool,
+        "record_call",
+        {"model": "gpt-4o", "provider": "openai", "call_id": CALL_ID},
+    )
+    _assert_private(result, caplog, capsys)
+    assert result.isError is (status == "rejected")
+    assert result.structuredContent["ok"] is (status != "rejected")
+    assert result.structuredContent["data"]["status"] == status
+    assert result.structuredContent["data"]["call_ids"] == [CALL_ID]
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("no_record,status", [(False, "ingested"), (True, "skipped")])
+def test_successful_settlement_preserves_recording_state(
+    monkeypatch, no_record, status
+):
+    responses = [httpx.Response(204)] + (
+        [] if no_record else [httpx.Response(202, json={"ingested": 1})]
+    )
+    requests, _, _ = _install_http(
+        monkeypatch, responses=responses, credentials=[_key()]
+    )
+    result = anyio.run(
+        _call_tool, "budget_confirm", {**CONFIRM, "no_record": no_record}
+    )
+    assert result.isError is False
+    assert result.structuredContent["ok"] is True
+    assert result.structuredContent["data"]["reservation_id"] == "res_known"
+    assert result.structuredContent["data"]["call_id"] == CALL_ID
+    assert result.structuredContent["data"]["recorded"]["status"] == status
+    assert len(requests) == (1 if no_record else 2)
+
+
+def test_settlement_survives_private_recording_validation_failure(
+    monkeypatch, caplog, capsys
+):
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(204), httpx.Response(202, json={"ingested": CANARY})],
+        credentials=[_key()],
+    )
+    result = anyio.run(_call_tool, "budget_confirm", CONFIRM)
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["ok"] is False
+    assert result.structuredContent["error"]["code"] == "recording_failed"
+    assert "settlement succeeded" in result.structuredContent["error"]["message"]
+    assert result.structuredContent["data"]["reservation_id"] == "res_known"
+    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert result.structuredContent["data"]["recorded"]["call_ids"] == [CALL_ID]
+    assert [request[1] for request in requests] == [
+        "/api/v1/budgets/confirm",
+        "/api/v1/metadata/ingest",
+    ]
+
+
+@pytest.mark.parametrize("failure", [ValueError, RuntimeError])
+def test_denial_recording_error_is_private_and_keeps_valid_decision(
+    monkeypatch, caplog, capsys, failure
+):
+    def invalid_event(**kwargs):
+        raise failure(CANARY)
+
+    monkeypatch.setattr(budget, "build_event", invalid_event)
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(
+                200, json={**CHECK_RESPONSE, "allowed": False, "reservation_id": None}
+            )
+        ],
+        credentials=[_key()],
+    )
+    result = anyio.run(_call_tool, "budget_check", CHECK)
+    _assert_private(result, caplog, capsys)
+    assert result.isError is False
+    assert result.structuredContent["data"]["allowed"] is False
+    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert len(requests) == 1
+
+
+def test_unexpected_recording_exception_keeps_known_settlement(
+    monkeypatch, caplog, capsys
+):
+    def unexpected(**kwargs):
+        raise RuntimeError(CANARY)
+
+    monkeypatch.setattr(_record, "request_ingest", unexpected)
+    requests, _, _ = _install_http(
+        monkeypatch, responses=[httpx.Response(204)], credentials=[_key()]
+    )
+    result = anyio.run(_call_tool, "budget_confirm", CONFIRM)
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    assert result.structuredContent["data"]["reservation_id"] == "res_known"
+    assert result.structuredContent["data"]["recorded"]["status"] == "failed"
+    assert len(requests) == 1
+
+
+class _RawProtocolCall(BaseModel):
+    method: str = "tools/call"
+    params: dict
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"name": "budget_check", "arguments": CANARY},
+        {"name": {"private": CANARY}, "arguments": {}},
+    ],
+)
+def test_malformed_tool_envelope_has_safe_protocol_error_and_diagnostics(
+    monkeypatch, caplog, capsys, params
+):
+    calls = []
+    monkeypatch.setattr(auth, "resolve_credential", lambda: calls.append("auth"))
+
+    async def exercise():
+        async with create_connected_server_and_client_session(
+            mcp_server.create_server()
+        ) as session:
+            caplog.set_level(logging.DEBUG)
+            logging.warning("An unrelated diagnostic remains available.")
+            with pytest.raises(McpError) as raised:
+                await session.send_request(
+                    _RawProtocolCall(params=params), types.CallToolResult
+                )
+            assert raised.value.error.code == types.INVALID_PARAMS
+            assert CANARY not in str(raised.value)
+            assert len((await session.list_tools()).tools) == 17
+
+    anyio.run(exercise)
+    assert calls == []
+    assert CANARY not in caplog.text
+    assert CANARY not in repr([(r.msg, r.args, r.exc_info) for r in caplog.records])
+    assert "MCP protocol diagnostic" in caplog.text
+    assert "An unrelated diagnostic remains available." in caplog.text
+    captured = capsys.readouterr()
+    assert CANARY not in captured.out + captured.err
+
+
+def test_malformed_notification_is_private_and_session_remains_usable(
+    monkeypatch, caplog, capsys
+):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+
+    async def exercise():
+        async with create_connected_server_and_client_session(
+            mcp_server.create_server()
+        ) as session:
+            caplog.set_level(logging.DEBUG)
+            await session.send_notification(
+                _RawProtocolCall(
+                    method="notifications/cancelled",
+                    params={"requestId": {CANARY: CANARY}},
+                )
+            )
+            assert len((await session.list_tools()).tools) == 17
+
+    anyio.run(exercise)
+    assert CANARY not in caplog.text
+    assert CANARY not in repr([(r.msg, r.args, r.exc_info) for r in caplog.records])
+    assert "MCP protocol diagnostic" in caplog.text
+    captured = capsys.readouterr()
+    assert CANARY not in captured.out + captured.err
+
+
+def test_unexpected_later_chunk_failure_preserves_completed_reservations(
+    monkeypatch, caplog, capsys
+):
+    requests = []
+    _install_http(monkeypatch, responses=[], credentials=[_key()])
+
+    def transport(self, request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "result": {
+                                **CHECK_RESPONSE,
+                                "reservation_id": f"known_{index}",
+                            }
+                        }
+                        for index in range(32)
+                    ]
+                },
+            )
+        raise RuntimeError(CANARY)
+
+    monkeypatch.setattr(httpx.MockTransport, "handle_request", transport)
+    result = anyio.run(
+        _call_tool, "budget_check_batch", {"checks": [CHECK] * 65, "no_record": True}
+    )
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    data = result.structuredContent["data"]
+    assert data is not None
+    assert result.structuredContent["error"]["code"] == "internal_error"
+    assert [item["result"]["reservation_id"] for item in data["results"]] == [
+        f"known_{index}" for index in range(32)
+    ]
+    assert data["failed_chunk_start"] == 32 and data["total_checks"] == 65
+    assert "unknown" in result.structuredContent["error"]["hint"]
+    assert "do not replay" in result.structuredContent["error"]["hint"]
+    assert len(requests) == 2
+
+
+def test_denial_receipt_exception_retains_entire_validated_chunk(
+    monkeypatch, caplog, capsys
+):
+    decisions = [
+        {"result": {**CHECK_RESPONSE, "reservation_id": f"known_{index}"}}
+        for index in range(32)
+    ]
+    decisions[1] = {
+        "result": {**CHECK_RESPONSE, "allowed": False, "reservation_id": None}
+    }
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[httpx.Response(200, json={"results": decisions})],
+        credentials=[_key()],
+    )
+    processed = []
+
+    def receipt(**kwargs):
+        processed.append(kwargs["data"].reservation_id)
+        if not kwargs["data"].allowed:
+            raise RuntimeError(CANARY)
+        return kwargs["data"]
+
+    monkeypatch.setattr(budget, "record_denial", receipt)
+    result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK] * 33})
+    _assert_private(result, caplog, capsys)
+    assert result.isError is True
+    data = result.structuredContent["data"]
+    assert data is not None
+    assert [item["result"]["reservation_id"] for item in data["results"]] == [
+        None if index == 1 else f"known_{index}" for index in range(32)
+    ]
+    assert data["failed_chunk_start"] == 0 and data["total_checks"] == 33
+    assert "reservation outcomes are known" in result.structuredContent["error"]["hint"]
+    assert (
+        "later chunks were not submitted" in result.structuredContent["error"]["hint"]
+    )
+    assert "do not replay" in result.structuredContent["error"]["hint"]
+    assert processed == ["known_0", None]
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "failure", [asyncio.CancelledError, KeyboardInterrupt, SystemExit]
+)
+def test_batch_does_not_convert_cancellation_or_process_control_to_failure(
+    monkeypatch, failure
+):
+    requests = []
+    _install_http(monkeypatch, responses=[], credentials=[_key()])
+
+    def transport(self, request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                200, json={"results": [{"result": CHECK_RESPONSE}] * 32}
+            )
+        raise failure()
+
+    monkeypatch.setattr(httpx.MockTransport, "handle_request", transport)
+    with mcp_server.tool_call_client(mcp_server.McpLaunchOptions()) as (_, client):
+        with pytest.raises(failure):
+            budget.request_budget_check_batch(
+                client=client,
+                checks=budget.prepare_batch_checks([CHECK] * 65),
+                no_record=True,
+            )
+    assert len(requests) == 2

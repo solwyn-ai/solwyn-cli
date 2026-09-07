@@ -94,10 +94,19 @@ def test_batch_mixed_dispositions_keep_order_and_single_denial_receipt(
         data = payload
         assert data["schema"] == "solwyn.budget.check.batch.v1"
     else:
-        assert payload["ok"] is True
+        assert result.isError is True
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "batch_check_failed"
         data = payload["data"]
     assert data["results"][0]["result"]["reservation_id"] == "res_1"
-    assert data["results"][1] == UNKNOWN
+    if interface == "cli":
+        assert data["results"][1] == UNKNOWN
+    else:
+        assert data["results"][1] == {
+            "result": None,
+            "error_code": "unknown_model",
+            "error_message": "The Solwyn API could not complete this check.",
+        }
     assert data["results"][2]["result"]["recorded"]["status"] == "ingested"
     assert len(requests) == 2
     assert requests[0][1] == "/api/v1/budgets/check/batch"

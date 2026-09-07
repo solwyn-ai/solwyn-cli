@@ -3,6 +3,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -54,6 +55,39 @@ _TOOL_NAMES = [
     "get_overview",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(
+    "malformed_json",
+    [
+        '{"secret":"SYNTHETIC_PRIVATE_STDIO_842b"}',
+        '{"secret":"SYNTHETIC_PRIVATE_STDIO_842b"',
+    ],
+)
+def test_malformed_stdio_input_keeps_fixed_private_diagnostics(
+    tmp_path, malformed_json
+):
+    executable = Path(sys.executable).with_name(
+        "solwyn.exe" if os.name == "nt" else "solwyn"
+    )
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name in {"PATH", "HOME", "TMPDIR", "SYSTEMROOT"}
+    }
+    environment["SOLWYN_API_KEY"] = "invalid-synthetic-never-authenticate"
+    process = subprocess.run(
+        [str(executable), "mcp"],
+        input=malformed_json + "\n",
+        text=True,
+        capture_output=True,
+        env=environment,
+        cwd=tmp_path,
+        timeout=15,
+    )
+    assert process.returncode == 0
+    assert "SYNTHETIC_PRIVATE_STDIO_842b" not in process.stdout + process.stderr
+    assert "MCP protocol diagnostic" in process.stderr
 
 
 def test_private_fastmcp_seam_is_exactly_version_pinned_and_tool_only() -> None:

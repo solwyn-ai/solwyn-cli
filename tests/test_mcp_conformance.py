@@ -319,7 +319,7 @@ def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
 
 
 def _mutate_additional_properties(contract: list[dict[str, Any]]) -> None:
-    contract[6]["inputSchema"]["additionalProperties"] = False
+    contract[6]["inputSchema"]["additionalProperties"] = True
 
 
 def _mutate_nested_output(contract: list[dict[str, Any]]) -> None:
@@ -1012,7 +1012,7 @@ def test_local_preconditions_return_structured_errors_without_http(
 
     result = anyio.run(_call_tool, "budget_status", {})
 
-    assert result.isError is False
+    assert result.isError is True
     assert result.structuredContent["ok"] is False
     assert result.structuredContent["error"]["code"] == expected_code
     assert requests == []
@@ -1057,7 +1057,7 @@ def test_key_only_tools_reject_jwt_without_http(
 
     result = anyio.run(_call_tool, tool_name, arguments)
 
-    assert result.isError is False
+    assert result.isError is True
     assert result.structuredContent == {
         "schema": f"solwyn.mcp.{tool_name.replace('_', '-')}.v1",
         "ok": False,
@@ -1092,7 +1092,7 @@ def test_list_projects_returns_structured_jwt_remediation_under_project_key(
 
     result = anyio.run(_call_tool, "list_projects", {})
 
-    assert result.isError is False
+    assert result.isError is True
     assert result.structuredContent["ok"] is False
     assert result.structuredContent["error"]["code"] == "authentication_required"
     assert "solwyn login" in result.structuredContent["error"]["hint"]
@@ -1774,7 +1774,7 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
         },
     )
 
-    assert result.isError is False
+    assert result.isError is True
     assert result.structuredContent == {
         "schema": "solwyn.mcp.budget-confirm.v1",
         "ok": False,
@@ -2031,6 +2031,8 @@ def test_record_call_preserves_dispositions(monkeypatch, status):
         },
     )
     assert result.structuredContent["data"]["status"] == status
+    assert result.isError is (status in {"rejected", "failed"})
+    assert result.structuredContent["ok"] is (status not in {"rejected", "failed"})
     assert requests[0][1] == "/api/v1/metadata/ingest"
     event = requests[0][2]["json"][0]
     assert event["call_id"] == call_id and event["tags"] == {"env": "prod"}
@@ -2190,7 +2192,15 @@ def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
             "provider": "openai",
         },
     )
-    assert result.structuredContent["ok"]
+    assert result.isError is True
+    assert result.structuredContent["ok"] is False
+    assert result.structuredContent["error"]["code"] == "recording_failed"
+    assert "settlement succeeded" in result.structuredContent["error"]["message"]
+    assert result.structuredContent["data"]["reservation_id"] == "res"
+    assert (
+        result.structuredContent["data"]["call_id"]
+        == "12345678-1234-1234-1234-123456789abc"
+    )
     assert result.structuredContent["data"]["recorded"]["status"] == "failed"
     assert len(requests) == 2
 

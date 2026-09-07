@@ -4,6 +4,7 @@
     "title": null,
     "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -874,6 +875,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "estimated_input_tokens": {
           "minimum": 0,
@@ -1522,6 +1524,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "reservation_id": {
           "minLength": 1,
@@ -1997,6 +2000,7 @@
     "title": null,
     "description": "Read the configured project's budget and provider health without authorizing spend.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -2264,6 +2268,7 @@
     "title": null,
     "description": "Read the configured project's month-to-date spend forecast without authorizing spend.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -2456,6 +2461,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -2945,6 +2951,7 @@
     "title": null,
     "description": "List projects visible to the logged-in user. Requires login/JWT authentication.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {},
       "title": "list_projectsArguments",
       "type": "object"
@@ -3115,6 +3122,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -3525,6 +3533,7 @@
     "title": null,
     "description": "Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -4506,6 +4515,7 @@
           "type": "object"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "model": {
           "maxLength": 2048,
@@ -4897,6 +4907,7 @@
     "title": null,
     "description": "List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -5107,6 +5118,7 @@
     "title": null,
     "description": "Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "key": {
           "maxLength": 64,
@@ -5352,6 +5364,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -5741,6 +5754,7 @@
     "title": null,
     "description": "Read one agent run by storage ID or exact raw run name. Accepts a project key or login.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "run": {
           "maxLength": 255,
@@ -5985,6 +5999,7 @@
     "title": null,
     "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {
         "project_id": {
           "anyOf": [
@@ -6757,6 +6772,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "properties": {
         "checks": {
           "items": {
@@ -7283,6 +7299,7 @@
     "title": null,
     "description": "Read calendar-month account spend, requests, trend, savings, and free-tier quota metadata. Requires login/JWT authentication.",
     "inputSchema": {
+      "additionalProperties": false,
       "properties": {},
       "title": "get_overviewArguments",
       "type": "object"

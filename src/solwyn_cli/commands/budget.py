@@ -393,15 +393,30 @@ BATCH_FAILURE_HINT = (
     "Completed results remain valid; do not replay completed checks. "
     "Reservation state within the failed chunk is unknown; later chunks were not submitted."
 )
+_BATCH_ATTRIBUTION_FAILURE_HINT = (
+    "All returned reservation outcomes are known; do not replay these checks. "
+    "Unfinished attribution outcomes may be unknown; later chunks were not submitted."
+)
 
 
 class BudgetCheckBatchFailure(Exception):
     """Keep known reservations available when a later chunk fails."""
 
-    def __init__(self, cause: Exception, data: BudgetCheckBatchData) -> None:
+    def __init__(
+        self,
+        cause: Exception,
+        data: BudgetCheckBatchData,
+        *,
+        attribution_failed: bool = False,
+    ) -> None:
         super().__init__("Batch check failed after completed chunks")
         self.cause = cause
         self.data = data
+        self.hint = (
+            _BATCH_ATTRIBUTION_FAILURE_HINT
+            if attribution_failed
+            else BATCH_FAILURE_HINT
+        )
 
 
 def prepare_batch_checks(checks: object) -> list[BudgetCheckRequest]:
@@ -444,8 +459,8 @@ def request_budget_check_batch(
     invocation_id = str(uuid4())
     results = []
     for offset in range(0, len(checks), 32):
-        batch = BudgetCheckBatchRequest(checks=checks[offset : offset + 32])
         try:
+            batch = BudgetCheckBatchRequest(checks=checks[offset : offset + 32])
             response = client.request(
                 "POST",
                 "/api/v1/budgets/check/batch",
@@ -460,7 +475,9 @@ def request_budget_check_batch(
                     item.result = validate_check_directive(
                         request=request, data=item.result
                     )
-        except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        except Exception as error:
+            # Ordinary unexpected failures can follow known reservations too.
+            # Cancellation and process-control BaseExceptions must still escape.
             if results:
                 raise BudgetCheckBatchFailure(
                     error,
@@ -471,17 +488,30 @@ def request_budget_check_batch(
                     ),
                 ) from error
             raise
-        for request, item in zip(batch.checks, data.results, strict=True):
-            if item.result is not None:
-                item.result = record_denial(
-                    client=client,
-                    request=request,
-                    data=item.result,
-                    sdk_instance_id=invocation_id,
-                    no_record=no_record,
-                    estimated_output_tokens=estimated_output_tokens,
-                )
+        # Retain the entire validated chunk before optional receipt side effects.
+        # A receipt failure must not hide later known results in this same chunk.
         results.extend(data.results)
+        try:
+            for request, item in zip(batch.checks, data.results, strict=True):
+                if item.result is not None:
+                    item.result = record_denial(
+                        client=client,
+                        request=request,
+                        data=item.result,
+                        sdk_instance_id=invocation_id,
+                        no_record=no_record,
+                        estimated_output_tokens=estimated_output_tokens,
+                    )
+        except Exception as error:
+            raise BudgetCheckBatchFailure(
+                error,
+                BudgetCheckBatchData(
+                    results=results,
+                    failed_chunk_start=offset,
+                    total_checks=len(checks),
+                ),
+                attribution_failed=True,
+            ) from error
     return BudgetCheckBatchData(results=results)
 
 
@@ -568,7 +598,7 @@ def _check_batch_command(
         )
         typer.echo(
             f"Batch failed at input index {error.data.failed_chunk_start} "
-            f"of {error.data.total_checks} checks. {BATCH_FAILURE_HINT}",
+            f"of {error.data.total_checks} checks. {error.hint}",
             err=True,
         )
         if isinstance(error.cause, ApiError):
@@ -675,8 +705,11 @@ def record_denial(
     try:
         event = build_event(**inputs)
         recorded = record_best_effort(client=client, event=event, no_record=no_record)
-    except (ValueError, TypeError) as error:
-        typer.echo(f"Warning: denial attribution failed: {error}", err=True)
+    except Exception:
+        typer.echo(
+            "Warning: denial attribution failed; the budget decision is unchanged.",
+            err=True,
+        )
         recorded = RecordingResult(status="failed", ingested=0, call_ids=[call_id])
     return data.model_copy(update={"call_id": call_id, "recorded": recorded})
 

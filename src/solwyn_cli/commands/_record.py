@@ -10,12 +10,17 @@ import typer
 from pydantic import BaseModel, ConfigDict, Field
 
 from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent, TokenDetails
-from solwyn_cli.auth import AuthError
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._tags import validate_tags
-from solwyn_cli.errors import ApiError
 
 CALL_ID_HINT = "Use a canonical lowercase UUID: uuidgen | tr A-F a-f"
+_REJECTION_HINTS = {
+    "unknown_model": "Use the exact model name.",
+    "unknown_service_tier": "Use a supported service tier for this model.",
+    "invalid_tags": "Check tag keys, values, and documented bounds.",
+    "tag_cardinality_exceeded": "Reduce the number of distinct tag values.",
+    "unsupported_modality": "Use a supported modality for this model.",
+}
 
 
 class IngestRejection(BaseModel):
@@ -111,8 +116,19 @@ def request_ingest(
             raise ValueError(
                 "Ingest duplicate call ID did not match the submitted event."
             )
+    data.rejected = [
+        rejection.model_copy(
+            update={
+                "model": events[rejection.index].model,
+                "message": _REJECTION_HINTS[rejection.code],
+            }
+        )
+        for rejection in data.rejected
+    ]
     for rejection in data.rejected:
-        typer.echo(rejection.message, err=True)
+        typer.echo(
+            f"Recording rejected ({rejection.code}). {rejection.message}", err=True
+        )
     legacy = any(item.reason == "legacy_key" for item in data.duplicates)
     if legacy:
         typer.echo(
@@ -147,6 +163,11 @@ def record_best_effort(
                 err=True,
             )
         return result
-    except (ApiError, AuthError, ValueError, TypeError) as error:
-        typer.echo(f"Warning: attribution recording failed: {error}", err=True)
+    except Exception:
+        # Settlement/denial already succeeded. Preserve that known state even on
+        # an unexpected recording failure, without printing its private details.
+        typer.echo(
+            "Warning: attribution recording failed; preserve the call identity for recovery.",
+            err=True,
+        )
         return RecordingResult(status="failed", ingested=0, call_ids=[event.call_id])
