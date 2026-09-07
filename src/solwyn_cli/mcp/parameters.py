@@ -88,10 +88,16 @@ SPECIFIC = {
         "no_record": "True skips denial attribution for every item only; checks still run and allowed items may reserve budget.",
     },
     "budget_confirm": {
-        "reservation_id": "Non-null, non-empty reservation ID returned by check. Confirm only after its call, using the same project key identity; skip null reservations.",
-        "call_id": "Caller-persisted UUIDv4 or UUIDv7, at most 36 characters; keep identical across settlement and recording retries. This tool records attempt_index=0.",
+        "media_usage": "Actual observed media billing quantities and pricing variants, forwarded unchanged to settlement and attribution. Null quantities are unobservable; zero means none. Never substitute admission estimates after provider completion.",
+        "modality": "Actual completed call modality for attribution (text by default); the pricing card selects settlement units from observed media_usage.",
+        "reservation_id": "Non-null, non-empty reservation ID returned by check, required for settlement. Confirm only after its call using the same project key identity; omit for record_only.",
+        "call_id": "Caller-persisted canonical UUID, at most 36 characters; required for settlement. Keep identical across settlement and recording retries; omit for record_only.",
+        "model": "Actual served model, required for settlement, at most 2048 characters; omit for record_only.",
+        "provider": "Actual served provider, required for settlement; omit for record_only.",
+        "attempt_index": "Observed nonnegative provider-attempt index, 0 by default; retained in attribution, never creates or retries a provider attempt. Keep identical on recording retry.",
+        "record_only": "Exact FIRST retained recording_retry event; omit every other argument. After a lost 204, first obtain a known 204 by replaying identical settlement inputs with no_record=true. Never replace the FIRST event with that replay's unused new event. Only ingests the supplied event; reports settlement=not_submitted, not proof of earlier settlement.",
         "is_provider_fallback": "True when the served provider differs through fallback routing; report the actual served provider and model.",
-        "no_record": "True skips attribution ingest only; settlement still occurs. False records after successful settlement; inspect confirmed and recorded separately.",
+        "no_record": "True skips ingest only; settlement still occurs. After a lost 204, replay identical settlement inputs with no_record=true; after a known 204, use record_only with the FIRST retained event, never this replay's unused new event. Inspect settlement and recording separately.",
     },
     "record_call": {
         "call_id": "Caller-persisted UUIDv4 or UUIDv7, at most 36 characters; reuse for retries with identical payload and attempt_index=0. Omission generates a new ID on each invocation, so cannot deduplicate lost-response retries.",
@@ -223,4 +229,34 @@ DenialRecordingRetry = _described_model(
         "event": "Exact recording_retry event returned by the original admission; preserve all fields, especially identity and timestamp. Never rebuild from ambient tags or run defaults.",
     },
     annotations={"event": _DenialEvent},
+)
+
+ConfirmationRecordingRetry = _described_model(
+    wire.IngestMetadataEvent,
+    {
+        **{
+            name: "Original value; preserve exactly. " + COMMON[name]
+            for name in wire.IngestMetadataEvent.model_fields
+            if name in COMMON
+        },
+        "call_id": "Original canonical UUID of the completed call; preserve exactly for deduplication.",
+        "sdk_instance_id": "Original emitting SDK instance identity; never regenerate to bypass a duplicate acknowledgement.",
+        "timestamp": "Original timezone-aware event timestamp; preserve exactly, including on a lost ingest acknowledgement.",
+        "is_model_fallback": "Original caller-reported model fallback flag; reporting it never invokes a provider.",
+        "modality": "Original observed call modality; preserve without selecting a new default.",
+        "token_details": "Original observed token totals and subsets; top-level totals must match. Preserve is_estimated and all subsets.",
+        "media_usage": "Original observed media quantities, is_estimated and pricing variants; null means unobservable, zero means none. Never replace with reservation estimates.",
+        "tags": "Exact original tags, including null; no ambient SOLWYN_TAGS merge occurs on retry.",
+        "agent_run_id": "Original caller run ID, including null; no ambient SOLWYN_AGENT_RUN_ID fallback occurs on retry.",
+        "deny_source": "Original denial metadata, normally null for a completed success/error event; preserve exactly.",
+        "deny_reason": "Original denial reason, normally null for completed provider calls; preserve exactly.",
+        "denied_by_period": "Original denied budget period, normally null for completed provider calls; preserve exactly.",
+        "estimated_output_bound": "Original optional output bound, normally null; never substitute it for observed output usage.",
+        "attempt_index": "Original nonnegative provider-attempt index; preserve exactly for the project/call/attempt deduplication key.",
+        "is_provider_fallback": "Original caller-reported served-provider fallback flag; preserve exactly without performing routing.",
+    },
+    annotations={
+        "token_details": TokenDetails | None,
+        "media_usage": MediaUsage | None,
+    },
 )

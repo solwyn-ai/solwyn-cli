@@ -621,6 +621,10 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "model",
                     "provider",
                     "is_provider_fallback",
+                    "attempt_index",
+                    "media_usage",
+                    "modality",
+                    "record_only",
                     "provider_region",
                     "service_tier",
                     "input_tokens",
@@ -797,9 +801,15 @@ def test_exact_tool_contract_and_mocked_http_conformance(
         assert (
             calls[1].structured_content["data"]["reservation_id"] == "res_01JZEXAMPLE"
         )
-        assert calls[2].structured_content["data"] == {
+        confirmed = calls[2].structured_content["data"]
+        retry = confirmed.pop("recording_retry")
+        assert retry["call_id"] == confirmed["call_id"]
+        assert retry["input_tokens"] == 100 and retry["output_tokens"] == 20
+        assert retry["token_details"]["is_estimated"] is True
+        assert confirmed == {
             "reservation_id": "res_01JZEXAMPLE",
             "call_id": "12345678-1234-1234-1234-123456789abc",
+            "settlement": "confirmed",
             "recorded": {
                 "status": "skipped",
                 "ingested": 0,
@@ -923,9 +933,7 @@ def test_budget_descriptions_are_live_views_of_canonical_guidance(
         + " Accepts a project API key or login/JWT with access to the selected project."
     )
     assert descriptions["budget_check"].startswith("Reserve budget only immediately")
-    assert descriptions["budget_confirm"].startswith(
-        "Settle only a non-null reservation"
-    )
+    assert descriptions["budget_confirm"].startswith("Settle a non-null reservation")
     for fragment in (
         "specific un-instrumented",
         "Never wrap SDK-instrumented",
@@ -1783,10 +1791,16 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
     assert recovery["reservation_id"] == "reservation"
     assert recovery["call_id"] == "12345678-1234-1234-1234-123456789abc"
     assert recovery["settlement"] == "unknown"
+    data = result.structured_content.pop("data")
+    assert data["reservation_id"] == "reservation"
+    assert data["call_id"] == recovery["call_id"]
+    assert data["settlement"] == "unknown"
+    assert data["recording_retry"]["call_id"] == recovery["call_id"]
+    assert data["recording_retry"]["model"] == "m"
+    assert data["recording_retry"]["provider"] == "openai"
     assert result.structured_content == {
         "schema": "solwyn.mcp.budget-confirm.v1",
         "ok": False,
-        "data": None,
         "error": {
             "code": "rate_limited",
             "message": "The Solwyn API rejected the request.",

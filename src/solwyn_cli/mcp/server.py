@@ -27,6 +27,7 @@ from solwyn_cli.mcp.parameters import (
     TokenDetails,
     parameter_descriptions,
     DenialRecordingRetry,
+    ConfirmationRecordingRetry,
 )
 from solwyn_cli._vendor.wire import (
     CALL_ID_PATTERN,
@@ -55,6 +56,8 @@ from solwyn_cli.commands.budget import (
     request_budget_check,
     confirm_and_record,
     confirm_event,
+    prepare_confirm_recording_retry,
+    record_confirm_only,
     record_denial,
     request_budget_status,
 )
@@ -373,6 +376,18 @@ class _ToolCatalog:
                 hint="Check the declared input fields and their types in list_tools.",
             )
 
+        if (
+            params.name == "budget_confirm"
+            and inputs.record_only is not None
+            and inputs.model_fields_set != {"record_only"}
+        ):
+            return _error(
+                result_type,
+                code="invalid_budget_confirm_request",
+                message="Use record_only without other confirmation arguments.",
+                hint="Supply only the exact recording_retry event from the original result.",
+            )
+
         try:
             result = await tool.fn(
                 **{name: getattr(inputs, name) for name in type(inputs).model_fields}
@@ -637,7 +652,7 @@ def _budget_tool_descriptions() -> tuple[str, str, str]:
         status,
         "Reserve budget only immediately before the caller-made spend. Denial is a successful decision with allowed=false, not an execution error. Denials record attribution by default; no_record skips ingest. Never automatically replay an ambiguous check: each invocation can create a new reservation. "
         f"{shared_sharp_edges}",
-        "Settle only a non-null reservation after the caller-made spend. Records attribution with the same call_id by default; no_record skips ingest. Recording failure does not undo settlement. Core retains a project-bound settlement receipt for 3600 seconds; retry only the identical reservation, call identity and usage within that window. The receipt is not a payload correction mechanism. After known settlement success, retry failed recording separately using record_call with the same call_id and attempt_index=0; never reserve again for a completed call. "
+        "Settle a non-null reservation after caller-made spend using observed token/media usage and actual served provider/model. Records attribution with the same call_id and attempt_index; no_record skips ingest. Recording failure does not undo settlement. Save the FIRST recording_retry event. After known settlement success, use only record_only=FIRST event to retry ingest; this reports settlement=not_submitted. After a lost 204, within Core's project-bound 3600-second receipt window replay identical settlement inputs with no_record=true. After a known 204, submit only record_only=FIRST event; never replace it with the replay's unused new event. Ordinary fresh-confirm replay regenerates timestamp/SDK identity and rereads ambient tags. An event never returned cannot be reconstructed. The receipt cannot correct successful settlement. Missing-media 422 permits corrected quantities under the retained funding ID; never reserve again for completed provider work. "
         f"{shared_sharp_edges}",
     )
 
@@ -771,7 +786,10 @@ def _execution_outcome(result: ResultT) -> ResultT:
         "unknown",
         "stopped",
     }:
-        settled = isinstance(result.data, BudgetConfirmData)
+        settled = (
+            isinstance(result.data, BudgetConfirmData)
+            and result.data.settlement == "confirmed"
+        )
         return result.model_copy(
             update={
                 "ok": False,
@@ -788,7 +806,11 @@ def _execution_outcome(result: ResultT) -> ResultT:
                         if settled
                         else "Attribution recording did not complete."
                     ),
-                    hint="Preserve the call identity and retry attribution with the same call_id and attempt; do not reserve again.",
+                    hint=(
+                        "After known settlement success, use budget_confirm record_only with the FIRST retained recording_retry; never replace it with a settlement-only replay's unused new event. Keep the earlier settlement state separately and do not reserve again."
+                        if isinstance(result.data, BudgetConfirmData)
+                        else "Preserve the call identity and retry attribution with the same call_id and attempt; do not reserve again."
+                    ),
                 ),
             }
         )
@@ -1245,10 +1267,10 @@ def _budget_check_batch_operation(
 def _budget_confirm_operation(
     *,
     launch_options: McpLaunchOptions,
-    reservation_id: str,
-    call_id: str,
-    model: str,
-    provider: ProviderName,
+    reservation_id: str | None,
+    call_id: str | None,
+    model: str | None,
+    provider: ProviderName | None,
     is_provider_fallback: bool,
     provider_region: str | None,
     service_tier: ServiceTier | None,
@@ -1266,6 +1288,10 @@ def _budget_confirm_operation(
     rejected_prediction_tokens: int,
     tool_use_input_tokens: int,
     is_estimated: bool,
+    media_usage: MediaUsage | None = None,
+    modality: Modality = Modality.TEXT,
+    attempt_index: int = 0,
+    record_only: ConfirmationRecordingRetry | None = None,
     latency_ms: float = 0,
     status: str = "success",
     agent_run_id: str | None = None,
@@ -1275,42 +1301,49 @@ def _budget_confirm_operation(
     no_record: bool = False,
 ) -> _BudgetConfirmResult:
     try:
-        request = BudgetConfirmRequest(
-            reservation_id=reservation_id,
-            call_id=call_id,
-            model=model,
-            provider=provider,
-            is_provider_fallback=is_provider_fallback,
-            provider_region=provider_region,
-            service_tier=service_tier,
-            token_details=TokenDetails(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cached_input_tokens=cached_input_tokens,
-                cache_creation_5m_tokens=cache_creation_5m_tokens,
-                cache_creation_1h_tokens=cache_creation_1h_tokens,
-                reasoning_tokens=reasoning_tokens,
-                audio_input_tokens=audio_input_tokens,
-                audio_output_tokens=audio_output_tokens,
-                image_input_tokens=image_input_tokens,
-                image_output_tokens=image_output_tokens,
-                accepted_prediction_tokens=accepted_prediction_tokens,
-                rejected_prediction_tokens=rejected_prediction_tokens,
-                tool_use_input_tokens=tool_use_input_tokens,
-                is_estimated=is_estimated,
-            ),
-        )
-        event = confirm_event(
-            request=request,
-            latency_ms=latency_ms,
-            status=status,
-            agent_run_id=agent_run_id
-            if agent_run_id is not None
-            else os.environ.get("SOLWYN_AGENT_RUN_ID"),
-            parent_agent_run_id=parent_run_id,
-            agent_run_name=run_name,
-            tags=_tool_tags(tags),
-        )
+        if record_only is not None:
+            event = prepare_confirm_recording_retry(record_only)
+            request = None
+        else:
+            request = BudgetConfirmRequest(
+                reservation_id=reservation_id,
+                call_id=call_id,
+                model=model,
+                provider=provider,
+                is_provider_fallback=is_provider_fallback,
+                provider_region=provider_region,
+                service_tier=service_tier,
+                media_usage=media_usage,
+                token_details=TokenDetails(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_input_tokens=cached_input_tokens,
+                    cache_creation_5m_tokens=cache_creation_5m_tokens,
+                    cache_creation_1h_tokens=cache_creation_1h_tokens,
+                    reasoning_tokens=reasoning_tokens,
+                    audio_input_tokens=audio_input_tokens,
+                    audio_output_tokens=audio_output_tokens,
+                    image_input_tokens=image_input_tokens,
+                    image_output_tokens=image_output_tokens,
+                    accepted_prediction_tokens=accepted_prediction_tokens,
+                    rejected_prediction_tokens=rejected_prediction_tokens,
+                    tool_use_input_tokens=tool_use_input_tokens,
+                    is_estimated=is_estimated,
+                ),
+            )
+            event = confirm_event(
+                request=request,
+                modality=modality,
+                attempt_index=attempt_index,
+                latency_ms=latency_ms,
+                status=status,
+                agent_run_id=agent_run_id
+                if agent_run_id is not None
+                else os.environ.get("SOLWYN_AGENT_RUN_ID"),
+                parent_agent_run_id=parent_run_id,
+                agent_run_name=run_name,
+                tags=_tool_tags(tags),
+            )
     except (ValidationError, ValueError):
         return _error(
             _BudgetConfirmResult,
@@ -1325,19 +1358,39 @@ def _budget_confirm_operation(
             )
             if auth_error is not None:
                 return auth_error
-            data = confirm_and_record(
-                client=client, request=request, event=event, no_record=no_record
+            data = (
+                record_confirm_only(client=client, event=event)
+                if request is None
+                else confirm_and_record(
+                    client=client, request=request, event=event, no_record=no_record
+                )
             )
         return _success(
             _BudgetConfirmResult,
             data,
         )
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
-        return _operation_error(
+        failure = _operation_error(
             _BudgetConfirmResult,
             error,
             invalid_response_code="invalid_budget_confirm_response",
         )
+        if (
+            request is not None
+            and isinstance(error, ApiError)
+            and error.code == "transport_error"
+            and failure.error is not None
+        ):
+            return failure.model_copy(
+                update={
+                    "error": failure.error.model_copy(
+                        update={
+                            "hint": "Settlement may have applied. Save the FIRST recording_retry if returned. Within Core's 3600-second receipt window, replay identical settlement inputs with no_record=true; after a known 204 use record_only with the FIRST event, never the replay's unused new event. An unseen event cannot be reconstructed; do not reserve again."
+                        }
+                    )
+                }
+            )
+        return failure
 
 
 def _project_status_operation(
@@ -1763,23 +1816,27 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description=confirm_description,
     )
     async def budget_confirm(
-        reservation_id: Annotated[str, Field(min_length=1)],
+        reservation_id: Annotated[str | None, Field(min_length=1)] = None,
         call_id: Annotated[
-            str,
+            str | None,
             Field(
                 min_length=1,
                 max_length=36,
                 pattern=CALL_ID_PATTERN,
                 description=CALL_ID_HINT,
             ),
-        ],
-        model: Annotated[str, Field(min_length=1, max_length=2048)],
-        provider: ProviderName,
+        ] = None,
+        model: Annotated[str | None, Field(min_length=1, max_length=2048)] = None,
+        provider: ProviderName | None = None,
         is_provider_fallback: bool = False,
         provider_region: Annotated[
             str | None, Field(min_length=1, max_length=32)
         ] = None,
         service_tier: ServiceTier | None = None,
+        media_usage: MediaUsage | None = None,
+        modality: Modality = Modality.TEXT,
+        attempt_index: Annotated[int, Field(ge=0)] = 0,
+        record_only: ConfirmationRecordingRetry | None = None,
         input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         output_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
         cached_input_tokens: Annotated[int, Field(ge=0, le=100_000_000)] = 0,
@@ -1813,6 +1870,10 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 is_provider_fallback=is_provider_fallback,
                 provider_region=provider_region,
                 service_tier=service_tier,
+                media_usage=media_usage,
+                modality=modality,
+                attempt_index=attempt_index,
+                record_only=record_only,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,

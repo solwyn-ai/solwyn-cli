@@ -89,24 +89,42 @@ recovery](mcp-bounded-work.md) for limits, indexed outcomes and explicit attribu
 Confirm a non-null reservation after its provider call using actual served
 model, provider, region/tier and observed token counts. Token subset buckets are
 already contained in the corresponding input/output totals; avoid counting them
-again. The current MCP confirmation input does not yet carry unit-priced media
-quantities; media admission/recording support alone is not a complete media
-reserve/settle workflow.
+again. Pass actual observed `media_usage` for unit-priced calls, with the actual
+`modality`. Confirmation and attribution receive the same quantities, estimate
+marker, resolution and quality. Null means unobservable; observed zero means no
+billed units. See [media settlement and recovery](media-confirmation.md).
 
-Core's project-bound confirmation receipt lasts 3,600 seconds. While retained,
-retry an identical reservation, call identity and usage after a lost response;
-the receipt does not compare payloads or correct an earlier settlement. Expiry,
-receipt loss or an unknown outcome needs explicit state inspection. Do not make
-a new reservation for an already completed provider call.
+Core's project-bound confirmation receipt lasts 3,600 seconds. After a lost 204,
+save the **first** returned `recording_retry` and original confirmation inputs.
+Within the receipt window, replay the identical settlement inputs with
+`no_record=true`; this sends no ingest. After a known 204, submit only
+`record_only` with that **first** event. The settlement-only replay prepares an
+unused new event: never replace the first event with the replay's
+`recording_retry`. Ordinary fresh-confirm replay generates a new timestamp/SDK
+instance and rereads ambient run/tags, so it is not exact-event recovery.
+
+The receipt does not compare payloads, correct earlier settlement or reconstruct
+an attribution event. Expiry, receipt loss or an unresolved outcome needs
+explicit state inspection. Do not make a new reservation for completed work.
 
 Confirmation and attribution are separate API operations. `no_record=true`
 skips ingest, not settlement (on checks it skips denial attribution, not
-admission). Inspect `confirmed` and `recorded` independently. Once settlement is
-known successful, recover a failed attribution using `record_call` with the same
-call identity and unchanged usage; do not reserve again.
+admission). Inspect `settlement` and `recorded` independently. Once settlement is
+known successful, recover a failed attribution using `budget_confirm` with only
+`record_only` set to the **first** retained `recording_retry` event. This preserves every
+event field and performs only ingest. It reports `settlement=not_submitted`
+because a caller-supplied event is not proof of settlement; keep the original
+confirmed result separately. Do not reserve again.
 
-Generate and persist `call_id` (UUIDv4 or UUIDv7) before sending. These MCP tools
-record `attempt_index=0`. Core deduplicates `(project_id, call_id, attempt_index)`
+This recipe requires the first exact event to have been returned. Ordinary CLI
+transport errors expose only a generic stderr error, with no prepared event;
+original flags cannot reconstruct its timestamp/SDK instance. A wholly lost MCP
+reply or a compact result that omits the event has the same unseen-event limit.
+
+Generate and persist `call_id` (UUIDv4 or UUIDv7) before sending. Confirmation
+accepts the caller's observed `attempt_index` (zero by default) and
+`is_provider_fallback`; it never performs routing or another provider attempt.
+Core deduplicates `(project_id, call_id, attempt_index)`
 while the identity is retained; a duplicate is an acknowledged no-op, not an
 update. Inspect ingested, rejected and duplicate result lanes. Omitting
 `record_call.call_id` generates a new ID per invocation and cannot protect a

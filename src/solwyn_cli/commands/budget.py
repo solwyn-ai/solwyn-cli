@@ -35,6 +35,7 @@ from solwyn_cli._vendor.wire import (
     BudgetPeriod,
     BudgetUpdateRequest,
     MediaUsage,
+    Modality,
     IngestMetadataEvent,
     ProviderName,
     ServiceTier,
@@ -79,7 +80,9 @@ app = typer.Typer(
 
 _FAIL_OPEN_NOTICE = "fail-open, unreserved — skip confirm"
 _CONFIRM_NOT_FOUND_HINT = (
-    "Expired or already consumed. Run a fresh check before spend; confirm once."
+    "Reservation and settlement receipt are unavailable. Preserve the completed call's "
+    "identity and usage; inspect settlement and attribution separately. Do not reserve "
+    "again for a completed provider call."
 )
 # Budget check and confirm are the only CLI surfaces the API can reject for key
 # scope, so the hint lives with them rather than in the shared error machinery.
@@ -319,8 +322,17 @@ class _RunControlDirective(BaseModel):
 class _BudgetConfirmData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    reservation_id: str
+    reservation_id: str | None
     call_id: str
+    settlement: Literal["not_submitted", "unknown", "confirmed"] = Field(
+        default="confirmed",
+        description="Settlement observed by this invocation; record-only reports not_submitted and cannot verify a prior settlement.",
+    )
+    recording_retry: IngestMetadataEvent | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Event prepared by this invocation. Keep the FIRST recording_retry for recovery; never replace it with a no_record replay's unused new event. Preserve every field. This event is not a settlement receipt.",
+    )
     recorded: RecordingResult | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -966,10 +978,12 @@ def confirm_event(
         model=request.model,
         provider=request.provider,
         token_details=request.token_details,
+        media_usage=request.media_usage,
         input_tokens=request.token_details.input_tokens,
         output_tokens=request.token_details.output_tokens,
         provider_region=request.provider_region,
         service_tier=request.service_tier,
+        is_provider_fallback=request.is_provider_fallback,
         **attribution,
     )
 
@@ -981,15 +995,56 @@ def confirm_and_record(
     event: IngestMetadataEvent,
     no_record: bool = False,
 ) -> BudgetConfirmData:
-    operation.remember(
+    data = BudgetConfirmData(
+        reservation_id=request.reservation_id,
+        call_id=request.call_id,
+        settlement="unknown",
+        recording_retry=event,
+    )
+    operation.retain(
+        data,
         reservation_id=request.reservation_id,
         call_id=request.call_id,
         settlement="unknown",
         recording="not_submitted",
     )
-    data = request_budget_confirm(client=client, request=request)
+    request_budget_confirm(client=client, request=request)
+    data = data.model_copy(update={"settlement": "confirmed"})
     operation.retain(data, settlement="confirmed")
     recorded = record_best_effort(client=client, event=event, no_record=no_record)
+    data = data.model_copy(update={"recorded": recorded})
+    operation.retain(data, recording=recorded.status)
+    return data
+
+
+def prepare_confirm_recording_retry(event: IngestMetadataEvent) -> IngestMetadataEvent:
+    """Validate a retained completed event without ambient defaults or new identity."""
+    if event.status not in {"success", "error"}:
+        raise ValueError("Confirmation recording requires a completed provider call.")
+    # All fields, including timestamp and sdk_instance_id, are supplied. The
+    # shared builder checks totals, tags and latency without replacing those IDs.
+    return build_event(**event.model_dump())
+
+
+def record_confirm_only(
+    *, client: SolwynClient, event: IngestMetadataEvent
+) -> BudgetConfirmData:
+    """Retry attribution only; a caller-supplied event proves no settlement state."""
+    event = prepare_confirm_recording_retry(event)
+    data = BudgetConfirmData(
+        reservation_id=None,
+        call_id=event.call_id,
+        settlement="not_submitted",
+        recording_retry=event,
+    )
+    operation.retain(
+        data,
+        reservation_id=None,
+        call_id=event.call_id,
+        settlement="not_submitted",
+        recording="not_submitted",
+    )
+    recorded = record_best_effort(client=client, event=event)
     data = data.model_copy(update={"recorded": recorded})
     operation.retain(data, recording=recorded.status)
     return data
@@ -1102,8 +1157,9 @@ def _confirm_table(data: _BudgetConfirmData) -> TableData:
     return TableData(
         columns=("Field", "Value"),
         rows=(
-            ("Reservation ID", data.reservation_id),
+            ("Reservation ID", data.reservation_id or "-"),
             ("Call ID", data.call_id),
+            ("Settlement", data.settlement),
             ("Recorded", data.recorded.status if data.recorded else "-"),
         ),
         right_align=("Value",),
@@ -1538,7 +1594,7 @@ def check(
 @app.command(
     "confirm",
     epilog=help_contract(
-        endpoint="POST /api/v1/budgets/confirm",
+        endpoint="POST /api/v1/budgets/confirm then POST /api/v1/metadata/ingest; --record-only ingests only",
         auth="key",
         exits=("0 success; 1 generic/API; 2 usage; 3 auth; 5 reservation not found"),
         schema="solwyn.budget-confirm.v1",
@@ -1546,23 +1602,26 @@ def check(
             "Settle only when check returned a non-null reservation after the call.",
             "Skip confirm when the reservation is null.",
             "Records attribution with the same call ID by default; --no-record skips ingest. Recording failure warns without undoing settlement.",
+            "Use observed media quantities and actual served provider/model. Retain the FIRST recording_retry; --record-only FILE ingests that exact event without confirmation or ambient defaults.",
+            "After a lost 204, replay identical settlement inputs with --no-record inside Core's 3600-second receipt window. After a known 204, use --record-only with the FIRST retained event; never replace it with the replay's unused new event.",
+            "CLI transport errors do not return the prepared event. Original flags cannot reconstruct an unseen timestamp or SDK instance; the MCP recovery sequence requires the FIRST event to have been returned. Never reserve again for a completed call.",
         ),
     ),
 )
 def confirm(
     context: typer.Context,
     call_id: Annotated[
-        str,
+        str | None,
         typer.Option("--call-id", help="Unique identifier for the provider call."),
-    ],
+    ] = None,
     model: Annotated[
-        str,
+        str | None,
         typer.Option("--model", help="Model that actually served the call."),
-    ],
+    ] = None,
     provider: Annotated[
-        ProviderName,
+        ProviderName | None,
         typer.Option("--provider", help="Provider that actually served the call."),
-    ],
+    ] = None,
     latency_ms: Annotated[float, typer.Option("--latency-ms", min=0)] = 0,
     status: Annotated[
         str, typer.Option("--status", help="success or error.")
@@ -1579,8 +1638,27 @@ def confirm(
         ),
     ] = None,
     no_record: Annotated[
-        bool, typer.Option("--no-record", help="Settle without recording attribution.")
+        bool,
+        typer.Option(
+            "--no-record",
+            help="Settle without ingest; use for explicit settlement replay after a lost 204.",
+        ),
     ] = False,
+    record_only: Annotated[
+        Path | None,
+        typer.Option(
+            "--record-only",
+            help="JSON file containing the exact FIRST retained recording_retry event; ingest only, with no other confirm flags.",
+        ),
+    ] = None,
+    attempt_index: Annotated[
+        int,
+        typer.Option(
+            "--attempt-index",
+            min=0,
+            help="Observed attempt index; keep identical on recording retry.",
+        ),
+    ] = 0,
     reservation_id: Annotated[
         str | None,
         typer.Option(
@@ -1602,6 +1680,59 @@ def confirm(
     service_tier: Annotated[
         ServiceTier | None,
         typer.Option("--service-tier", help="Provider service tier used for the call."),
+    ] = None,
+    modality: Annotated[
+        Modality,
+        typer.Option(
+            "--modality", help="Actual completed call modality for attribution."
+        ),
+    ] = Modality.TEXT,
+    image_count: Annotated[
+        int | None,
+        typer.Option(
+            "--image-count",
+            min=0,
+            help="Observed billed images; omit when unobservable, use 0 for none.",
+        ),
+    ] = None,
+    generation_count: Annotated[
+        int | None,
+        typer.Option(
+            "--generation-count",
+            min=0,
+            help="Observed billed generations; omit when unobservable.",
+        ),
+    ] = None,
+    video_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--video-seconds",
+            min=0,
+            help="Observed billed video seconds; omit when unobservable.",
+        ),
+    ] = None,
+    audio_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--audio-seconds",
+            min=0,
+            help="Observed billed audio seconds; omit when unobservable.",
+        ),
+    ] = None,
+    input_characters: Annotated[
+        int | None,
+        typer.Option(
+            "--input-characters",
+            min=0,
+            help="Observed billed input character count; no content is sent.",
+        ),
+    ] = None,
+    resolution: Annotated[
+        str | None,
+        typer.Option("--resolution", help="Observed pricing resolution selector."),
+    ] = None,
+    quality: Annotated[
+        str | None, typer.Option("--quality", help="Observed pricing quality selector.")
     ] = None,
     input_tokens: Annotated[
         int,
@@ -1669,12 +1800,12 @@ def confirm(
         bool,
         typer.Option(
             "--is-estimated",
-            help="Mark the token breakdown as estimated rather than provider-reported.",
+            help="Mark supplied token and media quantities as estimated rather than provider-reported.",
         ),
     ] = False,
 ) -> None:
     """Settle one reservation after an un-instrumented provider call."""
-    if reservation_id is None:
+    if record_only is None and reservation_id is None:
         exit_with_error(
             context,
             OutputError(
@@ -1684,7 +1815,7 @@ def confirm(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    if not reservation_id.strip():
+    if record_only is None and not reservation_id.strip():
         exit_with_error(
             context,
             OutputError(
@@ -1694,9 +1825,12 @@ def confirm(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    if (
-        not call_id.strip()
+    if record_only is None and (
+        not call_id
+        or not call_id.strip()
+        or not model
         or not model.strip()
+        or provider is None
         or (provider_region is not None and not provider_region.strip())
     ):
         exit_with_error(
@@ -1709,51 +1843,86 @@ def confirm(
             semantic=ErrorSemantic.USAGE,
         )
     try:
-        validate_call_id(call_id)
-        if status not in ("success", "error"):
-            raise ValueError("Status must be success or error.")
-        token_details = TokenDetails(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_input_tokens=cached_input_tokens,
-            cache_creation_5m_tokens=cache_creation_5m_tokens,
-            cache_creation_1h_tokens=cache_creation_1h_tokens,
-            reasoning_tokens=reasoning_tokens,
-            audio_input_tokens=audio_input_tokens,
-            audio_output_tokens=audio_output_tokens,
-            image_input_tokens=image_input_tokens,
-            image_output_tokens=image_output_tokens,
-            accepted_prediction_tokens=accepted_prediction_tokens,
-            rejected_prediction_tokens=rejected_prediction_tokens,
-            tool_use_input_tokens=tool_use_input_tokens,
-            is_estimated=is_estimated,
-        )
-        request = BudgetConfirmRequest(
-            reservation_id=reservation_id,
-            call_id=call_id,
-            model=model,
-            provider=provider,
-            is_provider_fallback=is_provider_fallback,
-            provider_region=provider_region,
-            service_tier=service_tier.value if service_tier is not None else None,
-            token_details=token_details,
-        )
-        event = confirm_event(
-            request=request,
-            latency_ms=latency_ms,
-            status=status,
-            agent_run_id=agent_run_id,
-            parent_agent_run_id=parent_run_id,
-            agent_run_name=run_name,
-            tags=parse_tags(tag),
-        )
-    except (ValidationError, ValueError) as error:
+        if record_only is not None:
+            if any(
+                name != "record_only"
+                and context.get_parameter_source(name).name == "COMMANDLINE"
+                for name in context.params
+            ):
+                raise ValueError("Use --record-only without other confirm flags.")
+            event = prepare_confirm_recording_retry(
+                IngestMetadataEvent.model_validate_json(
+                    record_only.read_text(encoding="utf-8")
+                )
+            )
+            request = None
+        else:
+            validate_call_id(call_id)
+            if status not in ("success", "error"):
+                raise ValueError("Status must be success or error.")
+            token_details = TokenDetails(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+                cache_creation_5m_tokens=cache_creation_5m_tokens,
+                cache_creation_1h_tokens=cache_creation_1h_tokens,
+                reasoning_tokens=reasoning_tokens,
+                audio_input_tokens=audio_input_tokens,
+                audio_output_tokens=audio_output_tokens,
+                image_input_tokens=image_input_tokens,
+                image_output_tokens=image_output_tokens,
+                accepted_prediction_tokens=accepted_prediction_tokens,
+                rejected_prediction_tokens=rejected_prediction_tokens,
+                tool_use_input_tokens=tool_use_input_tokens,
+                is_estimated=is_estimated,
+            )
+            quantities = dict(
+                image_count=image_count,
+                generation_count=generation_count,
+                video_seconds=video_seconds,
+                audio_seconds=audio_seconds,
+                input_characters=input_characters,
+                resolution=resolution,
+                quality=quality,
+            )
+            media = (
+                MediaUsage(**quantities, is_estimated=is_estimated)
+                if any(value is not None for value in quantities.values())
+                else None
+            )
+            request = BudgetConfirmRequest(
+                reservation_id=reservation_id,
+                call_id=call_id,
+                model=model,
+                provider=provider,
+                is_provider_fallback=is_provider_fallback,
+                provider_region=provider_region,
+                service_tier=service_tier.value if service_tier is not None else None,
+                token_details=token_details,
+                media_usage=media,
+            )
+            event = confirm_event(
+                request=request,
+                modality=modality,
+                attempt_index=attempt_index,
+                latency_ms=latency_ms,
+                status=status,
+                agent_run_id=agent_run_id,
+                parent_agent_run_id=parent_run_id,
+                agent_run_name=run_name,
+                tags=parse_tags(tag),
+            )
+    except (ValidationError, ValueError, OSError):
         exit_with_error(
             context,
             OutputError(
                 code="invalid_budget_confirm_request",
                 message="The budget confirmation request is invalid.",
-                hint=f"{error}. {CALL_ID_HINT}",
+                hint=(
+                    "Check completed-call fields, quantity bounds, token totals and tags. "
+                    "For --record-only, supply only the exact original event file. "
+                    f"{CALL_ID_HINT}"
+                ),
             ),
             semantic=ErrorSemantic.USAGE,
         )
@@ -1793,8 +1962,12 @@ def confirm(
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            data = confirm_and_record(
-                client=client, request=request, event=event, no_record=no_record
+            data = (
+                record_confirm_only(client=client, event=event)
+                if request is None
+                else confirm_and_record(
+                    client=client, request=request, event=event, no_record=no_record
+                )
             )
     except ApiError as error:
         if error.status_code == 404:

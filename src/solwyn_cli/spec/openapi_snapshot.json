@@ -1259,6 +1259,61 @@
         ]
       }
     },
+    "/api/v1/auth/key": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Authenticated Key",
+        "description": "Read the supplied full or read-only key's project and scope; JWT is rejected.\n\nNo project selector or budget operation is involved. Authentication may\nperform its normal last-used bookkeeping. Scope is not a promise that a\nlater write will pass its own authorization, entitlement or budget checks.",
+        "operationId": "get_authenticated_key_api_v1_auth_key_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedKeyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/budgets/check": {
       "post": {
         "tags": [
@@ -2079,7 +2134,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Content",
+            "description": "Invalid batch request or operation identity",
             "content": {
               "application/json": {
                 "schema": {
@@ -2190,6 +2245,7 @@
             "description": "Service Unavailable"
           },
           "422": {
+            "description": "Invalid batch request or operation identity",
             "content": {
               "application/json": {
                 "schema": {
@@ -2204,8 +2260,7 @@
                   "title": "Response 422 Get Batch Api V1 Budgets Check Batches  Operation Id  Get"
                 }
               }
-            },
-            "description": "Unprocessable Content"
+            }
           }
         }
       }
@@ -11444,6 +11499,32 @@
           "has_more"
         ],
         "title": "AuditEventListResponse"
+      },
+      "AuthenticatedKeyResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "description": "Project authenticated by the supplied API key."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope",
+            "description": "Scope of the supplied key, not its replacement."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "scope"
+        ],
+        "title": "AuthenticatedKeyResponse",
+        "description": "Minimal identity of the supplied key, including an accepted grace key."
       },
       "BaselineResult": {
         "properties": {
@@ -20933,5 +21014,5 @@
     }
   },
   "x-solwyn-snapshot-date": "2026-09-07",
-  "x-solwyn-core-ref": "5a0cd194ecc807a9dd7d1a4c7112b47e2a13f944"
+  "x-solwyn-core-ref": "63735b831a666aec568324e48d8dd30c4ddc7e0a"
 }

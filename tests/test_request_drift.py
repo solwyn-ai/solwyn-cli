@@ -113,9 +113,6 @@ UNADOPTED_OPTIONAL_FIELDS = {
     "BudgetConfirmRequest": (
         # No CLI lease plane: confirmation always requires a reservation.
         "lease_id",
-        # Declined: the confirm endpoint settles from token_details only and
-        # never reads it.
-        "media_usage",
         # Declined: same as check — inert on this endpoint.
         "modality",
     ),

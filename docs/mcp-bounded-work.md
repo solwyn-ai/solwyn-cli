@@ -134,6 +134,24 @@ unknown disposition. Never alter the payload or IDs to force a positive receipt.
 
 When confirmation already succeeded, `recovery.settlement=confirmed` and the
 known reservation/call identity survive an attribution timeout or failure.
-Retry attribution with its existing identity; do not reserve again for completed
-provider work. Compact failure recovery always preserves known identities and
-keeps admission, settlement and recording uncertainty separate.
+The full retained data also contains `recording_retry`, the exact event prepared
+before confirmation. Keep the **first** event and use `budget_confirm` with only
+`record_only` set to it to retry attribution after known settlement success;
+this performs no confirmation and reports settlement as `not_submitted`.
+
+Before a confirmation reply is received, settlement remains `unknown`, including
+after a lost 204. Save the **first** returned event and original confirmation
+inputs. Within Core's receipt window, replay identical settlement inputs with
+`no_record=true`, sending no ingest. Only after a known 204, send `record_only`
+with that **first** event. Never replace it with the settlement-only replay's
+unused new `recording_retry`. Ordinary fresh-confirm replay generates a new
+timestamp/SDK instance and rereads ambient run/tags. Do not reserve again for
+completed provider work.
+
+Compact failure recovery preserves known identities and separate states, but can
+omit the full event to meet the byte limit. A fully lost MCP reply cannot recover
+an event the caller never received. Ordinary CLI transport errors return a
+generic stderr error without the prepared event; original flags cannot
+reconstruct its timestamp/SDK instance. A settlement receipt or batch journal
+cannot supply that unseen event. Persist original observations and identities
+before calling. See [media settlement and recovery](media-confirmation.md).

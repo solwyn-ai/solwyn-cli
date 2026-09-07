@@ -1235,7 +1235,7 @@
           "kind": "option",
           "multiple": false,
           "name": "call_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1249,7 +1249,7 @@
           "kind": "option",
           "multiple": false,
           "name": "model",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1284,7 +1284,7 @@
           "kind": "option",
           "multiple": false,
           "name": "provider",
-          "required": true,
+          "required": false,
           "type": "choice"
         },
         {
@@ -1378,7 +1378,7 @@
             "--no-record"
           ],
           "default": false,
-          "help": "Settle without recording attribution.",
+          "help": "Settle without ingest; use for explicit settlement replay after a lost 204.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -1386,6 +1386,36 @@
           "name": "no_record",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--record-only"
+          ],
+          "default": null,
+          "help": "JSON file containing the exact FIRST retained recording_retry event; ingest only, with no other confirm flags.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "record_only",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "cli_names": [
+            "--attempt-index"
+          ],
+          "default": 0,
+          "help": "Observed attempt index; keep identical on recording retry.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "attempt_index",
+          "required": false,
+          "type": "integer range"
         },
         {
           "cli_names": [
@@ -1451,6 +1481,135 @@
           "name": "service_tier",
           "required": false,
           "type": "choice"
+        },
+        {
+          "choices": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "embedding"
+          ],
+          "cli_names": [
+            "--modality"
+          ],
+          "default": "text",
+          "help": "Actual completed call modality for attribution.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "modality",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--image-count"
+          ],
+          "default": null,
+          "help": "Observed billed images; omit when unobservable, use 0 for none.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "image_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--generation-count"
+          ],
+          "default": null,
+          "help": "Observed billed generations; omit when unobservable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "generation_count",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--video-seconds"
+          ],
+          "default": null,
+          "help": "Observed billed video seconds; omit when unobservable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "video_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--audio-seconds"
+          ],
+          "default": null,
+          "help": "Observed billed audio seconds; omit when unobservable.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "audio_seconds",
+          "required": false,
+          "type": "float range"
+        },
+        {
+          "cli_names": [
+            "--input-characters"
+          ],
+          "default": null,
+          "help": "Observed billed input character count; no content is sent.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "input_characters",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--resolution"
+          ],
+          "default": null,
+          "help": "Observed pricing resolution selector.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "resolution",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--quality"
+          ],
+          "default": null,
+          "help": "Observed pricing quality selector.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "quality",
+          "required": false,
+          "type": "text"
         },
         {
           "cli_names": [
@@ -1665,7 +1824,7 @@
             "--is-estimated"
           ],
           "default": false,
-          "help": "Mark the token breakdown as estimated rather than provider-reported.",
+          "help": "Mark supplied token and media quantities as estimated rather than provider-reported.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -6242,8 +6401,10 @@
       "keys": [
         "call_id",
         "recorded",
+        "recording_retry",
         "reservation_id",
-        "schema"
+        "schema",
+        "settlement"
       ],
       "optional_keys": [],
       "schema": "solwyn.budget-confirm.v1",

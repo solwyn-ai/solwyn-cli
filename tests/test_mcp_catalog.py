@@ -178,7 +178,7 @@ def test_actual_stdio_profile_discovery_and_rejection(tmp_path, profile, count):
     assert result.stderr == ""
 
 
-@pytest.mark.parametrize("profile,ceiling_kib", [("guardrails", 152), ("read", 72)])
+@pytest.mark.parametrize("profile,ceiling_kib", [("guardrails", 168), ("read", 72)])
 def test_catalog_is_deterministic_and_has_a_payload_budget(profile, ceiling_kib):
     def encoded():
         return json.dumps(
