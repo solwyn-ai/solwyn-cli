@@ -295,8 +295,9 @@ def test_request_count_accepts_exact_delta(runner):
 
 
 @pytest.mark.parametrize("cancellation_requests", [0, 1, 2])
+@pytest.mark.parametrize("auth_status", ["execution_error", "client_error"])
 def test_acceptance_requires_one_inflight_read_after_session_startup(
-    runner, monkeypatch, tmp_path, cancellation_requests
+    runner, monkeypatch, tmp_path, cancellation_requests, auth_status
 ):
     api = SimpleNamespace(
         mode="success",
@@ -333,7 +334,7 @@ def test_acceptance_requires_one_inflight_read_after_session_startup(
             return {"status": "client_error", "observed_children_exited": 2}
         api.requests.append(("GET", f"/api/v1/projects/{runner.PROJECT}/budget"))
         if api.mode == "auth":
-            return {"status": "execution_error", "code": "authentication_required"}
+            return {"status": auth_status, "code": "authentication_required"}
         if "--mode" not in command:
             return {"sdk": "1.28.1"}
         mode = command[command.index("--mode") + 1]
@@ -354,7 +355,13 @@ def test_acceptance_requires_one_inflight_read_after_session_startup(
         tmp_path / "examples",
         tmp_path,
     )
-    if cancellation_requests != 1:
+    if auth_status != "execution_error":
+        with pytest.raises(AssertionError) as captured:
+            runner.acceptance(*arguments)
+        assert str(captured.value) == (
+            "solwyn/python/modern auth: expected execution_error, HTTP request delta 1"
+        )
+    elif cancellation_requests != 1:
         with pytest.raises(AssertionError) as captured:
             runner.acceptance(*arguments)
         assert str(captured.value) == (

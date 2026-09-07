@@ -1,8 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeResult, providerGate, safeErrorCode, serverEnvironment } from './client.js';
+import { InMemoryTransport, SdkError, SdkErrorCode } from '@modelcontextprotocol/client';
+import { createReadClient, decodeResult, providerGate, safeErrorCode, serverEnvironment } from './client.js';
 
 const envelope = (data: unknown, ok = true, error: unknown = null, schema = 'solwyn.mcp.budget-check.v1') => ({ schema, ok, data, error });
+
+for (const [name, replyDelay, timeout, succeeds] of [
+  ['allows discovery after a slow startup', 2_500, 6_000, true],
+  ['honors a shorter caller deadline without replay', 250, 50, false],
+] as const) {
+  test(`modern client ${name}`, async (t) => {
+    const client = createReadClient('modern');
+    const [transport, server] = InMemoryTransport.createLinkedPair();
+    const methods: string[] = [];
+    let reply: ReturnType<typeof setTimeout> | undefined;
+    t.after(async () => {
+      clearTimeout(reply);
+      await client.close();
+      await server.close();
+    });
+    server.onmessage = message => {
+      assert('method' in message && 'id' in message);
+      methods.push(message.method);
+      reply = setTimeout(() => {
+        void server.send({ jsonrpc: '2.0', id: message.id, result: {
+          supportedVersions: ['2026-07-28'], capabilities: {},
+        } });
+      }, replyDelay);
+    };
+    await server.start();
+    if (succeeds) {
+      await client.connect(transport, { timeout });
+      assert.equal(client.getProtocolEra(), 'modern');
+    } else {
+      await assert.rejects(client.connect(transport, { timeout }),
+        error => error instanceof SdkError && error.code === SdkErrorCode.RequestTimeout);
+    }
+    assert.deepEqual(methods, ['server/discover']);
+  });
+}
 
 test('valid denial is normal, fail-open skips confirm, reserved remains distinct', () => {
   for (const [allowed, reservation, expected] of [

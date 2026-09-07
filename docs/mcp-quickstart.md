@@ -145,7 +145,8 @@ proxy credentials and OTel configuration. The SDK adds its OS baseline even when
 external clients/hosts remain separate from Solwyn's no-telemetry policy.
 
 `--timeout` bounds client useful work (10 seconds by default, configurable from
-0.1 to 30); timeout/cancellation unwinds the transport explicitly. SDK cleanup
+0.1 to 30). TypeScript discovery uses this same timeout, including slow process
+startup on Windows. Timeout/cancellation unwinds the transport explicitly. SDK cleanup
 is additional: Python's inspected waits total up to 6.5 seconds plus scheduling;
 TypeScript closes stdin, waits up to 2 seconds, then allows up to 2 seconds after
 termination before killing, and the example observes direct-child exit for up
