@@ -3,13 +3,13 @@
   "name": "ai.solwyn/solwyn",
   "title": "Solwyn",
   "description": "Inspect Solwyn budgets and attribute model spend through local MCP tools.",
-  "version": "0.2.0rc1",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "solwyn-cli",
-      "version": "0.2.0rc1",
+      "version": "0.2.0",
       "runtimeHint": "uvx",
       "transport": {"type": "stdio"},
       "packageArguments": [

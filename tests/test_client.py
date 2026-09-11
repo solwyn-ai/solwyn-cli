@@ -45,7 +45,7 @@ def test_success_uses_normalized_base_url_auth_user_agent_and_exact_timeouts(
     request = requests[0]
     assert request.url == httpx.URL(f"{API_URL}/api/v1/costs?limit=1")
     assert request.headers["Authorization"] == f"Bearer {VALID_KEY}"
-    assert request.headers["User-Agent"] == "solwyn-cli/0.2.0rc1"
+    assert request.headers["User-Agent"] == "solwyn-cli/0.2.0"
     assert request.extensions["timeout"] == {
         "connect": 5.0,
         "read": 30.0,
@@ -74,7 +74,7 @@ def test_unauthenticated_request_has_no_authorization_and_preserves_client_guard
     assert len(requests) == 1
     request = requests[0]
     assert "Authorization" not in request.headers
-    assert request.headers["User-Agent"] == "solwyn-cli/0.2.0rc1"
+    assert request.headers["User-Agent"] == "solwyn-cli/0.2.0"
     assert request.extensions["timeout"] == {
         "connect": 5.0,
         "read": 30.0,
@@ -385,7 +385,7 @@ def test_jwt_refresh_uses_client_user_agent_and_timeout_then_retries_once(
     assert len(requests) == 3
     refresh = requests[1]
     assert refresh.url == httpx.URL(f"{API_URL}/api/v1/auth/refresh")
-    assert refresh.headers["User-Agent"] == "solwyn-cli/0.2.0rc1"
+    assert refresh.headers["User-Agent"] == "solwyn-cli/0.2.0"
     assert "Authorization" not in refresh.headers
     assert refresh.extensions["timeout"] == {
         "connect": 5.0,
