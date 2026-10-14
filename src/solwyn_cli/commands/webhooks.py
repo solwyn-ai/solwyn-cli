@@ -324,7 +324,7 @@ def list_webhooks(context: typer.Context) -> None:
     "create",
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/webhooks",
-        auth="JWT",
+        auth="owner/admin JWT (project.write)",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.webhooks-create.v1",
         guidance=(
@@ -400,7 +400,7 @@ def create_webhook(
     "rotate",
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
-        auth="JWT",
+        auth="owner/admin JWT (project.write)",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.webhooks-rotate.v1",
         guidance=(
@@ -457,7 +457,7 @@ def rotate_webhook(
     "delete",
     epilog=help_contract(
         endpoint="DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
-        auth="JWT",
+        auth="owner/admin JWT (project.write)",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
         guidance=("Deactivates the webhook target and returns no API body.",),

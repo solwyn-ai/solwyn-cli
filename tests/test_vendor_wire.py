@@ -51,6 +51,8 @@ from solwyn_cli._vendor.wire import (
         (
             BudgetCheckRequest,
             {
+                "uncounted_calls",
+                "uncounted_tokens",
                 "price_hints_version",
                 "tags",
                 "run_directive_version",
@@ -300,3 +302,21 @@ def test_budget_update_serializes_rule_datetimes_as_wire_strings() -> None:
     assert request.model_dump(mode="json")["thresholds"][0]["snoozed_until"] == (
         "2026-07-10T12:00:00Z"
     )
+
+
+@pytest.mark.parametrize("field", ["uncounted_calls", "uncounted_tokens"])
+def test_budget_check_outage_tallies_default_zero_and_enforce_core_bounds(
+    field: str,
+) -> None:
+    data = {"provider": "openai", "model": "test-model", "estimated_input_tokens": 1}
+    assert BudgetCheckRequest.model_validate(data).model_dump()[field] == 0
+    for value in (0, 42, 9223372036854775807):
+        assert (
+            BudgetCheckRequest.model_validate({**data, field: value}).model_dump()[
+                field
+            ]
+            == value
+        )
+    for value in (-1, 9223372036854775808, None):
+        with pytest.raises(ValidationError):
+            BudgetCheckRequest.model_validate({**data, field: value})

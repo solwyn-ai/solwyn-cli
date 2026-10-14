@@ -229,7 +229,7 @@ def _readiness_diagnostic(client: SolwynClient) -> _ReadinessDiagnostic:
             name=check.name,
             status=check.status,
             detail=check.detail,
-            gating=check.name != "redis",
+            gating=check.name not in {"redis", "stripe_catalog", "stripe_portal"},
         )
         for check in readiness.checks
     ]

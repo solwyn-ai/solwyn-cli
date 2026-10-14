@@ -271,6 +271,9 @@ class BudgetUpdateRequest(_WireModel):
 
 
 class BudgetCheckRequest(_WireModel):
+    # Advisory outage tallies; the CLI admits no offline calls, so defaults are zero.
+    uncounted_calls: Annotated[int, Field(ge=0, le=9223372036854775807)] = 0
+    uncounted_tokens: Annotated[int, Field(ge=0, le=9223372036854775807)] = 0
     tags: dict[str, str] | None = None
     price_hints_version: Literal["1"] | None = None
     estimated_input_tokens: Annotated[int, Field(ge=0)]

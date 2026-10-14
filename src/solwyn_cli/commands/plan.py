@@ -1,5 +1,6 @@
 """Current subscription plan and entitlement command."""
 
+from datetime import datetime
 from typing import Literal
 
 import typer
@@ -7,7 +8,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._entitlement import TierCapabilities, fetch_billing_status
+from solwyn_cli.commands._entitlement import (
+    PendingPlan,
+    ScheduledPlanChange,
+    TierCapabilities,
+    fetch_billing_status,
+)
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -32,6 +38,11 @@ class _PlanData(BaseModel):
     tier: Literal["free", "production", "team", "scale"]
     billing_interval: Literal["month", "year"] | None
     status: str | None
+    current_period_end: datetime | None
+    cancel_at: datetime | None
+    grace_period_until: datetime | None
+    scheduled_plan_change: ScheduledPlanChange | None
+    pending_plan: PendingPlan | None
     limits: dict[str, int]
     capabilities: TierCapabilities
     cta_path: str
@@ -58,13 +69,53 @@ def _chunked_rows(label: str, values: list[str]) -> list[tuple[str, str]]:
     ]
 
 
+def _date(value: datetime | None) -> str:
+    return value.isoformat().replace("+00:00", "Z") if value else "none"
+
+
 def _table(data: _PlanData) -> TableData:
     capabilities = data.capabilities
+    period_end_label = "Period end"
+    if (
+        data.current_period_end is not None
+        and data.tier != "free"
+        and data.status in {"active", "trialing", "past_due"}
+    ):
+        period_end_label = "Ends" if data.cancel_at else "Renews"
     rows: list[tuple[str, str]] = [
         ("Tier", data.tier),
         ("Billing interval", data.billing_interval or "none"),
         ("Status", data.status or "none"),
     ]
+    rows.extend(
+        [
+            (period_end_label, _date(data.current_period_end)),
+            ("Cancel at", _date(data.cancel_at)),
+        ]
+    )
+    if data.status == "past_due":
+        rows.append(("Grace until", _date(data.grace_period_until)))
+    change = data.scheduled_plan_change
+    rows.extend(
+        [
+            (
+                "Scheduled plan",
+                f"{change.target_tier or 'unknown'} / {change.target_billing_interval or 'unknown'}"
+                if change
+                else "none",
+            ),
+            (
+                "Scheduled effective at",
+                _date(change.effective_at) if change else "none",
+            ),
+            (
+                "Pending plan",
+                f"{data.pending_plan.tier} / {data.pending_plan.billing_interval}"
+                if data.pending_plan
+                else "none",
+            ),
+        ]
+    )
     limit_labels = {
         "api_keys_per_project": "Limit api keys/project",
         "projects": "Limit projects",
@@ -122,7 +173,7 @@ def _table(data: _PlanData) -> TableData:
 
 
 def plan(context: typer.Context) -> None:
-    """Show the current plan, limits, and capabilities."""
+    """Show the current plan, subscription lifecycle, limits, and capabilities."""
     runtime = command_context(context)
     credential = required_credential(context, resolve=resolve_credential)
     try:
@@ -135,6 +186,11 @@ def plan(context: typer.Context) -> None:
             tier=status.tier,
             billing_interval=status.billing_interval,
             status=status.status,
+            current_period_end=status.current_period_end,
+            cancel_at=status.cancel_at,
+            grace_period_until=status.grace_period_until,
+            scheduled_plan_change=status.scheduled_plan_change,
+            pending_plan=status.pending_plan,
             limits=status.limits,
             capabilities=status.capabilities,
             cta_path=_CTA_PATH,

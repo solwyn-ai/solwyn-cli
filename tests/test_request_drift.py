@@ -80,6 +80,7 @@ DECLARED_DEFAULT_FIELDS = {
     ),
     "ProjectKeyRotateRequest": ("grace_seconds",),
     "WebhookCreateRequest": ("events",),
+    "BudgetCheckRequest": ("uncounted_calls", "uncounted_tokens"),
 }
 # Optional request fields the API accepts that the CLI deliberately does not
 # send. Every entry is proven to exist and to be optional in the snapshot before
@@ -1547,3 +1548,24 @@ def test_budget_batch_request_operation_and_limits():
         "$ref": "#/components/schemas/BudgetCheckBatchRequest"
     }
     assert REQUEST_MIRRORS[BudgetCheckBatchRequest] == "BudgetCheckBatchRequest"
+
+
+@pytest.mark.parametrize("field", ["uncounted_calls", "uncounted_tokens"])
+def test_budget_check_outage_default_drift_trips_guard(field: str) -> None:
+    mutated = copy.deepcopy(_snapshot())
+    _schema(mutated, "BudgetCheckRequest")["properties"][field]["default"] = 1
+    with pytest.raises(AssertionError, match=rf"BudgetCheckRequest\.{field}: default"):
+        assert_request_mirrors_match(mutated)
+
+
+@pytest.mark.parametrize("field", ["uncounted_calls", "uncounted_tokens"])
+def test_budget_check_outage_bounds_match_snapshot(field: str) -> None:
+    remote = _schema(_snapshot(), "BudgetCheckRequest")
+    local = BudgetCheckRequest.model_json_schema()
+    assert field not in local["required"]
+    assert field not in remote["required"]
+    for attribute in ("minimum", "maximum", "default", "type"):
+        assert (
+            local["properties"][field][attribute]
+            == remote["properties"][field][attribute]
+        )

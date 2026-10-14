@@ -835,6 +835,8 @@ def test_exact_tool_contract_and_mocked_http_conformance(
             "/api/v1/budgets/check",
             {},
             {
+                "uncounted_calls": 0,
+                "uncounted_tokens": 0,
                 "price_hints_version": "1",
                 "estimated_input_tokens": 1200,
                 "model": "gpt-5",
@@ -1183,6 +1185,8 @@ def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
             "/api/v1/budgets/check",
             {},
             {
+                "uncounted_calls": 0,
+                "uncounted_tokens": 0,
                 "price_hints_version": "1",
                 "estimated_input_tokens": 1,
                 "model": "m",
@@ -1746,6 +1750,8 @@ def test_budget_check_honors_exactly_one_429_retry(
         "/api/v1/budgets/check",
         {},
         {
+            "uncounted_calls": 0,
+            "uncounted_tokens": 0,
             "price_hints_version": "1",
             "estimated_input_tokens": 1,
             "model": "m",

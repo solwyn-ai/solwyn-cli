@@ -368,3 +368,44 @@ def test_keychain_diagnostic_rejects_an_incomplete_jwt_pair(
 
     assert result.status == "degraded"
     assert result.detail == "Keychain contains an incomplete JWT credential."
+
+
+@pytest.mark.parametrize("name", ["redis", "stripe_catalog", "stripe_portal"])
+@pytest.mark.parametrize("output_format", ["json", "table"])
+def test_doctor_labels_degraded_advisory_checks_non_gating(
+    name: str, output_format: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('default_project = "proj_alpha"\n')
+    monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        doctor_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token="test-access", refresh_token="test-refresh"
+        ),
+    )
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json={
+                "status": "ready",
+                "service": "solwyn-api",
+                "checks": [
+                    {"name": "database", "status": "ok", "detail": None},
+                    {"name": name, "status": "degraded", "detail": "advisory"},
+                ],
+            },
+        ),
+        httpx.Response(200, json={"user_id": "user_123"}),
+    ]
+    result = runner.invoke(
+        app, ["--json" if output_format == "json" else "--no-color", "doctor"]
+    )
+    assert result.exit_code == 0, result.stderr
+    if output_format == "json":
+        checks = json.loads(result.stdout)["readiness"]["checks"]
+        assert checks[0]["gating"] is True
+        assert checks[1]["gating"] is False
+    else:
+        assert f"Readiness {name} — advisory (non-gating)" in result.stdout

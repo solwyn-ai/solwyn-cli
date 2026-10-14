@@ -33,7 +33,7 @@
           "health"
         ],
         "summary": "Readiness Check",
-        "description": "Deep readiness — DB ping, Redis ping, billing task supervisor.\n\nReturns 200 with ``status=\"ready\"`` when all non-skipped gating checks\npass, 503 with ``status=\"degraded\"`` and the offending checks otherwise.\nECS task health checks should poll this endpoint so a replica with a\ncrashed meter-flush loop is taken out of the load balancer.\n\nRedis is reported but does NOT gate readiness (R3). The replica can serve\nevery request without it — budget checks fail open, limiters enforce\nlocally, alerts still deliver off the Postgres outbox (see\ndocs/operations/redis-degraded-modes.md). Failing readiness on a Redis\nping would pull *every* replica out of the load balancer during a routine\nElastiCache failover, converting a documented degraded mode into a total\noutage. The check stays in the payload so operators can see it.",
+        "description": "Deep readiness — DB ping, Redis ping, billing task supervisor.\n\nReturns 200 with ``status=\"ready\"`` when all non-skipped gating checks\npass, 503 with ``status=\"degraded\"`` and the offending checks otherwise.\nECS task health checks should poll this endpoint so a replica with a\ncrashed meter-flush loop is taken out of the load balancer.\n\nRedis is reported but does NOT gate readiness (R3). The replica can serve\nevery request without it — budget checks fail open, limiters enforce\nlocally, alerts still deliver off the Postgres outbox (see\ndocs/operations/redis-degraded-modes.md). Failing readiness on a Redis\nping would pull *every* replica out of the load balancer during a routine\nElastiCache failover, converting a documented degraded mode into a total\noutage. The check stays in the payload so operators can see it.\n\n``stripe_catalog`` does not gate readiness either: it is account-wide,\nso every replica (and any rollback image) sees the same answer. See\n``_NON_GATING_READINESS_CHECKS``.",
         "operationId": "readiness_check_health_ready_get",
         "responses": {
           "200": {
@@ -618,7 +618,7 @@
             "description": "Route-level signup rate limit exceeded"
           },
           "503": {
-            "description": "Email provider unavailable",
+            "description": "Email provider unavailable, or auth_capacity_exceeded with Retry-After: 1",
             "content": {
               "application/json": {
                 "example": {
@@ -684,6 +684,9 @@
           },
           "429": {
             "description": "Route-level login rate limit exceeded"
+          },
+          "503": {
+            "description": "auth_capacity_exceeded with Retry-After: 1"
           },
           "422": {
             "description": "Validation Error",
@@ -819,6 +822,9 @@
           },
           "429": {
             "description": "Route-level reset-password rate limit exceeded"
+          },
+          "503": {
+            "description": "auth_capacity_exceeded with Retry-After: 1"
           },
           "422": {
             "description": "Validation Error",
@@ -983,6 +989,9 @@
           },
           "429": {
             "description": "Invitation accept rate limit exceeded"
+          },
+          "503": {
+            "description": "auth_capacity_exceeded with Retry-After: 1"
           },
           "422": {
             "description": "Validation Error",
@@ -1320,7 +1329,7 @@
           "budgets"
         ],
         "summary": "Budget Check",
-        "description": "Pre-flight budget check. Creates a reservation if allowed.",
+        "description": "Pre-flight budget check. Creates a reservation if allowed.\n\nAn outage uncounted report riding the body is folded and committed FIRST,\nso the verdict below cannot lose it (see ``services.budget.uncounted_tally``).",
         "operationId": "budget_check_api_v1_budgets_check_post",
         "requestBody": {
           "content": {
@@ -2047,6 +2056,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/budget/uncounted": {
+      "get": {
+        "tags": [
+          "budgets"
+        ],
+        "summary": "Budget Uncounted Tally",
+        "description": "Read the project's per-call outage uncounted tally (zeros if never reported).",
+        "operationId": "budget_uncounted_tally_api_v1_projects__project_id__budget_uncounted_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UncountedTallyResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Uncounted tally temporarily unreadable; retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -3358,11 +3425,29 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Invalid target or more than 25,000 served events",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ],
+                  "title": "Response 422 Simulate Costs Api V1 Projects  Project Id  Costs Simulate Post"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Analytical capacity or deadline exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
                 }
               }
             }
@@ -4906,7 +4991,7 @@
             "description": "Cost export stream",
             "headers": {
               "X-Solwyn-Truncated": {
-                "description": "Whether an aggregated export was capped to the top 100 groups by spend. Always `false` for `group_by=day`, which exports every day in the window in chronological order.",
+                "description": "Always false: oversized exports fail before response headers. Aggregated exports allow 100 groups, or every day in the window.",
                 "schema": {
                   "type": "boolean"
                 }
@@ -4936,11 +5021,29 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Export exceeds 25,000 raw events, 100 groups or 32 MiB; narrow the window",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ],
+                  "title": "Response 422 Export Costs Csv Api V1 Projects  Project Id  Costs Export Get"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Export capacity or preparation deadline exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
                 }
               }
             }
@@ -4954,7 +5057,7 @@
           "costs"
         ],
         "summary": "Metadata Ingest",
-        "description": "Batch ingest metadata events from SDK instances (D16).\n\nResolves the project from the authenticated API key, deduplicates,\nand stores events as CostEvent records. Max batch size: 1000 events.\n\nReturns 202 for every well-formed request with per-event dispositions:\nevents the API refuses (unknown model, unknown service tier) appear in\n``rejected`` while accepted events commit — a rejected event never\ncosts the rest of the batch. Events a dedup surface already holds a\ndurable row for appear in ``duplicates``: neither ingested nor rejected,\nso ``len(submitted) == ingested + len(rejected) + len(duplicates)``.",
+        "description": "Batch ingest metadata events from SDK instances (D16).\n\nResolves the project from the authenticated API key, deduplicates,\nand stores events as CostEvent records. Max batch size: 1000 events.\n\nReturns 202 after accepted events have committed, with per-event dispositions.\nTemporary accounting or tag contention/maintenance returns 503 with Retry-After;\nthat batch is unaccepted and must be retried.\n\nIn a 202 response,\nevents the API refuses (unknown model, unknown service tier) appear in\n``rejected`` while accepted events commit — a rejected event never\ncosts the rest of the batch. Events a dedup surface already holds a\ndurable row for appear in ``duplicates``: neither ingested nor rejected,\nso ``len(submitted) == ingested + len(rejected) + len(duplicates)``.",
         "operationId": "metadata_ingest_api_v1_metadata_ingest_post",
         "requestBody": {
           "content": {
@@ -5022,6 +5125,25 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RateLimitErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporary accounting or tag contention/maintenance; batch unaccepted, retry",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
                 }
               }
             }
@@ -6715,6 +6837,243 @@
         }
       }
     },
+    "/api/v1/account/alerts/activity": {
+      "get": {
+        "tags": [
+          "alert-events"
+        ],
+        "summary": "Account Alert Activity",
+        "description": "One bounded activity page across the authenticated account's projects.",
+        "operationId": "account_alert_activity_api_v1_account_alerts_activity_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "fired",
+                    "snoozed",
+                    "unsnoozed",
+                    "paused",
+                    "resumed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertEventListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/alerts/latest-events": {
+      "post": {
+        "tags": [
+          "alert-events"
+        ],
+        "summary": "Latest Alert Events",
+        "description": "Latest fire per rule, plus latest account-rule event.\n\nPercent rules also match their stamped percent across budget-limit changes.\nAt most four indexed probes serve each rule. Fire probes filter periods\nbefore ordering; account lifecycle events survive activity pagination.",
+        "operationId": "latest_alert_events_api_v1_account_alerts_latest_events_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "90d"
+              ],
+              "type": "string",
+              "default": "30d",
+              "title": "Range"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertLatestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertLatestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/alerts/delivery-status": {
+      "get": {
+        "tags": [
+          "alert-events"
+        ],
+        "summary": "Account Delivery Status",
+        "operationId": "account_delivery_status_api_v1_account_alerts_delivery_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertDeliverySummary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/account/alerts/open-deliveries": {
+      "get": {
+        "tags": [
+          "alert-events"
+        ],
+        "summary": "Account Open Deliveries",
+        "operationId": "account_open_deliveries_api_v1_account_alerts_open_deliveries_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertOpenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/alert-events": {
       "get": {
         "tags": [
@@ -8005,7 +8364,7 @@
           "spend-baseline"
         ],
         "summary": "Get Project Spend Baseline",
-        "description": "Return the trailing daily-spend baseline for the project.\n\nJWT auth must own the project; API-key auth must be scoped to the same\nproject (mirrors the forecast / budget endpoints).\n\nThe materialized view is refreshed on a periodic schedule\n(``run_daily_spend_refresh_loop``). UI preview values may lag the live\ncost_events stream by up to one refresh interval — this is intentional\nso the dashboard doesn't drive REFRESH MATERIALIZED VIEW on every page\nload.",
+        "description": "Return the trailing daily-spend baseline for the project.\n\nJWT auth must own the project; API-key auth must be scoped to the same\nproject (mirrors the forecast / budget endpoints).\n\nClosed-day values reflect committed metadata immediately.",
         "operationId": "get_project_spend_baseline_api_v1_projects__project_id__spend_baseline_get",
         "security": [
           {
@@ -9041,6 +9400,16 @@
               }
             }
           },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingConflictResponse"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Service Unavailable",
             "content": {
@@ -9124,6 +9493,166 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BillingValidationResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUnavailableResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Discard Plan Change",
+        "description": "Discard a scheduled plan change; the plan renews as it is.\n\nIdempotent: 204 whether or not a change was waiting. Required before a\ncancel while a change is scheduled (``POST /cancel`` answers 409\n``billing_plan_change_scheduled``).",
+        "operationId": "discard_plan_change_api_v1_billing_plan_change_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingNotFoundResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingConflictResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUnavailableResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Cancel Subscription",
+        "description": "Schedule the subscription to end when the current plan term ends.\n\nThe term is the flat plan's period: a year on an annual plan, a month on a\nmonthly one. Nothing is prorated or refunded; the plan stays in force until\n``cancel_at``.",
+        "operationId": "cancel_subscription_api_v1_billing_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingNotFoundResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingConflictResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUnavailableResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Undo Cancel Subscription",
+        "description": "Undo a scheduled cancellation; the plan renews at its term end.",
+        "operationId": "undo_cancel_subscription_api_v1_billing_cancel_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingNotFoundResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingConflictResponse"
                 }
               }
             }
@@ -10362,6 +10891,19 @@
         ],
         "title": "AlertDeliveryStatus"
       },
+      "AlertDeliverySummary": {
+        "properties": {
+          "has_open_deliveries": {
+            "type": "boolean",
+            "title": "Has Open Deliveries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "has_open_deliveries"
+        ],
+        "title": "AlertDeliverySummary"
+      },
       "AlertEmailResponse": {
         "properties": {
           "effective_email": {
@@ -10592,6 +11134,71 @@
         ],
         "title": "AlertEventWindow"
       },
+      "AlertLatestRequest": {
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleLookup"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rules"
+        ],
+        "title": "AlertLatestRequest"
+      },
+      "AlertLatestResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AlertEventEntry"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "window": {
+            "$ref": "#/components/schemas/AlertEventWindow"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "window"
+        ],
+        "title": "AlertLatestResponse"
+      },
+      "AlertOpenResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AlertEventEntry"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "next_cursor"
+        ],
+        "title": "AlertOpenResponse"
+      },
       "AlertPreviewItem": {
         "properties": {
           "rule": {
@@ -10692,6 +11299,67 @@
         ],
         "title": "AlertRouting",
         "description": "Server-computed dispatch outcome for one alert.\n\nComputed by the shared routing predicate (``services/routing_predicate.py``)\nso it never diverges from what the dispatcher actually does. The client is a\npure renderer of this object (§5.2 grammar maps 1:1)."
+      },
+      "AlertRuleLookup": {
+        "properties": {
+          "rule_key": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Rule Key"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "rule_type": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Rule Type"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "period_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rule_key",
+          "project_id",
+          "rule_type"
+        ],
+        "title": "AlertRuleLookup"
       },
       "AlertsPreviewResponse": {
         "properties": {
@@ -11324,9 +11992,22 @@
             "format": "date-time",
             "title": "Current Period End"
           },
-          "cancel_at_period_end": {
-            "type": "boolean",
-            "title": "Cancel At Period End"
+          "billing_cycle_anchor": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Billing Cycle Anchor"
+          },
+          "cancel_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel At"
           },
           "pause_collection_exists": {
             "type": "boolean",
@@ -11369,7 +12050,8 @@
           "pending_update_exists",
           "current_period_start",
           "current_period_end",
-          "cancel_at_period_end",
+          "billing_cycle_anchor",
+          "cancel_at",
           "pause_collection_exists",
           "grace_period_until",
           "raw_status_at",
@@ -11564,7 +12246,7 @@
           "armed"
         ],
         "title": "BaselineResult",
-        "description": "Materialized-view-derived daily spend baseline for a project.\n\n``armed`` is True iff ``days_with_data`` >= 3. When False, the evaluator\nskips the rule and the UI shows a \"collect more data\" state."
+        "description": "Transactional daily spend baseline for a project.\n\n``armed`` is True iff ``days_with_data`` >= 3. When False, the evaluator\nskips the rule and the UI shows a \"collect more data\" state."
       },
       "BillingBadRequestDetail": {
         "properties": {
@@ -11804,7 +12486,10 @@
               "billing_subscription_past_due",
               "billing_subscription_unusable",
               "billing_subscription_active",
-              "billing_plan_no_change"
+              "billing_plan_no_change",
+              "billing_cancel_pending",
+              "billing_plan_change_scheduled",
+              "billing_plan_payment_failed"
             ],
             "title": "Code"
           },
@@ -11918,6 +12603,7 @@
               "billing_portal_unavailable",
               "billing_preview_unavailable",
               "billing_plan_change_unavailable",
+              "billing_cancel_unavailable",
               "billing_webhook_unavailable"
             ],
             "title": "Code"
@@ -12440,6 +13126,22 @@
             ],
             "title": "Price Hints Version",
             "description": "Explicit opt-in to server price hints on the response. Omitted requests keep price_hints null (no statement)."
+          },
+          "uncounted_calls": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Uncounted Calls",
+            "description": "Outage fail-open calls this client admitted on the per-call path since its last successful control-plane contact; advisory, never priced",
+            "default": 0
+          },
+          "uncounted_tokens": {
+            "type": "integer",
+            "maximum": 9223372036854775807,
+            "minimum": 0.0,
+            "title": "Uncounted Tokens",
+            "description": "Tokens consumed by those uncounted calls (provider-reported where the call completed, estimated input otherwise)",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -13013,6 +13715,33 @@
         },
         "type": "object",
         "title": "CancelPendingResponse"
+      },
+      "CancelResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "cancel_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel At",
+            "description": "When the subscription ends; null once a cancellation is undone."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "cancel_at"
+        ],
+        "title": "CancelResponse"
       },
       "CatalogRefreshRequest": {
         "properties": {
@@ -17126,46 +17855,31 @@
       "PlanChangeRequest": {
         "properties": {
           "target_tier": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "production",
-                  "team",
-                  "scale"
-                ]
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "production",
+              "team",
+              "scale"
             ],
             "title": "Target Tier"
           },
           "target_billing_interval": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "month",
-                  "year"
-                ]
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "month",
+              "year"
             ],
             "title": "Target Billing Interval"
-          },
-          "cancel_at_period_end": {
-            "type": "boolean",
-            "title": "Cancel At Period End",
-            "default": false
           }
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "target_tier",
+          "target_billing_interval"
+        ],
         "title": "PlanChangeRequest",
-        "description": "Request body for ``POST /api/v1/billing/plan-change``.\n\n``proration_date`` is deliberately NOT accepted from the client. It is\nderived server-side at handler entry; otherwise a hostile authenticated\ncaller could backdate the proration window and have Stripe compute\narbitrary credits or debits. Preview math may drift by a few seconds\nversus the confirm call — Stripe handles that within its prorated-second\ngranularity, and the dashboard already shows the preview as an estimate."
+        "description": "Request body for ``POST /api/v1/billing/plan-change``.\n\n``proration_date`` is deliberately NOT accepted from the client. It is\nderived server-side at handler entry; otherwise a hostile authenticated\ncaller could backdate the proration window and have Stripe compute\narbitrary credits or debits. Preview math may drift by a few seconds\nversus the confirm call — Stripe handles that within its prorated-second\ngranularity, and the dashboard already shows the preview as an estimate.\n\nCancelling is its own route (``POST /api/v1/billing/cancel``)."
       },
       "PlanChangeResponse": {
         "properties": {
@@ -17173,8 +17887,7 @@
             "type": "string",
             "enum": [
               "immediate",
-              "scheduled",
-              "cancel_at_period_end"
+              "scheduled"
             ],
             "title": "Mode"
           },
@@ -17192,6 +17905,19 @@
               }
             ],
             "title": "Proration Date"
+          },
+          "effective_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective At",
+            "description": "When a scheduled change takes effect (the current plan term's end)."
           }
         },
         "type": "object",
@@ -17302,6 +18028,28 @@
             ],
             "title": "Target Billing Interval"
           },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "immediate",
+              "scheduled"
+            ],
+            "title": "Mode",
+            "description": "immediate: applied now and the prorated difference invoiced (an upgrade that does not move from annual to monthly, or month to year). scheduled: applied at effective_at, nothing due now (a downgrade, or any year to month, upgrades included)."
+          },
+          "effective_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective At",
+            "description": "When a scheduled change takes effect; null for an immediate one."
+          },
           "proration_date": {
             "type": "integer",
             "title": "Proration Date"
@@ -17330,6 +18078,8 @@
         "required": [
           "target_tier",
           "target_billing_interval",
+          "mode",
+          "effective_at",
           "proration_date",
           "amount_due_cents",
           "total_cents",
@@ -18211,7 +18961,8 @@
           "operation_id",
           "checks"
         ],
-        "title": "RecoverableBudgetCheckRequest"
+        "title": "RecoverableBudgetCheckRequest",
+        "description": "A bounded batch of checks claimed once under a caller-chosen operation_id.\n\nEvery check's full body, including its uncounted_calls / uncounted_tokens\noutage tally, is part of the operation's identity: a retry with the same\noperation_id must carry the identical tally (anything else is a 409\noperation_conflict), so outage calls accrued after the first attempt belong\nin a later operation."
       },
       "RecoverableBudgetCheckResponse": {
         "properties": {
@@ -18643,6 +19394,55 @@
         ],
         "title": "SavingsSummary"
       },
+      "ScheduledPlanChangeResponse": {
+        "properties": {
+          "target_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "production",
+                  "team",
+                  "scale"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Tier",
+            "description": "The tier from effective_at; null if Solwyn did not make the schedule."
+          },
+          "target_billing_interval": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "month",
+                  "year"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Billing Interval"
+          },
+          "effective_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective At",
+            "description": "When the change takes effect (the term's end)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_tier",
+          "target_billing_interval",
+          "effective_at"
+        ],
+        "title": "ScheduledPlanChangeResponse"
+      },
       "ScopedBudgetConfig": {
         "properties": {
           "type": {
@@ -18909,7 +19709,7 @@
           "pricing_version": {
             "type": "string",
             "title": "Pricing Version",
-            "default": "2026-08-06"
+            "default": "2026-09-23"
           },
           "current_rates_snapshot": {
             "type": "boolean",
@@ -19388,12 +20188,21 @@
                 "type": "null"
               }
             ],
-            "title": "Current Period End"
+            "title": "Current Period End",
+            "description": "End of the current plan term (a year on an annual plan): the renewal date, unless ``cancel_at`` is set."
           },
-          "cancel_at_period_end": {
-            "type": "boolean",
-            "title": "Cancel At Period End",
-            "default": false
+          "cancel_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel At",
+            "description": "When the subscription ends; null while it renews."
           },
           "grace_period_until": {
             "anyOf": [
@@ -19434,6 +20243,17 @@
                 "type": "null"
               }
             ]
+          },
+          "scheduled_plan_change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledPlanChangeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A plan change waiting for the current term to end. It blocks a cancel until discarded (DELETE /plan-change). Null when none is scheduled, or when Stripe could not be read."
           }
         },
         "type": "object",
@@ -19981,6 +20801,47 @@
           "refresh_token"
         ],
         "title": "TokenResponse"
+      },
+      "UncountedTallyResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "uncounted_calls": {
+            "type": "integer",
+            "title": "Uncounted Calls",
+            "description": "Calls SDKs admitted fail-open on the per-call path while Solwyn Cloud was unreachable, as reported on their next successful budget check. Cumulative and advisory, never priced and never in current_usage; at-least-once delivery makes it an upper bound, and it saturates at the signed 64-bit ceiling."
+          },
+          "uncounted_tokens": {
+            "type": "integer",
+            "title": "Uncounted Tokens",
+            "description": "Tokens consumed by those uncounted calls (provider-reported where the call completed, estimated input otherwise). Same advisory, saturating, upper-bound semantics as uncounted_calls."
+          },
+          "last_reported_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reported At",
+            "description": "When a report was last folded; null if the project never reported."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "uncounted_calls",
+          "uncounted_tokens",
+          "last_reported_at"
+        ],
+        "title": "UncountedTallyResponse",
+        "description": "The per-call path's outage uncounted tally for one project.\n\nA separate read-only sub-resource rather than fields on\n``BudgetStatusResponse`` on purpose: released CLIs parse that response with\n``extra=\"forbid\"``, so any new key there breaks them the moment the API\ndeploys."
       },
       "UnitCostAnomalyConfig": {
         "properties": {
@@ -21013,6 +21874,6 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-09-07",
-  "x-solwyn-core-ref": "63735b831a666aec568324e48d8dd30c4ddc7e0a"
+  "x-solwyn-snapshot-date": "2026-10-14",
+  "x-solwyn-core-ref": "4925784d42e18bb6b680e5a87609d1829f1f64a9"
 }

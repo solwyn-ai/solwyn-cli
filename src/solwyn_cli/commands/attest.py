@@ -135,7 +135,8 @@ class AttestationSubscriptionSnapshot(_AttestationModel):
     pending_update_exists: bool
     current_period_start: datetime
     current_period_end: datetime
-    cancel_at_period_end: bool
+    billing_cycle_anchor: datetime
+    cancel_at: datetime | None
     pause_collection_exists: bool
     grace_period_until: datetime | None
     raw_status_at: datetime

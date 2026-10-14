@@ -149,7 +149,7 @@ def set_config(
     epilog=command_help(
         "POST /api/v1/projects/{project}/notifications/test-{channel}",
         TEST_SCHEMA,
-        auth="any; email requires JWT",
+        auth="any; Slack/PagerDuty require JWT or full-scope key; email requires JWT",
         guidance=(
             "SMS checks eligibility only (no message sent). Slack, PagerDuty and email send a real test. Slack/PagerDuty require --secret-stdin or SOLWYN_CHANNEL_SECRET; use channels test ID for stored credentials.",
             "Core enforces per-channel capabilities; SMS is Production+ and requires phone verification and consent.",

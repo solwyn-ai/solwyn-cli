@@ -94,11 +94,14 @@ def baseline(
     days: Annotated[
         int,
         typer.Option(
-            "--days", min=3, max=30, help="Lookback days for the hourly baseline."
+            "--days",
+            min=3,
+            max=30,
+            help="Lookback days for the daily spend baseline (excludes today).",
         ),
     ] = 7,
 ) -> None:
-    """Show the hourly-refreshed daily spend baseline."""
+    """Show the transactional daily spend baseline, excluding today."""
     data = cast(
         BaselineResult,
         _request(
@@ -127,7 +130,7 @@ def baseline(
                     f"{data.mean_daily_spend:.6f}",
                     f"{data.stdev_daily_spend:.6f}",
                     "yes" if data.armed else "no",
-                    "refreshed hourly",
+                    "committed closed days",
                 ),
             ),
             right_align=("Lookback", "Days with data", "Mean / day", "Stdev / day"),
