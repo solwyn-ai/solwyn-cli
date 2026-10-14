@@ -14,6 +14,12 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("account", "recover"): {
+        "endpoint": "POST /api/v1/accounts/me/personal",
+        "auth": "JWT; active membership not required",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.account.recover.v1",
+    },
     ("attest",): {
         "endpoint": "GET /api/v1/projects/{project}/spend-control-attestation or GET /api/v1/account/spend-control-attestation",
         "auth": "project: key or JWT; account: JWT",

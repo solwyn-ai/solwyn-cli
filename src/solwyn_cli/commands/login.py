@@ -148,7 +148,13 @@ def _login_with_password(context: typer.Context) -> None:
                 hint="Verify your email in the dashboard, then try logging in again.",
                 detail=error.detail,
             )
-        exit_with_error(context, error, semantic=ErrorSemantic.AUTH)
+        exit_with_error(
+            context,
+            error,
+            semantic=ErrorSemantic.GENERIC
+            if error.status_code == 503
+            else ErrorSemantic.AUTH,
+        )
     except CredentialStorageError as error:
         exit_with_error(
             context,

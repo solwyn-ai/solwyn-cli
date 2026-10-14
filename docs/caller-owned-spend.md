@@ -27,6 +27,36 @@ replays succeed, while rejections and legacy timestamp collisions exit 1. On an 
 or partial write, retain the returned `call_ids` in input order before retrying; the
 result has `status=failed` and preserves the dispositions already received.
 
+Core's explicitly unaccepted ingest capacity responses use one of three fixed
+`detail` strings with `Retry-After: 1`: `Budget admission is busy; retry shortly`,
+`Account tag registry is busy; retry the batch.`, or
+`Accounting maintenance is in progress; retry the batch.` These prove that
+individual attempt recorded nothing. The client retries ingest once when any
+`Retry-After` is present, sharing the existing 429 retry budget and 10-second
+wait cap; this replay policy does not itself prove absence.
+If a recognized rejection remains, `record` exits 1 with a retry hint and
+`status=not_recorded` only when no earlier chunk completed and every attempt
+for the failed chunk is provably nonaccepting. Recognized rejections and Core's
+pre-ingest 429/401 responses meet that boundary. An earlier potentially accepted
+attempt stays uncertain even if the final retry is a recognized rejection;
+JWT refresh cannot erase that uncertainty or replenish the shared retry allowance.
+A valid 202 with complete canonical dispositions resolves the call normally.
+A partial multi-chunk invocation retains `status=failed` and all known
+dispositions; the recognized
+rejection proves only the failed chunk was unaccepted if its earlier attempts
+also meet that boundary. A generic/proxy 503, a missing or different header,
+or a transport failure remains uncertain:
+CLI retains `status=failed` and MCP reports `recording=unknown`. Always retry
+attribution with the original `call_ids` and attempt indices.
+
+Budget and quota periods use Core's server receive time (`received_at`), while
+cost analytics use the stored event `timestamp`. A backdated `record --batch`
+event counts against the budget and quota period in which Core receives it,
+but appears on its original day in `costs` if that timestamp is within Core's
+accepted clock bounds. Core clamps excessive future skew and, when a past
+horizon is configured, older timestamps; retention can also hide old analytics.
+Backdating records does not move spend out of the current budget period.
+
 Repeat `--tag key=value` to override environment tags. Keys and values preserve
 whitespace and case; empty values and equals signs in values are legal, commas in
 flag values are not. Tags allow at most 10 keys, keys of 1–64 characters, and values
@@ -63,8 +93,21 @@ either a nullable `result`, or `error_code` and `error_message`. Unknown models 
 per-item errors. All allowed exits 0, any denial exits 4, and errors without a denial
 exit 1. A request-level 404 or 503 fails the chunk. If an earlier chunk completed,
 its results and reservation IDs remain in output, alongside `failed_chunk_start`
-and `total_checks`; later chunks were not submitted. Reservation state inside a
-503-failed chunk is unknown. Do not replay completed checks or assume rollback.
+and `total_checks`; later chunks were not submitted. Every legacy batch 503
+leaves reservation state within the failed chunk unknown, including
+`Budget admission is busy; retry shortly` with `Retry-After: 1`. Core uses that
+same response both before admission and after the legacy loop has committed
+earlier item reservations, so the response cannot distinguish those cases.
+This uncertainty applies even to the first chunk. Do not replay completed
+checks, assume rollback, or blindly resubmit the failed chunk. The CLI does not
+automatically replay budget checks.
+
+For single `/budgets/check` and durable `/budgets/check/batches`, that fixed
+busy detail proves no reservation was made by the request; retrying admission
+in a moment is safe. This is a reservation guarantee: single checks can already
+have folded advisory `uncounted_calls`/`uncounted_tokens` before lock contention.
+A retry can overcount this advisory upper-bound telemetry. Preserve caller
+values; the hint does not promise an absence of all side effects.
 The MCP `budget_check_batch` tool submits at most 32 checks to Core’s durable
 journal with a caller-retained UUIDv7. Recovery uses GET only; explicit denial
 attribution retry preserves its exact event. See [bounded MCP work and recovery](mcp-bounded-work.md)

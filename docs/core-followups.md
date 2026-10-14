@@ -118,3 +118,34 @@ and closed `solwyn-ai/core` issues found no earlier matches on 2026-09-05. They 
 No finding from the wave-0 list was obsolete at the verified commit. When Core resolves one,
 move it to a resolved section with the fixing issue or commit instead of leaving a stale current
 finding on this page.
+
+
+## Reliability audit at Core `4925784d` (2026-10-14)
+
+- Declare the accounting-rebuild 503 from `GET /api/v1/account/costs` in OpenAPI.
+  `_load_account_project_metadata` already refuses to publish a partial gauge
+  when durable accounting is rebuilding; the route's response declaration
+  omits this status. This requires a Core change, not a CLI snapshot edit.
+- Give pre-auth budget-capacity shedding a typed machine code in OpenAPI,
+  distinct from a mid-batch backend failure. At this Core HEAD, the middleware
+  and global `BudgetProjectBusyError` handler both return
+  `Budget admission is busy; retry shortly` with `Retry-After: 1`. The legacy
+  `/budgets/check/batch` loop can commit earlier item reservations before that
+  handler fires: the identical response does not prove no reservation for any
+  failed legacy chunk. The CLI preserves that uncertainty, completed results,
+  and later unsubmitted chunks. Single `/budgets/check` lock/floor errors precede
+  reservation; durable `/budgets/check/batches` converts route failures to
+  structured `outcome_unavailable`, requiring same-ID GET recovery. Only these
+  two paths receive the fixed-detail no-reservation hint. Advisory uncounted
+  tallies can already be folded before a single-check lock failure; retries may
+  overcount their upper bound. Do not broaden reservation absence to all effects.
+- Give explicitly unaccepted ingest capacity responses stable machine codes
+  and declare their rollback guarantee. The CLI currently requires status 503,
+  `Retry-After: 1`, and one of the exact budget-busy, tag-registry-busy, or
+  accounting-maintenance details from Core's three handlers. Unrecognized proxy
+  responses or missing/different headers retain recording uncertainty. Identical
+  call-ID replay remains separately safe under ingest deduplication; it cannot
+  establish that the earlier request recorded nothing. The CLI retains this
+  evidence across all attempts and JWT refresh: a recognized final rejection
+  alone cannot prove the whole logical batch call was unaccepted. Core's auth
+  dependencies and IP/project 429 gates reject before ingest starts.

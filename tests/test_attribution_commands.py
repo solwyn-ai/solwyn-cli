@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from solwyn_cli.commands import budget
 from solwyn_cli.main import app
-from solwyn_cli.errors import error_from_response
+from solwyn_cli.errors import ApiError, error_from_response
 from golden.harness import assert_matches_golden
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -412,8 +412,12 @@ def test_multiple_tags_do_not_invent_a_denying_key(transport):
 def test_uncertain_record_failure_retains_generated_call_ids_for_safe_retry(transport):
     requests, replies = transport
     replies.append(
-        error_from_response(
-            httpx.Response(503, json={"detail": "Temporarily unavailable"})
+        ApiError(
+            status_code=None,
+            code="transport_error",
+            message="Could not connect to the Solwyn API.",
+            hint=None,
+            detail=None,
         )
     )
     result = runner.invoke(
@@ -423,4 +427,4 @@ def test_uncertain_record_failure_retains_generated_call_ids_for_safe_retry(tran
     payload = json.loads(result.stdout)
     assert payload["status"] == "failed"
     assert payload["call_ids"] == [requests[0][2]["json"][0]["call_id"]]
-    assert "Temporarily unavailable" in result.stderr
+    assert "transport_error" in result.stderr

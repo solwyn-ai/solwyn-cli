@@ -19,6 +19,7 @@ from pydantic import (
 
 from solwyn_cli._vendor.validation import validate_project_key_format
 from solwyn_cli._vendor.wire import RefreshRequest
+from solwyn_cli.errors import error_from_response
 
 KEYRING_SERVICE = "solwyn-cli"
 API_KEY_ENTRY = "api_key"
@@ -31,6 +32,8 @@ class AuthError(RuntimeError):
     """Authentication failed without exposing credential material."""
 
     exit_code: ClassVar[int] = AUTH_EXIT_CODE
+    # A terminal auth failure cannot erase an earlier ingest attempt's uncertainty.
+    ingest_outcome_uncertain: bool = False
 
 
 class CredentialStorageError(AuthError):
@@ -223,6 +226,8 @@ def request_with_refresh_retry(
     response = request(credential)
     if response.status_code != httpx.codes.UNAUTHORIZED:
         return response
+    if error_from_response(response).code == "account_membership_revoked":
+        return response
     if not isinstance(credential, JwtCredential):
         raise AuthError("Authentication failed. Check your credentials.")
 
@@ -248,5 +253,7 @@ def request_with_refresh_retry(
         on_credential_rotated(rotated)
     retry_response = request(rotated)
     if retry_response.status_code == httpx.codes.UNAUTHORIZED:
+        if error_from_response(retry_response).code == "account_membership_revoked":
+            return retry_response
         raise AuthError("Authentication failed after refresh. Log in again.")
     return retry_response

@@ -13,7 +13,11 @@ solwyn --project "$SOLWYN_PROJECT_ID" costs export --format json > costs.jsonl 2
 ```
 
 Export writes raw CSV or NDJSON rather than the CLI JSON envelope. Keep stdout and
-stderr separate; stderr contains Core's `X-Solwyn-*` window and truncation headers.
+stderr separate; stderr contains Core's `X-Solwyn-*` window headers and
+`X-Solwyn-Export-Snapshot` when supplied. Raw exports are capped at 25,000 events
+or 32 MiB; aggregate exports at 10,000 pricing subgroups. Oversized exports
+and simulations (25,000 events) return 422, exit 2, and no partial result;
+narrow the window.
 Write exports to a temporary file and rename only after exit 0 so a failed
 connection does not publish a partial file. Preserve CSV formula-safety prefixes.
 
@@ -22,3 +26,56 @@ returns uncapped totals and the effective window. Locally invalid cost queries
 return `invalid_cost_query` with corrective guidance; malformed API responses
 remain `invalid_costs_response`. Neither tool records spend or
 mutates account settings. Use the tool's structured `ok` and `error` fields.
+
+On a 503 with `Retry-After`, the shared client retries GET reads and metadata
+ingest once, sharing the existing 429 retry budget and waiting at most
+10 seconds (numeric seconds and HTTP dates are
+supported). It never retries a download after yielding output bytes. Other
+POSTs, including read-only cost simulation, are not automatically retried
+on 503. Simulation receives a service-busy read hint. Capacity and rate-limit
+retries share one replay allowance across JWT refresh; authentication refresh
+does not replenish that allowance.
+Do not infer a write's outcome
+from a generic service-busy response: inspect retained state before retrying.
+
+MCP exposes the fixed `service_busy` error code with a local retry hint.
+Single budget checks and durable journal admission receive a reservation-specific
+hint on Core's fixed budget-busy detail: no reservation was made, so admission
+is safe to retry. This does not promise zero side effects: advisory uncounted
+tallies may already have been folded and can overcount on retry. The CLI's legacy
+batch endpoint can return the identical busy detail after committing earlier
+items; its failed chunk remains unknown even on the first chunk. Keep completed
+results and do not blindly replay the failed chunk; later chunks were not submitted.
+
+Ingest `not_recorded` requires a final status 503, `Retry-After: 1`, and exactly one of
+Core's three rejection details: `Budget admission is busy; retry shortly`,
+`Account tag registry is busy; retry the batch.`, or
+`Accounting maintenance is in progress; retry the batch.` Every earlier attempt
+must also be provably nonaccepting: a recognized rejection or Core's pre-ingest
+429/401 response. A recognized final rejection cannot erase uncertainty from
+an earlier potentially accepted attempt, including across JWT refresh.
+Missing/different headers, unrecognized HTML/JSON proxy responses, and transport
+failures keep MCP
+`recording=unknown` and CLI `status=failed` with retained call IDs. A valid 202
+acknowledgement with complete canonical dispositions resolves the call normally.
+Retry attribution with the same call identities and attempt indices regardless of
+whether absence is proven. Durable journal `outcome_unavailable` retains its
+existing code and unknown state; use the same operation ID with `recover_only`
+to inspect it.
+Other 503s, including accounting-gauge rebuilds, carry no absence guarantee.
+CLI service-busy failures use existing exit 1, not an auth or budget-denied exit.
+
+`solwyn login` retries `auth_capacity_exceeded` once with the same capped wait.
+Continued exhaustion exits 1 and preserves that machine-readable code with a
+retry hint. Credentials and tokens are never emitted. If a JWT request returns
+`account_membership_revoked`, run `solwyn account recover` instead of repeatedly
+logging in. Recovery requires JWT authentication and idempotently creates a
+personal account when no active membership exists (or returns the existing
+account); it emits `solwyn.account.recover.v1` with `account_id`. Project keys
+cannot recover accounts. Unset `SOLWYN_API_KEY` and clear a stored project key
+with `solwyn logout` before using user login if necessary. Recovery is CLI-only.
+
+Budget and quota periods use server receive time. Analytics use the event's
+stored timestamp: a backdated batch counts against today's applicable budget
+and quota period but appears on its original analytics day, subject to Core's
+clock bounds and retention. Backdating cannot bypass current-period limits.
