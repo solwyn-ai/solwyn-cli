@@ -481,7 +481,13 @@ def _account(
                 else AccountAlertSnoozeResponse
             )
             payload = model.model_validate(response.json()).model_dump(mode="json")
-    table = TableData(
+    output_engine(context).write_success(
+        schema="solwyn.alerts.account.v1", data=payload, table=_account_table(payload)
+    )
+
+
+def _account_table(payload: dict[str, Any]) -> TableData:
+    return TableData(
         columns=("field", "value"),
         rows=tuple(
             (
@@ -495,9 +501,6 @@ def _account(
             for key, value in payload.items()
         ),
         fold_cells=True,
-    )
-    output_engine(context).write_success(
-        schema="solwyn.alerts.account.v1", data=payload, table=table
     )
 
 
@@ -517,13 +520,7 @@ def account_show(
     output_engine(context).write_success(
         schema="solwyn.alerts.account.v1",
         data=data,
-        table=TableData(
-            columns=("Field", "Value"),
-            rows=tuple(
-                (k, json.dumps(v)) for k, v in data.model_dump(mode="json").items()
-            ),
-            fold_cells=True,
-        ),
+        table=_account_table(data.model_dump(mode="json")),
     )
 
 

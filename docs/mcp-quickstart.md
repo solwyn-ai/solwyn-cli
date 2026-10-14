@@ -100,6 +100,12 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 
 ## Run the actual clients
 
+The copied Python/TypeScript examples and verification fixtures pin a verified
+CLI/MCP tool inventory: exact names and cardinality, read-only annotations and
+privacy/discovery checks. They intentionally fail closed when the catalog
+changes. Update these clients and fixtures together with the server version
+when tools are added; keep all discovery and annotation checks intact.
+
 The checked-in [Python client](../examples/mcp/python/client.py) uses public MCP
 2.1.1 and its own `uv.lock`, with Python 3.11+. From the CLI checkout, substitute
 your installed executable and project:

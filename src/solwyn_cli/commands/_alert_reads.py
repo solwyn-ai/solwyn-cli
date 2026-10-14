@@ -134,7 +134,7 @@ def _matches(event: AlertEventEntry, rule: AlertRuleLookup) -> bool:
 
 
 def request_latest_events(
-    *, client: SolwynClient, rules: list[AlertRuleLookup]
+    *, client: SolwynClient, rules: list[AlertRuleLookup], account_id: str | None = None
 ) -> tuple[list[RuleLatest], AlertEventWindow | None]:
     require_alert_jwt(client)
     results = []
@@ -150,6 +150,10 @@ def request_latest_events(
             ).json()
         )
         window = page.window
+        if account_id is not None and any(
+            event.account_id != account_id for event in page.events
+        ):
+            raise ValueError("Latest alert event account did not match.")
         if any(
             not any(_matches(event, rule) for rule in chunk) for event in page.events
         ):
@@ -188,14 +192,24 @@ def request_account_alert(
         return data
     latest, window = request_latest_events(
         client=client,
+        account_id=data.account_id,
         rules=[
             AlertRuleLookup(
-                rule_key=data.account_id,
+                rule_key=rule_key,
                 project_id=None,
-                rule_type="account_spend_threshold",
+                rule_type="account_spend",
             )
+            for rule_key in (data.account_id, "account_spend")
         ],
     )
+    merged = {}
+    for field in ("last_fired", "latest_event"):
+        events = [event for result in latest if (event := getattr(result, field))]
+        merged[field] = (
+            max(events, key=lambda event: (event.emitted_at, event.id))
+            if events
+            else None
+        )
     return AccountAlertWithLatestResponse(
-        **data.model_dump(), **latest[0].model_dump(), latest_window=window
+        **data.model_dump(), **merged, latest_window=window
     )

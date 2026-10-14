@@ -64,7 +64,9 @@ check. These outputs use `solwyn.alerts.activity.v1` and `solwyn.alerts.pending.
 Last firing is opt-in and requires JWT, including project rules. Selectors come
 from the fetched rules, are chunked at 100, and match thresholds by percent so
 budget-limit edits preserve history. Budget output maps rule keys to firing events
-or null; account output includes last firing and latest lifecycle event. Core's
+or null; account output includes last firing and latest lifecycle event, merging
+current account-ID and legacy `account_spend` history by timestamp and event ID.
+Core's
 default 30d window and plan retention apply; null does not prove a rule never
 fired. Without the flag there is no extra request. MCP exposes
 `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert` and the

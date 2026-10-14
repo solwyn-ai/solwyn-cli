@@ -754,8 +754,92 @@ def test_account_latest_tool_retains_both_firing_and_lifecycle(monkeypatch):
         {
             "rule_key": "account-one",
             "project_id": None,
-            "rule_type": "account_spend_threshold",
+            "rule_type": "account_spend",
             "percent": None,
             "period_keys": None,
-        }
+        },
+        {
+            "rule_key": "account_spend",
+            "project_id": None,
+            "rule_type": "account_spend",
+            "percent": None,
+            "period_keys": None,
+        },
     ]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        {"rule_key": "unassociated"},
+        {"project_id": "proj_other"},
+        {"rule_key": "account-one", "account_id": "other-account"},
+    ],
+)
+def test_account_latest_legacy_history_rejects_wrong_association(monkeypatch, mutate):
+    event = (
+        dict(
+            EVENT,
+            scope="account",
+            project_id=None,
+            rule_key="account_spend",
+            rule_type="account_spend",
+            event_type="fired",
+        )
+        | mutate
+    )
+    result, requests = call(
+        monkeypatch,
+        "get_account_alert",
+        [
+            httpx.Response(200, json=ACCOUNT),
+            httpx.Response(200, json=dict(events=[event], window=WINDOW)),
+        ],
+        {"with_last_fired": True},
+    )
+    assert result.is_error
+    assert result.structured_content["error"]["code"] == "invalid_read_response"
+    assert result.structured_content["data"] is None
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("legacy_only", [True, False])
+def test_account_latest_tool_merges_legacy_firing_with_current_lifecycle(
+    monkeypatch, legacy_only
+):
+    fire = dict(
+        EVENT,
+        scope="account",
+        project_id=None,
+        rule_key="account_spend",
+        rule_type="account_spend",
+        event_type="fired",
+    )
+    paused = dict(
+        fire,
+        rule_key="account-one",
+        rule_type="account_spend_threshold",
+        event_type="paused",
+        id="paused",
+        emitted_at="2026-10-01T00:00:00Z",
+    )
+    result, requests = call(
+        monkeypatch,
+        "get_account_alert",
+        [
+            httpx.Response(200, json=ACCOUNT),
+            httpx.Response(
+                200,
+                json=dict(
+                    events=[fire] if legacy_only else [paused, fire], window=WINDOW
+                ),
+            ),
+        ],
+        {"with_last_fired": True},
+    )
+    assert not result.is_error, result
+    data = result.structured_content["data"]
+    assert data["last_fired"]["id"] == fire["id"]
+    assert data["latest_event"]["id"] == (fire["id"] if legacy_only else paused["id"])
+    assert data["latest_window"] == WINDOW
+    assert len(requests[1][2]["json"]["rules"]) == 2

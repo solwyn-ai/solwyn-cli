@@ -221,6 +221,93 @@ def test_account_last_fired_retains_lifecycle():
     assert data["latest_event"]["event_type"] == "paused"
 
 
+@pytest.mark.parametrize(
+    "history", ["current", "legacy", "mixed", "tie", "empty", "lifecycle"]
+)
+def test_account_latest_merges_current_and_legacy_histories(history):
+    from test_alerts_command import ACCOUNT
+
+    current = dict(
+        EVENT,
+        project_id=None,
+        scope="account",
+        rule_key="account-one",
+        rule_type="account_spend_threshold",
+        event_type="fired",
+        id="a-current",
+    )
+    legacy = dict(
+        current, rule_key="account_spend", rule_type="account_spend", id="z-legacy"
+    )
+    paused = dict(
+        current, id="paused", event_type="paused", emitted_at="2026-10-01T00:00:00Z"
+    )
+    events = {
+        "current": [current],
+        "legacy": [legacy],
+        "mixed": [legacy, paused],
+        "tie": [current, legacy],
+        "empty": [],
+        "lifecycle": [paused],
+    }[history]
+    FakeClient.responses = [
+        httpx.Response(200, json=ACCOUNT),
+        httpx.Response(200, json=dict(events=events, window=WINDOW)),
+    ]
+    result = invoke("alerts", "account", "show", "--with-last-fired")
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    if history == "empty":
+        assert data["last_fired"] is None and data["latest_event"] is None
+    elif history == "lifecycle":
+        assert data["last_fired"] is None and data["latest_event"]["id"] == "paused"
+    else:
+        assert data["last_fired"]["id"] == (
+            "a-current" if history == "current" else "z-legacy"
+        )
+        assert data["latest_event"]["id"] == (
+            "paused" if history == "mixed" else data["last_fired"]["id"]
+        )
+    assert data["latest_window"] == WINDOW
+    selectors = FakeClient.instances[0].requests[1][2]["json"]["rules"]
+    assert [r["rule_key"] for r in selectors] == ["account-one", "account_spend"]
+    assert all(
+        r["project_id"] is None and r["rule_type"] == "account_spend" for r in selectors
+    )
+
+
+def test_account_last_fired_table_keeps_scalar_and_null_conventions():
+    from test_alerts_command import ACCOUNT
+
+    FakeClient.responses = [
+        httpx.Response(200, json=ACCOUNT),
+        httpx.Response(200, json=dict(events=[], window=WINDOW)),
+    ]
+    result = runner.invoke(
+        app, ["--no-color", "alerts", "account", "show", "--with-last-fired"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "account-one" in result.stdout and '"account-one"' not in result.stdout
+    rows = {
+        line.split()[0]: line.split()[1:]
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+    assert rows["last_fired"] == rows["latest_event"] == rows["snoozed_until"] == ["—"]
+    assert rows["enabled"] == ["True"] and rows["spend_threshold_usd"] == ["100.0"]
+    assert '"effective_from"' in result.stdout
+
+
+def test_account_latest_opt_out_makes_only_the_config_read():
+    from test_alerts_command import ACCOUNT
+
+    FakeClient.responses = [httpx.Response(200, json=ACCOUNT)]
+    result = invoke("alerts", "account", "show")
+    assert result.exit_code == 0
+    assert len(FakeClient.instances[0].requests) == 1
+    assert "last_fired" not in json.loads(result.stdout)
+
+
 def test_identity_requires_full_me_and_shows_verified(monkeypatch):
     from solwyn_cli.commands import whoami
 
