@@ -1,6 +1,6 @@
 # Connect a harness to Solwyn MCP
 
-Solwyn CLI 0.2.0 is published on PyPI. This guide uses local stdio;
+This guide describes Solwyn CLI 0.3.0 (PyPI package `solwyn-cli`). It uses local stdio;
 there is no hosted MCP endpoint. Account/project access is a separate prerequisite.
 
 ## Install and make one read
@@ -15,15 +15,14 @@ solwyn login --with-key
 ```
 
 Alternatively, use `pipx install solwyn-cli`. The command/tool reference and
-example clients below follow this checkout, including additions made after the
-September 2026 PyPI release. Inspect your installed version with `solwyn --help`
-and MCP discovery. To use the exact 33-read/37-guardrails inventory described
-here before those additions are released, build an authorized current checkout:
+example clients below describe 0.3.0 (33 read / 37 guardrails tools); 0.2.0 exposes
+13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.3.0 is not
+yet available from your package index, build an authorized checkout:
 
 ```sh
 uv sync --locked --all-groups
 uv build --wheel
-uv tool install --force --python 3.11 dist/solwyn_cli-0.2.0-py3-none-any.whl
+uv tool install --force --python 3.11 dist/solwyn_cli-0.3.0-py3-none-any.whl
 ```
 
 The login command prompts for a project key and stores it in the OS keychain.
