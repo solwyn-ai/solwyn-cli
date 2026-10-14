@@ -17,7 +17,7 @@ solwyn login --with-key
 Alternatively, use `pipx install solwyn-cli`. The command/tool reference and
 example clients below follow this checkout, including additions made after the
 September 2026 PyPI release. Inspect your installed version with `solwyn --help`
-and MCP discovery. To use the exact 31-read/35-guardrails inventory described
+and MCP discovery. To use the exact 33-read/37-guardrails inventory described
 here before those additions are released, build an authorized current checkout:
 
 ```sh
@@ -138,7 +138,7 @@ npm start -- --executable /absolute/path/to/solwyn --project proj_0123456789abcd
 
 Both programs discover the read catalog, make one successful read, validate the
 Solwyn envelope/project, and print only typed selected fields as JSON. They
-require all 31 current read tool names, exactly once, with explicit read-only
+require all 33 current read tool names, exactly once, with explicit read-only
 annotations and no continuation cursor; incomplete or write-bearing catalogs
 fail before a budget read. They check both MCP `isError` and envelope `ok`.
 Execution failures return a fixed
