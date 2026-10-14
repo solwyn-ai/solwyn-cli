@@ -1,7 +1,7 @@
 # Command reference
 
-These references describe this checkout. Published 0.2.0 predates later audit
-additions; use installed `--help` and MCP discovery for its exact surface.
+These references describe solwyn-cli 0.3.0. Earlier releases, including 0.2.0, lack many of
+these commands; use installed `--help` and MCP discovery for an installed version's exact surface.
 Global selection/output flags precede commands. Core authorizes every request.
 
 - [Account and identity, rename and recovery](account.mdx)

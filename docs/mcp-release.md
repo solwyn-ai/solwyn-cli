@@ -1,11 +1,11 @@
 # MCP release preparation
 
-**Unpublished Registry draft.** The `solwyn-cli` 0.2.0 package is published on
-PyPI (verified 2026-10-14), but that September release predates later changes
-in this checkout. The [Registry draft](registry/server.draft.json) proposes
-`ai.solwyn/solwyn`; namespace ownership is **unverified**. Neither local validation
-nor MCP discovery proves Registry publication, ownership, safety certification or
-availability of checkout-only features in the published wheel.
+**Unpublished Registry draft.** This checkout prepares `solwyn-cli` 0.3.0; verify its
+PyPI publication separately (0.2.0 was verified on PyPI on 2026-10-14). The
+[Registry draft](registry/server.draft.json) proposes `ai.solwyn/solwyn`;
+namespace ownership is **unverified**. Neither local validation nor MCP discovery proves
+Registry publication, ownership, safety certification or availability of checkout-only
+features in a published wheel.
 
 ## Validate locally
 
@@ -34,7 +34,7 @@ resolution remains separate; this is not a claim of byte-identical wheel builds.
 Inspect the final distribution before uploading; for the current version:
 
 ```sh
-uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.2.0-py3-none-any.whl
+uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.3.0-py3-none-any.whl
 ```
 
 Protected checks keep their existing names: `Quality`, `Tests (Python 3.11)`,
@@ -76,8 +76,8 @@ artifacts and the Registry publisher's `mcp-publisher publish` from the director
 containing the final `server.json`. Obtain credentials through the release
 system, and follow the publisher's current authentication/namespace verification
 instructions. Do not run these commands for `server.draft.json` or infer
-that the draft is an approved Registry listing or that the published 0.2.0
-wheel contains this checkout's later additions.
+that the draft is an approved Registry listing or that a published wheel
+contains changes made after its release.
 
 ## Registry schema and ownership marker
 
