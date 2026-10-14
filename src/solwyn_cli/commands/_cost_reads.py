@@ -30,8 +30,6 @@ def fetch_project_read(
     kwargs = {"params": params} if params is not None else {}
     if body is not None:
         kwargs["json"] = body.model_dump(mode="json")
-    if path == "costs/simulate":
-        kwargs.update(retry_rate_limit=False, retry_auth=False)
     data = response_model.model_validate(
         client.request(
             "POST" if body is not None else "GET",

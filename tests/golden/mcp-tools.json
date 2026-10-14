@@ -13914,7 +13914,7 @@
   {
     "name": "simulate_costs",
     "title": "Simulate costs",
-    "description": "Read-only POST replay of historical usage at current prices. Never reserves or bills, never automatically retried. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read-only historical repricing; never reserves or bills. Definite 401: one JWT refresh/replay; 429: one bounded retry. No 503/transport replay. Accepts a project API key or login/JWT with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "$defs": {

@@ -324,14 +324,13 @@ def test_account_costs_unsupported_filters_local(monkeypatch, field, value):
     assert requests == []
 
 
-@pytest.mark.parametrize("status", [429, 503])
-def test_simulation_never_automatically_retries(monkeypatch, status):
+def test_simulation_503_never_automatically_retries(monkeypatch):
     result, requests = call(
         monkeypatch,
         "simulate_costs",
         [
             httpx.Response(
-                status, headers={"Retry-After": "0"}, json={"detail": "Unavailable"}
+                503, headers={"Retry-After": "0"}, json={"detail": "Unavailable"}
             )
         ],
         {"provider": "openai", "model": "synthetic-model"},

@@ -170,7 +170,10 @@ provider, modality and paired custom-window/preset filters. Explicit `project_id
 is mutually exclusive; configured default projects are irrelevant to the account
 query. Core still enforces plan entitlements, account access and role permissions.
 Project mode defaults to model grouping. Pricing simulation is a read-only POST;
-it makes no admission or billing change and does not automatically retry.
+it makes no admission or billing change. A definite 401 rejection may refresh
+JWT once and replay once; a definite 429 uses the client's single bounded
+rate-limit retry, shared across JWT refresh. A 503 or transport failure never
+replays simulation. All attempts remain within the existing MCP deadline.
 
 `budget_uncounted` returns cumulative advisory calls/tokens and nullable
 `last_reported_at`, labelled an **unpriced upper bound**: possibly overcounted,

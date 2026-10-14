@@ -2701,7 +2701,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         name="simulate_costs",
         title="Simulate costs",
         credential_requirement="either",
-        description="Read-only POST replay of historical usage at current prices. Never reserves or bills, never automatically retried.",
+        description="Read-only historical repricing; never reserves or bills. Definite 401: one JWT refresh/replay; 429: one bounded retry. No 503/transport replay.",
     )
     async def simulate_costs(
         provider: ProviderName,

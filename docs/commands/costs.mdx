@@ -144,7 +144,10 @@ rewrite historical spend.
 MCP counterparts in both profiles are `list_cost_events`, `get_cost_baseline`,
 `get_unit_economics`, `get_cost_drift`, `list_priced_models` and `simulate_costs`.
 They share strict response/query models with the CLI. Simulation is a read-only
-POST and is not automatically retried. `get_costs` supports JWT account mode,
+POST. Both CLI and MCP may refresh JWT once and replay once after a definite
+401 rejection, and use one bounded rate-limit retry after a definite 429.
+They never replay simulation after a 503 or transport failure. Retries share
+the existing client budget and MCP deadline. `get_costs` supports JWT account mode,
 default project grouping, and only the account endpoint's supported filters;
 explicit project selectors are mutually exclusive with account mode. Paginated
 MCP events have bounded `all_pages` and preserve the first unread cursor on error.
