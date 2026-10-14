@@ -41,19 +41,19 @@ HELP_CONTRACTS = {
     ("alerts", "activity"): {
         "endpoint": "GET /api/v1/account/alerts/activity",
         "auth": "JWT; any account member",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.alerts.activity.v1",
     },
     ("alerts", "pending"): {
         "endpoint": "GET /api/v1/account/alerts/open-deliveries",
         "auth": "JWT; any account member",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.alerts.pending.v1",
     },
     ("account", "recover"): {
         "endpoint": "POST /api/v1/accounts/me/personal",
         "auth": "JWT; active membership not required",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.account.recover.v1",
     },
     ("attest",): {

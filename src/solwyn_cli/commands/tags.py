@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._pagination import read_pages
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands._tags import validate_tags
 from solwyn_cli.errors import ApiError
@@ -140,6 +141,7 @@ def _read(
     prefix: str | None = None,
     limit: int = 25,
     cursor: str | None = None,
+    all_pages: bool = False,
 ) -> None:
     runtime = command_context(context)
     if runtime.project is None:
@@ -167,13 +169,18 @@ def _read(
             data = (
                 fetch_tags(client=client, project_id=runtime.project)
                 if key is None
-                else fetch_tag_values(
-                    client=client,
-                    project_id=runtime.project,
-                    key=key,
-                    prefix=prefix,
-                    limit=limit,
+                else read_pages(
+                    lambda page_cursor: fetch_tag_values(
+                        client=client,
+                        project_id=runtime.project,
+                        key=key,
+                        prefix=prefix,
+                        limit=limit,
+                        cursor=page_cursor,
+                    ),
+                    field="values",
                     cursor=cursor,
+                    all_pages=all_pages,
                 )
             )
     except ApiError as error:
@@ -255,9 +262,14 @@ def tag_values(
     prefix: Annotated[str | None, typer.Option("--prefix")] = None,
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 25,
     cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+    all_pages: Annotated[
+        bool, typer.Option("--all", help="Follow all remaining cursor pages.")
+    ] = False,
 ) -> None:
     """Read a page of values for one verbatim key."""
-    _read(context, key=key, prefix=prefix, limit=limit, cursor=cursor)
+    _read(
+        context, key=key, prefix=prefix, limit=limit, cursor=cursor, all_pages=all_pages
+    )
 
 
 @app.command(

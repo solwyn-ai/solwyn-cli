@@ -1,0 +1,166 @@
+---
+title: Notification channels
+---
+
+Channels belong to the account. Reads require JWT; create/update/test/delete require owner JWT. Integrations
+require Production or above. Supported types are Slack, PagerDuty, Teams,
+Discord and Telegram. Secret input comes from stdin or `SOLWYN_CHANNEL_SECRET`,
+never secret arguments. `--config-stdin` reads a type-specific JSON object.
+List/show responses mask integration secrets.
+
+```sh
+solwyn channels list
+solwyn channels show CHANNEL_ID
+```
+
+Create/update require the type's documented configuration. Slack supports a
+webhook or bot token plus destination; PagerDuty uses a routing key;
+Teams/Discord use webhooks; Telegram uses bot token plus chat id. Test sends a
+real delivery; delete removes the channel and its routing references.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn channels`
+
+Manage reusable account notification channels.
+
+```console
+Usage: solwyn channels [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for channels subcommands
+Auth: varies by subcommand
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+```
+
+## `solwyn channels create`
+
+Create an owner-managed channel using stdin or environment credentials.
+
+```console
+Usage: solwyn channels create [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--type` | ` (Choice(['slack', 'pagerduty', 'teams', 'discord', 'telegram']); required)` | `None` |
+| `--name` | ` (STRING; required)` | `None` |
+| `--secret-stdin` | ` (BOOL)` | `False` |
+| `--config-stdin` | `Read the type-specific config JSON object from stdin, including any optional secrets. (BOOL)` | `False` |
+| `--secret-field` | `Secret field name only; defaults to the type's primary secret. (STRING)` | `None` |
+| `--channel` | `Slack destination ID for bot-token mode. (STRING)` | `None` |
+| `--chat-id` | `Telegram destination ID. (STRING)` | `None` |
+
+```text
+Endpoint: POST /api/v1/account/notification-channels
+Auth: JWT; owner for mutations
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.channels.v1
+Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET; never command arguments.
+Slack requires webhook_url or bot_token + channel; PagerDuty routing_key; Teams/Discord webhook_url; Telegram bot_token + chat_id. All types require Production+.
+```
+
+## `solwyn channels delete`
+
+Delete a channel and remove its project and rule routing references.
+
+```console
+Usage: solwyn channels delete [OPTIONS] CHANNEL_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `channel_id` | ` (STRING; required)` | `None` |
+
+```text
+Endpoint: DELETE /api/v1/account/notification-channels/{channel_id}
+Auth: JWT; owner for mutations
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.channels.delete.v1
+Core removes the channel ID from project notification settings and every budget rule's channel_ids.
+```
+
+## `solwyn channels list`
+
+List account channels with masked credentials.
+
+```console
+Usage: solwyn channels list [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/account/notification-channels
+Auth: JWT
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.channels.list.v1
+```
+
+## `solwyn channels show`
+
+Show a channel; secret fields retain only their final four characters.
+
+```console
+Usage: solwyn channels show [OPTIONS] CHANNEL_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `channel_id` | ` (STRING; required)` | `None` |
+
+```text
+Endpoint: GET /api/v1/account/notification-channels/{channel_id}
+Auth: JWT
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.channels.v1
+```
+
+## `solwyn channels test`
+
+Send a test through a stored channel (owner only).
+
+```console
+Usage: solwyn channels test [OPTIONS] CHANNEL_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `channel_id` | ` (STRING; required)` | `None` |
+
+```text
+Endpoint: POST /api/v1/account/notification-channels/{channel_id}/test
+Auth: JWT; owner for mutations
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.channels.test.v1
+Sends a real test using the channel's stored credentials. In-band success:false exits 1.
+```
+
+## `solwyn channels update`
+
+Update selected fields; Core retains masked secret values on write-back.
+
+```console
+Usage: solwyn channels update [OPTIONS] CHANNEL_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `channel_id` | ` (STRING; required)` | `None` |
+| `--name` | ` (STRING)` | `None` |
+| `--secret-stdin` | ` (BOOL)` | `False` |
+| `--config-stdin` | ` (BOOL)` | `False` |
+| `--secret-field` | ` (STRING)` | `None` |
+| `--channel` | ` (STRING)` | `None` |
+| `--chat-id` | ` (STRING)` | `None` |
+
+```text
+Endpoint: GET then PUT /api/v1/account/notification-channels/{channel_id}
+Auth: JWT; owner for mutations
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.channels.v1
+Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET; never command arguments.
+Omitted values stay unchanged. Masked secrets retain stored credentials. JSON null clears individual config fields only if the channel remains usable. Type is immutable.
+```
+

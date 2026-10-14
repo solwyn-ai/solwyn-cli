@@ -1,0 +1,90 @@
+---
+title: Local configuration
+---
+
+Inspect and update non-secret local configuration. These commands run offline,
+require no credentials and emit plain text, including when global `--json` is
+selected. Allowed keys are `api_url`, `default_project` and `format`; credentials belong
+in the OS keychain or explicit environment input.
+
+```sh
+solwyn config list
+solwyn config set default_project proj_example
+solwyn config get default_project
+```
+
+Explicit global flags override environment settings, which override configured
+defaults. Changing a read selector never changes the identity of a project key.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn config`
+
+Inspect and update local configuration.
+
+```console
+Usage: solwyn config [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: local configuration router
+Auth: local (none)
+Exit codes: 0 success; 2 usage
+JSON schema: none (subcommands emit plain text)
+```
+
+## `solwyn config get`
+
+Print one configuration value.
+
+```console
+Usage: solwyn config get [OPTIONS] KEY
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `key` | `Configuration key to read. (STRING; required)` | `None` |
+
+```text
+Endpoint: local configuration read
+Auth: local (none)
+Exit codes: 0 success; 2 usage
+JSON schema: none (plain text value)
+```
+
+## `solwyn config list`
+
+Print every allowlisted configuration value in deterministic order.
+
+```console
+Usage: solwyn config list [OPTIONS]
+```
+
+```text
+Endpoint: local configuration read
+Auth: local (none)
+Exit codes: 0 success; 2 usage
+JSON schema: none (plain text key/value list)
+```
+
+## `solwyn config set`
+
+Validate and persist one configuration value.
+
+```console
+Usage: solwyn config set [OPTIONS] KEY VALUE
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `key` | `Configuration key to update. (STRING; required)` | `None` |
+| `value` | `New configuration value. (STRING; required)` | `None` |
+
+```text
+Endpoint: local configuration write
+Auth: local (none)
+Exit codes: 0 success; 2 usage
+JSON schema: none (human confirmation on stderr)
+```
+

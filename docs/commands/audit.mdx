@@ -1,0 +1,46 @@
+---
+title: Account audit trail
+---
+
+Read account-wide audit events with JWT; no selected project is required.
+`--range` accepts 7d, 30d (default), 90d or 365d. `--action` matches an exact
+string, not a prefix or wildcard. `--all` follows remaining cursor pages and can
+start from `--cursor`; without it the command returns a single page.
+
+```sh
+solwyn --json audit --range 30d --all
+solwyn audit --action billing.plan_changed
+```
+
+Audit records include account, team, project, key, billing, channel and phone/
+consent actions. Rule add/remove is not audited; only `budget.updated` is in this trail.
+The trail does not include each rule's firing. Use `alerts list --rule-type` for that event history.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn audit`
+
+List account audit events newest first.
+
+```console
+Usage: solwyn audit [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--range` | `Audit window. (Choice(['7d', '30d', '90d', '365d']))` | `30d` |
+| `--action` | `Exact audit action to match. (STRING)` | `None` |
+| `--cursor` | `Opaque cursor from the preceding page. (STRING)` | `None` |
+| `--all` | `Follow cursors until all remaining events are read. (BOOL)` | `False` |
+
+```text
+Endpoint: GET /api/v1/account/audit-events
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth
+JSON schema: solwyn.audit.v1
+Actions are exact-match strings; use --all to follow every returned cursor.
+Known actions: account.created, account.updated, team.member_removed, team.member_role_changed, team.invitation_created, team.invitation_revoked, project.created, project.updated, project.archived, budget.defaults_restored, budget.updated, api_key.rotated, api_key.deleted, agent_run.stopped, billing.plan_intent_deleted, billing.plan_changed, billing.cancel_scheduled, billing.cancel_undone, billing.plan_change_discarded, notification_channel.created, notification_channel.updated, notification_channel.deleted, account_phone.verified, account_phone.deleted, consent.sms_alerts_changed, upserted.
+Rule add/remove is not audited; only budget.updated is in this trail. Use alerts list --rule-type for per-rule lifecycle events.
+```
+

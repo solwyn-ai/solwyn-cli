@@ -1,0 +1,101 @@
+---
+title: Tags
+---
+
+Tag discovery is account-scoped even through a selected project's URL. Reads
+accept a project key or JWT and require Team; sending and enforcing tags works
+on every tier. Retire requires owner/admin JWT.
+
+```sh
+solwyn --project proj_example tags list
+solwyn --project proj_example tags values customer --prefix ex --all
+```
+
+Keys and values retain verbatim spelling. Prefix matching is case-sensitive;
+keys contain 1–64 characters and prefixes at most 256, with no NUL. Values
+default to one 25-row page; `--limit` is 1–100 per page. `--all` follows all
+remaining pages, optionally from `--cursor`, keeping key/prefix/limit on every
+request and Core order in output. Reuse cursors only with the same key/prefix.
+Exhaustion returns `next_cursor=null` and `has_more=false`; loops, inconsistent
+continuation, drift or a later failure emit no partial success. Retirement
+removes the active namespace registration while retaining historical values.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn tags`
+
+Browse account-scoped tag keys and values; retire keys.
+
+```console
+Usage: solwyn tags [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite tag router
+Auth: varies by subcommand
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+Discovery is account-scoped, including when requested through a project URL.
+```
+
+## `solwyn tags list`
+
+List active keys across the account, including similar verbatim spellings.
+
+```console
+Usage: solwyn tags list [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/projects/{project}/tags
+Auth: any
+Exit codes: 0 success; 1 API/upgrade; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.tags.v1
+Discovery is account-scoped and needs Team; sending and enforcing tags works on every tier.
+```
+
+## `solwyn tags retire`
+
+Retire a key while retaining historical values.
+
+```console
+Usage: solwyn tags retire [OPTIONS] KEY
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `key` | ` (STRING; required)` | `None` |
+
+```text
+Endpoint: DELETE /api/v1/account/tags
+Auth: JWT admin/owner
+Exit codes: 0 retired; 1 API; 2 usage; 3 auth; 5 never registered
+JSON schema: solwyn.tags.v1
+Retirement frees an active key slot; later ingest may reactivate the key. Available on every tier.
+```
+
+## `solwyn tags values`
+
+Read a page of values for one verbatim key.
+
+```console
+Usage: solwyn tags values [OPTIONS] KEY
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `key` | ` (STRING; required)` | `None` |
+| `--prefix` | ` (STRING)` | `None` |
+| `--limit` | ` (<IntRange 1<=x<=100>)` | `25` |
+| `--cursor` | ` (STRING)` | `None` |
+| `--all` | `Follow all remaining cursor pages. (BOOL)` | `False` |
+
+```text
+Endpoint: GET /api/v1/projects/{project}/tags/values
+Auth: any
+Exit codes: 0 success; 1 API/upgrade; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.tags.values.v1
+Discovery is account-scoped; prefix matching is case-sensitive.
+```
+

@@ -1,0 +1,77 @@
+---
+title: Provider visibility
+---
+
+Read provider/model failover groups and advisory untracked-surface observations
+for the selected project. Project keys or JWT work; Core checks project access.
+The OpenAPI project-key declaration follow-up is tracked separately in #394.
+
+```sh
+solwyn --project proj_example providers failovers --range 7d
+solwyn --json --project proj_example providers untracked --range 30d
+```
+
+Failovers show requested and served identity, reason/error class, count, cost,
+first/last observation, and whether cost is unpriced. Core returns the top 50
+groups of an unknown total. Untracked returns the top 25 observations of an
+unknown total; counts are advisory and never billing truth. Its five-part
+identity is provider, client shape, mode, surface and rule kind. The CLI derives
+an effective retention window from billing status when available, or reports it
+as unknown. Neither response offers pagination. Both reads are also MCP tools.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn providers`
+
+Inspect provider failovers and advisory untracked surfaces.
+
+```console
+Usage: solwyn providers [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for provider visibility subcommands
+Auth: any
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+```
+
+## `solwyn providers failovers`
+
+Show recent provider and model failover groups.
+
+```console
+Usage: solwyn providers failovers [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--range` | `Failover aggregation range. (Choice(['24h', '7d', '30d']))` | `7d` |
+
+```text
+Endpoint: GET /api/v1/projects/{project}/providers/failovers
+Auth: any
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.providers.failovers.v1
+```
+
+## `solwyn providers untracked`
+
+Show advisory observations for unmetered provider surfaces.
+
+```console
+Usage: solwyn providers untracked [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--range` | `Observation range before retention clamp. (Choice(['7d', '30d', '90d']))` | `7d` |
+
+```text
+Endpoint: GET /api/v1/projects/{project}/untracked-surfaces
+Auth: any
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.providers.untracked.v1
+```
+

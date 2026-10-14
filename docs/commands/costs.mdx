@@ -80,7 +80,12 @@ dashboard path.
 
 `costs events` emits `solwyn.costs.events.v1`, including `items`, `next_cursor`,
 `has_more`, and `window`. Table output prints a continuation notice and the next
-cursor on stderr when another page is available. Rows preserve denied cost, denial source/reason, SDK
+cursor on stderr when another page is available. Add `--all` to follow every
+remaining cursor page, optionally starting from `--cursor`; `--limit` remains
+the per-page size. Filters are forwarded on every page, rows stay in Core order,
+and exhausted output has `next_cursor=null` and `has_more=false`. Repeated
+cursors, inconsistent continuation, malformed responses or a later request
+failure exit nonzero without emitting a partial success. Rows preserve denied cost, denial source/reason, SDK
 instance ID, and entitled tags. Events require Production except the onboarding
 probe (`--limit 1` without a cursor). Limits are 1–100. The event API omits
 `call_id`, provider fallback and failover reason; raw export provides the failover

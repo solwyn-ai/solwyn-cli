@@ -1,20 +1,29 @@
 # Connect a harness to Solwyn MCP
 
-Solwyn 0.2.0 is **pre-release, private and not published to PyPI**. Start from an
-authorized source checkout or a wheel built from it. This guide uses local stdio;
+Solwyn CLI 0.2.0 is published on PyPI. This guide uses local stdio;
 there is no hosted MCP endpoint. Account/project access is a separate prerequisite.
 
 ## Install and make one read
 
-From the authorized CLI checkout:
+Install the published package (MCP is included; no extra is required):
+
+```sh
+uv tool install --python 3.11 solwyn-cli
+uv tool dir --bin
+solwyn --version
+solwyn login --with-key
+```
+
+Alternatively, use `pipx install solwyn-cli`. The command/tool reference and
+example clients below follow this checkout, including additions made after the
+September 2026 PyPI release. Inspect your installed version with `solwyn --help`
+and MCP discovery. To use the exact 31-read/35-guardrails inventory described
+here before those additions are released, build an authorized current checkout:
 
 ```sh
 uv sync --locked --all-groups
 uv build --wheel
-uv tool install --python 3.11 dist/solwyn_cli-0.2.0-py3-none-any.whl
-uv tool dir --bin
-solwyn --version
-solwyn login --with-key
+uv tool install --force --python 3.11 dist/solwyn_cli-0.2.0-py3-none-any.whl
 ```
 
 The login command prompts for a project key and stores it in the OS keychain.
@@ -129,7 +138,7 @@ npm start -- --executable /absolute/path/to/solwyn --project proj_0123456789abcd
 
 Both programs discover the read catalog, make one successful read, validate the
 Solwyn envelope/project, and print only typed selected fields as JSON. They
-require all 30 current read tool names, exactly once, with explicit read-only
+require all 31 current read tool names, exactly once, with explicit read-only
 annotations and no continuation cursor; incomplete or write-bearing catalogs
 fail before a budget read. They check both MCP `isError` and envelope `ok`.
 Execution failures return a fixed

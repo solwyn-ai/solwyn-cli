@@ -46,7 +46,7 @@ class PersonalAccountResponse(BaseModel):
     epilog=help_contract(
         endpoint="POST /api/v1/accounts/me/personal",
         auth="JWT; active membership not required",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.account.recover.v1",
         guidance=(
             "Idempotently creates a personal account when you have no active membership.",

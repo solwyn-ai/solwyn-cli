@@ -1,0 +1,124 @@
+---
+title: Webhooks
+---
+
+Manage selected-project targets with JWT. Listing is a read; create, rotate and
+delete require owner/admin `project.write`. Core requires public HTTPS targets.
+A signing secret is shown once on create or rotate; rotate if it is lost.
+
+```sh
+solwyn --project proj_example webhooks list
+solwyn --project proj_example webhooks create --url https://hooks.example.test/solwyn --events '*'
+```
+
+Verify `X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>` and deduplicate
+retries with `Idempotency-Key`. Core defines no timestamp header or replay window.
+Delete deactivates the target.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn webhooks`
+
+Manage project webhook targets.
+
+```console
+Usage: solwyn webhooks [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for webhook target subcommands
+Auth: JWT
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+A signing secret is shown exactly once on create or rotate.
+If the signing secret is lost, rotate the webhook.
+Verify X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>.
+Use Idempotency-Key to deduplicate retries.
+No timestamp header or replay window is defined.
+```
+
+## `solwyn webhooks create`
+
+Create a webhook target and reveal its signing secret once.
+
+```console
+Usage: solwyn webhooks create [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--url` | `Destination URI; Core requires public HTTPS. (STRING; required)` | `None` |
+| `--events` | `Comma-separated event names, or * for all events. (STRING)` | `*` |
+
+```text
+Endpoint: POST /api/v1/projects/{project}/webhooks
+Auth: owner/admin JWT (project.write)
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.webhooks-create.v1
+The signing secret is shown exactly once; store it securely.
+Verify X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>.
+Use Idempotency-Key to deduplicate retries.
+No timestamp header or replay window is defined.
+```
+
+## `solwyn webhooks delete`
+
+Deactivate a webhook target.
+
+```console
+Usage: solwyn webhooks delete [OPTIONS] WEBHOOK_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `webhook_id` | `Webhook target identifier. (STRING; required)` | `None` |
+
+```text
+Endpoint: DELETE /api/v1/projects/{project}/webhooks/{webhook_id}
+Auth: owner/admin JWT (project.write)
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.webhooks-delete.v1 (CLI output after bodyless 204)
+Deactivates the webhook target and returns no API body.
+```
+
+## `solwyn webhooks list`
+
+List active webhook targets with masked secret prefixes.
+
+```console
+Usage: solwyn webhooks list [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/projects/{project}/webhooks
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.webhooks-list.v1
+Lists secret_prefix only; it never returns a signing secret.
+If the signing secret is lost, rotate the webhook.
+```
+
+## `solwyn webhooks rotate`
+
+Rotate a target's signing secret and reveal the replacement once.
+
+```console
+Usage: solwyn webhooks rotate [OPTIONS] WEBHOOK_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `webhook_id` | `Webhook target identifier. (STRING; required)` | `None` |
+
+```text
+Endpoint: POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate
+Auth: owner/admin JWT (project.write)
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.webhooks-rotate.v1
+The signing secret is shown exactly once; the old secret stops working immediately.
+Verify X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>.
+Use Idempotency-Key to deduplicate retries.
+No timestamp header or replay window is defined.
+```
+

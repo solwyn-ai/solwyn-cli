@@ -27,6 +27,7 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
+from solwyn_cli.commands._pagination import read_pages
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -511,6 +512,9 @@ def list_runs(
     cursor: Annotated[
         str | None, typer.Option("--cursor", help="Opaque next-page cursor.")
     ] = None,
+    all_pages: Annotated[
+        bool, typer.Option("--all", help="Follow all remaining cursor pages.")
+    ] = False,
 ) -> None:
     """List recent project agent runs."""
     try:
@@ -566,17 +570,22 @@ def list_runs(
     credential = required_credential(context, resolve=resolve_credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            data = fetch_agent_runs(
-                client=client,
-                project_id=project_id,
-                time_range=time_range,
-                from_=from_,
-                to=to,
-                query=query,
-                parent=parent,
-                sort=sort,
-                limit=limit,
+            data = read_pages(
+                lambda page_cursor: fetch_agent_runs(
+                    client=client,
+                    project_id=project_id,
+                    time_range=time_range,
+                    from_=from_,
+                    to=to,
+                    query=query,
+                    parent=parent,
+                    sort=sort,
+                    limit=limit,
+                    cursor=page_cursor,
+                ),
+                field="runs",
                 cursor=cursor,
+                all_pages=all_pages,
             )
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         _command_error(context, error, response="runs")

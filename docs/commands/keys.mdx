@@ -1,0 +1,94 @@
+---
+title: Project keys
+---
+
+Inspect metadata, rotate or revoke keys for the selected project using JWT.
+Metadata never reveals existing key material. Rotation's replacement key is
+shown once and can be stored with `--store`; omitted `--scope` keeps its scope.
+Grace is 0–604800 seconds. Revoke takes an identifier, never raw key material, and hard-revokes it
+without minting a replacement.
+
+```sh
+solwyn --project proj_example keys show
+solwyn --project proj_example keys rotate --grace 3600 --store
+```
+
+Project-key credentials mask a stored JWT; unselect the key before JWT-only
+commands. Do not put key material in arguments or repository configuration.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn keys`
+
+Recover from leaked or expired project keys.
+
+```console
+Usage: solwyn keys [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for project-key subcommands
+Auth: JWT
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+Metadata help never reveals existing key material.
+```
+
+## `solwyn keys revoke`
+
+Hard-revoke a project key without minting a replacement.
+
+```console
+Usage: solwyn keys revoke [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--key-id` | `Identifier of the key to hard-revoke. (STRING; required)` | `None` |
+
+```text
+Endpoint: DELETE /api/v1/projects/{project}/key/{key_id}
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.keys-revoke.v1 (CLI output after bodyless 204)
+Accepts only a key identifier; never pass key material.
+```
+
+## `solwyn keys rotate`
+
+Rotate the active key and reveal its replacement exactly once.
+
+```console
+Usage: solwyn keys rotate [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--grace-seconds` | `Seconds the old key remains valid (0 through 604800). (INT)` | `None` |
+| `--scope` | `Scope for the replacement key; omit to keep the current scope. (Choice(['full', 'read_only']))` | `None` |
+
+```text
+Endpoint: POST /api/v1/projects/{project}/key/rotate
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.keys-rotate.v1
+The replacement key is shown exactly once; store it in the OS keychain.
+```
+
+## `solwyn keys show`
+
+Show active project-key metadata without revealing key material.
+
+```console
+Usage: solwyn keys show [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/projects/{project}/key
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.keys-show.v1
+Shows metadata only and never reveals existing key material.
+```
+

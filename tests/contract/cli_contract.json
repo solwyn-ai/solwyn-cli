@@ -3734,6 +3734,20 @@
         },
         {
           "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": "Follow all remaining cursor pages.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_pages",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
             "--range"
           ],
           "default": "7d",
@@ -5822,7 +5836,7 @@
       "path": [
         "providers"
       ],
-      "summary": null
+      "summary": "Inspect provider failovers and advisory untracked surfaces."
     },
     {
       "hidden": false,
@@ -6597,6 +6611,20 @@
           "name": "cursor",
           "required": false,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": "Follow all remaining cursor pages.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_pages",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -6819,6 +6847,20 @@
           "name": "cursor",
           "required": false,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": "Follow all remaining cursor pages.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_pages",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [

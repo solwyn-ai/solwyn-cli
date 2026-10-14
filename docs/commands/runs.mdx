@@ -1,0 +1,120 @@
+---
+title: Agent runs
+---
+
+List and inspect project agent runs with a project key or JWT. Stop requires
+JWT with `budget.write`; it is CLI-only. Select a project with global `--project`.
+
+```sh
+solwyn --project proj_example runs list --all --limit 100 --sort total_cost
+solwyn --project proj_example runs show checkout-agent
+```
+
+`runs list` defaults to one 25-row page and `--range 7d`. Paired timezone-aware
+`--from`/`--to` replace the range. `--q` is a literal, case-insensitive name
+substring; `--parent` accepts a raw or storage parent id. Sort is descending
+`last_seen_at`, `total_cost` or `total_calls`; reuse a cursor only with its original
+sort. `--all` follows every remaining page, optionally from `--cursor`, preserving
+Core order and the per-page limit (1–100). Exhaustion returns `next_cursor=null`
+and `has_more=false`. A loop, inconsistent continuation, malformed page or later
+request failure exits nonzero without a partial success result. The first window
+is retained and any page's retention clamp is reported.
+
+Costs are lifetime run aggregates: the listing window selects qualifying runs
+and does not recompute their totals. `show` accepts a storage id or resolves an
+exact raw name through listing; ambiguous names return candidate ids instead of
+choosing one. Core's single GET currently requires the storage id.
+`stop` revokes leases and
+preserves Core's enforcement deadline. Auto-grouped explorer buckets cannot be
+stopped. A failed stop is never automatically replayed on 429.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn runs`
+
+Inspect and control project agent runs.
+
+```console
+Usage: solwyn runs [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for agent-run subcommands
+Auth: varies by subcommand
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+List and show accept a project key or login; stop requires login with budget.write.
+```
+
+## `solwyn runs list`
+
+List recent project agent runs.
+
+```console
+Usage: solwyn runs list [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--range` | `Listing window. (Choice(['7d', '30d', '90d', '365d']))` | `7d` |
+| `--from` | `Lower-inclusive RFC 3339 custom bound. (STRING)` | `None` |
+| `--to` | `Upper-exclusive RFC 3339 custom bound. (STRING)` | `None` |
+| `--q` | `Case-insensitive literal name substring. (STRING)` | `None` |
+| `--parent` | `Raw or storage parent run ID. (STRING)` | `None` |
+| `--sort` | `Descending sort key. (Choice(['last_seen_at', 'total_cost', 'total_calls']))` | `last_seen_at` |
+| `--limit` | `Runs per page. (<IntRange 1<=x<=100>)` | `25` |
+| `--cursor` | `Opaque next-page cursor. (STRING)` | `None` |
+| `--all` | `Follow all remaining cursor pages. (BOOL)` | `False` |
+
+```text
+Endpoint: GET /api/v1/projects/{project}/agent-runs
+Auth: any
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.runs.v1
+Costs are lifetime totals; the window selects qualifying runs only.
+Custom --from/--to bounds override --range and must be timezone-aware.
+A cursor can only be reused with the sort that created it.
+```
+
+## `solwyn runs show`
+
+Show one project agent run.
+
+```console
+Usage: solwyn runs show [OPTIONS] RUN
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `run` | `Storage ID or exact run name. (STRING; required)` | `None` |
+
+```text
+Endpoint: GET /api/v1/projects/{project}/agent-runs then GET /api/v1/projects/{project}/agent-runs/{run_id}
+Auth: any
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.runs.v1
+Storage IDs are read directly; exact raw run names are resolved through the list endpoint.
+```
+
+## `solwyn runs stop`
+
+Stop future work for one project agent run.
+
+```console
+Usage: solwyn runs stop [OPTIONS] RUN
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `run` | `Storage ID or exact run name. (STRING; required)` | `None` |
+
+```text
+Endpoint: optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop
+Auth: JWT + budget.write
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.runs.stop.v1
+Stops future checks and lease renewals; in-flight requests finish.
+Auto-grouped explorer runs are not stoppable.
+```
+

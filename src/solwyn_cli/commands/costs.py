@@ -341,6 +341,7 @@ def _run(
     group_by: str | None = None,
     limit: int = 25,
     cursor: str | None = None,
+    all_pages: bool = False,
     export_format: str = "csv",
     account: bool = False,
     **filters: Any,
@@ -458,6 +459,7 @@ def _run(
                     project_id=runtime.project,
                     limit=limit,
                     cursor=cursor,
+                    all_pages=all_pages,
                     **filters,
                 )
                 table = _events_table(data)
@@ -683,6 +685,9 @@ def events(
     context: typer.Context,
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 25,
     cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+    all_pages: Annotated[
+        bool, typer.Option("--all", help="Follow all remaining cursor pages.")
+    ] = False,
     time_range: Annotated[
         str,
         typer.Option(
@@ -752,6 +757,7 @@ def events(
         "events",
         limit=limit,
         cursor=cursor,
+        all_pages=all_pages,
         time_range=time_range,
         from_=from_,
         to=to,
