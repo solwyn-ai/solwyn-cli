@@ -3,8 +3,15 @@
 import importlib.util
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
+import anyio
+import httpx
 import pytest
+
+from solwyn_cli import auth
+from solwyn_cli.mcp import server as mcp_server
+from test_mcp_conformance import BUDGET_RESPONSE, VALID_KEY, _install_http
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,6 +187,102 @@ def test_explicit_environment_drops_unrelated_secrets(example, monkeypatch):
     environment = example.server_environment()
     assert environment["SOLWYN_API_KEY"] == "intended-synthetic-key"
     assert "PRIVATE_CANARY" not in environment.values()
+
+
+@pytest.mark.parametrize("mode", ["modern", "legacy"])
+def test_delivered_client_discovers_expanded_server_before_budget_read(
+    example, monkeypatch, mode
+):
+    project = "proj_0123456789abcdef01234567"
+    requests, _, _ = _install_http(
+        monkeypatch,
+        responses=[
+            httpx.Response(200, json={**BUDGET_RESPONSE, "project_id": project})
+        ],
+        credentials=[
+            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+        ],
+        project=project,
+    )
+    server = mcp_server.create_server(
+        launch_options=mcp_server.McpLaunchOptions(profile="read", project_id=project)
+    )
+    # Substitute only process transport; the delivered client, public SDK,
+    # server discovery, argument validation and HTTP operation remain real.
+    monkeypatch.setattr(example, "stdio_client", lambda *args, **kwargs: server)
+    output, code = anyio.run(
+        example.read_budget,
+        SimpleNamespace(
+            executable="synthetic-server",
+            project=project,
+            api_url="http://synthetic.test",
+            timeout=10,
+            mode=mode,
+            validation_error=False,
+        ),
+    )
+    assert code == 0, output
+    assert output == {
+        "status": "ok",
+        "protocol": "2025-11-25" if mode == "legacy" else "2026-07-28",
+        "tools": 30,
+        "project_id": project,
+        "remaining_budget": 87.5,
+    }
+    assert len(requests) == 1
+    assert requests[0][:2] == ("GET", f"/api/v1/projects/{project}/budget")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "old_inventory",
+        "missing_budget",
+        "missing_new_read",
+        "extra_read",
+        "duplicate",
+        "writer",
+        "write_annotation",
+        "missing_annotation",
+        "missing_read_hint",
+        "non_boolean_read_hint",
+        "continued",
+    ],
+)
+def test_delivered_client_rejects_incomplete_write_or_malformed_catalog(
+    example, mutation
+):
+    tools = [
+        item.definition.model_copy(deep=True)
+        for item in mcp_server.get_tool_catalog(profile="read")
+    ]
+    catalog = SimpleNamespace(tools=tools, next_cursor=None)
+    if mutation == "old_inventory":
+        catalog.tools = tools[:13]
+    elif mutation == "missing_budget":
+        catalog.tools = [tool for tool in tools if tool.name != "budget_status"]
+    elif mutation == "missing_new_read":
+        catalog.tools = [tool for tool in tools if tool.name != "plan_catalog"]
+    elif mutation == "extra_read":
+        catalog.tools = [*tools, tools[0].model_copy(update={"name": "unknown_read"})]
+    elif mutation == "duplicate":
+        tools[-1] = tools[0]
+    elif mutation == "writer":
+        # Even a falsely read-labelled writer must fail exact-name validation.
+        tools[-1].name = "budget_check"
+    elif mutation == "write_annotation":
+        tools[-1].annotations.read_only_hint = False
+    elif mutation == "missing_annotation":
+        tools[-1].annotations = None
+    elif mutation == "missing_read_hint":
+        tools[-1].annotations.read_only_hint = None
+    elif mutation == "non_boolean_read_hint":
+        tools[-1].annotations.read_only_hint = "true"
+    else:
+        catalog.next_cursor = "PRIVATE_CURSOR_CANARY"
+    with pytest.raises(ValueError, match="Unexpected read catalog") as error:
+        example.validate_read_catalog(catalog)
+    assert "PRIVATE_" not in str(error.value)
 
 
 def test_wheel_runner_is_a_delivered_acceptance_command():

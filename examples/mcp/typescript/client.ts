@@ -13,9 +13,30 @@ export type Envelope =
   | { schema: string; ok: false; data: ObjectValue | null; error: { code: string } };
 const projectPattern = /^proj_[a-f0-9]{24}$/;
 const safeCodes = new Set(['authentication_required', 'authentication_failed', 'invalid_arguments', 'forbidden', 'read_only_key', 'jwt_required']);
+const readToolNames = new Set([
+  'budget_status', 'get_project_status', 'get_forecast', 'get_costs',
+  'list_projects', 'get_cost_total', 'list_budget_rules', 'list_tags',
+  'list_tag_values', 'list_agent_runs', 'get_agent_run', 'list_alert_events',
+  'get_overview', 'list_cost_events', 'get_cost_baseline', 'get_unit_economics',
+  'get_cost_drift', 'list_priced_models', 'simulate_costs',
+  'list_provider_failovers', 'list_untracked_surfaces', 'list_audit_events',
+  'plan_status', 'plan_catalog', 'get_whoami', 'get_account_phone',
+  'list_alert_activity', 'list_open_alert_deliveries', 'budget_uncounted',
+  'get_account_alert',
+]);
 
 function object(value: unknown): value is ObjectValue {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Require the complete current read profile, including budget_status. */
+export function validateReadCatalog(catalog: unknown): void {
+  if (!object(catalog) || !Array.isArray(catalog.tools) || catalog.nextCursor != null ||
+      catalog.tools.length !== readToolNames.size ||
+      !catalog.tools.every(tool => object(tool) && typeof tool.name === 'string' && readToolNames.has(tool.name) && object(tool.annotations) && tool.annotations.readOnlyHint === true) ||
+      new Set(catalog.tools.map(tool => tool.name)).size !== readToolNames.size) {
+    throw new Error('Unexpected read catalog');
+  }
 }
 
 export function decodeResult(isError: boolean, payload: unknown): Envelope {
@@ -113,7 +134,7 @@ async function main(): Promise<number> {
     await client.connect(transport, options);
     if (client.getProtocolEra() !== (values.mode === 'legacy' ? 'legacy' : 'modern')) throw new Error('Unexpected protocol');
     const catalog = await client.listTools({}, { ...options, cacheMode: 'refresh' });
-    if (catalog.tools.length !== 13 || !catalog.tools.every(tool => tool.annotations?.readOnlyHint) || !catalog.tools.some(tool => tool.name === 'budget_status')) throw new Error('Unexpected read catalog');
+    validateReadCatalog(catalog);
     const wire: CallToolResult = await client.callTool({ name: 'budget_status', arguments: values['validation-error'] ? { projectid: 'PRIVATE_VALIDATION_CANARY' } : {} }, options);
     const result = decodeResult(wire.isError === true, wire.structuredContent);
     const protocol = values.mode === 'legacy' ? '2025-11-25' : '2026-07-28';

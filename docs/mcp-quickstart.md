@@ -123,7 +123,10 @@ npm start -- --executable /absolute/path/to/solwyn --project proj_0123456789abcd
 
 Both programs discover the read catalog, make one successful read, validate the
 Solwyn envelope/project, and print only typed selected fields as JSON. They
-check both MCP `isError` and envelope `ok`. Execution failures return a fixed
+require all 30 current read tool names, exactly once, with explicit read-only
+annotations and no continuation cursor; incomplete or write-bearing catalogs
+fail before a budget read. They check both MCP `isError` and envelope `ok`.
+Execution failures return a fixed
 allowlisted code and exit 1. Add `--validation-error` to deliberately demonstrate
 `invalid_arguments` without HTTP. Add `--api-url` for a selected authorized API.
 These are example-client options, not Solwyn global options.

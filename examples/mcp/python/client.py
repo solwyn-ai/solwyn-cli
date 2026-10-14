@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import anyio
 from mcp import Client
+from mcp.types import ListToolsResult
 from mcp.client.stdio import (
     StdioServerParameters,
     get_default_environment,
@@ -30,6 +31,54 @@ SAFE_CODES = frozenset(
     }
 )
 PROJECT_PATTERN = r"^proj_[a-f0-9]{24}$"
+READ_TOOL_NAMES = frozenset(
+    {
+        "budget_status",
+        "get_project_status",
+        "get_forecast",
+        "get_costs",
+        "list_projects",
+        "get_cost_total",
+        "list_budget_rules",
+        "list_tags",
+        "list_tag_values",
+        "list_agent_runs",
+        "get_agent_run",
+        "list_alert_events",
+        "get_overview",
+        "list_cost_events",
+        "get_cost_baseline",
+        "get_unit_economics",
+        "get_cost_drift",
+        "list_priced_models",
+        "simulate_costs",
+        "list_provider_failovers",
+        "list_untracked_surfaces",
+        "list_audit_events",
+        "plan_status",
+        "plan_catalog",
+        "get_whoami",
+        "get_account_phone",
+        "list_alert_activity",
+        "list_open_alert_deliveries",
+        "budget_uncounted",
+        "get_account_alert",
+    }
+)
+
+
+def validate_read_catalog(catalog: ListToolsResult) -> None:
+    """Require the complete current read profile, including budget_status."""
+    if (
+        len(catalog.tools) != len(READ_TOOL_NAMES)
+        or {tool.name for tool in catalog.tools} != READ_TOOL_NAMES
+        or catalog.next_cursor is not None
+        or not all(
+            tool.annotations and tool.annotations.read_only_hint is True
+            for tool in catalog.tools
+        )
+    ):
+        raise ValueError("Unexpected read catalog")
 
 
 class ToolError(BaseModel):
@@ -141,17 +190,7 @@ async def read_budget(args: argparse.Namespace) -> tuple[dict, int]:
             if client.protocol_version != expected:
                 raise ValueError("Unexpected protocol")
             catalog = await client.list_tools()
-            if (
-                len(catalog.tools) != 13
-                or catalog.next_cursor
-                or not all(
-                    tool.annotations and tool.annotations.read_only_hint
-                    for tool in catalog.tools
-                )
-            ):
-                raise ValueError("Unexpected read catalog")
-            if not any(tool.name == "budget_status" for tool in catalog.tools):
-                raise ValueError("Budget read missing")
+            validate_read_catalog(catalog)
             arguments = (
                 {"projectid": "PRIVATE_VALIDATION_CANARY"}
                 if args.validation_error
