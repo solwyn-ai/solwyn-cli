@@ -16,7 +16,17 @@ solwyn channels show CHANNEL_ID
 Create/update require the type's documented configuration. Slack supports a
 webhook or bot token plus destination; PagerDuty uses a routing key;
 Teams/Discord use webhooks; Telegram uses bot token plus chat id. Test sends a
-real delivery; delete removes the channel and its routing references.
+real delivery; delete removes the channel and its project notification and
+budget-rule routing references throughout the authenticated account. Delete
+shows the channel identifier and account scope before interactive confirmation
+or `--yes`. Non-TTY without `--yes` exits 2 (`confirmation_required`) before
+credentials or HTTP; decline, EOF or Ctrl-C exits 2 (`confirmation_declined`)
+without mutation. Effects, prompt and echo use sanitized stderr; stdout keeps
+the existing success schema.
+
+```sh
+solwyn channels delete CHANNEL_ID --yes
+```
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
@@ -74,12 +84,14 @@ Usage: solwyn channels delete [OPTIONS] CHANNEL_ID
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
 | `channel_id` | ` (STRING; required)` | `None` |
+| `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
 
 ```text
 Endpoint: DELETE /api/v1/account/notification-channels/{channel_id}
 Auth: JWT; owner for mutations
-Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage or confirmation; 3 auth; 5 not found
 JSON schema: solwyn.channels.delete.v1
+Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
 Core removes the channel ID from project notification settings and every budget rule's channel_ids.
 ```
 
@@ -163,4 +175,3 @@ JSON schema: solwyn.channels.v1
 Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET; never command arguments.
 Omitted values stay unchanged. Masked secrets retain stored credentials. JSON null clears individual config fields only if the channel remains usable. Type is immutable.
 ```
-

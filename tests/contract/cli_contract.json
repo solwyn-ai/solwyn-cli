@@ -3082,6 +3082,20 @@
           "name": "channel_id",
           "required": true,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -4835,6 +4849,20 @@
           "name": "key_id",
           "required": true,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -4881,6 +4909,20 @@
           "name": "scope",
           "required": false,
           "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -6681,6 +6723,20 @@
           "name": "run",
           "required": true,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -6775,6 +6831,20 @@
           "name": "key",
           "required": true,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -7288,6 +7358,20 @@
           "name": "webhook_id",
           "required": true,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -7329,6 +7413,20 @@
           "name": "webhook_id",
           "required": true,
           "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [

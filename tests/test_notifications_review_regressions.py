@@ -76,7 +76,7 @@ def invoke(args: list[str], *, input: str | None = None):
 @pytest.mark.parametrize(
     "args,status,payload",
     [
-        (["channels", "delete", "ch_one"], 204, None),
+        (["channels", "delete", "--yes", "ch_one"], 204, None),
         (
             [
                 "channels",
@@ -113,7 +113,7 @@ def test_mutations_retry_429_once_after_retry_after(
                 headers={"Retry-After": "2"},
                 json={"detail": "Rate limit exceeded"},
             ),
-            httpx.Response(status, json=payload),
+            httpx.Response(status, **({} if status == 204 else {"json": payload})),
         ]
     )
     result = invoke(args, input="synthetic-secret-abcd\n")
@@ -138,7 +138,7 @@ def test_mutation_exhausted_429_stops_after_one_retry(transport_api):
             for _ in range(2)
         ]
     )
-    result = invoke(["channels", "delete", "ch_one"])
+    result = invoke(["channels", "delete", "--yes", "ch_one"])
     assert result.exit_code == 1
     assert len(calls) == 2
     assert sleeps == [2.0]
@@ -149,7 +149,7 @@ def test_mutation_exhausted_429_stops_after_one_retry(transport_api):
     "args,status,payload",
     [
         (["channels", "show", "ch_one"], 200, CHANNEL),
-        (["channels", "delete", "ch_one"], 204, None),
+        (["channels", "delete", "--yes", "ch_one"], 204, None),
         (["notifications", "set", "--no-sms"], 200, CONFIG),
     ],
 )
@@ -166,7 +166,7 @@ def test_notification_routes_keep_one_jwt_refresh(transport_api, args, status, p
                     "token_type": "bearer",
                 },
             ),
-            httpx.Response(status, json=payload),
+            httpx.Response(status, **({} if status == 204 else {"json": payload})),
         ]
     )
     result = invoke(args)
@@ -286,7 +286,7 @@ def test_rejected_refreshed_jwt_stops_after_one_refresh(transport_api):
             httpx.Response(401, json={"detail": "Invalid token"}),
         ]
     )
-    result = invoke(["channels", "delete", "ch_one"])
+    result = invoke(["channels", "delete", "--yes", "ch_one"])
     assert result.exit_code == 3
     assert [call.method for call in calls] == ["DELETE", "POST", "DELETE"]
     assert len(saved_tokens) == 1

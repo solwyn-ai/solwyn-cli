@@ -15,6 +15,7 @@ from solwyn_cli.commands._tags import validate_tags
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
+from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -277,14 +278,24 @@ def tag_values(
     epilog=help_contract(
         endpoint="DELETE /api/v1/account/tags",
         auth="JWT admin/owner",
-        exits="0 retired; 1 API; 2 usage; 3 auth; 5 never registered",
+        exits="0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered",
         schema="solwyn.tags.v1",
         guidance=(
             "Retirement frees an active key slot; later ingest may reactivate the key. Available on every tier.",
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
         ),
     ),
 )
-def retire_tag(context: typer.Context, key: str) -> None:
+def retire_tag(
+    context: typer.Context,
+    key: str,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
+) -> None:
     """Retire a key while retaining historical values."""
     try:
         validate_tags({key: ""})
@@ -294,6 +305,11 @@ def retire_tag(context: typer.Context, key: str) -> None:
             OutputError(code="invalid_tag_query", message=str(error)),
             semantic=ErrorSemantic.USAGE,
         )
+    effect = (
+        f"Retire tag {key!r} in the authenticated account (account-wide): frees an active key slot "
+        "while retaining historical values; later ingest may reactivate the key."
+    )
+    check_confirmation(context, yes=yes, effect=effect)
     credential = required_credential(context, resolve=resolve_credential)
     if not isinstance(credential, JwtCredential):
         exit_with_error(
@@ -305,6 +321,7 @@ def retire_tag(context: typer.Context, key: str) -> None:
             ),
             semantic=ErrorSemantic.AUTH,
         )
+    confirm_effects(context, yes=yes, effect=effect)
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:

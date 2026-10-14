@@ -24,9 +24,20 @@ Costs are lifetime run aggregates: the listing window selects qualifying runs
 and does not recompute their totals. `show` accepts a storage id or resolves an
 exact raw name through listing; ambiguous names return candidate ids instead of
 choosing one. Core's single GET currently requires the storage id.
-`stop` revokes leases and
-preserves Core's enforcement deadline. Auto-grouped explorer buckets cannot be
+`stop` blocks future checks and lease renewals while in-flight requests finish.
+It revokes outstanding leases and preserves Core's enforcement deadline. Auto-grouped explorer buckets cannot be
 stopped. A failed stop is never automatically replayed on 429.
+
+Stop displays the raw name and resolved storage target in the selected project
+before interactive confirmation or `--yes`. Without a TTY and `--yes`, it exits
+2 with `confirmation_required` before credentials or HTTP. Decline, EOF or Ctrl-C
+exits 2 with `confirmation_declined` and never stops the run.
+Effects, prompt and confirmation echo stay on sanitized stderr; stdout remains
+one successful JSON result or the existing table.
+
+```sh
+solwyn --project proj_example runs stop checkout-agent --yes
+```
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
@@ -108,13 +119,14 @@ Usage: solwyn runs stop [OPTIONS] RUN
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
 | `run` | `Storage ID or exact run name. (STRING; required)` | `None` |
+| `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
 
 ```text
 Endpoint: optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop
 Auth: JWT + budget.write
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
 JSON schema: solwyn.runs.stop.v1
 Stops future checks and lease renewals; in-flight requests finish.
 Auto-grouped explorer runs are not stoppable.
+Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
 ```
-

@@ -136,7 +136,7 @@ def test_keys_show_uses_quoted_project_and_matches_golden(
     ("command", "payload"),
     [
         (["show"], {**KEY_METADATA, "server_note": "additive metadata"}),
-        (["rotate"], {**ROTATE_RESPONSE, "server_note": "additive metadata"}),
+        (["rotate", "--yes"], {**ROTATE_RESPONSE, "server_note": "additive metadata"}),
     ],
 )
 def test_keys_responses_ignore_benign_additive_fields_without_rendering_them(
@@ -198,6 +198,7 @@ def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
                 PROJECT_ID,
                 "keys",
                 "rotate",
+                "--yes",
                 "--grace-seconds",
                 "3600",
             ],
@@ -217,7 +218,10 @@ def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
     ]
     rendered = result.stdout + result.stderr + repr(result.exception) + caplog.text
     assert rendered.count(ROTATED_KEY) == 1
-    assert result.stderr == ""
+    assert (
+        result.stderr
+        == "Rotate the active key in project 'proj/recovery': its replacement is shown once; the old key becomes invalid after 3600 seconds.\n"
+    )
     suffix = "json" if output_format == "json" else "txt"
     assert_matches_golden(
         result.stdout, GOLDEN_DIR / f"keys-rotate-{output_format}.{suffix}"
@@ -231,7 +235,9 @@ def test_keys_rotate_maps_omitted_grace_and_scope_to_explicit_nulls(
     monkeypatch.setattr(keys_module, "resolve_credential", _jwt)
     FakeClient.responses = [httpx.Response(200, json=ROTATE_RESPONSE)]
 
-    result = runner.invoke(app, ["--json", "--project", "proj", "keys", "rotate"])
+    result = runner.invoke(
+        app, ["--json", "--project", "proj", "keys", "rotate", "--yes"]
+    )
 
     assert result.exit_code == 0, result.stderr
     assert FakeClient.instances[0].requests[0][2]["json"] == {
@@ -252,7 +258,7 @@ def test_keys_rotate_posts_the_chosen_scope_for_the_replacement_key(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj", "keys", "rotate", "--scope", scope],
+        ["--json", "--project", "proj", "keys", "rotate", "--yes", "--scope", scope],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -275,7 +281,7 @@ def test_keys_rotate_rejects_an_unknown_scope_before_auth(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj", "keys", "rotate", "--scope", "admin"],
+        ["--json", "--project", "proj", "keys", "rotate", "--yes", "--scope", "admin"],
     )
 
     assert result.exit_code == 2
@@ -298,6 +304,7 @@ def test_keys_revoke_deletes_once_requires_204_and_matches_golden(
             PROJECT_ID,
             "keys",
             "revoke",
+            "--yes",
             "--key-id",
             KEY_ID,
         ],
@@ -316,11 +323,14 @@ def test_keys_revoke_deletes_once_requires_204_and_matches_golden(
     assert_matches_golden(
         result.stdout, GOLDEN_DIR / f"keys-revoke-{output_format}.{suffix}"
     )
-    assert result.stderr == ""
+    assert (
+        result.stderr
+        == "Hard-revoke key 'key/old' in project 'proj/recovery': invalidates it without a replacement.\n"
+    )
 
 
 @pytest.mark.parametrize(
-    "command", [["show"], ["rotate"], ["revoke", "--key-id", "key"]]
+    "command", [["show"], ["rotate", "--yes"], ["revoke", "--yes", "--key-id", "key"]]
 )
 @pytest.mark.parametrize("source", ["environment", "keyring"])
 @pytest.mark.parametrize("output_format", ["table", "json"])
@@ -364,7 +374,9 @@ def test_keys_commands_require_auth_without_request(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert json.loads(result.stderr)["code"] == "authentication_required"
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["code"] == "authentication_required"
+    )
     assert FakeClient.instances == []
 
 
@@ -372,11 +384,11 @@ def test_keys_commands_require_auth_without_request(
     "args",
     [
         ["--project", "", "keys", "show"],
-        ["--project", "   ", "keys", "rotate"],
-        ["--project", "proj", "keys", "rotate", "--grace-seconds", "-1"],
-        ["--project", "proj", "keys", "rotate", "--grace-seconds", "604801"],
-        ["--project", "proj", "keys", "revoke", "--key-id", ""],
-        ["--project", "proj", "keys", "revoke", "--key-id", "   "],
+        ["--project", "   ", "keys", "rotate", "--yes"],
+        ["--project", "proj", "keys", "rotate", "--yes", "--grace-seconds", "-1"],
+        ["--project", "proj", "keys", "rotate", "--yes", "--grace-seconds", "604801"],
+        ["--project", "proj", "keys", "revoke", "--yes", "--key-id", ""],
+        ["--project", "proj", "keys", "revoke", "--yes", "--key-id", "   "],
     ],
 )
 def test_keys_commands_validate_identifiers_and_grace_before_auth(
@@ -400,10 +412,10 @@ def test_keys_commands_validate_identifiers_and_grace_before_auth(
     ("command", "status", "code", "expected_exit", "hint_fragment"),
     [
         (["show"], 404, "not_found", 5, "project or key"),
-        (["rotate"], 409, "rotation_conflict", 1, "already"),
-        (["rotate"], 410, "key_inactive", 1, "inactive"),
-        (["rotate"], 429, "rate_limited", 1, "later"),
-        (["revoke", "--key-id", "key"], 404, "not_found", 5, "project or key"),
+        (["rotate", "--yes"], 409, "rotation_conflict", 1, "already"),
+        (["rotate", "--yes"], 410, "key_inactive", 1, "inactive"),
+        (["rotate", "--yes"], 429, "rate_limited", 1, "later"),
+        (["revoke", "--yes", "--key-id", "key"], 404, "not_found", 5, "project or key"),
     ],
 )
 def test_keys_api_errors_are_actionable_and_never_retried(
@@ -433,7 +445,7 @@ def test_keys_api_errors_are_actionable_and_never_retried(
     )
 
     assert result.exit_code == expected_exit
-    payload = json.loads(result.stderr)
+    payload = json.loads(result.stderr.splitlines()[-1])
     assert payload["detail"] == detail
     assert hint_fragment in payload["hint"].lower()
     assert len(FakeClient.instances[0].requests) == 1
@@ -479,16 +491,19 @@ def test_keys_show_not_found_matches_golden(
             ),
         ),
         (["show"], httpx.Response(200, json={**KEY_METADATA, "key": ROTATED_KEY})),
-        (["rotate"], httpx.Response(200, json={**ROTATE_RESPONSE, "key": "not-a-key"})),
         (
-            ["rotate"],
+            ["rotate", "--yes"],
+            httpx.Response(200, json={**ROTATE_RESPONSE, "key": "not-a-key"}),
+        ),
+        (
+            ["rotate", "--yes"],
             httpx.Response(
                 200,
                 json={**ROTATE_RESPONSE, "rotation_grace_until": "2026-07-10T13:30:00"},
             ),
         ),
         (["show"], httpx.Response(201, json=KEY_METADATA)),
-        (["rotate"], httpx.Response(201, json=ROTATE_RESPONSE)),
+        (["rotate", "--yes"], httpx.Response(201, json=ROTATE_RESPONSE)),
         # The spec requires scope on both responses: absent or unknown is invalid.
         (
             ["show"],
@@ -503,7 +518,7 @@ def test_keys_show_not_found_matches_golden(
         ),
         (["show"], httpx.Response(200, json={**KEY_METADATA, "scope": "admin"})),
         (
-            ["rotate"],
+            ["rotate", "--yes"],
             httpx.Response(
                 200,
                 json={
@@ -513,16 +528,19 @@ def test_keys_show_not_found_matches_golden(
                 },
             ),
         ),
-        (["rotate"], httpx.Response(200, json={**ROTATE_RESPONSE, "scope": "admin"})),
         (
-            ["rotate"],
+            ["rotate", "--yes"],
+            httpx.Response(200, json={**ROTATE_RESPONSE, "scope": "admin"}),
+        ),
+        (
+            ["rotate", "--yes"],
             httpx.Response(
                 200,
                 json={**ROTATE_RESPONSE, "key_prefix": "sk_proj_1234567890abcdef"},
             ),
         ),
-        (["revoke", "--key-id", "key"], httpx.Response(200, json={})),
-        (["revoke", "--key-id", "key"], httpx.Response(204, json={})),
+        (["revoke", "--yes", "--key-id", "key"], httpx.Response(200, json={})),
+        (["revoke", "--yes", "--key-id", "key"], httpx.Response(204, json={})),
     ],
 )
 def test_keys_commands_reject_malformed_or_wrong_status_responses_without_leaks(
@@ -542,7 +560,7 @@ def test_keys_commands_reject_malformed_or_wrong_status_responses_without_leaks(
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert json.loads(result.stderr)["code"] == "invalid_keys_response"
+    assert json.loads(result.stderr.splitlines()[-1])["code"] == "invalid_keys_response"
     rendered = result.stderr + repr(result.exception) + caplog.text
     assert ROTATED_KEY not in rendered
     assert ACCESS_TOKEN not in rendered

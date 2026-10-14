@@ -13,7 +13,17 @@ solwyn --project proj_example webhooks create --url https://hooks.example.test/s
 
 Verify `X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>` and deduplicate
 retries with `Idempotency-Key`. Core defines no timestamp header or replay window.
-Delete deactivates the target.
+Delete deactivates the delivery target. Rotation immediately invalidates the
+old signing secret and reveals its replacement once. Both commands display the
+exact target and selected project before interactive confirmation or `--yes`.
+Non-TTY without `--yes` exits 2 (`confirmation_required`) before credentials or
+HTTP; decline, EOF or Ctrl-C exits 2 (`confirmation_declined`) without mutation.
+Preview, prompt and echo are sanitized stderr; stdout keeps its success schema.
+
+```sh
+solwyn --project proj_example webhooks delete wh_example --yes
+solwyn --project proj_example webhooks rotate wh_example --yes
+```
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
@@ -73,13 +83,15 @@ Usage: solwyn webhooks delete [OPTIONS] WEBHOOK_ID
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
 | `webhook_id` | `Webhook target identifier. (STRING; required)` | `None` |
+| `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
 
 ```text
 Endpoint: DELETE /api/v1/projects/{project}/webhooks/{webhook_id}
 Auth: owner/admin JWT (project.write)
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
 JSON schema: solwyn.webhooks-delete.v1 (CLI output after bodyless 204)
 Deactivates the webhook target and returns no API body.
+Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
 ```
 
 ## `solwyn webhooks list`
@@ -110,15 +122,16 @@ Usage: solwyn webhooks rotate [OPTIONS] WEBHOOK_ID
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
 | `webhook_id` | `Webhook target identifier. (STRING; required)` | `None` |
+| `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
 
 ```text
 Endpoint: POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate
 Auth: owner/admin JWT (project.write)
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
 JSON schema: solwyn.webhooks-rotate.v1
+Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
 The signing secret is shown exactly once; the old secret stops working immediately.
 Verify X-Solwyn-Signature: sha256=<hex HMAC-SHA256 of the raw body>.
 Use Idempotency-Key to deduplicate retries.
 No timestamp header or replay window is defined.
 ```
-

@@ -32,6 +32,7 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
+from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -671,26 +672,44 @@ def _jwt_credential(context: typer.Context) -> JwtCredential:
             "POST /api/v1/projects/{project}/agent-runs/{run_id}/stop"
         ),
         auth="JWT + budget.write",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.runs.stop.v1",
         guidance=(
             "Stops future checks and lease renewals; in-flight requests finish.",
             "Auto-grouped explorer runs are not stoppable.",
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
         ),
     ),
 )
 def stop_run(
     context: typer.Context,
     run: Annotated[str, typer.Argument(help="Storage ID or exact run name.")],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Stop future work for one project agent run."""
     runtime = command_context(context)
     project_id = _project_id(context)
+    effect = (
+        f"Stop run {run!r} in project {project_id!r}: blocks future checks and lease renewals; "
+        "in-flight requests finish."
+    )
+    check_confirmation(context, yes=yes, effect=effect)
     credential = _jwt_credential(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             storage_run_id = resolve_agent_run_id(
                 client=client, project_id=project_id, run=run
+            )
+            confirm_effects(
+                context,
+                yes=yes,
+                effect=f"Stop run {run!r} (resolved target {storage_run_id}) in project {project_id!r}: "
+                "blocks future checks and lease renewals; in-flight requests finish.",
             )
             data = stop_agent_run(
                 client=client,
