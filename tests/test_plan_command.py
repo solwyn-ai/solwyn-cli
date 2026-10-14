@@ -68,7 +68,8 @@ BILLING_STATUS = {
     },
     "status": "active",
     "current_period_end": "2026-10-01T00:00:00Z",
-    "cancel_at_period_end": False,
+    "cancel_at": None,
+    "scheduled_plan_change": None,
     "grace_period_until": None,
     "stripe_customer_id": "cus_private",
     "recent_invoices": [],
@@ -190,3 +191,158 @@ def test_plan_invalid_billing_response_fails_closed(
     assert result.stdout == ""
     error = json.loads(result.stderr)
     assert error["code"] == "invalid_plan_response"
+
+
+@pytest.mark.parametrize("output_format", ["json", "table"])
+@pytest.mark.parametrize("cancelling", [False, True])
+def test_plan_exposes_subscription_lifecycle(
+    monkeypatch: pytest.MonkeyPatch, output_format: str, cancelling: bool
+) -> None:
+    monkeypatch.setattr(
+        plan_module,
+        "resolve_credential",
+        lambda: auth.JwtCredential(
+            access_token="test-access", refresh_token="test-refresh"
+        ),
+    )
+    monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
+    lifecycle = {
+        "current_period_end": "2027-10-01T00:00:00Z",
+        "cancel_at": "2027-10-01T00:00:00Z" if cancelling else None,
+        "grace_period_until": "2026-10-21T00:00:00Z",
+        "scheduled_plan_change": {
+            "target_tier": "production",
+            "target_billing_interval": "month",
+            "effective_at": "2027-10-01T00:00:00Z",
+        },
+        "pending_plan": {"tier": "scale", "billing_interval": "year"},
+    }
+    FakeClient.responses = [
+        httpx.Response(200, json={**BILLING_STATUS, **lifecycle, "status": "past_due"})
+    ]
+    result = runner.invoke(
+        app, ["--json" if output_format == "json" else "--no-color", "plan"]
+    )
+    assert result.exit_code == 0, result.stderr
+    if output_format == "json":
+        payload = json.loads(result.stdout)
+        for field, value in lifecycle.items():
+            assert payload[field] == value
+        assert "cancel_at_period_end" not in payload
+    else:
+        assert ("Ends" if cancelling else "Renews") in result.stdout
+        assert "Cancel at" in result.stdout
+        assert "Grace until" in result.stdout
+        assert "Scheduled plan" in result.stdout
+        assert "Pending plan" in result.stdout
+        assert "production / month" in result.stdout
+        assert "scale / year" in result.stdout
+        assert "2027-10-01" in result.stdout
+        assert "2026-10-21" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        {"target_tier": None, "target_billing_interval": None},
+        {"target_tier": "team", "target_billing_interval": "year"},
+    ],
+)
+def test_plan_accepts_required_nullable_scheduled_targets(
+    monkeypatch: pytest.MonkeyPatch, targets: dict[str, str | None]
+) -> None:
+    monkeypatch.setattr(
+        plan_module,
+        "resolve_credential",
+        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+    )
+    monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
+    change = {**targets, "effective_at": "2027-10-01T00:00:00Z"}
+    FakeClient.responses = [
+        httpx.Response(200, json={**BILLING_STATUS, "scheduled_plan_change": change})
+    ]
+    result = runner.invoke(app, ["--json", "plan"])
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["scheduled_plan_change"] == change
+
+
+@pytest.mark.parametrize(
+    "missing", ["target_tier", "target_billing_interval", "effective_at"]
+)
+def test_plan_rejects_incomplete_scheduled_change(
+    monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    monkeypatch.setattr(
+        plan_module,
+        "resolve_credential",
+        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+    )
+    monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
+    change = {
+        "target_tier": None,
+        "target_billing_interval": None,
+        "effective_at": "2027-10-01T00:00:00Z",
+    }
+    del change[missing]
+    FakeClient.responses = [
+        httpx.Response(200, json={**BILLING_STATUS, "scheduled_plan_change": change})
+    ]
+    result = runner.invoke(app, ["--json", "plan"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_plan_response"
+
+
+@pytest.mark.parametrize("output_format", ["json", "table"])
+def test_plan_optional_lifecycle_can_be_omitted_for_free_accounts(
+    monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    monkeypatch.setattr(
+        plan_module,
+        "resolve_credential",
+        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+    )
+    monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
+    minimal = {field: BILLING_STATUS[field] for field in ("limits", "capabilities")}
+    FakeClient.responses = [
+        httpx.Response(200, json={**minimal, "tier": "free", "billing_interval": None})
+    ]
+    result = runner.invoke(
+        app, ["--json" if output_format == "json" else "--no-color", "plan"]
+    )
+    assert result.exit_code == 0, result.stderr
+    if output_format == "json":
+        payload = json.loads(result.stdout)
+        for field in (
+            "current_period_end",
+            "cancel_at",
+            "grace_period_until",
+            "scheduled_plan_change",
+            "pending_plan",
+        ):
+            assert payload[field] is None
+    else:
+        assert "Grace until" not in result.stdout
+        assert "Scheduled plan" in result.stdout
+        assert "Pending plan" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "field", ["current_period_end", "cancel_at", "grace_period_until"]
+)
+def test_plan_rejects_invalid_lifecycle_timestamps(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    monkeypatch.setattr(
+        plan_module,
+        "resolve_credential",
+        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+    )
+    monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
+    FakeClient.responses = [
+        httpx.Response(200, json={**BILLING_STATUS, field: "invalid-date"})
+    ]
+    result = runner.invoke(app, ["--json", "plan"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "invalid_plan_response"

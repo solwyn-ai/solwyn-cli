@@ -327,7 +327,7 @@ HELP_CONTRACTS = {
     },
     ("notifications", "test"): {
         "endpoint": "POST /api/v1/projects/{project}/notifications/test-{channel}",
-        "auth": "any; email requires JWT",
+        "auth": "any; Slack/PagerDuty require JWT or full-scope key; email requires JWT",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.test.v1",
@@ -597,13 +597,13 @@ HELP_CONTRACTS = {
     },
     ("webhooks", "create"): {
         "endpoint": "POST /api/v1/projects/{project}/webhooks",
-        "auth": "JWT",
+        "auth": "owner/admin JWT (project.write)",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-create.v1",
     },
     ("webhooks", "delete"): {
         "endpoint": "DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
-        "auth": "JWT",
+        "auth": "owner/admin JWT (project.write)",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
     },
@@ -615,7 +615,7 @@ HELP_CONTRACTS = {
     },
     ("webhooks", "rotate"): {
         "endpoint": "POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
-        "auth": "JWT",
+        "auth": "owner/admin JWT (project.write)",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-rotate.v1",
     },
@@ -747,6 +747,9 @@ def test_audit_help_explains_exact_actions_and_rule_event_gap() -> None:
         "agent_run.stopped",
         "billing.plan_intent_deleted",
         "billing.plan_changed",
+        "billing.cancel_scheduled",
+        "billing.cancel_undone",
+        "billing.plan_change_discarded",
         "notification_channel.created",
         "notification_channel.updated",
         "notification_channel.deleted",

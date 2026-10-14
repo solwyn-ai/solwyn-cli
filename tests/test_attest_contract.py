@@ -151,3 +151,45 @@ def test_attestation_auth_contract_is_account_jwt_and_project_dual_auth() -> Non
     assert paths["/api/v1/projects/{project_id}/spend-control-attestation"]["get"][
         "security"
     ] == [{"BearerAuth": []}, {"ApiKeyAuth": []}]
+
+
+@pytest.mark.parametrize("cancel_at", [None, "2027-10-01T00:00:00Z"])
+def test_attestation_subscription_requires_anchor_and_nullable_cancel(
+    cancel_at: str | None,
+) -> None:
+    from pydantic import ValidationError
+
+    data = {
+        "tier": "team",
+        "billing_interval": "year",
+        "status": "active",
+        "pending_update_exists": False,
+        "pause_collection_exists": False,
+        "grace_period_until": None,
+        "cancel_at": cancel_at,
+        **{
+            field: "2026-10-01T00:00:00Z"
+            for field in (
+                "current_period_start",
+                "current_period_end",
+                "billing_cycle_anchor",
+                "raw_status_at",
+                "created_at",
+                "updated_at",
+            )
+        },
+    }
+    model = AttestationSubscriptionSnapshot.model_validate(data)
+    assert (model.cancel_at is None) == (cancel_at is None)
+    for field in ("billing_cycle_anchor", "cancel_at"):
+        incomplete = {key: value for key, value in data.items() if key != field}
+        with pytest.raises(ValidationError):
+            AttestationSubscriptionSnapshot.model_validate(incomplete)
+    with pytest.raises(ValidationError):
+        AttestationSubscriptionSnapshot.model_validate(
+            {**data, "billing_cycle_anchor": None}
+        )
+    with pytest.raises(ValidationError):
+        AttestationSubscriptionSnapshot.model_validate(
+            {**data, "cancel_at_period_end": False}
+        )

@@ -92,9 +92,9 @@ dashboard path. They never launch a checkout.
 
 ## Baselines, unit economics, and drift
 
-`costs baseline --days 3..30` reads the daily-spend materialized view. The view
-is refreshed hourly, so it can trail the live aggregate. `armed` becomes true
-after Core has at least three days of data.
+`costs baseline --days 3..30` reads transactional daily spend, excluding today.
+Closed days reflect committed metadata immediately. `armed` becomes true after
+Core has at least three days of data.
 
 `costs unit-economics` accepts `--range 7d|30d|90d`, defaults to `30d`, and
 compares the immediately preceding window unless `--no-vs-prev` is set. Add

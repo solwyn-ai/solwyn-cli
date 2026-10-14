@@ -8962,6 +8962,22 @@
         "BudgetCheckRequest": {
           "additionalProperties": false,
           "properties": {
+            "uncounted_calls": {
+              "default": 0,
+              "description": "Advisory count of outage fail-open calls since the last successful contact; default zero because the CLI admits no offline calls. Never affects budget pricing.",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Uncounted Calls",
+              "type": "integer"
+            },
+            "uncounted_tokens": {
+              "default": 0,
+              "description": "Advisory tokens consumed by those outage calls; default zero because the CLI admits no offline calls. Must be between zero and 9223372036854775807.",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Uncounted Tokens",
+              "type": "integer"
+            },
             "tags": {
               "anyOf": [
                 {

@@ -3370,7 +3370,7 @@
             "--days"
           ],
           "default": 7,
-          "help": "Lookback days for the hourly baseline.",
+          "help": "Lookback days for the daily spend baseline (excludes today).",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
@@ -3386,7 +3386,7 @@
         "costs",
         "baseline"
       ],
-      "summary": "Show the hourly-refreshed daily spend baseline."
+      "summary": "Show the transactional daily spend baseline, excluding today."
     },
     {
       "hidden": false,
@@ -4930,7 +4930,7 @@
       "path": [
         "plan"
       ],
-      "summary": "Show the current plan, limits, and capabilities."
+      "summary": "Show the current plan, subscription lifecycle, limits, and capabilities."
     },
     {
       "hidden": false,
@@ -6970,9 +6970,14 @@
     {
       "keys": [
         "billing_interval",
+        "cancel_at",
         "capabilities",
         "cta_path",
+        "current_period_end",
+        "grace_period_until",
         "limits",
+        "pending_plan",
+        "scheduled_plan_change",
         "schema",
         "status",
         "tier"

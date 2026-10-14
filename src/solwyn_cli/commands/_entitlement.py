@@ -1,8 +1,9 @@
 """Typed response fields adopted from the pinned Core contract."""
 
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from solwyn_cli.auth import AuthError
 from solwyn_cli.client import SolwynClient
@@ -71,18 +72,25 @@ class PendingPlan(_Response):
     billing_interval: Literal["month", "year"]
 
 
+class ScheduledPlanChange(_Response):
+    target_tier: Literal["production", "team", "scale"] | None
+    target_billing_interval: Literal["month", "year"] | None
+    effective_at: datetime
+
+
 class SubscriptionStatusResponse(_Response):
     tier: Literal["free", "production", "team", "scale"]
     billing_interval: Literal["month", "year"] | None
     limits: dict[str, int]
     capabilities: TierCapabilities
     status: str | None = None
-    current_period_end: str | None = None
-    cancel_at_period_end: bool = False
-    grace_period_until: str | None = None
+    current_period_end: datetime | None = None
+    cancel_at: datetime | None = None
+    grace_period_until: datetime | None = None
     stripe_customer_id: str | None = None
-    recent_invoices: list[InvoiceSummary] = []
+    recent_invoices: list[InvoiceSummary] = Field(default_factory=list)
     pending_plan: PendingPlan | None = None
+    scheduled_plan_change: ScheduledPlanChange | None = None
 
 
 def fetch_billing_status(*, client: SolwynClient) -> SubscriptionStatusResponse:

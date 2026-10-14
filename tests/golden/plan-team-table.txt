@@ -2,6 +2,11 @@ Field                                           Value
 Tier                                             team
 Billing interval                                 year
 Status                                         active
+Renews                           2026-10-01T00:00:00Z
+Cancel at                                        none
+Scheduled plan                                   none
+Scheduled effective at                           none
+Pending plan                                     none
 Limit api keys/project                             10
 Limit projects                              unlimited
 Limit requests/month                           500000

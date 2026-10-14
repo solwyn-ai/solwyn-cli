@@ -137,6 +137,8 @@ def test_budget_check_posts_exact_call_shaped_request_with_project_key(
             "/api/v1/budgets/check",
             {
                 "json": {
+                    "uncounted_calls": 0,
+                    "uncounted_tokens": 0,
                     "price_hints_version": "1",
                     "estimated_input_tokens": 1200,
                     "model": "gpt-5",
@@ -165,6 +167,8 @@ def test_budget_check_sends_agent_run_id_only_when_the_flag_is_supplied(
             "/api/v1/budgets/check",
             {
                 "json": {
+                    "uncounted_calls": 0,
+                    "uncounted_tokens": 0,
                     "price_hints_version": "1",
                     "estimated_input_tokens": 1200,
                     "model": "gpt-5",
@@ -192,6 +196,8 @@ def test_budget_check_omits_agent_run_id_rather_than_posting_an_explicit_null(
     (_, _, kwargs) = FakeClient.instances[0].requests[0]
     assert "agent_run_id" not in kwargs["json"]
     assert kwargs["json"] == {
+        "uncounted_calls": 0,
+        "uncounted_tokens": 0,
         "price_hints_version": "1",
         "estimated_input_tokens": 1200,
         "model": "gpt-5",
