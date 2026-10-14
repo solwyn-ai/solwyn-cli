@@ -3,10 +3,12 @@
 import importlib
 import json
 
+import click
 import httpx
 import pytest
 from typer.testing import CliRunner
 
+from help_options import assert_public_bool_flag
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.main import app
@@ -209,7 +211,8 @@ def test_interactive_acceptance_decline_eof_and_interrupt(
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c[0] + "-" + c[1][0])
-def test_help_is_auth_and_http_free(transport, monkeypatch, case):
+@pytest.mark.parametrize("color", [False, True], ids=["no-color", "color"])
+def test_help_is_auth_and_http_free(transport, monkeypatch, case, color):
     calls, _, _, modules = transport
     for module in modules:
         monkeypatch.setattr(
@@ -217,9 +220,20 @@ def test_help_is_auth_and_http_free(transport, monkeypatch, case):
             "resolve_credential",
             lambda: pytest.fail("help resolved credentials"),
         )
-    result = runner.invoke(app, argv(case, "--help"))
+    # Typer caches its force-terminal decision at import, before these cases.
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", color)
+    monkeypatch.setenv("TERM", "xterm-256color" if color else "dumb")
+    if color:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.setenv("FORCE_COLOR", "1")
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
+        monkeypatch.setenv("NO_COLOR", "1")
+    result = runner.invoke(app, argv(case, "--help"), color=color)
     assert result.exit_code == 0
-    assert "--yes" in result.stdout
+    assert ("\x1b[" in result.stdout) is color
+    assert "--yes" in click.unstyle(result.stdout)
+    assert_public_bool_flag([case[0], case[1][0]], "--yes")
     assert calls == []
 
 

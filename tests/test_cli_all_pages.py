@@ -4,10 +4,12 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
+import click
 import httpx
 import pytest
 from typer.testing import CliRunner
 
+from help_options import assert_public_bool_flag
 from solwyn_cli.auth import ProjectKeyCredential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import costs, runs, tags
@@ -234,13 +236,26 @@ def test_all_pages_preserve_first_window_and_any_retention_clamp(paging):
 @pytest.mark.parametrize(
     "command", [["costs", "events"], ["runs", "list"], ["tags", "values"]]
 )
-def test_public_help_advertises_all(command):
-    result = runner.invoke(app, [*command, "--help"], terminal_width=160)
+@pytest.mark.parametrize("color", [False, True], ids=["no-color", "color"])
+def test_public_help_advertises_all(command, color, monkeypatch):
+    # Typer caches its force-terminal decision at import, before these cases.
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", color)
+    monkeypatch.setenv("TERM", "xterm-256color" if color else "dumb")
+    if color:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.setenv("FORCE_COLOR", "1")
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
+        monkeypatch.setenv("NO_COLOR", "1")
+    result = runner.invoke(app, [*command, "--help"], terminal_width=160, color=color)
     assert result.exit_code == 0
-    assert "--all" in result.output
+    assert ("\x1b[" in result.output) is color
+    rendered = click.unstyle(result.output)
+    assert "--all" in rendered
     assert "Follow all remaining cursor pages" in " ".join(
-        result.output.replace("│", " ").split()
+        rendered.replace("│", " ").split()
     )
+    assert_public_bool_flag(command, "--all")
 
 
 def test_providers_group_has_useful_public_description():
