@@ -681,3 +681,82 @@ def test_new_alert_result_limit_returns_original_cursor(monkeypatch, name):
     assert result.structured_content["data"] is None
     assert result.structured_content["recovery"]["cursor"] == "original"
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("verified", [False, True])
+def test_jwt_identity_same_strict_read_and_verified_state(monkeypatch, verified):
+    me = dict(
+        user_id="user-synthetic",
+        email="user@example.invalid",
+        email_verified=verified,
+        first_name="Synthetic",
+        marketing_emails_subscribed=False,
+        account_id="acct-synthetic",
+        display_name="Synthetic",
+        subscription_tier="free",
+        alert_email_override=None,
+    )
+    account = dict(
+        id="acct-synthetic",
+        display_name="Synthetic",
+        subscription_tier="free",
+        alert_email_override=None,
+        seat_limit=1,
+        seats_used=1,
+        your_role="member",
+    )
+    result, requests = call(
+        monkeypatch,
+        "get_whoami",
+        [
+            httpx.Response(200, json=me),
+            httpx.Response(200, json=account),
+            httpx.Response(200, json=[]),
+        ],
+    )
+    assert not result.is_error, result
+    data = result.structured_content["data"]
+    assert data["user"] == me
+    assert data["your_role"] == "member"
+    assert [request[1] for request in requests] == [
+        "/api/v1/account/me",
+        "/api/v1/accounts/me",
+        "/api/v1/projects",
+    ]
+    assert "Bearer synthetic" not in str(result)
+
+
+def test_account_latest_tool_retains_both_firing_and_lifecycle(monkeypatch):
+    fire = dict(
+        EVENT,
+        project_id=None,
+        rule_key="account-one",
+        rule_type="account_spend_threshold",
+        event_type="fired",
+    )
+    paused = dict(
+        fire, id="paused", event_type="paused", emitted_at="2026-10-01T00:00:00Z"
+    )
+    result, requests = call(
+        monkeypatch,
+        "get_account_alert",
+        [
+            httpx.Response(200, json=ACCOUNT),
+            httpx.Response(200, json=dict(events=[paused, fire], window=WINDOW)),
+        ],
+        {"with_last_fired": True},
+    )
+    assert not result.is_error, result
+    data = result.structured_content["data"]
+    assert data["last_fired"]["id"] == fire["id"]
+    assert data["latest_event"]["event_type"] == "paused"
+    assert data["latest_window"] == WINDOW
+    assert requests[1][2]["json"]["rules"] == [
+        {
+            "rule_key": "account-one",
+            "project_id": None,
+            "rule_type": "account_spend_threshold",
+            "percent": None,
+            "period_keys": None,
+        }
+    ]

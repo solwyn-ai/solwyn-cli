@@ -479,3 +479,31 @@ def test_new_cli_json_output_goldens(name, args, payload):
     result = invoke(*args)
     assert result.exit_code == 0, result.output
     assert_matches_golden(result.stdout, Path("tests/golden") / f"{name}-json.json")
+
+
+def test_catalog_yearly_units_and_free_null_overage():
+    payload = copy.deepcopy(catalog())
+    tier = payload["tiers"]["team"]
+    tier["prices"]["year"] = dict(
+        amount_cents=100001, monthly_display_cents=8333, currency="usd"
+    )
+    tier["overage"]["unit_amount_decimal_cents"] = "0.123456"
+    payload["tiers"]["free"] = dict(
+        tier,
+        tier="free",
+        display_name="Free",
+        prices=dict(month=None, year=None),
+        overage=None,
+    )
+    FakeClient.responses = [httpx.Response(200, json=payload)]
+    result = invoke("plan", "list")
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["tiers"]["team"]["prices"]["year"] == {
+        "amount_cents": 100001,
+        "monthly_display_cents": 8333,
+        "currency": "usd",
+    }
+    assert data["tiers"]["team"]["overage"]["unit_amount_decimal_cents"] == "0.123456"
+    assert data["tiers"]["free"]["overage"] is None
+    assert data["tiers"]["free"]["prices"] == {"month": None, "year": None}
