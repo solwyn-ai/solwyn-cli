@@ -2,16 +2,21 @@
 
 Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and recover from leaked or expired project keys — from your terminal, your scripts, or your coding agent.
 
-> **Status:** pre-release. This repository is private while the first release is prepared, and the package is not yet published to PyPI.
+Version 0.2.0 is published on PyPI. This repository documents the current development
+checkout; additions made after the September 2026 release may require a source build.
+Use `solwyn --help` and MCP discovery to inspect the installed version.
 
 ## Installation
 
-Until the first release, install from a local checkout:
+Install the published package with uv:
 
 ```console
-uv tool install .
+uv tool install solwyn-cli
 solwyn --version
 ```
+
+Or use `pipx install solwyn-cli`. For development or unreleased commands, install
+from an authorized checkout with `uv tool install .`.
 
 Requires Python 3.11 or newer. The package installs two identical executables: `solwyn` and `solwyn-cli` (an alias matching the package name).
 
@@ -92,11 +97,12 @@ Every command's `--help` states its exit codes, authentication requirements, and
 Account management includes subscription preview, change, cancellation/resume,
 scheduled-change discard, hosted checkout/portal links and pending-intent dismissal.
 Billing writes require owner JWT and confirmation or `--yes`; preview is a JWT
-read at any role. See the [plan reference](docs/commands/plan.mdx). The full reference for every command lives in the [CLI docs](https://docs.solwyn.ai/docs/cli).
+read at any role. See the [plan reference](docs/commands/plan.mdx). The [in-repo command reference](docs/commands/README.md) describes this checkout.
+The published guide lives in the [CLI docs](https://docs.solwyn.ai/docs/cli).
 
 ## Scripting
 
-All commands support `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, and not-found failures. Global flags select the project (`--project`), API base URL (`--api-url`), and output format, and go before the subcommand.
+API and setup commands support global `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, and not-found failures. The local `config` commands emit plain text. Global flags select the project (`--project`), API base URL (`--api-url`), and output format, and go before the subcommand.
 
 ## Trust posture
 

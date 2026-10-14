@@ -1,8 +1,8 @@
 # Core contract follow-ups
 
 This document records the process work that accompanies the CLI's vendored Core contract. The
-findings were re-verified on 2026-09-05 against clean Core `main` at
-`690d61c0de1f11c6653f7a8a17800356f5009a8c`. Detailed source evidence and implementation
+findings were re-verified on 2026-10-14 against clean Core `main` at
+`4925784d42e18bb6b680e5a87609d1829f1f64a9`. Detailed source evidence and implementation
 discussion live in the linked Core issues; this page keeps the cross-repository process and
 ownership visible to CLI contributors.
 
@@ -22,7 +22,7 @@ must ignore the CLI-only `x-solwyn-snapshot-date` and `x-solwyn-core-ref` stamps
 daily run would report a false diff.
 
 Both signals remain useful. The age gate stays in public CLI CI and forces periodic conscious
-review even during quiet periods. The content monitor runs privately and detects actual contract
+review even during quiet periods. The proposed content monitor would run privately and detect actual contract
 changes promptly. A successful no-drift run must not rewrite the snapshot date, because doing so
 would hide how long it has been since a maintainer reviewed and committed a sync.
 
@@ -78,11 +78,12 @@ Run daily and allow `workflow_dispatch` for repair and testing:
    prevent the issue from being created; it can never turn the run into "no drift."
 
 The Core repository already proves that its own `shared/openapi.json` matches a fresh export in
-`scripts/check-openapi.sh:8-16`. The proposed job starts from that checked-in customer contract
+`scripts/check-openapi.sh:42-46`. The proposed job starts from that checked-in customer contract
 and uses the CLI's `scripts/sync_spec.py:73-94` for the cross-repository candidate. It does not
 duplicate API schema generation.
 
-Implementation of this monitor is tracked in
+No matching content-drift workflow exists in Core at the verified commit.
+Implementation remains Core/private-infrastructure work and is tracked in
 [Core issue #403](https://github.com/solwyn-ai/core/issues/403).
 
 ### Acceptance criteria
@@ -99,26 +100,34 @@ Implementation of this monitor is tracked in
 
 ## Verified Core issue register
 
-The ten wave-0 findings are still current at Core `690d61c0`. Exact-symbol searches across open
-and closed `solwyn-ai/core` issues found no earlier matches on 2026-09-05. They are now tracked as:
+Nine wave-0 findings remain pending in source at the verified Core commit. This
+register describes implementation evidence, not the current GitHub issue state.
+The historical issue search was performed on 2026-09-05; no new issue search or
+issue closure was performed during this verification.
 
-| # | Status | Core issue |
+| Core issue | Status | Evidence at `4925784d` |
 | --- | --- | --- |
-| 1 | Still current | [#394 — Declare project-key auth for agent-run and provider GET operations in OpenAPI](https://github.com/solwyn-ai/core/issues/394) |
-| 2 | Still current | [#395 — Allow the single agent-run GET to resolve a raw customer run id](https://github.com/solwyn-ai/core/issues/395) |
-| 3 | Still current | [#396 — Type `AgentRunEntry.velocity_flags` with the shared `VelocityFlag` contract](https://github.com/solwyn-ai/core/issues/396) |
-| 4 | Still current | [#397 — Make `analytics.tags` upgrade responses explicit about allowed alternatives](https://github.com/solwyn-ai/core/issues/397) |
-| 5 | Still current | [#398 — Validate project notification and webhook event filters against one registry](https://github.com/solwyn-ai/core/issues/398) |
-| 6 | Still current | [#399 — Use one request counter for the free-tier quota gate and overview](https://github.com/solwyn-ai/core/issues/399) |
-| 7 | Still current | [#400 — Expose build identity on health and token lifetime on auth responses](https://github.com/solwyn-ai/core/issues/400) |
-| 8 | Still current | [#401 — Report retention clamping on untracked-surface reads](https://github.com/solwyn-ai/core/issues/401) |
-| 9 | Still current | [#402 — Return provider fallback attribution on `CostEventResponse`](https://github.com/solwyn-ai/core/issues/402) |
-| 10 | Still current | [#403 — Add a private scheduled Core-to-CLI OpenAPI content drift monitor](https://github.com/solwyn-ai/core/issues/403) |
+| [#394 — Declare project-key auth on agent-run and provider GETs](https://github.com/solwyn-ai/core/issues/394) | Pending | `shared/openapi.json` still declares only `HTTPBearer` for single agent-run, providers and provider-failover GETs, although runtime auth accepts project keys. |
+| [#395 — Resolve raw customer run ids on single agent-run GET](https://github.com/solwyn-ai/core/issues/395) | Pending | `routers/agent_runs.py:get_project_agent_run` compares `AgentRun.id == run_id`; it does not resolve a raw name. The CLI resolves names through listing before GET. |
+| [#396 — Type velocity flags with VelocityFlag](https://github.com/solwyn-ai/core/issues/396) | Pending | `AgentRunEntry.velocity_flags` remains nullable `list[str]` in source and OpenAPI. |
+| [#397 — Explicit analytics.tags upgrade alternatives](https://github.com/solwyn-ai/core/issues/397) | Pending | `routers/tags.py:_require_tags_entitlement` raises upgrade-required without `allowed_values`. The CLI renders alternatives when Core supplies them. |
+| [#398 — One event-filter registry](https://github.com/solwyn-ai/core/issues/398) | Pending | `NotificationConfigUpdate.enabled_event_types` remains `set[str]`; `WebhookCreateRequest.events` remains a comma-separated `str`. No shared validation registry is used by these request models. |
+| [#400 — Health build identity and token lifetime](https://github.com/solwyn-ai/core/issues/400) | Pending | `HealthResponse` contains only `status` and `service`; `TokenResponse` contains access/refresh tokens and token type, without `expires_in`. |
+| [#401 — Untracked-surface retention metadata](https://github.com/solwyn-ai/core/issues/401) | Pending | `UntrackedSurfaceResponse` has no clamp/window fields. The CLI's wrapper estimates the effective window from billing retention when available and reports unknown otherwise. |
+| [#402 — Cost-event provider fallback attribution](https://github.com/solwyn-ai/core/issues/402) | Pending | `CostEventResponse` has `is_model_fallback`, but no provider-fallback or failover-reason field. Filtering support does not imply those fields are returned. |
+| [#403 — Private scheduled content-drift monitor](https://github.com/solwyn-ai/core/issues/403) | Pending; Core/private infra | No corresponding workflow under Core `.github/workflows`; the mechanism above is a proposal. Public CLI age/content guards remain unchanged. |
 
-No finding from the wave-0 list was obsolete at the verified commit. When Core resolves one,
-move it to a resolved section with the fixing issue or commit instead of leaving a stale current
-finding on this page.
+### Resolved in Core
 
+[#399 — One request counter for the free-tier gate and overview](https://github.com/solwyn-ai/core/issues/399)
+was resolved by Core commit `67e3b60f` (PR #393). At the verified HEAD,
+`routers/overview.py:17,172-186` uses the gate's `_free_tier_quota_state` from
+`routers/costs.py` and returns its `current_requests`, quota and window fields.
+The resolver's LIMIT-bounded scan reports the exact request count below the
+quota, but reports the included-request cap once exceeded. `current_requests`
+is a quota signal, **not a usage figure** above the cap. `total_requests` is a
+separate analytics figure over its retention-clamped window. Sharing the gate's
+resolver does not make the two figures interchangeable.
 
 ## Reliability audit at Core `4925784d` (2026-10-14)
 

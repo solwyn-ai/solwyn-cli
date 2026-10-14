@@ -1,0 +1,44 @@
+---
+title: Repository setup
+---
+
+Run from the repository to configure its Solwyn project, detect Python provider
+SDK imports, print SDK wiring and read budget status. Provider credentials are
+never collected. `--agents` additionally writes Claude, Cursor and AGENTS.md
+guidance; `--run-cap` applies only to newly created projects.
+
+```sh
+solwyn init
+solwyn init --agents
+```
+
+Init can bootstrap login, list/select projects and optionally create a project;
+creation shows a one-time project key. It writes local configuration and scans
+imports, then verifies budget with a read. Keychain access requires the same OS
+account. The help contract below lists every conditional remote/local operation.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn init`
+
+Configure Solwyn safely for the current repository.
+
+```console
+Usage: solwyn init [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--agents` | `Write Claude, Cursor, and AGENTS.md guidance. (BOOL)` | `False` |
+| `--run-cap` | `Create a wildcard per-run hard cap after project creation; caps every run at min(caps).  (FLOAT)` | `None` |
+
+```text
+Endpoint: composite onboarding workflow
+Auth: any or interactive bootstrap
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.init.v1
+Remote operations: conditional POST /api/v1/auth/login; GET /api/v1/projects; optional POST /api/v1/projects; final GET /api/v1/projects/{project}/budget; --run-cap adds a rule with GET/GET/PUT /api/v1/projects/{project}/budget after creation.
+Local operations: write local configuration; scan Python imports; render SDK snippets; optionally write agent artifacts with --agents.
+Provider credentials are never collected; --agents writes safe agent guidance.
+```

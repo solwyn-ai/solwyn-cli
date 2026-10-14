@@ -20,6 +20,7 @@ from solwyn_cli.runtime import command_context, output_engine
 
 
 app = typer.Typer(
+    help="Inspect provider failovers and advisory untracked surfaces.",
     add_completion=False,
     no_args_is_help=True,
     epilog=help_contract(

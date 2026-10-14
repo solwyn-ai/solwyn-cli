@@ -30,6 +30,7 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
+from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -401,9 +402,10 @@ def create_webhook(
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
         auth="owner/admin JWT (project.write)",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.webhooks-rotate.v1",
         guidance=(
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
             "The signing secret is shown exactly once; the old secret stops working immediately.",
             *_DELIVERY_GUIDANCE,
         ),
@@ -412,6 +414,12 @@ def create_webhook(
 def rotate_webhook(
     context: typer.Context,
     webhook_id: Annotated[str, typer.Argument(help="Webhook target identifier.")],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Rotate a target's signing secret and reveal the replacement once."""
     runtime = command_context(context)
@@ -419,7 +427,10 @@ def rotate_webhook(
     validated_webhook_id = _validated_identifier(
         context, webhook_id, label="webhook_id"
     )
+    effect = f"Rotate webhook {validated_webhook_id!r} in project {project_id!r}: the old signing secret becomes invalid immediately; its replacement is shown once."
+    check_confirmation(context, yes=yes, effect=effect)
     credential = _jwt_credential(context, operation="rotate")
+    confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     webhook_path = quote(validated_webhook_id, safe="")
     try:
@@ -458,14 +469,23 @@ def rotate_webhook(
     epilog=help_contract(
         endpoint="DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
         auth="owner/admin JWT (project.write)",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
-        guidance=("Deactivates the webhook target and returns no API body.",),
+        guidance=(
+            "Deactivates the webhook target and returns no API body.",
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
+        ),
     ),
 )
 def delete_webhook(
     context: typer.Context,
     webhook_id: Annotated[str, typer.Argument(help="Webhook target identifier.")],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Deactivate a webhook target."""
     runtime = command_context(context)
@@ -473,7 +493,10 @@ def delete_webhook(
     validated_webhook_id = _validated_identifier(
         context, webhook_id, label="webhook_id"
     )
+    effect = f"Deactivate webhook {validated_webhook_id!r} in project {project_id!r}: disables this delivery target."
+    check_confirmation(context, yes=yes, effect=effect)
     credential = _jwt_credential(context, operation="delete")
+    confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     webhook_path = quote(validated_webhook_id, safe="")
     try:

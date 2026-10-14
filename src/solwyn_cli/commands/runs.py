@@ -27,10 +27,12 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
+from solwyn_cli.commands._pagination import read_pages
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
+from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -511,6 +513,9 @@ def list_runs(
     cursor: Annotated[
         str | None, typer.Option("--cursor", help="Opaque next-page cursor.")
     ] = None,
+    all_pages: Annotated[
+        bool, typer.Option("--all", help="Follow all remaining cursor pages.")
+    ] = False,
 ) -> None:
     """List recent project agent runs."""
     try:
@@ -566,17 +571,22 @@ def list_runs(
     credential = required_credential(context, resolve=resolve_credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            data = fetch_agent_runs(
-                client=client,
-                project_id=project_id,
-                time_range=time_range,
-                from_=from_,
-                to=to,
-                query=query,
-                parent=parent,
-                sort=sort,
-                limit=limit,
+            data = read_pages(
+                lambda page_cursor: fetch_agent_runs(
+                    client=client,
+                    project_id=project_id,
+                    time_range=time_range,
+                    from_=from_,
+                    to=to,
+                    query=query,
+                    parent=parent,
+                    sort=sort,
+                    limit=limit,
+                    cursor=page_cursor,
+                ),
+                field="runs",
                 cursor=cursor,
+                all_pages=all_pages,
             )
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         _command_error(context, error, response="runs")
@@ -662,26 +672,44 @@ def _jwt_credential(context: typer.Context) -> JwtCredential:
             "POST /api/v1/projects/{project}/agent-runs/{run_id}/stop"
         ),
         auth="JWT + budget.write",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.runs.stop.v1",
         guidance=(
             "Stops future checks and lease renewals; in-flight requests finish.",
             "Auto-grouped explorer runs are not stoppable.",
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
         ),
     ),
 )
 def stop_run(
     context: typer.Context,
     run: Annotated[str, typer.Argument(help="Storage ID or exact run name.")],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Stop future work for one project agent run."""
     runtime = command_context(context)
     project_id = _project_id(context)
+    effect = (
+        f"Stop run {run!r} in project {project_id!r}: blocks future checks and lease renewals; "
+        "in-flight requests finish."
+    )
+    check_confirmation(context, yes=yes, effect=effect)
     credential = _jwt_credential(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             storage_run_id = resolve_agent_run_id(
                 client=client, project_id=project_id, run=run
+            )
+            confirm_effects(
+                context,
+                yes=yes,
+                effect=f"Stop run {run!r} (resolved target {storage_run_id}) in project {project_id!r}: "
+                "blocks future checks and lease renewals; in-flight requests finish.",
             )
             data = stop_agent_run(
                 client=client,

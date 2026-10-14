@@ -69,11 +69,14 @@ def _help(
     endpoint: str,
     auth: str = "key or JWT; account requires JWT",
     schema: str = "solwyn.alerts.v1",
+    *,
+    not_found: bool = True,
 ) -> str:
     return help_contract(
         endpoint=endpoint,
         auth=auth,
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth"
+        + ("; 5 not found" if not_found else ""),
         schema=schema,
     )
 
@@ -587,6 +590,7 @@ def account_preview(
         "GET /api/v1/account/alerts/activity",
         "JWT; any account member",
         "solwyn.alerts.activity.v1",
+        not_found=False,
     ),
 )
 def activity(
@@ -643,6 +647,7 @@ def _write_account_events(context: typer.Context, data: BaseModel, schema: str) 
         "GET /api/v1/account/alerts/open-deliveries",
         "JWT; any account member",
         "solwyn.alerts.pending.v1",
+        not_found=False,
     ),
 )
 def pending(

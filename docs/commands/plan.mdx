@@ -52,7 +52,8 @@ A null value remains null; the CLI never invents a cancellation date.
 `plan change --tier T --interval month|year` fetches and displays the real Stripe
 estimate before confirmation. `production`, `team` and `scale` are paid targets.
 Core decides whether a change applies immediately with proration (an upgrade
-within the same interval, or same-tier month-to-year) or waits until the current
+that does not move year-to-month, including month-to-year tier upgrades, or
+same-tier month-to-year) or waits until the current
 term end (downgrades and **every** year-to-month switch, including upgrades).
 The result preserves `mode`, `effective_at`, integer `amount_due_cents` and
 `total_cents`, currency, and each line's description, signed cent amount, period

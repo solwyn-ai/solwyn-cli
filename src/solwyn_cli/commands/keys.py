@@ -29,6 +29,7 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
+from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -266,9 +267,10 @@ def show_key(context: typer.Context) -> None:
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/key/rotate",
         auth="JWT",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.keys-rotate.v1",
         guidance=(
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
             "The replacement key is shown exactly once; store it in the OS keychain.",
         ),
     ),
@@ -289,6 +291,12 @@ def rotate_key(
             help="Scope for the replacement key; omit to keep the current scope.",
         ),
     ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Rotate the active key and reveal its replacement exactly once."""
     runtime = command_context(context)
@@ -305,7 +313,22 @@ def rotate_key(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    grace = (
+        "the Core default grace period"
+        if grace_seconds is None
+        else f"{grace_seconds} seconds"
+    )
+    effect = (
+        f"Rotate the active key in project {project_id!r}: its replacement is shown once; "
+        + (
+            "the old key becomes invalid immediately."
+            if grace_seconds == 0
+            else f"the old key becomes invalid after {grace}."
+        )
+    )
+    check_confirmation(context, yes=yes, effect=effect)
     credential = _jwt_credential(context, operation="rotate")
+    confirm_effects(context, yes=yes, effect=effect)
     path = quote(project_id, safe="")
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -346,9 +369,12 @@ def rotate_key(
     epilog=help_contract(
         endpoint="DELETE /api/v1/projects/{project}/key/{key_id}",
         auth="JWT",
-        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.keys-revoke.v1 (CLI output after bodyless 204)",
-        guidance=("Accepts only a key identifier; never pass key material.",),
+        guidance=(
+            "Accepts only a key identifier; never pass key material.",
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
+        ),
     ),
 )
 def revoke_key(
@@ -357,12 +383,21 @@ def revoke_key(
         str,
         typer.Option("--key-id", help="Identifier of the key to hard-revoke."),
     ],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Hard-revoke a project key without minting a replacement."""
     runtime = command_context(context)
     project_id = _validated_identifier(context, runtime.project, label="project")
     validated_key_id = _validated_identifier(context, key_id, label="key_id")
+    effect = f"Hard-revoke key {validated_key_id!r} in project {project_id!r}: invalidates it without a replacement."
+    check_confirmation(context, yes=yes, effect=effect)
     credential = _jwt_credential(context, operation="revoke")
+    confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     key_path = quote(validated_key_id, safe="")
     try:

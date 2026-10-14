@@ -230,7 +230,7 @@ def request(
         ) as client:
             response = client.request(method, path, **options)
         if deleted_id is not None:
-            if response.status_code != 204:
+            if response.status_code != 204 or response.content:
                 raise ValueError("Expected bodyless delete response")
             payload = {"id": deleted_id, "deleted": True}
         else:

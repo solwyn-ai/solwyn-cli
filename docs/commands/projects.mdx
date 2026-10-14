@@ -1,0 +1,134 @@
+---
+title: Projects
+---
+
+Select a project with global `--project` for `show`. `list` and `create` require
+JWT; `show` accepts a project key or JWT. Rename and delete require owner/admin
+JWT. Core enforces role and tier limits.
+
+```sh
+solwyn projects list
+solwyn --project proj_example projects show
+solwyn projects create --name sandbox --budget 10 --store-key
+```
+
+Creation returns the first project key once; `--store-key` writes it to the OS
+keychain. Existing key material cannot be retrieved. Delete displays effects
+and requires confirmation or `--yes`; it irreversibly archives the project,
+revokes every project key in the same transaction and clears matching local
+project selection. The archived project immediately becomes unavailable.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn projects`
+
+Inspect Solwyn projects.
+
+```console
+Usage: solwyn projects [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for project subcommands
+Auth: varies by subcommand
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+```
+
+## `solwyn projects create`
+
+Create a project and capture its first API key exactly once.
+
+```console
+Usage: solwyn projects create [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--name` | `Name for the new project. (STRING; required)` | `None` |
+| `--budget` | `Initial project budget in USD. (FLOAT)` | `100.0` |
+| `--period` | `Initial budget period. (Choice(['daily', 'weekly', 'monthly']))` | `monthly` |
+| `--mode` | `Initial budget enforcement mode. (Choice(['alert_only', 'hard_deny']))` | `alert_only` |
+| `--scope` | `Scope for the project's first key; omit for the API default. (Choice(['full', 'read_only']))` | `None` |
+| `--store-key` | `Store the new key in the OS keychain. (BOOL)` | `False` |
+
+```text
+Endpoint: POST /api/v1/projects
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth
+JSON schema: solwyn.projects-create.v1
+The new project key is shown exactly once or stored directly in the OS keychain.
+```
+
+## `solwyn projects delete`
+
+Irreversibly archive a project and revoke all of its keys.
+
+```console
+Usage: solwyn projects delete [OPTIONS] PROJECT_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `project_id` | `Project identifier to archive. (STRING; required)` | `None` |
+| `--yes` | `Acknowledge the irreversible project deletion. (BOOL)` | `False` |
+
+```text
+Endpoint: DELETE /api/v1/projects/{id}
+Auth: JWT (owner or admin)
+Exit codes: 0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found
+JSON schema: solwyn.projects-delete.v1 (CLI output after bodyless 204)
+Irreversible: archives the project, revokes every project key in the same transaction, and the project immediately becomes unavailable.
+Pass --yes; an interactive terminal must also type the exact project name.
+```
+
+## `solwyn projects list`
+
+List projects available to the logged-in user.
+
+```console
+Usage: solwyn projects list [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/projects
+Auth: JWT
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth
+JSON schema: solwyn.projects-list.v1
+```
+
+## `solwyn projects rename`
+
+Rename a project as an account owner or admin.
+
+```console
+Usage: solwyn projects rename [OPTIONS] PROJECT_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `project_id` | `Project identifier to rename. (STRING; required)` | `None` |
+| `--name` | `New project name. (STRING; required)` | `None` |
+
+```text
+Endpoint: PUT /api/v1/projects/{id}
+Auth: JWT (owner or admin)
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.projects-rename.v1
+```
+
+## `solwyn projects show`
+
+Show the project selected by the global project context.
+
+```console
+Usage: solwyn projects show [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/projects/{project}
+Auth: any
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+JSON schema: solwyn.projects-show.v1
+```

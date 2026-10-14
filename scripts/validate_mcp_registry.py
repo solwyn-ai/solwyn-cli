@@ -73,7 +73,12 @@ def validate_draft(path: Path) -> None:
     ):
         raise ValueError("Draft executable alias mismatch")
     readme = (ROOT / "README.md").read_text()
-    if "not yet published to PyPI" not in readme or "<!-- mcp-name:" in readme:
+    release_notes = (ROOT / "docs/mcp-release.md").read_text()
+    if (
+        "**Unpublished Registry draft.**" not in release_notes
+        or "namespace ownership is **unverified**." not in release_notes
+        or "<!-- mcp-name:" in readme
+    ):
         raise ValueError("Reassess draft state before preparing a published release")
 
 
@@ -92,7 +97,7 @@ def main() -> int:
         )
         return 1
     print(
-        "Unpublished draft shape and metadata verified; namespace ownership and package availability remain unverified.",
+        "Unpublished Registry draft shape and metadata verified; namespace ownership remains unverified; offline validation does not check package availability.",
         file=sys.stderr,
     )
     return 0

@@ -41,3 +41,19 @@ validation values. `solwyn.account.rename.v1` returns the complete strict accoun
 response: ID, display name, tier, alert-email override, seat limit/usage and your
 role. Rename remains CLI-only. Inspect account state before deliberately retrying
 an uncertain write; see [team management](team.mdx).
+
+## Recover a personal account
+
+```sh
+solwyn account recover
+solwyn --json account recover
+```
+
+`account recover` requires JWT but does not require an active membership. It
+idempotently creates a personal account after membership removal, or returns
+the existing account when one is active. The POST goes to
+`/api/v1/accounts/me/personal`; `solwyn.account.recover.v1` returns `account_id`.
+The command stays CLI-only. A project key masking login must be unselected;
+there is no credential fallback. Exit codes are 0 success, 1 API/invalid response,
+2 usage and 3 auth. Core maps a missing user to 401, so there is no not-found
+exit for this route.

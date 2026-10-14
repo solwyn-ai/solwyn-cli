@@ -24,10 +24,13 @@ from solwyn_cli.commands._notifications_common import (
     emit,
     emit_delivery,
     group_help,
+    EXITS,
     request,
     secret_input,
     usage,
 )
+from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
+from solwyn_cli.help import help_contract
 from solwyn_cli.output import TableData
 
 app = typer.Typer(
@@ -322,18 +325,34 @@ def test_channel(
 
 @app.command(
     "delete",
-    epilog=command_help(
-        "DELETE " + BASE + "/{channel_id}",
-        "solwyn.channels.delete.v1",
+    epilog=help_contract(
+        endpoint="DELETE " + BASE + "/{channel_id}",
+        schema="solwyn.channels.delete.v1",
+        auth="JWT; owner for mutations",
+        exits=EXITS.replace("2 usage;", "2 usage or confirmation;"),
         guidance=(
+            "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
             "Core removes the channel ID from project notification settings and every budget rule's channel_ids.",
         ),
     ),
 )
 def delete(
-    context: typer.Context, channel_id: Annotated[str, typer.Argument()]
+    context: typer.Context,
+    channel_id: Annotated[str, typer.Argument()],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed effects without prompting."
+        ),
+    ] = False,
 ) -> None:
     """Delete a channel and remove its project and rule routing references."""
+    effect = (
+        f"Delete channel {channel_id!r} in the authenticated account: removes the channel "
+        "and its project notification and budget-rule routing references."
+    )
+    check_confirmation(context, yes=yes, effect=effect)
+    confirm_effects(context, yes=yes, effect=effect)
     data = request(
         context, "DELETE", path(channel_id), ChannelDeleted, deleted_id=channel_id
     )

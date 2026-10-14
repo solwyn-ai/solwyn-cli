@@ -341,6 +341,7 @@ def test_webhooks_rotate_quotes_ids_posts_no_body_and_reveals_secret_once(
                 PROJECT_ID,
                 "webhooks",
                 "rotate",
+                "--yes",
                 WEBHOOK_ID,
             ],
         )
@@ -355,7 +356,10 @@ def test_webhooks_rotate_quotes_ids_posts_no_body_and_reveals_secret_once(
     ]
     rendered = result.stdout + result.stderr + repr(result.exception) + caplog.text
     assert rendered.count(ROTATED_SECRET) == 1
-    assert result.stderr == ""
+    assert (
+        result.stderr
+        == "Rotate webhook 'wh/alpha' in project 'proj/webhooks': the old signing secret becomes invalid immediately; its replacement is shown once.\n"
+    )
     suffix = "json" if output_format == "json" else "txt"
     assert_matches_golden(
         result.stdout, GOLDEN_DIR / f"webhooks-rotate-{output_format}.{suffix}"
@@ -382,6 +386,7 @@ def test_webhooks_delete_requires_bodyless_204_and_matches_golden(
             PROJECT_ID,
             "webhooks",
             "delete",
+            "--yes",
             WEBHOOK_ID,
         ],
     )
@@ -394,7 +399,10 @@ def test_webhooks_delete_requires_bodyless_204_and_matches_golden(
             {},
         )
     ]
-    assert result.stderr == ""
+    assert (
+        result.stderr
+        == "Deactivate webhook 'wh/alpha' in project 'proj/webhooks': disables this delivery target.\n"
+    )
     suffix = "json" if output_format == "json" else "txt"
     assert_matches_golden(
         result.stdout, GOLDEN_DIR / f"webhooks-delete-{output_format}.{suffix}"
@@ -406,8 +414,8 @@ def test_webhooks_delete_requires_bodyless_204_and_matches_golden(
     [
         ["list"],
         ["create", "--url", "https://hooks.example.com/hook"],
-        ["rotate", WEBHOOK_ID],
-        ["delete", WEBHOOK_ID],
+        ["rotate", "--yes", WEBHOOK_ID],
+        ["delete", "--yes", WEBHOOK_ID],
     ],
 )
 @pytest.mark.parametrize(
@@ -439,7 +447,7 @@ def test_webhooks_commands_are_jwt_only_without_network(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert expected_hint in json.loads(result.stderr)["hint"]
+    assert expected_hint in json.loads(result.stderr.splitlines()[-1])["hint"]
     assert FakeClient.instances == []
 
 
@@ -448,8 +456,8 @@ def test_webhooks_commands_are_jwt_only_without_network(
     [
         ["list"],
         ["create", "--url", "https://hooks.example.com/hook"],
-        ["rotate", "wh"],
-        ["delete", "wh"],
+        ["rotate", "--yes", "wh"],
+        ["delete", "--yes", "wh"],
     ],
 )
 def test_webhooks_commands_require_login_without_network(
@@ -466,7 +474,9 @@ def test_webhooks_commands_require_login_without_network(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert json.loads(result.stderr)["code"] == "authentication_required"
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["code"] == "authentication_required"
+    )
     assert FakeClient.instances == []
 
 
@@ -474,8 +484,8 @@ def test_webhooks_commands_require_login_without_network(
     "args",
     [
         ["--project", "   ", "webhooks", "list"],
-        ["--project", "proj", "webhooks", "rotate", "   "],
-        ["--project", "proj", "webhooks", "delete", "   "],
+        ["--project", "proj", "webhooks", "rotate", "--yes", "   "],
+        ["--project", "proj", "webhooks", "delete", "--yes", "   "],
         ["--project", "proj", "webhooks", "create", "--url", "not-a-url"],
     ],
 )
@@ -524,16 +534,16 @@ def test_webhooks_validate_local_identifiers_and_uri_before_auth(
                 },
             ),
         ),
-        (["rotate", "wh"], httpx.Response(201, json=ROTATE_RESPONSE)),
+        (["rotate", "--yes", "wh"], httpx.Response(201, json=ROTATE_RESPONSE)),
         (
-            ["rotate", "wh"],
+            ["rotate", "--yes", "wh"],
             httpx.Response(
                 200,
                 json={**ROTATE_RESPONSE, "signing_secret": "not-hex"},
             ),
         ),
-        (["delete", "wh"], httpx.Response(200, json={})),
-        (["delete", "wh"], httpx.Response(204, content=b"{}")),
+        (["delete", "--yes", "wh"], httpx.Response(200, json={})),
+        (["delete", "--yes", "wh"], httpx.Response(204, content=b"{}")),
     ],
 )
 def test_webhooks_reject_malformed_or_wrong_status_responses_without_leaks(
@@ -554,7 +564,10 @@ def test_webhooks_reject_malformed_or_wrong_status_responses_without_leaks(
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert json.loads(result.stderr)["code"] == "invalid_webhooks_response"
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["code"]
+        == "invalid_webhooks_response"
+    )
     rendered = result.stderr + repr(result.exception) + caplog.text
     assert SIGNING_SECRET not in rendered
     assert ROTATED_SECRET not in rendered
@@ -571,7 +584,7 @@ def test_webhooks_reject_malformed_or_wrong_status_responses_without_leaks(
             ["create", "--url", "https://hooks.example.com/hook"],
             {**CREATE_RESPONSE, "server_note": "new metadata"},
         ),
-        (["rotate", "wh"], {**ROTATE_RESPONSE, "server_note": "new metadata"}),
+        (["rotate", "--yes", "wh"], {**ROTATE_RESPONSE, "server_note": "new metadata"}),
     ],
 )
 def test_webhooks_ignore_benign_additive_response_fields(
@@ -617,19 +630,23 @@ def test_webhooks_not_found_and_deactivated_errors_are_actionable(
 
     missing = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", "delete", "missing"],
+        ["--json", "--project", "proj", "webhooks", "delete", "--yes", "missing"],
     )
     inactive = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", "rotate", "inactive"],
+        ["--json", "--project", "proj", "webhooks", "rotate", "--yes", "inactive"],
     )
 
     assert missing.exit_code == 5
     assert (
-        "Verify the project or webhook identifier" in json.loads(missing.stderr)["hint"]
+        "Verify the project or webhook identifier"
+        in json.loads(missing.stderr.splitlines()[-1])["hint"]
     )
     assert inactive.exit_code == 1
-    assert "Create a new webhook target" in json.loads(inactive.stderr)["hint"]
+    assert (
+        "Create a new webhook target"
+        in json.loads(inactive.stderr.splitlines()[-1])["hint"]
+    )
 
 
 def test_webhook_secret_occurs_only_in_create_and_rotate_goldens() -> None:
@@ -723,13 +740,13 @@ _MUTATION_CASES = [
         id="create",
     ),
     pytest.param(
-        ["rotate", WEBHOOK_ID],
+        ["rotate", "--yes", WEBHOOK_ID],
         200,
         ROTATE_RESPONSE,
         ROTATED_SECRET,
         id="rotate",
     ),
-    pytest.param(["delete", WEBHOOK_ID], 204, None, None, id="delete"),
+    pytest.param(["delete", "--yes", WEBHOOK_ID], 204, None, None, id="delete"),
 ]
 
 
@@ -867,8 +884,8 @@ def test_webhook_mutations_use_real_client_reactive_jwt_refresh(
     "command",
     [
         ["create", "--url", "https://hooks.example.com/solwyn"],
-        ["rotate", WEBHOOK_ID],
-        ["delete", WEBHOOK_ID],
+        ["rotate", "--yes", WEBHOOK_ID],
+        ["delete", "--yes", WEBHOOK_ID],
     ],
 )
 @pytest.mark.parametrize("failure", ["503", "transport"])

@@ -41,19 +41,19 @@ HELP_CONTRACTS = {
     ("alerts", "activity"): {
         "endpoint": "GET /api/v1/account/alerts/activity",
         "auth": "JWT; any account member",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.alerts.activity.v1",
     },
     ("alerts", "pending"): {
         "endpoint": "GET /api/v1/account/alerts/open-deliveries",
         "auth": "JWT; any account member",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.alerts.pending.v1",
     },
     ("account", "recover"): {
         "endpoint": "POST /api/v1/accounts/me/personal",
         "auth": "JWT; active membership not required",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.account.recover.v1",
     },
     ("attest",): {
@@ -344,7 +344,7 @@ HELP_CONTRACTS = {
         "endpoint": "DELETE /api/v1/account/notification-channels/{channel_id}",
         "auth": "JWT; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
-        "usage; 3 auth; 5 not found",
+        "usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.channels.delete.v1",
     },
     ("notifications",): {
@@ -483,13 +483,13 @@ HELP_CONTRACTS = {
     ("keys", "revoke"): {
         "endpoint": "DELETE /api/v1/projects/{project}/key/{key_id}",
         "auth": "JWT",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.keys-revoke.v1 (CLI output after bodyless 204)",
     },
     ("keys", "rotate"): {
         "endpoint": "POST /api/v1/projects/{project}/key/rotate",
         "auth": "JWT",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.keys-rotate.v1",
     },
     ("keys", "show"): {
@@ -597,7 +597,7 @@ HELP_CONTRACTS = {
     ("runs", "stop"): {
         "endpoint": "optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop",
         "auth": "JWT + budget.write",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.runs.stop.v1",
     },
     ("projects", "rename"): {
@@ -646,7 +646,7 @@ HELP_CONTRACTS = {
     ("webhooks", "delete"): {
         "endpoint": "DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
         "auth": "owner/admin JWT (project.write)",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
     },
     ("webhooks", "list"): {
@@ -658,7 +658,7 @@ HELP_CONTRACTS = {
     ("webhooks", "rotate"): {
         "endpoint": "POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
         "auth": "owner/admin JWT (project.write)",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-rotate.v1",
     },
     ("record",): {
@@ -689,7 +689,7 @@ HELP_CONTRACTS = {
     ("tags", "retire"): {
         "endpoint": "DELETE /api/v1/account/tags",
         "auth": "JWT admin/owner",
-        "exits": "0 retired; 1 API; 2 usage; 3 auth; 5 never registered",
+        "exits": "0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered",
         "schema": "solwyn.tags.v1",
     },
 }

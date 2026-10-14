@@ -29,7 +29,7 @@ def validate(path):
 def test_registry_draft_validates_offline():
     result = validate(DRAFT)
     assert result.returncode == 0, result.stderr
-    assert "Unpublished draft shape and metadata verified" in result.stderr
+    assert "Unpublished Registry draft shape and metadata verified" in result.stderr
     assert result.stdout == ""
 
 
@@ -63,3 +63,48 @@ def test_invalid_or_misleading_draft_fails(tmp_path, mutation):
     result = validate(path)
     assert result.returncode == 1
     assert "PRIVATE_KEY_CANARY" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "published_package",
+        "ownership_marker",
+        "registry_checkpoint",
+        "namespace_checkpoint",
+    ],
+)
+def test_registry_publication_guard_is_independent_of_pypi(tmp_path, state):
+    """A live package is compatible with a draft; Registry claims need review."""
+    import importlib.util
+    import shutil
+
+    spec = importlib.util.spec_from_file_location(
+        "registry_validator", ROOT / "scripts/validate_mcp_registry.py"
+    )
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    scratch = tmp_path / "checkout"
+    scratch.mkdir()
+    shutil.copytree(ROOT / "docs/registry", scratch / "docs/registry")
+    shutil.copyfile(ROOT / "pyproject.toml", scratch / "pyproject.toml")
+    notes = (ROOT / "docs/mcp-release.md").read_text()
+    readme = "Install the published package: uv tool install solwyn-cli\n"
+    if state == "ownership_marker":
+        readme += "<!-- mcp-name: ai.solwyn/solwyn -->\n"
+    elif state == "registry_checkpoint":
+        notes = notes.replace(
+            "**Unpublished Registry draft.**", "Published Registry listing."
+        )
+    elif state == "namespace_checkpoint":
+        notes = notes.replace(
+            "namespace ownership is **unverified**.", "Namespace verified."
+        )
+    (scratch / "README.md").write_text(readme)
+    (scratch / "docs/mcp-release.md").write_text(notes)
+    validator.ROOT = scratch
+    if state == "published_package":
+        validator.validate_draft(scratch / "docs/registry/server.draft.json")
+    else:
+        with pytest.raises(ValueError, match="Reassess draft state"):
+            validator.validate_draft(scratch / "docs/registry/server.draft.json")

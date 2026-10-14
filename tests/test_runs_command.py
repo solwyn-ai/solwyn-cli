@@ -108,6 +108,7 @@ def _run_args(*args: str, json_output: bool = False) -> list[str]:
         "proj_alpha",
         "runs",
         *args,
+        *(["--yes"] if args and args[0] == "stop" else []),
     ]
 
 
@@ -465,7 +466,7 @@ def test_runs_stop_refuses_project_keys_before_network(
     result = runner.invoke(app, _run_args("stop", STORAGE_ID, json_output=True))
 
     assert result.exit_code == 3
-    error = json.loads(result.stderr)
+    error = json.loads(result.stderr.splitlines()[-1])
     assert error["code"] == "authentication_required"
     assert "solwyn login" in error["hint"]
     assert FakeClient.instances == []
@@ -507,7 +508,7 @@ def test_runs_stop_surfaces_missing_budget_write_permission(
     result = runner.invoke(app, _run_args("stop", STORAGE_ID, json_output=True))
 
     assert result.exit_code == 3
-    error = json.loads(result.stderr)
+    error = json.loads(result.stderr.splitlines()[-1])
     assert error["message"] == "permission_required"
     assert error["hint"] == (
         "Your role cannot perform this action; use solwyn whoami to inspect it."
@@ -543,6 +544,7 @@ def test_runs_stop_resolves_raw_name_and_emits_honest_stop_result(
     suffix = "json.json" if json_output else "table.txt"
     assert_matches_golden(result.stdout, GOLDEN_DIR / f"runs-stop-{suffix}")
     assert result.stderr == (
+        f"Stop run 'checkout-agent' (resolved target {STORAGE_ID}) in project 'proj_alpha': blocks future checks and lease renewals; in-flight requests finish.\n"
         "stops future checks and lease renewals; in-flight requests finish; "
         "fully effective by 2026-08-08T12:00:30Z\n"
     )
@@ -587,4 +589,10 @@ def test_runs_stop_surfaces_not_stoppable_conflict_as_generic_failure(
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert_matches_golden(result.stderr, GOLDEN_DIR / golden)
+    if json_output:
+        assert_matches_golden(
+            result.stderr, GOLDEN_DIR / "runs-stop-not-stoppable-json-stderr.txt"
+        )
+        assert_matches_golden(result.stderr.split("\n", 1)[1], GOLDEN_DIR / golden)
+    else:
+        assert_matches_golden(result.stderr, GOLDEN_DIR / golden)

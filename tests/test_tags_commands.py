@@ -104,7 +104,7 @@ def test_values_reserved_characters_are_query_parameter(transport):
 
 def test_retirement_requires_jwt_before_request(transport):
     requests, _ = transport
-    result = runner.invoke(app, ["--json", "tags", "retire", "env"])
+    result = runner.invoke(app, ["--json", "tags", "retire", "--yes", "env"])
     assert result.exit_code == 3
     assert "JWT" in result.stderr
     assert requests == []
@@ -126,6 +126,8 @@ def test_tag_goldens(transport, monkeypatch, mode, case):
             httpx.Response(200, json=DISCOVERY if case == "list" else VALUES)
         )
     args = ["tags", case]
+    if case == "retire":
+        args.append("--yes")
     if case != "list":
         args.append("env" if case == "retire" else "route /? # =")
     result = runner.invoke(
@@ -189,7 +191,7 @@ def test_retire_never_registered_is_not_found(transport, monkeypatch):
     replies.append(
         error_from_response(httpx.Response(404, json={"detail": "Tag key not found"}))
     )
-    result = runner.invoke(app, ["--json", "tags", "retire", "missing"])
+    result = runner.invoke(app, ["--json", "tags", "retire", "--yes", "missing"])
     assert result.exit_code == 5
     assert requests[0] == (
         "DELETE",

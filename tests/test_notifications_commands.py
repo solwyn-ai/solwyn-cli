@@ -121,7 +121,7 @@ def invoke(args, *, input=None, json_output=True):
             {"success": True, "message": "Test sent"},
             "channels-test",
         ),
-        (["channels", "delete", "ch_one"], None, "channels-delete"),
+        (["channels", "delete", "--yes", "ch_one"], None, "channels-delete"),
         (["account", "alert-email", "show"], ALERT_EMAIL, "account-alert-email-show"),
         (
             ["account", "alert-email", "set", "ops@example.com"],
@@ -139,7 +139,8 @@ def test_command_goldens(api, format, args, body, golden):
     _, _, responses = api
     responses.append(
         httpx.Response(
-            204 if body is None else 201 if "create" in args else 200, json=body
+            204 if body is None else 201 if "create" in args else 200,
+            **({} if body is None else {"json": body}),
         )
     )
     result = invoke(args, input=SECRET + "\n", json_output=format == "json")
@@ -149,7 +150,13 @@ def test_command_goldens(api, format, args, body, golden):
         Path("tests/golden")
         / f"{golden}-{format}.{'json' if format == 'json' else 'txt'}",
     )
-    assert result.stderr == ""
+    if "delete" in args and args[0] == "channels":
+        assert (
+            result.stderr
+            == "Delete channel 'ch_one' in the authenticated account: removes the channel and its project notification and budget-rule routing references.\n"
+        )
+    else:
+        assert result.stderr == ""
 
 
 @pytest.mark.parametrize(
@@ -301,7 +308,7 @@ def test_channel_test_false_exits_one(api):
     [
         ["channels", "list"],
         ["channels", "show", "id"],
-        ["channels", "delete", "id"],
+        ["channels", "delete", "--yes", "id"],
         ["account", "alert-email", "show"],
         ["account", "alert-email", "set", "ops@example.com"],
         ["notifications", "test", "email"],
@@ -540,7 +547,7 @@ def test_email_delivery_success_preserves_actual_wire_shape(api):
 def test_delete_requires_204_without_replaying_unexpected_success(api):
     _, calls, responses = api
     responses.append(httpx.Response(200, json={}))
-    result = invoke(["channels", "delete", "ch_one"])
+    result = invoke(["channels", "delete", "--yes", "ch_one"])
     assert result.exit_code == 1
     assert len(calls) == 1
     assert calls[0][2] == {}
