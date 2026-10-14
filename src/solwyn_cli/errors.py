@@ -17,8 +17,8 @@ WRITE_BUSY_HINT = (
 BUDGET_BUSY_DETAIL = "Budget admission is busy; retry shortly"
 BUDGET_BUSY_HINT = "No reservation was made by this request; safe to retry in a moment."
 LEGACY_BATCH_BUSY_HINT = (
-    "Completed results remain valid; do not replay completed checks. "
-    "Reservation state within the failed chunk is unknown; later chunks were not submitted."
+    "Reservation state within the failed chunk is unknown; do not blindly replay "
+    "the failed chunk. Later chunks were not submitted."
 )
 INGEST_BUSY_HINT = (
     "Nothing recorded by this batch; safe to retry in a moment with the same call_ids."
@@ -49,6 +49,7 @@ class ApiError(RuntimeError):
         hint: str | None,
         detail: RawDetail | None,
         retry_after: str | None = None,
+        ingest_outcome_uncertain: bool = False,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -57,6 +58,8 @@ class ApiError(RuntimeError):
         self.hint = hint
         self.detail = detail
         self.retry_after = retry_after
+        # Whole-call evidence supplied by the client, never a public error field.
+        self.ingest_outcome_uncertain = ingest_outcome_uncertain
 
 
 def _safe_cta_path(value: object) -> str | None:
@@ -208,14 +211,16 @@ def is_budget_admission_busy(error: BaseException, *, path: str) -> bool:
 
 
 def is_ingest_unaccepted(error: BaseException) -> bool:
-    """Recognize Core's three rolled-back ingest capacity responses.
+    """Prove a logical ingest was unaccepted using all its attempt evidence.
 
     Exact fixed details plus Retry-After: 1 are the current runtime contract.
-    Generic/proxy 503s and missing headers do not prove absence. Eligibility
-    for an identical-call-ID replay is a separate client policy.
+    Generic/proxy 503s and missing headers do not prove absence, even when a
+    later retry is rejected by Core. Eligibility for an identical-call-ID
+    replay is a separate client policy.
     """
     return (
         isinstance(error, ApiError)
+        and not error.ingest_outcome_uncertain
         and error.status_code == 503
         and error.retry_after == "1"
         and isinstance(error.detail, str)

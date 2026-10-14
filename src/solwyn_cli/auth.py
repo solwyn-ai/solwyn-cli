@@ -32,6 +32,8 @@ class AuthError(RuntimeError):
     """Authentication failed without exposing credential material."""
 
     exit_code: ClassVar[int] = AUTH_EXIT_CODE
+    # A terminal auth failure cannot erase an earlier ingest attempt's uncertainty.
+    ingest_outcome_uncertain: bool = False
 
 
 class CredentialStorageError(AuthError):

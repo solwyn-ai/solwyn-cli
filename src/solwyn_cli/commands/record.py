@@ -27,7 +27,7 @@ from solwyn_cli.commands._record import (
 )
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands._tags import parse_tags
-from solwyn_cli.errors import ApiError, is_ingest_unaccepted
+from solwyn_cli.errors import ApiError, INGEST_UNKNOWN_HINT, is_ingest_unaccepted
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
@@ -330,6 +330,7 @@ def record(
         if (
             error.status_code is None
             or error.status_code >= 500
+            or error.ingest_outcome_uncertain
             or result.ingested
             or result.rejected
             or result.duplicates
@@ -349,9 +350,20 @@ def record(
             semantic=ErrorSemantic.USAGE if error.status_code in (400, 422) else None,
         )
     except AuthError as error:
+        if error.ingest_outcome_uncertain or (
+            result.ingested or result.rejected or result.duplicates
+        ):
+            result.status = "failed"
+            output_engine(context).write_success(
+                schema="solwyn.record.v1", data=result, table=recording_table(result)
+            )
         exit_with_error(
             context,
-            OutputError(code="authentication_failed", message=str(error)),
+            OutputError(
+                code="authentication_failed",
+                message=str(error),
+                hint=INGEST_UNKNOWN_HINT if error.ingest_outcome_uncertain else None,
+            ),
             semantic=ErrorSemantic.AUTH,
         )
     except (ValidationError, ValueError, TypeError):

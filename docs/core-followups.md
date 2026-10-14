@@ -145,4 +145,7 @@ finding on this page.
   accounting-maintenance details from Core's three handlers. Unrecognized proxy
   responses or missing/different headers retain recording uncertainty. Identical
   call-ID replay remains separately safe under ingest deduplication; it cannot
-  establish that the earlier request recorded nothing.
+  establish that the earlier request recorded nothing. The CLI retains this
+  evidence across all attempts and JWT refresh: a recognized final rejection
+  alone cannot prove the whole logical batch call was unaccepted. Core's auth
+  dependencies and IP/project 429 gates reject before ingest starts.

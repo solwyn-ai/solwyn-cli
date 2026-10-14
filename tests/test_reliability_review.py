@@ -57,6 +57,8 @@ def test_legacy_busy_chunk_is_uncertain_and_suffix_is_unsubmitted(
         assert "do not replay completed checks" in result.stderr
     else:
         assert payload is None
+        assert "Completed results" not in result.stderr
+        assert "completed checks" not in result.stderr
     assert len(requests) == completed_chunks + 1
     assert not remaining
 

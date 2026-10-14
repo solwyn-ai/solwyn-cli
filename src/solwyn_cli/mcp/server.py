@@ -949,7 +949,11 @@ def _operation_error(
             result_type,
             code="authentication_required",
             message="Solwyn authentication is required.",
-            hint="Configure a project key or run solwyn login, then retry.",
+            hint=(
+                INGEST_UNKNOWN_HINT
+                if error.ingest_outcome_uncertain
+                else "Configure a project key or run solwyn login, then retry."
+            ),
         )
     if isinstance(error, ValueError) and str(error) == "project_required":
         return _error(
@@ -992,6 +996,8 @@ def _normalized_remote_error_code(error: ApiError) -> str:
 
 def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
     """Keep only local allowlisted CTA paths from shared sanitized hints."""
+    if error.ingest_outcome_uncertain and error.hint == INGEST_UNKNOWN_HINT:
+        return INGEST_UNKNOWN_HINT
     if code == "service_busy" and error.hint in {
         BUDGET_BUSY_HINT,
         INGEST_BUSY_HINT,

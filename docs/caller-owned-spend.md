@@ -30,15 +30,22 @@ result has `status=failed` and preserves the dispositions already received.
 Core's explicitly unaccepted ingest capacity responses use one of three fixed
 `detail` strings with `Retry-After: 1`: `Budget admission is busy; retry shortly`,
 `Account tag registry is busy; retry the batch.`, or
-`Accounting maintenance is in progress; retry the batch.` These prove no events
-in that request batch were recorded. The client retries ingest once when any
+`Accounting maintenance is in progress; retry the batch.` These prove that
+individual attempt recorded nothing. The client retries ingest once when any
 `Retry-After` is present, sharing the existing 429 retry budget and 10-second
 wait cap; this replay policy does not itself prove absence.
 If a recognized rejection remains, `record` exits 1 with a retry hint and
-`status=not_recorded` when no earlier chunk completed. A partial multi-chunk
-invocation retains `status=failed` and all known dispositions; the recognized
-rejection proves only the failed chunk was unaccepted. A generic/proxy 503,
-a missing or different header, or a transport failure remains uncertain:
+`status=not_recorded` only when no earlier chunk completed and every attempt
+for the failed chunk is provably nonaccepting. Recognized rejections and Core's
+pre-ingest 429/401 responses meet that boundary. An earlier potentially accepted
+attempt stays uncertain even if the final retry is a recognized rejection;
+JWT refresh cannot erase that uncertainty or replenish the shared retry allowance.
+A valid 202 with complete canonical dispositions resolves the call normally.
+A partial multi-chunk invocation retains `status=failed` and all known
+dispositions; the recognized
+rejection proves only the failed chunk was unaccepted if its earlier attempts
+also meet that boundary. A generic/proxy 503, a missing or different header,
+or a transport failure remains uncertain:
 CLI retains `status=failed` and MCP reports `recording=unknown`. Always retry
 attribution with the original `call_ids` and attempt indices.
 

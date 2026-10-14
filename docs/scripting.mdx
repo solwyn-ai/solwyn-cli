@@ -32,8 +32,9 @@ ingest once, sharing the existing 429 retry budget and waiting at most
 10 seconds (numeric seconds and HTTP dates are
 supported). It never retries a download after yielding output bytes. Other
 POSTs, including read-only cost simulation, are not automatically retried
-on 503. Simulation receives a service-busy read hint. `retry_rate_limit=False`
-controls only 429 retries; eligible GET/ingest 503 retries remain enabled.
+on 503. Simulation receives a service-busy read hint. Capacity and rate-limit
+retries share one replay allowance across JWT refresh; authentication refresh
+does not replenish that allowance.
 Do not infer a write's outcome
 from a generic service-busy response: inspect retained state before retrying.
 
@@ -46,14 +47,18 @@ batch endpoint can return the identical busy detail after committing earlier
 items; its failed chunk remains unknown even on the first chunk. Keep completed
 results and do not blindly replay the failed chunk; later chunks were not submitted.
 
-Ingest `not_recorded` requires status 503, `Retry-After: 1`, and exactly one of
+Ingest `not_recorded` requires a final status 503, `Retry-After: 1`, and exactly one of
 Core's three rejection details: `Budget admission is busy; retry shortly`,
 `Account tag registry is busy; retry the batch.`, or
-`Accounting maintenance is in progress; retry the batch.` Only these responses
-prove that the request batch was unaccepted. Missing/different headers,
-unrecognized HTML/JSON proxy responses, and transport failures keep MCP
-`recording=unknown` and CLI `status=failed` with retained call IDs. Retry
-attribution with the same call identities and attempt indices regardless of
+`Accounting maintenance is in progress; retry the batch.` Every earlier attempt
+must also be provably nonaccepting: a recognized rejection or Core's pre-ingest
+429/401 response. A recognized final rejection cannot erase uncertainty from
+an earlier potentially accepted attempt, including across JWT refresh.
+Missing/different headers, unrecognized HTML/JSON proxy responses, and transport
+failures keep MCP
+`recording=unknown` and CLI `status=failed` with retained call IDs. A valid 202
+acknowledgement with complete canonical dispositions resolves the call normally.
+Retry attribution with the same call identities and attempt indices regardless of
 whether absence is proven. Durable journal `outcome_unavailable` retains its
 existing code and unknown state; use the same operation ID with `recover_only`
 to inspect it.

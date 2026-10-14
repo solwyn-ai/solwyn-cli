@@ -411,7 +411,10 @@ class BudgetCheckBatchData(_BudgetCheckBatchResponse):
     )
 
 
-BATCH_FAILURE_HINT = LEGACY_BATCH_BUSY_HINT
+BATCH_FAILURE_HINT = (
+    "Completed results remain valid; do not replay completed checks. "
+    + LEGACY_BATCH_BUSY_HINT
+)
 _BATCH_ATTRIBUTION_FAILURE_HINT = (
     "All returned reservation outcomes are known; do not replay these checks. "
     "Unfinished attribution outcomes may be unknown; later chunks were not submitted."
