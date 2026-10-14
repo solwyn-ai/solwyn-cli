@@ -114,7 +114,7 @@ def test_mcp_preview_exact_read_policy_jwt_no_project_and_units(monkeypatch, mod
             cache=None,
         ) as client:
             tools = (await client.list_tools()).tools
-            assert len(tools) == 31
+            assert len(tools) == 33
             tool = next(t for t in tools if t.name == "plan_preview")
             assert tool.annotations.read_only_hint is True
             assert tool.annotations.destructive_hint is False
@@ -130,7 +130,7 @@ def test_mcp_preview_exact_read_policy_jwt_no_project_and_units(monkeypatch, mod
     anyio.run(exercise)
     assert requests[0][:2] == ("POST", "/api/v1/billing/plan-preview")
     assert requests[0][2]["json"] == TARGET
-    for profile, count in (("read", 31), ("guardrails", 35)):
+    for profile, count in (("read", 33), ("guardrails", 37)):
         catalog = server.get_tool_catalog(profile=profile)
         assert len(catalog) == count
         assert (

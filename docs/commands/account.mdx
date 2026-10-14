@@ -20,3 +20,24 @@ state. Verified phone and SMS consent are prerequisites for SMS notifications.
 Absent timestamps remain null. Verification and consent changes stay in the
 dashboard. MCP provides `get_account_phone` in both profiles. Account recovery
 remains CLI-only.
+
+## Rename the current account
+
+```sh
+solwyn account rename "New account name"
+solwyn --json account rename "New account name" --yes
+```
+
+Rename requires owner JWT. It reads the current account and displays its ID,
+old/new names and invitation-email effects before confirmation or `--yes`.
+Non-TTY use without `--yes` exits 2 before reading credentials or HTTP.
+The PATCH sends only `display_name`; `alert_email_override` remains untouched.
+Use the existing `account alert-email show|set|clear` commands to manage that
+independent preference.
+
+Core normalizes display names, rejects controls/bidi/zero-width characters and
+limits them to 120 characters. Invalid input uses fixed errors without reflecting
+validation values. `solwyn.account.rename.v1` returns the complete strict account
+response: ID, display name, tier, alert-email override, seat limit/usage and your
+role. Rename remains CLI-only. Inspect account state before deliberately retrying
+an uncertain write; see [team management](team.mdx).

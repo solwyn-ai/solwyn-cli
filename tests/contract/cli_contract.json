@@ -221,6 +221,48 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.account.rename.v1",
+      "name": "rename",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "name"
+          ],
+          "default": null,
+          "help": "New account display name (1\u2013120 characters).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed rename without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "account",
+        "rename"
+      ],
+      "summary": "Rename your account (owner only), preserving its alert-email override."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": null,
       "name": "agent-context",
       "output_kind": "plain-text",
@@ -4684,6 +4726,73 @@
       "hidden": false,
       "is_group": true,
       "json_schema": null,
+      "name": "invite",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "invite"
+      ],
+      "summary": "Preview or accept an invitation privately."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.invite.accept.v1",
+      "name": "accept",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge joining the displayed account without confirming.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--new-user"
+          ],
+          "default": false,
+          "help": "Explicit invitation-only user creation with interactive email, display name, and hidden password; requires no selected credentials.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "new_user",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "invite",
+        "accept"
+      ],
+      "summary": "Join the invited account and securely store its returned JWT pair."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.invite.show.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "invite",
+        "show"
+      ],
+      "summary": "Preview an invitation; token comes only from stdin or a hidden prompt."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
       "name": "keys",
       "output_kind": "varies-by-subcommand",
       "params": [],
@@ -6722,6 +6831,351 @@
       "hidden": false,
       "is_group": true,
       "json_schema": null,
+      "name": "team",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "team"
+      ],
+      "summary": "Manage your account team."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.team.invites.v1",
+      "name": "invites",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "team",
+        "invites"
+      ],
+      "summary": "Manage account invitations."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.invites.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "team",
+        "invites",
+        "list"
+      ],
+      "summary": "List all open invitations, including expired rows and delivery status."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.invitation-action.v1",
+      "name": "resend",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "invitation_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "invitation_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "team",
+        "invites",
+        "resend"
+      ],
+      "summary": "Attempt to resend an open invitation; delivery status requires a read."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.invitation-action.v1",
+      "name": "revoke",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "invitation_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "invitation_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "team",
+        "invites",
+        "revoke"
+      ],
+      "summary": "Revoke an invitation so it cannot be accepted."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.invitation.v1",
+      "name": "send",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "email"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "email",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "admin",
+            "member"
+          ],
+          "cli_names": [
+            "--role"
+          ],
+          "default": "member",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "role",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "team",
+        "invites",
+        "send"
+      ],
+      "summary": "Request an invitation; inspect returned status, not HTTP delivery claims."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.remove.v1",
+      "name": "leave",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "team",
+        "leave"
+      ],
+      "summary": "Leave this account; the last owner cannot leave."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.team.members.v1",
+      "name": "members",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "team",
+        "members"
+      ],
+      "summary": "List members and manage access."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.members.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "team",
+        "members",
+        "list"
+      ],
+      "summary": "List the full active roster in Core's join order."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.remove.v1",
+      "name": "remove",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "user_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "user_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "team",
+        "members",
+        "remove"
+      ],
+      "summary": "Remove a member, revoking their sessions and created project keys."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.team.member.v1",
+      "name": "set-role",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "user_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "user_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "admin",
+            "member"
+          ],
+          "cli_names": [
+            "--role"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "role",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "team",
+        "members",
+        "set-role"
+      ],
+      "summary": "Set a non-owner's role to admin or member (owner only)."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
       "name": "webhooks",
       "output_kind": "varies-by-subcommand",
       "params": [],
@@ -6922,6 +7376,21 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.account.recover.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "alert_email_override",
+        "display_name",
+        "id",
+        "schema",
+        "seat_limit",
+        "seats_used",
+        "subscription_tier",
+        "your_role"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.account.rename.v1",
       "universal_error_envelope": false
     },
     {
@@ -7447,6 +7916,30 @@
     },
     {
       "keys": [
+        "accepted",
+        "account_name",
+        "auth_type",
+        "role",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.invite.accept.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_name",
+        "expires_at",
+        "inviter_email",
+        "role",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.invite.show.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "key_id",
         "project_id",
         "revoked",
@@ -7879,6 +8372,77 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.tags.values.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "action",
+        "completed",
+        "hint",
+        "invitation_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.team.invitation-action.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "delivery_status",
+        "expires_at",
+        "hint",
+        "id",
+        "invited_email",
+        "invited_role",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.team.invitation.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "invitations",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.team.invites.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "email",
+        "joined_at",
+        "name",
+        "role",
+        "schema",
+        "user_id"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.team.member.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "members",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.team.members.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "hint",
+        "removed",
+        "schema",
+        "self_leave",
+        "user_id"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.team.remove.v1",
       "universal_error_envelope": false
     },
     {

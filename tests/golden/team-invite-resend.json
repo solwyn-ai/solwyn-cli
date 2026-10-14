@@ -1,0 +1,1 @@
+{"schema":"solwyn.team.invitation-action.v1","account_id":"acct_one","invitation_id":"inv_one","action":"resend","completed":true,"hint":"Inspect solwyn team invites list for delivery_status; this response does not establish email delivery."}

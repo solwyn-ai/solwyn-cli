@@ -38,7 +38,7 @@ solwyn --json --project proj_0123456789abcdef01234567 budget status
 ```
 
 `mcp-config` runs offline and resolves the absolute executable for its installed
-interpreter. It defaults to the 31-tool `read` profile. Extract only `command`
+interpreter. It defaults to the 33-tool `read` profile. Extract only `command`
 and `args` from its `solwyn.mcp-config.v1` result into your host's documented
 configuration container. For example, the descriptor portion on POSIX is:
 
@@ -75,7 +75,7 @@ recording, provider call, JWT refresh or host edit occurs. Its exit codes are
 | Authenticated key project | Core's `GET /api/v1/auth/key` identifies the supplied key. Key-bound writes use this project; a read selector cannot redirect them. |
 | Credential kind/source | Environment project key, keychain project key, then keychain JWT, in that order. Empty/invalid environment key presence prevents fallback. A stored key can mask a JWT. |
 | Key scope | `full`, `read_only`, or unknown when it cannot be established. A successful read does not prove write scope. `full` does not promise a future allowed decision. |
-| Profile and annotations | Discovery aids. `read` exposes 31 tools; `guardrails` exposes all 35. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
+| Profile and annotations | Discovery aids. `read` exposes 33 tools; `guardrails` exposes all 37. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
 
 The [tool/auth matrix](mcp-profiles.md) lists exceptions: `list_projects` and
 `get_overview` need JWT, account alert history needs JWT, and tag discovery needs
@@ -260,3 +260,9 @@ and `interval` (`month|year`). It is a JWT read at any role with no selected pro
 requirement; a configured project key masks JWT. To apply a change, use CLI
 `plan change` and review its fresh estimate before confirming or passing `--yes`.
 All billing writes stay CLI-only; see the [plan reference](commands/plan.mdx).
+
+Account reads also include `list_team_members` (any account JWT role) and
+`list_team_invites` (owner/admin JWT), without a selected project. A project key
+can mask stored JWT credentials. Team/account writes and the private CLI
+invitation token workflow are not MCP tools; see [team](commands/team.mdx) and
+[invitation acceptance](commands/invite.mdx).

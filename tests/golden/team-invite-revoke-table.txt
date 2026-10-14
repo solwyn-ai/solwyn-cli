@@ -1,0 +1,6 @@
+Field          Value   
+account_id     acct_one
+invitation_id  inv_one 
+action         revoke  
+completed      True    
+hint           none    

@@ -1,0 +1,1 @@
+{"schema":"solwyn.team.invites.v1","invitations":[{"id":"inv_one","invited_email":"invited@example.invalid","invited_role":"member","expires_at":"2026-10-21T00:00:00Z","delivery_status":"send_failed"}]}

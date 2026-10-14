@@ -47,6 +47,8 @@ READ_TOOL_NAMES = frozenset(
         "budget_uncounted",
         "get_account_alert",
         "plan_preview",
+        "list_team_members",
+        "list_team_invites",
     }
 )
 

@@ -50,10 +50,21 @@ from solwyn_cli.commands._billing import (
     PlanChangeRequest,
 )
 
+from solwyn_cli.commands._team import (
+    AccountUpdateRequest,
+    RoleUpdateRequest,
+    InviteRequest,
+    AcceptInvitationRequest,
+)
+
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 
 
 REQUEST_MIRRORS = {
+    AccountUpdateRequest: "AccountUpdateRequest",
+    RoleUpdateRequest: "RoleUpdateRequest",
+    InviteRequest: "InviteRequest",
+    AcceptInvitationRequest: "AcceptInvitationRequest",
     CheckoutRequest: "CheckoutRequest",
     PlanPreviewRequest: "PlanPreviewRequest",
     PlanChangeRequest: "PlanChangeRequest",
@@ -102,6 +113,8 @@ DECLARED_DEFAULT_FIELDS = {
 # trips the guard — and any field NOT listed here trips it the moment Core adds
 # it. Mirrors stay an exact match against everything the CLI actually posts.
 UNADOPTED_OPTIONAL_FIELDS = {
+    # Override changes are owned by the dedicated account alert-email commands.
+    "AccountUpdateRequest": ("alert_email_override",),
     "IngestMetadataEvent": (
         # SDK-internal velocity observation and aggregate receipt accounting.
         "velocity_flags",
@@ -145,6 +158,7 @@ UNADOPTED_OPTIONAL_FIELDS = {
 # test_response_subset.py. Adopt the rule type; do not relax the union instead.
 UNADOPTED_THRESHOLD_CONFIGS: tuple[str, ...] = ()
 UNADOPTED_FIELD_OWNERS = {
+    "AccountUpdateRequest": AccountUpdateRequest,
     "IngestMetadataEvent": IngestMetadataEvent,
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
@@ -1583,3 +1597,27 @@ def test_budget_check_outage_bounds_match_snapshot(field: str) -> None:
             local["properties"][field][attribute]
             == remote["properties"][field][attribute]
         )
+
+
+@pytest.mark.parametrize("mutation", ["required", "removed", "unknown"])
+def test_rename_unadopted_override_drift_still_fails(mutation):
+    mutated = copy.deepcopy(_snapshot())
+    schema = _schema(mutated, "AccountUpdateRequest")
+    if mutation == "required":
+        schema.setdefault("required", []).append("alert_email_override")
+    elif mutation == "removed":
+        schema["properties"].pop("alert_email_override")
+    else:
+        schema["properties"]["future_field"] = {"type": "string"}
+    with pytest.raises(AssertionError, match="AccountUpdateRequest"):
+        assert_request_mirrors_match(mutated)
+
+
+def test_rename_mirror_cannot_serialize_an_override_clear():
+    assert AccountUpdateRequest(display_name="New Team").model_dump() == {
+        "display_name": "New Team"
+    }
+    assert UNADOPTED_OPTIONAL_FIELDS["AccountUpdateRequest"] == (
+        "alert_email_override",
+    )
+    assert UNADOPTED_FIELD_OWNERS["AccountUpdateRequest"] is AccountUpdateRequest

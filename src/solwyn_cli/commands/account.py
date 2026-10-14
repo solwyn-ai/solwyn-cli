@@ -184,3 +184,63 @@ def phone_show(context: typer.Context) -> None:
             fold_cells=True,
         ),
     )
+
+
+@app.command(
+    "rename",
+    epilog=help_contract(
+        endpoint="PATCH /api/v1/accounts/me",
+        auth="owner JWT",
+        exits="0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+        schema="solwyn.account.rename.v1",
+        guidance=(
+            "Shows old/new account names before interactive confirmation or --yes. Sends only display_name; use account alert-email for its independent override.",
+        ),
+    ),
+)
+def rename(
+    context: typer.Context,
+    name: Annotated[
+        str, typer.Argument(help="New account display name (1–120 characters).")
+    ],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", help="Acknowledge the displayed rename without prompting."
+        ),
+    ] = False,
+) -> None:
+    """Rename your account (owner only), preserving its alert-email override."""
+    from solwyn_cli.commands import _team as shared
+
+    shared.preflight(context, yes)
+    try:
+        body = shared.AccountUpdateRequest(display_name=name)
+    except ValidationError:
+        shared.fail(
+            context,
+            "invalid_account_name",
+            "Provide an account display name of 1–120 characters.",
+            semantic=ErrorSemantic.USAGE,
+        )
+    with shared.team_client(context) as client:
+        account = shared.fetch_account(client)
+        shared.require_role(context, account, ("owner",))
+        shared.effects(
+            f"Rename account {account.id} from {account.display_name} to {name}. The account display name is used in invitation emails."
+        )
+        shared.confirm(context, yes)
+        # Override changes belong to the dedicated account alert-email commands.
+        with shared.write_response(context):
+            data = shared._AccountSelf.model_validate(
+                shared.write_request(
+                    context,
+                    client,
+                    "PATCH",
+                    shared.BASE,
+                    json=body.model_dump(include={"display_name"}),
+                ).json()
+            )
+            if data.id != account.id:
+                raise ValueError("Account mismatch")
+    shared.emit(context, "solwyn.account.rename.v1", data)

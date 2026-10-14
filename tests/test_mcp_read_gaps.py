@@ -352,8 +352,8 @@ def test_diagnostic_ipc_supports_complete_catalog_and_rejects_overflow():
         expected_tools=names,
         expected_version="synthetic",
     )
-    assert len(request.expected_tools) == 35
-    assert len(HelperResult(tools=names).tools) == 35
+    assert len(request.expected_tools) == 37
+    assert len(HelperResult(tools=names).tools) == 37
     with pytest.raises(ValidationError):
         HelperResult(tools=names + ["overflow"])
 
@@ -843,3 +843,16 @@ def test_account_latest_tool_merges_legacy_firing_with_current_lifecycle(
     assert data["latest_event"]["id"] == (fire["id"] if legacy_only else paused["id"])
     assert data["latest_window"] == WINDOW
     assert len(requests[1][2]["json"]["rules"]) == 2
+
+
+@pytest.mark.parametrize("name", ["list_team_members", "list_team_invites"])
+def test_team_malformed_mcp_read_has_truthful_read_guidance(monkeypatch, name):
+    result, requests = call(
+        monkeypatch, name, [httpx.Response(200, json={"unknown": "PRIVATE"})]
+    )
+    assert result.is_error
+    error = result.structured_content["error"]
+    assert error["code"] == "invalid_read_response"
+    assert "No write was submitted" in error["hint"]
+    assert len(requests) == 1 and requests[0][0] == "GET"
+    assert "PRIVATE" not in str(result)

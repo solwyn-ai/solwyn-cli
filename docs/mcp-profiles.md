@@ -12,7 +12,7 @@ Global `--project` and `--api-url` options precede `mcp`. Its `--profile`
 option follows `mcp`. Credentials belong in the existing keychain workflow or
 the subprocess's `SOLWYN_API_KEY` environment, never in argv or repository JSON.
 
-`read` exposes 31 tools. `guardrails` exposes all 35 and remains the default for
+`read` exposes 33 tools. `guardrails` exposes all 37 and remains the default for
 compatibility with `solwyn mcp`. The choice stays fixed for the process lifetime.
 Excluded names fail both discovery and invocation: calling one returns the fixed
 MCP protocol error `-32602`, `Unknown tool`, before argument validation, credential
@@ -25,6 +25,8 @@ resolution or HTTP. A tool argument cannot switch profiles.
 | `list_budget_rules` | Both | Project key or JWT; `with_last_fired=true` requires JWT |
 | `plan_status`, `plan_catalog` | Both | JWT or project key with account/user context; no selected project required |
 | `plan_preview` | Both | JWT at any account role; no selected project required |
+| `list_team_members` | Both | JWT; any account member; no selected project required |
+| `list_team_invites` | Both | JWT; owner/admin; no selected project required |
 | `get_whoami` | Both | JWT reads identity including email verification; project keys return local context with no invented user or raw key |
 | `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert`, `get_account_phone`, `list_audit_events` | Both | JWT; reads do not impose owner-only write gates |
 | `list_alert_events` | Both | Project key or JWT for project history; `account=true` reads account-scope events, requires JWT and ignores `project_id` |
@@ -42,7 +44,7 @@ key, then keychain JWT, freshly evaluated for every operation. A stored key can
 therefore mask a JWT needed for account tools.
 
 Discovery includes human titles, behavioral annotations, described input fields
-and typed output schemas. All 31 reads have `readOnlyHint=true`; the four writes
+and typed output schemas. All 33 reads have `readOnlyHint=true`; the four writes
 have `readOnlyHint=false`, `destructiveHint=true` and `idempotentHint=false`.
 The conservative write hints cover budget/accounting changes and composite
 operations; they do not claim that every retry duplicates an effect. Reads use
@@ -214,5 +216,28 @@ The common 30-second useful-work deadline, 1 MiB HTTP and 2 MiB result fences ap
 read guidance. Definite 401/429 rejection handling retains the shared bounds.
 Billing errors use fixed local MCP hints, never remote Stripe detail. The new
 declaration has a separate 4 KiB allocation; the previous declaration allocations
-and runtime limits stay unchanged. Diagnostics accept exactly the 35-name
-catalog (36 entries are rejected).
+and runtime limits stay unchanged. Diagnostics accept exactly the 37-name
+catalog (38 entries are rejected).
+
+## Account team reads
+
+`list_team_members` and `list_team_invites` appear in both profiles without project
+parameters. The first permits any account member's JWT and returns the full active
+roster in join order (`solwyn.team.members.v1`). The second requires owner/admin
+JWT and returns all open invitations, including expired rows, in Core's newest-first
+order (`solwyn.team.invites.v1`). Required nullable fields remain nullable; unknown
+fields fail closed and `delivery_status` is preserved verbatim.
+
+Both reads have `readOnlyHint=true`, `destructiveHint=false`,
+`idempotentHint=true`, and `openWorldHint=true`. They use the existing JWT selection,
+refresh/429 policy, operation deadline, HTTP/result fences and fixed safe errors.
+A selected project key fails with JWT guidance, without falling back to a different
+identity. Team writes and account rename are CLI-only. Invitation preview/accept
+use the CLI's private token/password workflow, analogous to login; neither is an
+MCP tool. See [team](commands/team.mdx) and [invite](commands/invite.mdx).
+
+The two new declarations share a separate 8 KiB compact UTF-8 allocation. The
+original 72/168 KiB budgets, adopted-read 112 KiB and billing-preview 4 KiB
+allocations stay fixed. Every prior declaration is pinned independently to its
+pre-team hash. Diagnostic maximum inventory is 37; 38 is rejected. Byte, time,
+cursor, HTTP, result, page and deadline limits are unchanged.

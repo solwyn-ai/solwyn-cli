@@ -1,0 +1,59 @@
+# Team members and invitations
+
+Team commands use the selected user JWT and current account, without a selected
+project. A selected environment or stored project key masks JWT credentials;
+unset `SOLWYN_API_KEY` and clear a stored key with `solwyn logout`, then log in.
+Core authorizes every request, including requests after a captured effects preview.
+
+```sh
+solwyn team members list
+solwyn --json team members list
+solwyn team members set-role USER_ID --role admin --yes
+solwyn team members remove USER_ID --yes
+solwyn team leave --yes
+solwyn team invites list
+solwyn team invites send teammate@example.com --role member --yes
+solwyn team invites resend INVITATION_ID --yes
+solwyn team invites revoke INVITATION_ID --yes
+```
+
+Every write displays its account, target and effects on sanitized stderr and needs
+interactive confirmation or `--yes`. Non-TTY use without `--yes` exits 2 before
+credential resolution or HTTP. Decline, EOF and Ctrl-C never submit the write.
+JSON successes occupy one stdout object; errors use stderr and existing exit codes.
+HTTP 401/403 use exit 3, 404 uses 5, and conflicts/503/unknown write outcomes use 1.
+Inspect state after an uncertain write before deliberately retrying.
+
+Any member may list the full active roster (`solwyn.team.members.v1`, `members`),
+in Core's join order. Only owners can change a non-owner to `admin` or `member`
+(`solwyn.team.member.v1`). Changed roles invalidate existing access tokens;
+refresh sessions remain available to obtain current permissions. The CLI cannot
+assign or transfer ownership.
+
+Owners can remove admins/members; admins can remove members. Any role may remove
+itself. Removal revokes the member's sessions, invalidates access tokens, and
+revokes project keys they created in this account. `team leave` resolves the actual
+JWT user's identity, never a supplied user ID. The last owner cannot leave (409).
+Keep the membership and contact support about ownership; role changes cannot
+create another owner. `solwyn.team.remove.v1` acknowledges the confirmed removal and marks
+`self_leave`. After leaving, log in again; deliberately use `account recover` if
+you need a personal account. The CLI does not clear unrelated credentials or
+recover automatically.
+
+Owners/admins can list, send, resend and revoke invitations. Lists
+(`solwyn.team.invites.v1`, `invitations`) preserve Core's newest-first order, include
+expired open rows and retain every `delivery_status` verbatim. Send defaults to
+`member`, accepts `admin`, and returns `solwyn.team.invitation.v1`. A 200 can be an
+existing pending invitation or synthetic existing-member result; it does not prove
+a new email was sent. Send JSON includes a fixed `hint` stating that delivery is
+unproven. An invitation may persist with `send_failed`.
+
+Resend/revoke require an exact empty 204. Their
+`solwyn.team.invitation-action.v1` acknowledgement contains no invented delivery
+status. Even a resend 204 does not prove delivery: read `team invites list`
+separately. Revoke prevents the token from being accepted. Send/resend never
+replay generic 503 or transport failures; inspect current state first.
+
+MCP exposes only `list_team_members` and `list_team_invites`, in both profiles,
+using the same strict parsers and role gates. Team writes remain CLI-only.
+See [invitation acceptance](invite.mdx) and [account settings](account.mdx).

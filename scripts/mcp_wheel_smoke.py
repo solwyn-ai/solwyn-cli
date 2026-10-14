@@ -374,7 +374,7 @@ def acceptance(
                     result = run_client(launch, cwd=root, env=environment, expected=0)
                     assert (
                         result["status"] == "ok"
-                        and result["tools"] == 31
+                        and result["tools"] == 33
                         and result["project_id"] == PROJECT
                         and result["remaining_budget"] == 87.5
                     )

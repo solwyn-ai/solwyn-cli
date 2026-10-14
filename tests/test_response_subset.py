@@ -14,6 +14,20 @@ from solwyn_cli.commands import audit, budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "MemberOut": ("user_id", "email", "name", "role", "joined_at"),
+    "InvitationOut": (
+        "id",
+        "invited_email",
+        "invited_role",
+        "expires_at",
+        "delivery_status",
+    ),
+    "InvitationPreviewResponse": (
+        "account_name",
+        "inviter_email",
+        "role",
+        "expires_at",
+    ),
     "CheckoutResponse": ("checkout_url",),
     "PortalResponse": ("portal_url",),
     "PlanPreviewResponse": (
@@ -983,6 +997,17 @@ OPERATION_RESPONSE_BINDINGS = {
     ),
     ("GET", "/health"): ("200", "object", "HealthResponse"),
     ("GET", "/health/ready"): ("200", "object", "ReadinessResponse"),
+    ("GET", "/api/v1/accounts/me/members"): ("200", "array", "MemberOut"),
+    ("PATCH", "/api/v1/accounts/me/members/{user_id}"): ("200", "object", "MemberOut"),
+    ("GET", "/api/v1/accounts/me/invitations"): ("200", "array", "InvitationOut"),
+    ("POST", "/api/v1/accounts/me/invitations"): ("200", "object", "InvitationOut"),
+    ("GET", "/api/v1/invitations/{token}"): (
+        "200",
+        "object",
+        "InvitationPreviewResponse",
+    ),
+    ("POST", "/api/v1/invitations/{token}/accept"): ("200", "object", "TokenResponse"),
+    ("PATCH", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
     ("DELETE", "/api/v1/projects/{project_id}/budget/rule/{rule_key}"): (
@@ -1216,6 +1241,9 @@ INFORMATIVE_OPERATION_RESPONSE_BINDINGS = {
     ("GET", "/health/ready"): ("503", "object", "ReadinessResponse"),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
+    ("DELETE", "/api/v1/accounts/me/members/{user_id}"): "204",
+    ("POST", "/api/v1/accounts/me/invitations/{invitation_id}/resend"): "204",
+    ("DELETE", "/api/v1/accounts/me/invitations/{invitation_id}"): "204",
     ("DELETE", "/api/v1/account/notification-channels/{channel_id}"): "204",
     ("DELETE", "/api/v1/account/alerts"): "204",
     ("DELETE", "/api/v1/projects/{project_id}"): "204",
@@ -1765,12 +1793,21 @@ def test_every_consumed_no_content_operation_is_bodyless() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["/api/v1/projects/{project_id}/key/{key_id}", "/api/v1/account/alerts"]
+    "method,path",
+    [
+        ("delete", "/api/v1/projects/{project_id}/key/{key_id}"),
+        ("delete", "/api/v1/account/alerts"),
+        ("delete", "/api/v1/accounts/me/members/{user_id}"),
+        ("post", "/api/v1/accounts/me/invitations/{invitation_id}/resend"),
+        ("delete", "/api/v1/accounts/me/invitations/{invitation_id}"),
+    ],
 )
 @pytest.mark.parametrize("mutation", ["status", "body", "alternate"])
-def test_no_content_response_drift_trips_guard(path: str, mutation: str) -> None:
+def test_no_content_response_drift_trips_guard(
+    method: str, path: str, mutation: str
+) -> None:
     mutated = copy.deepcopy(_snapshot())
-    responses = mutated["paths"][path]["delete"]["responses"]
+    responses = mutated["paths"][path][method]["responses"]
     if mutation == "status":
         responses["200"] = responses.pop("204")
     elif mutation == "body":

@@ -1,0 +1,8 @@
+Field                 Value                 
+id                    acct_one              
+display_name          New Team              
+subscription_tier     team                  
+alert_email_override  alerts@example.invalid
+seat_limit            5                     
+seats_used            2                     
+your_role             owner                 

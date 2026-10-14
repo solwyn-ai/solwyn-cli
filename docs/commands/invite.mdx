@@ -1,0 +1,58 @@
+# Preview and accept invitations
+
+```sh
+solwyn invite show
+solwyn invite accept
+solwyn invite accept --new-user
+```
+
+Tokens come only from a hidden terminal prompt or bounded stdin. There is no token
+argument, flag, environment variable or file workflow. Never put a token or password
+in shell history. For automation, supply one token via a private pipe and use
+`invite accept --yes` with an already selected JWT. One final LF/CRLF is accepted;
+multiple tokens, URLs, whitespace, controls and inputs above 4096 ASCII URL-safe
+characters are rejected with a fixed error. No token, token URL or JWT pair appears
+in command results.
+
+`invite show` uses an unauthenticated GET without resolving or sending credentials.
+Its strict `solwyn.invite.show.v1` result has `account_name`, nullable
+`inviter_email`, `role`, and `expires_at`. Invalid, expired, revoked or consumed
+invitations return fixed `invitation_gone` guidance (exit 1).
+
+Acceptance displays the real invitation/account, role, expiry and joining effects
+on sanitized stderr, then requires confirmation or `--yes`. Non-TTY acceptance
+without `--yes` exits 2 before reading credentials or the token. Joining consumes
+the invitation, creates membership, can verify the invited email and send an
+acceptance notice, and replaces stored JWT credentials with the returned pair.
+Core requires the invited identity to have no active account membership.
+
+Signed-in acceptance uses the selected JWT and an exactly empty `{}` request body.
+A selected project key fails with JWT guidance; credential/refresh/storage failure
+never switches to new-user mode. Explicit `--new-user` is only the invitation JIT
+flow: it requires an interactive terminal and no selected credentials, then asks
+for the invited email, display name (1–120 characters) and hidden password
+(8–128 characters), followed by a second hidden password prompt. A mismatch,
+EOF or Ctrl-C stops before the acceptance POST. If Core rejects the email in
+`--new-user` mode, enter the invited email or ask the owner/admin to verify the
+recipient. Existing selected JWTs or keys cause a fixed ambiguity error;
+unset the environment key and use `solwyn logout` deliberately first. This mode
+never sends existing credentials. Possession of the invitation proves control of
+the invited email; it is not standalone signup. Core may truncate a new user's
+stored name to 80 characters.
+
+A successful strict token response is stored once through the normal secure JWT
+store. `solwyn.invite.accept.v1` exposes only `accepted`, `auth_type`, preview account
+name and role. Malformed success returns `invalid_invitation_accept_response`;
+storage failure returns `invitation_credential_storage_failed` (exit 3) and states
+acceptance completed. Either can follow a committed acceptance: try normal login
+and inspect `whoami`, without automatically accepting again.
+
+Only the definite before-mutation `auth_capacity_exceeded` 503 is retried once,
+with the shared Retry-After policy capped at 10 seconds and shared with the 429
+retry allowance. Continued capacity rejection exits 1, not an auth exit. Other
+503/transport outcomes never replay acceptance and retain unknown-outcome guidance.
+Core's definite 401/429 rejection handling keeps its existing bounds.
+
+Invitation preview and acceptance remain CLI credential workflows. MCP has no
+token/password-entry or accept tool; authenticated roster/invitation list reads
+are available there. See [team management](team.mdx).

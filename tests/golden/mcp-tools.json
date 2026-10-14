@@ -1098,7 +1098,7 @@
             }
           ],
           "default": null,
-          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved.",
+          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1\u201364 characters, values at most 256, no NUL. Whitespace and case are preserved.",
           "title": "Tags"
         },
         "estimated_output_tokens": {
@@ -1113,7 +1113,7 @@
             }
           ],
           "default": null,
-          "description": "Optional output token bound, integer 0–100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
+          "description": "Optional output token bound, integer 0\u2013100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
           "title": "Estimated Output Tokens"
         },
         "no_record": {
@@ -1814,14 +1814,14 @@
               "description": "Original value; preserve exactly. Provider used for this call; use the actual served provider when recording or confirming."
             },
             "input_tokens": {
-              "description": "Original value; preserve exactly. Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Original value; preserve exactly. Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
               "type": "integer"
             },
             "output_tokens": {
-              "description": "Original value; preserve exactly. Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
+              "description": "Original value; preserve exactly. Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -2230,7 +2230,7 @@
           "properties": {
             "input_tokens": {
               "default": 0,
-              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
@@ -2238,7 +2238,7 @@
             },
             "output_tokens": {
               "default": 0,
-              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -2246,7 +2246,7 @@
             },
             "cached_input_tokens": {
               "default": 0,
-              "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cached Input Tokens",
@@ -2254,7 +2254,7 @@
             },
             "cache_creation_5m_tokens": {
               "default": 0,
-              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 5M Tokens",
@@ -2262,7 +2262,7 @@
             },
             "cache_creation_1h_tokens": {
               "default": 0,
-              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 1H Tokens",
@@ -2270,7 +2270,7 @@
             },
             "reasoning_tokens": {
               "default": 0,
-              "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Reasoning Tokens",
@@ -2278,7 +2278,7 @@
             },
             "audio_input_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Input Tokens",
@@ -2286,7 +2286,7 @@
             },
             "audio_output_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Output Tokens",
@@ -2294,7 +2294,7 @@
             },
             "image_input_tokens": {
               "default": 0,
-              "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Input Tokens",
@@ -2302,7 +2302,7 @@
             },
             "image_output_tokens": {
               "default": 0,
-              "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Output Tokens",
@@ -2310,7 +2310,7 @@
             },
             "accepted_prediction_tokens": {
               "default": 0,
-              "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
+              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Accepted Prediction Tokens",
@@ -2318,7 +2318,7 @@
             },
             "rejected_prediction_tokens": {
               "default": 0,
-              "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
+              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Rejected Prediction Tokens",
@@ -2326,7 +2326,7 @@
             },
             "tool_use_input_tokens": {
               "default": 0,
-              "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Tool Use Input Tokens",
@@ -2473,7 +2473,7 @@
         },
         "input_tokens": {
           "default": 0,
-          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
+          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Input Tokens",
@@ -2481,7 +2481,7 @@
         },
         "output_tokens": {
           "default": 0,
-          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
+          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Output Tokens",
@@ -2489,7 +2489,7 @@
         },
         "cached_input_tokens": {
           "default": 0,
-          "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+          "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Cached Input Tokens",
@@ -2497,7 +2497,7 @@
         },
         "cache_creation_5m_tokens": {
           "default": 0,
-          "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
+          "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Cache Creation 5M Tokens",
@@ -2505,7 +2505,7 @@
         },
         "cache_creation_1h_tokens": {
           "default": 0,
-          "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
+          "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Cache Creation 1H Tokens",
@@ -2513,7 +2513,7 @@
         },
         "reasoning_tokens": {
           "default": 0,
-          "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
+          "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Reasoning Tokens",
@@ -2521,7 +2521,7 @@
         },
         "audio_input_tokens": {
           "default": 0,
-          "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+          "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Audio Input Tokens",
@@ -2529,7 +2529,7 @@
         },
         "audio_output_tokens": {
           "default": 0,
-          "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+          "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Audio Output Tokens",
@@ -2537,7 +2537,7 @@
         },
         "image_input_tokens": {
           "default": 0,
-          "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
+          "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Image Input Tokens",
@@ -2545,7 +2545,7 @@
         },
         "image_output_tokens": {
           "default": 0,
-          "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
+          "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Image Output Tokens",
@@ -2553,7 +2553,7 @@
         },
         "accepted_prediction_tokens": {
           "default": 0,
-          "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
+          "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Accepted Prediction Tokens",
@@ -2561,7 +2561,7 @@
         },
         "rejected_prediction_tokens": {
           "default": 0,
-          "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
+          "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Rejected Prediction Tokens",
@@ -2569,7 +2569,7 @@
         },
         "tool_use_input_tokens": {
           "default": 0,
-          "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+          "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Tool Use Input Tokens",
@@ -2653,7 +2653,7 @@
             }
           ],
           "default": null,
-          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved.",
+          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1\u201364 characters, values at most 256, no NUL. Whitespace and case are preserved.",
           "title": "Tags"
         },
         "no_record": {
@@ -2992,7 +2992,7 @@
         },
         "MediaUsage": {
           "additionalProperties": false,
-          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call — never zero, which\nwould claim the call billed none of it.",
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
           "properties": {
             "image_count": {
               "anyOf": [
@@ -4251,7 +4251,7 @@
             }
           ],
           "default": null,
-          "description": "Core grouping dimension (for example model, provider or modality), or tag:<key> with key 1–64 characters and no NUL. Core validates dimensions.",
+          "description": "Core grouping dimension (for example model, provider or modality), or tag:<key> with key 1\u201364 characters and no NUL. Core validates dimensions.",
           "title": "Group By"
         },
         "account": {
@@ -4429,7 +4429,7 @@
             }
           ],
           "default": null,
-          "description": "AND filters as key=value strings; unique keys 1–64 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
+          "description": "AND filters as key=value strings; unique keys 1\u201364 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
           "title": "Tag"
         }
       },
@@ -5380,7 +5380,7 @@
             }
           ],
           "default": null,
-          "description": "AND filters as key=value strings; unique keys 1–64 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
+          "description": "AND filters as key=value strings; unique keys 1\u201364 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
           "title": "Tag"
         }
       },
@@ -6932,7 +6932,7 @@
           "properties": {
             "input_tokens": {
               "default": 0,
-              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
@@ -6940,7 +6940,7 @@
             },
             "output_tokens": {
               "default": 0,
-              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -6948,7 +6948,7 @@
             },
             "cached_input_tokens": {
               "default": 0,
-              "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cached Input Tokens",
@@ -6956,7 +6956,7 @@
             },
             "cache_creation_5m_tokens": {
               "default": 0,
-              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 5M Tokens",
@@ -6964,7 +6964,7 @@
             },
             "cache_creation_1h_tokens": {
               "default": 0,
-              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 1H Tokens",
@@ -6972,7 +6972,7 @@
             },
             "reasoning_tokens": {
               "default": 0,
-              "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Reasoning Tokens",
@@ -6980,7 +6980,7 @@
             },
             "audio_input_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Input Tokens",
@@ -6988,7 +6988,7 @@
             },
             "audio_output_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Output Tokens",
@@ -6996,7 +6996,7 @@
             },
             "image_input_tokens": {
               "default": 0,
-              "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Input Tokens",
@@ -7004,7 +7004,7 @@
             },
             "image_output_tokens": {
               "default": 0,
-              "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Output Tokens",
@@ -7012,7 +7012,7 @@
             },
             "accepted_prediction_tokens": {
               "default": 0,
-              "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
+              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Accepted Prediction Tokens",
@@ -7020,7 +7020,7 @@
             },
             "rejected_prediction_tokens": {
               "default": 0,
-              "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
+              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Rejected Prediction Tokens",
@@ -7028,7 +7028,7 @@
             },
             "tool_use_input_tokens": {
               "default": 0,
-              "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Tool Use Input Tokens",
@@ -7084,7 +7084,7 @@
             }
           ],
           "default": null,
-          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total. If omitted, use token_details.input_tokens or zero; when both are supplied they must match.",
+          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total. If omitted, use token_details.input_tokens or zero; when both are supplied they must match.",
           "title": "Input Tokens"
         },
         "output_tokens": {
@@ -7099,7 +7099,7 @@
             }
           ],
           "default": null,
-          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000. If omitted, use token_details.output_tokens or zero; when both are supplied they must match.",
+          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000. If omitted, use token_details.output_tokens or zero; when both are supplied they must match.",
           "title": "Output Tokens"
         },
         "token_details": {
@@ -7229,7 +7229,7 @@
             }
           ],
           "default": null,
-          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved.",
+          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1\u201364 characters, values at most 256, no NUL. Whitespace and case are preserved.",
           "title": "Tags"
         }
       },
@@ -7943,7 +7943,7 @@
       "additionalProperties": false,
       "properties": {
         "key": {
-          "description": "Verbatim tag key, 1–64 characters and no NUL; whitespace and case are significant. Team plan required.",
+          "description": "Verbatim tag key, 1\u201364 characters and no NUL; whitespace and case are significant. Team plan required.",
           "maxLength": 64,
           "minLength": 1,
           "title": "Key",
@@ -7979,7 +7979,7 @@
         },
         "limit": {
           "default": 25,
-          "description": "Maximum entries in this page, integer 1–100; defaults to 25. Continue using the returned cursor.",
+          "description": "Maximum entries in this page, integer 1\u2013100; defaults to 25. Continue using the returned cursor.",
           "maximum": 100,
           "minimum": 1,
           "title": "Limit",
@@ -8301,7 +8301,7 @@
             }
           ],
           "default": null,
-          "description": "Parent run storage ID or raw caller run ID, 1–256 characters; selects children of this parent.",
+          "description": "Parent run storage ID or raw caller run ID, 1\u2013256 characters; selects children of this parent.",
           "title": "Parent"
         },
         "sort": {
@@ -8311,7 +8311,7 @@
         },
         "limit": {
           "default": 25,
-          "description": "Maximum entries in this page, integer 1–100; defaults to 25. Continue using the returned cursor.",
+          "description": "Maximum entries in this page, integer 1\u2013100; defaults to 25. Continue using the returned cursor.",
           "maximum": 100,
           "minimum": 1,
           "title": "Limit",
@@ -8667,7 +8667,7 @@
       "additionalProperties": false,
       "properties": {
         "run": {
-          "description": "Run storage ID or exact raw caller run name, 1–255 characters; ambiguous names fail with guidance to list IDs.",
+          "description": "Run storage ID or exact raw caller run name, 1\u2013255 characters; ambiguous names fail with guidance to list IDs.",
           "maxLength": 255,
           "minLength": 1,
           "title": "Run",
@@ -9527,7 +9527,7 @@
   {
     "name": "budget_check_batch",
     "title": "Check or recover a bounded batch",
-    "description": "Submit 1–32 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation. Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
+    "description": "Submit 1\u201332 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation. Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -9563,7 +9563,7 @@
                 }
               ],
               "default": null,
-              "description": "Attribution tags replace SOLWYN_TAGS for this item when supplied (including null); omission uses ambient tags. At most 10 keys, keys 1–64 characters, values at most 256, no NUL; preserve whitespace/case.",
+              "description": "Attribution tags replace SOLWYN_TAGS for this item when supplied (including null); omission uses ambient tags. At most 10 keys, keys 1\u201364 characters, values at most 256, no NUL; preserve whitespace/case.",
               "title": "Tags"
             },
             "price_hints_version": {
@@ -9676,7 +9676,7 @@
           "additionalProperties": false,
           "properties": {
             "index": {
-              "description": "Original check index, 0–31, retained with its exact denial event.",
+              "description": "Original check index, 0\u201331, retained with its exact denial event.",
               "maximum": 31,
               "minimum": 0,
               "title": "Index",
@@ -10123,7 +10123,7 @@
           "properties": {
             "input_tokens": {
               "default": 0,
-              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
@@ -10131,7 +10131,7 @@
             },
             "output_tokens": {
               "default": 0,
-              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -10139,7 +10139,7 @@
             },
             "cached_input_tokens": {
               "default": 0,
-              "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cached Input Tokens",
@@ -10147,7 +10147,7 @@
             },
             "cache_creation_5m_tokens": {
               "default": 0,
-              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 5M Tokens",
@@ -10155,7 +10155,7 @@
             },
             "cache_creation_1h_tokens": {
               "default": 0,
-              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 1H Tokens",
@@ -10163,7 +10163,7 @@
             },
             "reasoning_tokens": {
               "default": 0,
-              "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Reasoning Tokens",
@@ -10171,7 +10171,7 @@
             },
             "audio_input_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Input Tokens",
@@ -10179,7 +10179,7 @@
             },
             "audio_output_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Output Tokens",
@@ -10187,7 +10187,7 @@
             },
             "image_input_tokens": {
               "default": 0,
-              "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Input Tokens",
@@ -10195,7 +10195,7 @@
             },
             "image_output_tokens": {
               "default": 0,
-              "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Output Tokens",
@@ -10203,7 +10203,7 @@
             },
             "accepted_prediction_tokens": {
               "default": 0,
-              "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
+              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Accepted Prediction Tokens",
@@ -10211,7 +10211,7 @@
             },
             "rejected_prediction_tokens": {
               "default": 0,
-              "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
+              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Rejected Prediction Tokens",
@@ -10219,7 +10219,7 @@
             },
             "tool_use_input_tokens": {
               "default": 0,
-              "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
+              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Tool Use Input Tokens",
@@ -10253,7 +10253,7 @@
             }
           ],
           "default": null,
-          "description": "1–32 ordered check bodies for one durable admission operation; omit entirely for recover_only or record_only. Validate before submission; never automatically replay unknown outcomes.",
+          "description": "1\u201332 ordered check bodies for one durable admission operation; omit entirely for recover_only or record_only. Validate before submission; never automatically replay unknown outcomes.",
           "title": "Checks"
         },
         "no_record": {
@@ -10274,7 +10274,7 @@
             }
           ],
           "default": null,
-          "description": "Optional output token bound, integer 0–100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
+          "description": "Optional output token bound, integer 0\u2013100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
           "title": "Estimated Output Tokens"
         },
         "operation_id": {
@@ -10388,7 +10388,7 @@
           "description": "Caller-retained exact denial event for a separate attribution-only retry.",
           "properties": {
             "index": {
-              "description": "Original check index, 0–31; preserve with its exact event payload.",
+              "description": "Original check index, 0\u201331; preserve with its exact event payload.",
               "maximum": 31,
               "minimum": 0,
               "title": "Index",
@@ -10721,7 +10721,7 @@
         },
         "MediaUsage": {
           "additionalProperties": false,
-          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call — never zero, which\nwould claim the call billed none of it.",
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
           "properties": {
             "image_count": {
               "anyOf": [
@@ -12148,12 +12148,12 @@
             }
           ],
           "default": null,
-          "description": "AND filters as key=value strings; unique keys 1–64 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
+          "description": "AND filters as key=value strings; unique keys 1\u201364 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
           "title": "Tag"
         },
         "limit": {
           "default": 50,
-          "description": "Maximum events per page, integer 1–100 (default 50); preserve all filters when continuing with the returned cursor.",
+          "description": "Maximum events per page, integer 1\u2013100 (default 50); preserve all filters when continuing with the returned cursor.",
           "maximum": 100,
           "minimum": 1,
           "title": "Limit",
@@ -13966,7 +13966,7 @@
           "description": "Target priced provider to replay historical usage against, without spending or reserving."
         },
         "model": {
-          "description": "Exact target model (1–2048 characters) from list_priced_models; Core rejects unavailable or unsupported targets.",
+          "description": "Exact target model (1\u20132048 characters) from list_priced_models; Core rejects unavailable or unsupported targets.",
           "maxLength": 2048,
           "minLength": 1,
           "title": "Model",
@@ -15088,7 +15088,7 @@
             }
           ],
           "default": null,
-          "description": "Exact audit action string of 1–100 characters; omit to include all actions.",
+          "description": "Exact audit action string of 1\u2013100 characters; omit to include all actions.",
           "title": "Action"
         },
         "cursor": {
@@ -18207,7 +18207,7 @@
   {
     "name": "get_account_alert",
     "title": "Get account alert",
-    "description": "Read account spend alert configuration, optionally latest firing and lifecycle history within Core’s 30d retention window. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read account spend alert configuration, optionally latest firing and lifecycle history within Core\u2019s 30d retention window. Requires login/JWT; a configured project key takes precedence over stored login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -19202,6 +19202,407 @@
         "ok"
       ],
       "title": "_PlanPreviewResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": null
+  },
+  {
+    "name": "list_team_members",
+    "title": "List team members",
+    "description": "Read the complete active account roster in join order. Any account member may read it; no project selection is required. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "title": "list_team_membersArguments"
+    },
+    "execution": null,
+    "outputSchema": {
+      "$defs": {
+        "MemberOut": {
+          "additionalProperties": false,
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "string"
+            },
+            "email": {
+              "title": "Email",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            },
+            "role": {
+              "enum": [
+                "owner",
+                "admin",
+                "member"
+              ],
+              "title": "Role",
+              "type": "string"
+            },
+            "joined_at": {
+              "format": "date-time",
+              "title": "Joined At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "user_id",
+            "email",
+            "name",
+            "role",
+            "joined_at"
+          ],
+          "title": "MemberOut",
+          "type": "object"
+        },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
+        "TeamMembersData": {
+          "additionalProperties": false,
+          "properties": {
+            "members": {
+              "items": {
+                "$ref": "#/$defs/MemberOut"
+              },
+              "title": "Members",
+              "type": "array"
+            }
+          },
+          "required": [
+            "members"
+          ],
+          "title": "TeamMembersData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.team.members.v1",
+          "default": "solwyn.team.members.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamMembersData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_ListTeamMembersResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": null
+  },
+  {
+    "name": "list_team_invites",
+    "title": "List team invites",
+    "description": "Read all open account invitations and their delivery status, including expired invitations. Core requires owner/admin role; no project selection is required. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "title": "list_team_invitesArguments"
+    },
+    "execution": null,
+    "outputSchema": {
+      "$defs": {
+        "InvitationOut": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "invited_email": {
+              "title": "Invited Email",
+              "type": "string"
+            },
+            "invited_role": {
+              "enum": [
+                "owner",
+                "admin",
+                "member"
+              ],
+              "title": "Invited Role",
+              "type": "string"
+            },
+            "expires_at": {
+              "format": "date-time",
+              "title": "Expires At",
+              "type": "string"
+            },
+            "delivery_status": {
+              "title": "Delivery Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "invited_email",
+            "invited_role",
+            "expires_at",
+            "delivery_status"
+          ],
+          "title": "InvitationOut",
+          "type": "object"
+        },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
+        "TeamInvitesData": {
+          "additionalProperties": false,
+          "properties": {
+            "invitations": {
+              "items": {
+                "$ref": "#/$defs/InvitationOut"
+              },
+              "title": "Invitations",
+              "type": "array"
+            }
+          },
+          "required": [
+            "invitations"
+          ],
+          "title": "TeamInvitesData",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.team.invites.v1",
+          "default": "solwyn.team.invites.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamInvitesData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_ListTeamInvitesResult",
       "type": "object"
     },
     "icons": null,

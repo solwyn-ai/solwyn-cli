@@ -59,6 +59,8 @@ TOOL_NAMES = [
     "budget_uncounted",
     "get_account_alert",
     "plan_preview",
+    "list_team_members",
+    "list_team_invites",
 ]
 
 BUDGET_RESPONSE = {
@@ -809,6 +811,8 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 {"project_id"},
                 {"with_last_fired"},
                 {"tier", "interval"},
+                set(),
+                set(),
             ]
 
             calls = [

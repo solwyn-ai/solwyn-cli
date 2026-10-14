@@ -1,0 +1,3 @@
+Invitation ID  Email                Role    Expires              Delivery status
+inv_one        invited@example.inv  member  2026-10-21T00:00:00  send_failed    
+               alid                         +00:00                              

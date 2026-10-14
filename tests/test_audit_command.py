@@ -96,11 +96,22 @@ def _key(source: str) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
 
 
-def test_root_registers_audit_without_deferred_team_crud() -> None:
+def test_root_registers_audit_alongside_customer_team_commands() -> None:
     root = get_command(app)
 
     assert "audit" in root.commands
-    assert "team" not in root.commands
+    assert set(root.commands["team"].commands) == {"members", "invites", "leave"}
+    assert set(root.commands["team"].commands["members"].commands) == {
+        "list",
+        "set-role",
+        "remove",
+    }
+    assert set(root.commands["team"].commands["invites"].commands) == {
+        "list",
+        "send",
+        "resend",
+        "revoke",
+    }
 
 
 @pytest.mark.parametrize("output_format", ["table", "json"])
