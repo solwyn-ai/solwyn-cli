@@ -296,7 +296,7 @@ def test_request_count_accepts_exact_delta(runner):
 
 @pytest.mark.parametrize("cancellation_requests", [0, 1, 2])
 @pytest.mark.parametrize("auth_status", ["execution_error", "client_error"])
-@pytest.mark.parametrize("read_tools", [13, 30, 31])
+@pytest.mark.parametrize("read_tools", [13, 30, 31, 32])
 def test_acceptance_requires_one_inflight_read_after_session_startup(
     runner, monkeypatch, tmp_path, cancellation_requests, auth_status, read_tools
 ):
@@ -357,7 +357,7 @@ def test_acceptance_requires_one_inflight_read_after_session_startup(
         tmp_path / "examples",
         tmp_path,
     )
-    if read_tools != 30:
+    if read_tools != 31:
         with pytest.raises(AssertionError):
             runner.acceptance(*arguments)
         assert not cancellations  # Reject stale/extra discovery before later lanes.

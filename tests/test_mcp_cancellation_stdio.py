@@ -225,7 +225,7 @@ def test_stdio_stop_prevents_later_effects(tmp_path, legacy, ending, scenario):
             )
             send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": meta})
             reply = messages.get(timeout=3)
-            assert reply["id"] == 2 and len(reply["result"]["tools"]) == 34
+            assert reply["id"] == 2 and len(reply["result"]["tools"]) == 35
         process.stdin.close()
         process.wait(timeout=3)
         release.set()

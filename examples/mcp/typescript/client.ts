@@ -22,7 +22,7 @@ const readToolNames = new Set([
   'list_provider_failovers', 'list_untracked_surfaces', 'list_audit_events',
   'plan_status', 'plan_catalog', 'get_whoami', 'get_account_phone',
   'list_alert_activity', 'list_open_alert_deliveries', 'budget_uncounted',
-  'get_account_alert',
+  'get_account_alert', 'plan_preview',
 ]);
 
 function object(value: unknown): value is ObjectValue {

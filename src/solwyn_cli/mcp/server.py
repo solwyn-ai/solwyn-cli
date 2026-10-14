@@ -115,6 +115,7 @@ from solwyn_cli.commands.runs import (
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
 from solwyn_cli.errors import (
     ApiError,
+    BILLING_HINTS,
     BUDGET_BUSY_HINT,
     INGEST_BUSY_HINT,
     INGEST_UNKNOWN_HINT,
@@ -174,6 +175,12 @@ from solwyn_cli.commands.providers import (
     fetch_provider_failovers,
     fetch_untracked_surfaces,
 )
+from solwyn_cli.commands._billing import (
+    PaidTier,
+    BillingInterval,
+    PlanPreviewResponse,
+    fetch_plan_preview,
+)
 from solwyn_cli.commands.audit import (
     AuditRange,
     AuditEventListResponse,
@@ -222,9 +229,13 @@ TOOL_NAMES = (
     "list_open_alert_deliveries",
     "budget_uncounted",
     "get_account_alert",
+    "plan_preview",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
+        "billing_plan_no_change",
+        "billing_subscription_not_found",
+        "billing_preview_unavailable",
         "authentication_failed",
         "authentication_required",
         "budget_denied",
@@ -255,6 +266,9 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
     }
 )
 _SAFE_REMOTE_HINTS = {
+    "billing_plan_no_change": BILLING_HINTS["billing_plan_no_change"],
+    "billing_subscription_not_found": BILLING_HINTS["billing_subscription_not_found"],
+    "billing_preview_unavailable": BILLING_HINTS["billing_preview_unavailable"],
     "service_busy": SERVICE_BUSY_HINT,
     "account_membership_revoked": MEMBERSHIP_RECOVERY_HINT,
     "outcome_unavailable": "Recover with the same operation_id using recover_only; admission may have applied.",
@@ -740,6 +754,12 @@ class _PlanStatusResult(_ToolResult[_PlanData]):
 class _PlanCatalogResult(_ToolResult[BillingCatalogResponse]):
     schema_name: Literal["solwyn.plan.catalog.v1"] = Field(
         default="solwyn.plan.catalog.v1", alias="schema"
+    )
+
+
+class _PlanPreviewResult(_ToolResult[PlanPreviewResponse]):
+    schema_name: Literal["solwyn.plan.preview.v1"] = Field(
+        default="solwyn.plan.preview.v1", alias="schema"
     )
 
 
@@ -2037,6 +2057,7 @@ def _read_operation(
     project_read=False,
     identity=False,
     jwt_required=False,
+    transport_read_hint=None,
     **options,
 ):
     try:
@@ -2048,6 +2069,17 @@ def _read_operation(
             data = reader(client=client, **options)
         return _success(result_type, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        if (
+            transport_read_hint
+            and isinstance(error, ApiError)
+            and error.code == "transport_error"
+        ):
+            return _error(
+                result_type,
+                code="api_error",
+                message="Could not connect to the Solwyn API.",
+                hint=transport_read_hint,
+            )
         return _operation_error(
             result_type,
             error,
@@ -2990,6 +3022,29 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 launch,
                 jwt_required=True,
                 with_last_fired=with_last_fired,
+            )
+        )
+
+    @catalog.tool(
+        name="plan_preview",
+        title="Plan preview",
+        credential_requirement="jwt",
+        credential_note="Requires login/JWT at any account role; no selected project required. A selected project key takes precedence over login.",
+        description="Read a plan-change estimate: immediate proration or scheduling at term end, integer cents, currency and line periods. Never changes a subscription or bills; not a price lock. No 503/transport replay.",
+    )
+    async def plan_preview(
+        tier: PaidTier, interval: BillingInterval
+    ) -> _PlanPreviewResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _PlanPreviewResult,
+                fetch_plan_preview,
+                launch,
+                jwt_required=True,
+                transport_read_hint="The preview is read-only and has no billing effect; retry the preview when connectivity returns.",
+                tier=tier,
+                interval=interval,
             )
         )
 

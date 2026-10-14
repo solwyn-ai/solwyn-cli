@@ -20,6 +20,8 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.errors import (
+    BILLING_HINTS,
+    BILLING_WRITE_UNKNOWN_HINT,
     ApiError,
     BUDGET_BUSY_HINT,
     INGEST_BUSY_HINT,
@@ -293,6 +295,17 @@ class SolwynClient:
                             # Core's simulation route only reads historical usage.
                             # Keep its service/read hint without enabling POST replay.
                             error.hint = SERVICE_BUSY_HINT
+            if (
+                response.status_code == 503
+                and method.upper() != "GET"
+                and endpoint.startswith("api/v1/billing/")
+            ):
+                error.hint = BILLING_HINTS.get(
+                    error.code,
+                    SERVICE_BUSY_HINT
+                    if endpoint == "api/v1/billing/plan-preview"
+                    else BILLING_WRITE_UNKNOWN_HINT,
+                )
             raise error
 
     def request_unauthenticated(
@@ -385,7 +398,16 @@ class SolwynClient:
                 status_code=None,
                 code="transport_error",
                 message="Could not connect to the Solwyn API.",
-                hint=INGEST_UNKNOWN_HINT if evidence.ingest_outcome_uncertain else None,
+                hint=(
+                    INGEST_UNKNOWN_HINT
+                    if evidence.ingest_outcome_uncertain
+                    else "The preview is read-only; retry the preview when connectivity returns."
+                    if relative_path.rstrip("/") == "api/v1/billing/plan-preview"
+                    else BILLING_WRITE_UNKNOWN_HINT
+                    if relative_path.startswith("api/v1/billing/")
+                    and method.upper() != "GET"
+                    else None
+                ),
                 detail=None,
                 ingest_outcome_uncertain=evidence.ingest_outcome_uncertain,
             ) from None

@@ -70,6 +70,7 @@ _TOOL_NAMES = [
     "list_open_alert_deliveries",
     "budget_uncounted",
     "get_account_alert",
+    "plan_preview",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

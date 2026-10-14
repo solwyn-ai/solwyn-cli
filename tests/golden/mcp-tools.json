@@ -18916,5 +18916,302 @@
       "openWorldHint": true
     },
     "_meta": null
+  },
+  {
+    "name": "plan_preview",
+    "title": "Plan preview",
+    "description": "Read a plan-change estimate: immediate proration or scheduling at term end, integer cents, currency and line periods. Never changes a subscription or bills; not a price lock. No 503/transport replay. Requires login/JWT at any account role; no selected project required. A selected project key takes precedence over login.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tier": {
+          "description": "Target paid plan tier: production, team or scale. Preview only; does not change the plan.",
+          "enum": [
+            "production",
+            "team",
+            "scale"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "interval": {
+          "description": "Target billing interval, month or year. Preview only; does not create a charge.",
+          "enum": [
+            "month",
+            "year"
+          ],
+          "title": "Interval",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tier",
+        "interval"
+      ],
+      "title": "plan_previewArguments"
+    },
+    "execution": null,
+    "outputSchema": {
+      "$defs": {
+        "PlanPreviewLineResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "title": "Description",
+              "type": "string"
+            },
+            "amount_cents": {
+              "title": "Amount Cents",
+              "type": "integer"
+            },
+            "currency": {
+              "title": "Currency",
+              "type": "string"
+            },
+            "period_start": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period Start"
+            },
+            "period_end": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period End"
+            },
+            "proration": {
+              "title": "Proration",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "description",
+            "amount_cents",
+            "currency",
+            "period_start",
+            "period_end",
+            "proration"
+          ],
+          "title": "PlanPreviewLineResponse",
+          "type": "object"
+        },
+        "PlanPreviewResponse": {
+          "additionalProperties": false,
+          "properties": {
+            "target_tier": {
+              "enum": [
+                "production",
+                "team",
+                "scale"
+              ],
+              "title": "Target Tier",
+              "type": "string"
+            },
+            "target_billing_interval": {
+              "enum": [
+                "month",
+                "year"
+              ],
+              "title": "Target Billing Interval",
+              "type": "string"
+            },
+            "mode": {
+              "enum": [
+                "immediate",
+                "scheduled"
+              ],
+              "title": "Mode",
+              "type": "string"
+            },
+            "effective_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Effective At"
+            },
+            "proration_date": {
+              "title": "Proration Date",
+              "type": "integer"
+            },
+            "amount_due_cents": {
+              "title": "Amount Due Cents",
+              "type": "integer"
+            },
+            "total_cents": {
+              "title": "Total Cents",
+              "type": "integer"
+            },
+            "currency": {
+              "title": "Currency",
+              "type": "string"
+            },
+            "lines": {
+              "items": {
+                "$ref": "#/$defs/PlanPreviewLineResponse"
+              },
+              "title": "Lines",
+              "type": "array"
+            }
+          },
+          "required": [
+            "target_tier",
+            "target_billing_interval",
+            "mode",
+            "effective_at",
+            "proration_date",
+            "amount_due_cents",
+            "total_cents",
+            "currency",
+            "lines"
+          ],
+          "title": "PlanPreviewResponse",
+          "type": "object"
+        },
+        "ReadRecovery": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cursor"
+            }
+          },
+          "title": "ReadRecovery",
+          "type": "object"
+        },
+        "_ToolError": {
+          "additionalProperties": false,
+          "description": "Safe structured MCP error with no raw server or credential material.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hint"
+            },
+            "status_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Code"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "_ToolError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "solwyn.plan.preview.v1",
+          "default": "solwyn.plan.preview.v1",
+          "title": "Schema",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanPreviewResponse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/_ToolError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadRecovery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "_PlanPreviewResult",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": null
   }
 ]

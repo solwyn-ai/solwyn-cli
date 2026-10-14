@@ -34,15 +34,15 @@ Calls made through the Solwyn Python SDK are enforced and attributed automatical
 `solwyn mcp` serves read, guardrail, and attribution tools to any MCP client over local stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
 ```console
-solwyn --project proj_0123456789abcdef01234567 mcp --profile read   # 30 read tools
-solwyn --project proj_0123456789abcdef01234567 mcp                  # default guardrails profile, all 34 tools
+solwyn --project proj_0123456789abcdef01234567 mcp --profile read   # 31 read tools
+solwyn --project proj_0123456789abcdef01234567 mcp                  # default guardrails profile, all 35 tools
 solwyn doctor --mcp                                                 # verify the wiring
 ```
 
 Customer reads include account-wide alert activity and open deliveries, last firing,
-advisory unpriced outage traffic, plan catalog/status, identity/email verification,
+advisory unpriced outage traffic, plan catalog/status/change preview, identity/email verification,
 phone/SMS prerequisites, cost analysis/simulation, provider visibility and audit.
-The 30 reads appear in both profiles; billing/team/member writes remain CLI-only.
+The 31 reads appear in both profiles; billing/team/member writes remain CLI-only.
 See [alerts](docs/commands/alerts.mdx), [budget](docs/commands/budget.mdx),
 [plan](docs/commands/plan.mdx) and [account](docs/commands/account.mdx).
 
@@ -88,7 +88,10 @@ Every command's `--help` states its exit codes, authentication requirements, and
 | Agents | `mcp`, `mcp-config`, `agent-context` |
 | Administration | `budget rules` / `rule` / `threshold`, `alerts`, `channels`, `notifications`, `webhooks`, `keys`, `projects`, `account`, `tags`, `audit`, `attest`, `plan`, `config` |
 
-The administration group is for operators and is needed rarely. The full reference for every command lives in the [CLI docs](https://docs.solwyn.ai/docs/cli).
+Account management includes subscription preview, change, cancellation/resume,
+scheduled-change discard, hosted checkout/portal links and pending-intent dismissal.
+Billing writes require owner JWT and confirmation or `--yes`; preview is a JWT
+read at any role. See the [plan reference](docs/commands/plan.mdx). The full reference for every command lives in the [CLI docs](https://docs.solwyn.ai/docs/cli).
 
 ## Scripting
 

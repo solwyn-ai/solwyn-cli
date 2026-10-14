@@ -5144,6 +5144,131 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.plan.cancel.v1",
+      "name": "cancel",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Confirm cancellation at the current term end.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "plan",
+        "cancel"
+      ],
+      "summary": "End the plan at the current term end (the year for annual plans), no proration or refund."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.change.v1",
+      "json_schemas": [
+        "solwyn.plan.change.v1",
+        "solwyn.plan.discard.v1"
+      ],
+      "name": "change",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "production",
+            "team",
+            "scale"
+          ],
+          "cli_names": [
+            "--tier"
+          ],
+          "default": null,
+          "help": "Target paid tier: production, team or scale.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "tier",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "month",
+            "year"
+          ],
+          "cli_names": [
+            "--interval"
+          ],
+          "default": null,
+          "help": "Target billing interval: month or year.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "interval",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--discard"
+          ],
+          "default": false,
+          "help": "Discard the scheduled plan change; cannot combine with targets or --dry-run.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "discard",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--dry-run"
+          ],
+          "default": false,
+          "help": "Read the actual estimate without submitting a change; JWT at any role.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "dry_run",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Confirm the displayed plan change or discard effects.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "plan",
+        "change"
+      ],
+      "summary": "Preview then confirm a plan change, or discard a scheduled change."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": "solwyn.plan.catalog.v1",
       "name": "list",
       "output_kind": "json-envelope",
@@ -5153,6 +5278,197 @@
         "list"
       ],
       "summary": "Compare catalog prices in cents, included requests, limits and capabilities."
+    },
+    {
+      "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "pending",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "plan",
+        "pending"
+      ],
+      "summary": "Manage the captured paid-signup plan intent."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.pending.dismiss.v1",
+      "name": "dismiss",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Confirm dismissing the captured signup intent.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "plan",
+        "pending",
+        "dismiss"
+      ],
+      "summary": "Dismiss pending signup intent; does not cancel or change an active subscription."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.portal.v1",
+      "name": "portal",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--no-browser"
+          ],
+          "default": false,
+          "help": "Print the URL without opening a browser.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_browser",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Confirm creating a billing portal session.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "plan",
+        "portal"
+      ],
+      "summary": "Create a hosted billing portal URL; always print it, open only with a terminal."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.resume.v1",
+      "name": "resume",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Confirm clearing cancellation and resuming renewal.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "plan",
+        "resume"
+      ],
+      "summary": "Clear a Solwyn or portal cancellation so renewal resumes at the term end."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.upgrade.v1",
+      "name": "upgrade",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "choices": [
+            "production",
+            "team",
+            "scale"
+          ],
+          "cli_names": [
+            "--tier"
+          ],
+          "default": null,
+          "help": "Paid checkout tier: production, team or scale.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "tier",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "month",
+            "year"
+          ],
+          "cli_names": [
+            "--interval"
+          ],
+          "default": null,
+          "help": "Checkout billing interval: month or year.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "interval",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--no-browser"
+          ],
+          "default": false,
+          "help": "Print the URL without opening a browser.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_browser",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Confirm creating the paid checkout session.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "plan",
+        "upgrade"
+      ],
+      "summary": "Create a hosted paid checkout URL; always print it, open only with a terminal."
     },
     {
       "hidden": false,
@@ -7250,6 +7566,16 @@
     },
     {
       "keys": [
+        "cancel_at",
+        "schema",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.cancel.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "currency",
         "schema",
         "tax_behavior",
@@ -7258,6 +7584,63 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.plan.catalog.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "dry_run",
+        "preview",
+        "result",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.change.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "discarded",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.discard.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "dismissed",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.pending.dismiss.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "portal_url",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.portal.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "cancel_at",
+        "schema",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.resume.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "checkout_url",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.upgrade.v1",
       "universal_error_envelope": false
     },
     {

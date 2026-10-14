@@ -44,9 +44,19 @@ from solwyn_cli.commands.providers import FailoverRange, UntrackedRange
 from solwyn_cli.commands.audit import AuditRange
 
 
+from solwyn_cli.commands._billing import (
+    CheckoutRequest,
+    PlanPreviewRequest,
+    PlanChangeRequest,
+)
+
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 
+
 REQUEST_MIRRORS = {
+    CheckoutRequest: "CheckoutRequest",
+    PlanPreviewRequest: "PlanPreviewRequest",
+    PlanChangeRequest: "PlanChangeRequest",
     AlertLatestRequest: "AlertLatestRequest",
     AlertRuleLookup: "AlertRuleLookup",
     NotificationConfigUpdate: "NotificationConfigUpdate",

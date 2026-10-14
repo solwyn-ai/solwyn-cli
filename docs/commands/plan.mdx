@@ -18,3 +18,92 @@ remain null. No currency conversion or floating-point money conversion occurs.
 Both reads accept JWT or project keys with the required account/user context;
 Core enforces access. No project selection is required. Group/subcommand help
 performs no API read. MCP offers `plan_status` and `plan_catalog` in both profiles.
+
+```sh
+# Any account JWT can read this estimate; no confirmation or billing effect.
+solwyn --json plan change --tier team --interval year --dry-run
+
+# Owner JWT required for every write below. Review effects before using --yes.
+solwyn plan change --tier team --interval year
+solwyn plan change --discard
+solwyn plan cancel
+solwyn plan resume
+solwyn plan upgrade --tier production --interval month --no-browser
+solwyn plan portal --no-browser
+solwyn plan pending dismiss
+```
+
+Every billing write, including checkout and portal session creation, displays its
+effects and requires interactive confirmation or `--yes`. Without an interactive
+terminal and without `--yes`, the command exits 2 before HTTP. Declining or EOF
+also exits 2 without submitting a write. Core alone enforces `billing.manage`,
+currently owner-only: admin/member JWTs cannot write. Billing commands require
+JWT; an environment or stored project key masks login and must be unselected.
+These commands have no MCP writer equivalents.
+
+`plan cancel` ends the plan at the **current plan term end**: the current paid
+year on annual plans, the month on monthly plans. There is no proration or refund;
+the plan stays in effect until the returned `cancel_at`. `plan resume` clears a
+cancellation made in Solwyn or the Stripe portal and resumes renewal at the same
+term end. Both commands show lifecycle state first, then return Core's `status`
+and required nullable `cancel_at` (`solwyn.plan.cancel.v1` / `solwyn.plan.resume.v1`).
+A null value remains null; the CLI never invents a cancellation date.
+
+`plan change --tier T --interval month|year` fetches and displays the real Stripe
+estimate before confirmation. `production`, `team` and `scale` are paid targets.
+Core decides whether a change applies immediately with proration (an upgrade
+within the same interval, or same-tier month-to-year) or waits until the current
+term end (downgrades and **every** year-to-month switch, including upgrades).
+The result preserves `mode`, `effective_at`, integer `amount_due_cents` and
+`total_cents`, currency, and each line's description, signed cent amount, period
+bounds and proration flag. Negative cents are credits. Scheduled previews say
+nothing is due now. The estimate is **not a price lock**: timing and amounts can
+drift before confirmation. The final request sends only target tier and interval;
+it never submits the preview's `proration_date`.
+
+The `solwyn.plan.change.v1` envelope contains `dry_run`, `preview`, and `result`.
+`--dry-run` performs only the preview POST, requires no confirmation, and leaves
+`result=null`. A successful write includes Core's actual mode/status and optional
+nullable proration date/effective date in `result`. JSON stdout contains one
+result; effects, prompts, and browser notices go to stderr.
+
+`plan change --discard` displays the captured scheduled change before removing it.
+It cannot combine with `--tier`, `--interval`, or `--dry-run`; invalid combinations
+exit 2 before HTTP. Core's empty 204 establishes the desired discarded state,
+whether or not a schedule existed; `solwyn.plan.discard.v1` reports
+`discarded=true`. A `billing_plan_change_scheduled` cancellation conflict points
+here. `billing_cancel_pending` points to inspection and `plan resume`; payment
+failure points to inspection and `plan portal`. Hints never perform recovery.
+
+`plan upgrade` creates a hosted checkout session; `plan portal` creates a hosted
+billing-management session. Neither response proves payment or a subscription
+change occurred. Core may expire older open checkout sessions when creating a new one. Both always print their returned HTTPS URL
+(`solwyn.plan.upgrade.v1.checkout_url` / `solwyn.plan.portal.v1.portal_url`) and
+open it only in an interactive terminal unless `--no-browser` is set. Non-TTY
+scripts never open a browser, even with `--yes`. Malformed URLs, credential-bearing
+URLs, unsafe schemes and control characters are rejected before browser use.
+A browser failure preserves the successfully created URL and advises opening it
+manually. Checkout generates one request ID retained across eligible rejection
+retries; a later CLI invocation creates a new ID. Existing subscribers use
+`plan change`, as the `billing_subscription_active` hint explains.
+
+`plan pending dismiss` shows and removes the captured paid-signup intent; it does
+not cancel or change an active subscription. A confirmed empty 204 means the
+desired dismissal, not proof of a previous row. The
+`solwyn.plan.pending.dismiss.v1` result is `dismissed=true`; bare `plan` retains
+its existing pending-plan visibility.
+
+No billing POST/DELETE automatically replays a 503 or transport failure. For a
+write, an unsuccessful response can leave its outcome unknown: inspect `plan`
+and hosted billing state before deliberately retrying. A preview remains a read
+and can be retried explicitly. Definite 401/429 rejection handling follows the
+shared bounded client policy; checkout keeps the same request identity. Numeric
+exit codes are unchanged: 0 success, 1 API/invalid response, 2 usage/confirmation,
+3 authentication/role refusal and 5 not found. Applicable 409 details preserve
+the typed optional `status`; private or unexpected billing detail fields fail
+closed.
+
+MCP `plan_preview(tier, interval)` is the same read-only estimate in **both**
+profiles, with `solwyn.plan.preview.v1`. Like CLI dry-run it requires JWT at any
+account role and no project selection; Core does not apply the owner write gate.
+It retains the common deadline, response/result limits and safe error policy.

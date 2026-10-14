@@ -58,6 +58,7 @@ TOOL_NAMES = [
     "list_open_alert_deliveries",
     "budget_uncounted",
     "get_account_alert",
+    "plan_preview",
 ]
 
 BUDGET_RESPONSE = {
@@ -807,6 +808,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 {"cursor", "all_pages"},
                 {"project_id"},
                 {"with_last_fired"},
+                {"tier", "interval"},
             ]
 
             calls = [

@@ -79,3 +79,14 @@ Budget and quota periods use server receive time. Analytics use the event's
 stored timestamp: a backdated batch counts against today's applicable budget
 and quota period but appears on its original analytics day, subject to Core's
 clock bounds and retention. Backdating cannot bypass current-period limits.
+
+For subscription planning, use
+`solwyn --json plan change --tier team --interval year --dry-run` or MCP
+`plan_preview(tier="team", interval="year")`. Both are JWT reads at any role and
+preserve integer cents, signed credits, currency, dates and proration lines.
+Estimates are not price locks. Billing writes remain CLI-only and require owner
+JWT plus interactive confirmation or `--yes`; effects/prompts go to stderr and
+stdout holds one JSON result. Non-TTY use without `--yes` exits 2 before HTTP.
+Checkout/portal links always print, never open a browser without a terminal, and
+support `--no-browser`. Inspect known subscription/hosted state after write
+503/transport failures; do not blindly replay. See the [plan reference](commands/plan.mdx).

@@ -19,7 +19,7 @@ MCP_HELP = help_contract(
     guidance=(
         "Protocol: stdio only; stdout is reserved for MCP JSON-RPC framing.",
         "Runtime configuration and credentials are resolved anew for every tool call.",
-        "Profiles: guardrails (default, all 34 tools) or read (30 reads). Fixed for the server lifetime; profiles never grant permissions.",
+        "Profiles: guardrails (default, all 35 tools) or read (31 reads). Fixed for the server lifetime; profiles never grant permissions.",
         "Put global --project and --api-url before mcp; put --profile after mcp.",
         f"Tools: {', '.join(TOOL_NAMES)}.",
         "No telemetry, update checks, provider keys, prompts, or responses are collected.",

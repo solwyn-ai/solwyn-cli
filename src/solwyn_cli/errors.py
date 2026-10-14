@@ -1,10 +1,11 @@
 """Safe typed errors for HTTP and API failures."""
 
 import unicodedata
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 RawDetail: TypeAlias = str | dict[str, Any]
@@ -35,6 +36,84 @@ _INGEST_UNACCEPTED_DETAILS = frozenset(
     }
 )
 MEMBERSHIP_RECOVERY_HINT = "Run solwyn account recover to recover a personal account."
+
+
+BILLING_WRITE_UNKNOWN_HINT = (
+    "Billing write outcome may be unknown; inspect solwyn plan and the hosted "
+    "billing state before retrying. Do not blindly replay this action."
+)
+BILLING_HINTS = {
+    "billing_cancel_pending": "Inspect solwyn plan; use solwyn plan resume to clear cancellation before changing plans.",
+    "billing_plan_change_scheduled": "Inspect solwyn plan; use solwyn plan change --discard before cancelling.",
+    "billing_plan_payment_failed": "Inspect solwyn plan and invoices; use solwyn plan portal to resolve payment before a deliberate retry.",
+    "billing_subscription_active": "Use solwyn plan change --tier T --interval month|year for an existing subscription.",
+    "billing_subscription_past_due": "Inspect solwyn plan; use solwyn plan portal to resolve the outstanding invoice.",
+    "billing_subscription_unusable": "Inspect solwyn plan and use solwyn plan portal to resolve the subscription state.",
+    "billing_plan_no_change": "Inspect solwyn plan and solwyn plan list; choose a different tier or interval.",
+    "billing_cancel_unavailable": BILLING_WRITE_UNKNOWN_HINT,
+    "billing_plan_change_unavailable": BILLING_WRITE_UNKNOWN_HINT,
+    "billing_checkout_unavailable": "Checkout session creation outcome may be unknown; inspect solwyn plan and hosted checkout before creating another session.",
+    "billing_portal_unavailable": "Billing portal session creation outcome may be unknown; inspect known hosted sessions before creating another portal session.",
+    "billing_preview_unavailable": "The preview is read-only and has no billing effect; retry the preview in a moment.",
+    "billing_subscription_not_found": "Inspect solwyn plan; use solwyn plan upgrade --tier T --interval month|year to start paid checkout.",
+    "billing_customer_not_found": "Inspect solwyn plan; use solwyn plan upgrade --tier T --interval month|year to start paid checkout.",
+    "billing_plan_change_validation": "Inspect solwyn plan and solwyn plan list, then choose an eligible plan.",
+    "seat_limit_exceeded": "Inspect solwyn whoami and solwyn plan list; choose a plan that accommodates the account seats.",
+}
+
+
+class _BillingErrorDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+
+class BillingConflictDetail(_BillingErrorDetail):
+    code: Literal[
+        "billing_subscription_past_due",
+        "billing_subscription_unusable",
+        "billing_subscription_active",
+        "billing_plan_no_change",
+        "billing_cancel_pending",
+        "billing_plan_change_scheduled",
+        "billing_plan_payment_failed",
+    ]
+    message: str
+    status: str | None = None
+
+
+class BillingUnavailableDetail(_BillingErrorDetail):
+    code: Literal[
+        "billing_checkout_unavailable",
+        "billing_portal_unavailable",
+        "billing_preview_unavailable",
+        "billing_plan_change_unavailable",
+        "billing_cancel_unavailable",
+        "billing_webhook_unavailable",
+    ]
+    message: str
+
+
+class BillingNotFoundDetail(_BillingErrorDetail):
+    code: Literal[
+        "billing_subscription_not_found",
+        "billing_customer_not_found",
+        "webhook_event_not_found",
+    ]
+    message: str
+
+
+class BillingValidationDetail(_BillingErrorDetail):
+    code: Literal["billing_plan_change_validation", "seat_limit_exceeded"]
+    message: str
+    current_seats: int | None = None
+    target_seat_limit: int | None = None
+
+
+_BILLING_ERROR_MODELS = {
+    409: BillingConflictDetail,
+    503: BillingUnavailableDetail,
+    404: BillingNotFoundDetail,
+    422: BillingValidationDetail,
+}
 
 
 class ApiError(RuntimeError):
@@ -184,6 +263,21 @@ def error_from_response(
         if code == "http_error":
             code = "service_busy"
         hint = SERVICE_BUSY_HINT
+
+    if code in BILLING_HINTS or code.startswith("billing_"):
+        model = _BILLING_ERROR_MODELS.get(response.status_code)
+        try:
+            if model is None:
+                raise ValueError("Unexpected billing error status.")
+            parsed = model.model_validate(detail)
+        except (ValidationError, ValueError, TypeError):
+            code = "invalid_billing_error_response"
+            message = "The billing error response was invalid."
+            detail = None
+            hint = "Inspect solwyn plan before retrying a billing action."
+        else:
+            detail = parsed.model_dump(exclude_unset=True)
+            hint = BILLING_HINTS.get(code)
 
     return ApiError(
         status_code=response.status_code,
