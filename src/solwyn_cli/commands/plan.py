@@ -75,6 +75,13 @@ def _date(value: datetime | None) -> str:
 
 def _table(data: _PlanData) -> TableData:
     capabilities = data.capabilities
+    period_end_label = "Period end"
+    if (
+        data.current_period_end is not None
+        and data.tier != "free"
+        and data.status in {"active", "trialing", "past_due"}
+    ):
+        period_end_label = "Ends" if data.cancel_at else "Renews"
     rows: list[tuple[str, str]] = [
         ("Tier", data.tier),
         ("Billing interval", data.billing_interval or "none"),
@@ -82,7 +89,7 @@ def _table(data: _PlanData) -> TableData:
     ]
     rows.extend(
         [
-            ("Ends" if data.cancel_at else "Renews", _date(data.current_period_end)),
+            (period_end_label, _date(data.current_period_end)),
             ("Cancel at", _date(data.cancel_at)),
         ]
     )

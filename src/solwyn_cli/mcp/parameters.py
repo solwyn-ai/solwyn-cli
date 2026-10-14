@@ -178,8 +178,8 @@ BudgetCheckRequest = _described_model(
             for name in wire.BudgetCheckRequest.model_fields
             if name in COMMON
         },
-        "uncounted_calls": "Advisory count of outage fail-open calls since the last successful contact; default zero because the CLI admits no offline calls. Never affects budget pricing.",
-        "uncounted_tokens": "Advisory tokens consumed by those outage calls; default zero because the CLI admits no offline calls. Must be between zero and 9223372036854775807.",
+        "uncounted_calls": "Advisory count of outage fail-open calls since the last successful contact. Defaults to zero; ordinary CLI requests send zero because the CLI admits no offline calls, while batch callers may supply their own advisory tally. Never affects budget pricing. Must be between zero and 9223372036854775807.",
+        "uncounted_tokens": "Advisory tokens consumed by those outage calls. Defaults to zero; ordinary CLI requests send zero because the CLI admits no offline calls, while batch callers may supply their own advisory tally. Never affects budget pricing. Must be between zero and 9223372036854775807.",
         "estimated_media": "Estimated media billing quantities and pricing variants for admission; null uses token-based estimation. Null quantities are unknown, zero means none.",
         "tags": "Attribution tags replace SOLWYN_TAGS for this item when supplied (including null); omission uses ambient tags. At most 10 keys, keys 1–64 characters, values at most 256, no NUL; preserve whitespace/case.",
         "agent_run_id": "Stable caller run ID, at most 256 characters; omission uses SOLWYN_AGENT_RUN_ID, explicit null disables that fallback. Never replace an ID to evade a stopped run.",

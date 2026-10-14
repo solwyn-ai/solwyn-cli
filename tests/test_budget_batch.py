@@ -91,6 +91,31 @@ def invoke(
     return result, payload, requests, remaining
 
 
+@pytest.mark.parametrize("interface", ["cli", "mcp"])
+@pytest.mark.parametrize(
+    "tallies", [{}, {"uncounted_calls": 3, "uncounted_tokens": 4200}]
+)
+def test_batch_preserves_caller_advisory_tallies_and_defaults(
+    monkeypatch, interface, tallies
+):
+    result, _, requests, remaining = invoke(
+        monkeypatch,
+        interface,
+        [{**CHECK, **tallies}],
+        [httpx.Response(200, json={"results": [item(ALLOWED)]})],
+        no_record=True,
+    )
+    if interface == "cli":
+        assert result.exit_code == 0, result.stderr
+    else:
+        assert not result.is_error
+    assert not remaining
+    assert len(requests) == 1
+    posted = requests[0][2]["json"]["checks"][0]
+    assert posted["uncounted_calls"] == tallies.get("uncounted_calls", 0)
+    assert posted["uncounted_tokens"] == tallies.get("uncounted_tokens", 0)
+
+
 @pytest.mark.parametrize("interface", ["cli"])
 def test_batch_mixed_dispositions_keep_order_and_single_denial_receipt(
     monkeypatch, interface

@@ -322,9 +322,72 @@ def test_plan_optional_lifecycle_can_be_omitted_for_free_accounts(
         ):
             assert payload[field] is None
     else:
+        assert "Period end" in result.stdout
+        assert "Renews" not in result.stdout
+        assert "Ends" not in result.stdout
         assert "Grace until" not in result.stdout
         assert "Scheduled plan" in result.stdout
         assert "Pending plan" in result.stdout
+        assert_matches_golden(result.stdout, GOLDEN_DIR / "plan-free-table.txt")
+
+
+@pytest.mark.parametrize(
+    "lifecycle, label",
+    [
+        ({"current_period_end": None}, "Period end"),
+        (
+            {"current_period_end": None, "cancel_at": "2026-10-01T00:00:00Z"},
+            "Period end",
+        ),
+        ({"tier": "free"}, "Period end"),
+        ({"tier": "free", "cancel_at": "2026-10-01T00:00:00Z"}, "Period end"),
+        ({"status": None}, "Period end"),
+        *[
+            ({"status": status}, "Period end")
+            for status in (
+                "unpaid",
+                "canceled",
+                "incomplete_expired",
+                "paused",
+                "incomplete",
+                "unknown",
+            )
+        ],
+        *[
+            (
+                {
+                    "status": status,
+                    "cancel_at": "2026-10-01T00:00:00Z" if cancelling else None,
+                },
+                "Ends" if cancelling else "Renews",
+            )
+            for status in ("active", "trialing", "past_due")
+            for cancelling in (False, True)
+        ],
+    ],
+)
+def test_plan_period_end_label_preserves_exact_json(
+    monkeypatch: pytest.MonkeyPatch, lifecycle: dict[str, Any], label: str
+) -> None:
+    monkeypatch.setattr(
+        plan_module,
+        "resolve_credential",
+        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+    )
+    monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
+    response = {**BILLING_STATUS, **lifecycle}
+    FakeClient.responses = [httpx.Response(200, json=response)]
+    result = runner.invoke(app, ["--no-color", "plan"])
+    assert result.exit_code == 0, result.stderr
+    assert label in result.stdout
+    for other in {"Period end", "Renews", "Ends"} - {label}:
+        assert other not in result.stdout
+
+    FakeClient.responses = [httpx.Response(200, json=response)]
+    result = runner.invoke(app, ["--json", "plan"])
+    assert result.exit_code == 0, result.stderr
+    expected = json.loads((GOLDEN_DIR / "plan-team.json").read_text()) | lifecycle
+    assert json.loads(result.stdout) == expected
 
 
 @pytest.mark.parametrize(

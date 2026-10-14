@@ -14,9 +14,9 @@ solwyn --project proj_example costs drift --range 7d
 ```
 
 `forecast` projects month-end spend from live month-to-date activity. Its period
-ends at the final microsecond of the month. `costs baseline` reads an
-hourly-refreshed materialized view, so the two commands can legitimately differ
-for recent events.
+ends at the final microsecond of the month. `costs baseline` reads transactional
+daily spend, excluding today; closed days reflect committed metadata immediately.
+The two commands use different windows, so their results can legitimately differ.
 
 `costs unit-economics` compares cost per request, tokens per dollar, and average
 prompt tokens over `7d`, `30d`, or `90d`. Core may also return cost per agent run
