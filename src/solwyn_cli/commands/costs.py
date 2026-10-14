@@ -10,11 +10,16 @@ import typer
 import httpx
 from pydantic import ValidationError
 
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import (
+    AuthError,
+    JwtRequiredError,
+    JwtCredential,
+    resolve_credential,
+)
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands._cost_filters import (
-    CostQueryError,
+    UnsupportedAccountCostFilterError,
     cost_params,
     validate_group_by,
 )
@@ -118,7 +123,7 @@ def _request_account_costs(
 ) -> tuple[AccountCostsData, httpx.Headers]:
     """Read account costs and retain Core's effective-window headers."""
     if not isinstance(client.current_credential, JwtCredential):
-        raise AuthError("Account costs require JWT.")
+        raise JwtRequiredError("Account costs require JWT.")
     if any(
         filters.get(name) is not None
         for name in (
@@ -132,7 +137,7 @@ def _request_account_costs(
             "tag",
         )
     ):
-        raise CostQueryError(
+        raise UnsupportedAccountCostFilterError(
             "Account costs support only model, provider, modality, group_by and window filters."
         )
     params = cost_params(time_range=time_range, **filters)

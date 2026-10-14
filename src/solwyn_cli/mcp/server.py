@@ -37,7 +37,13 @@ from solwyn_cli._vendor.wire import (
     ServiceTier,
 )
 from solwyn_cli.artifacts import agent_guidance
-from solwyn_cli.auth import AuthError, JwtCredential, ProjectKeyCredential
+from solwyn_cli.auth import (
+    AuthError,
+    JwtCredential,
+    ProjectKeyCredential,
+    JwtRequiredError,
+    JWT_REQUIRED_HINT,
+)
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
     AlertEventListResponse,
@@ -64,7 +70,11 @@ from solwyn_cli.commands.budget import (
     record_denial,
     request_budget_status,
 )
-from solwyn_cli.commands._cost_filters import CostQueryError
+from solwyn_cli.commands._cost_filters import (
+    CostQueryError,
+    AccountProjectConflictError,
+    UnsupportedAccountCostFilterError,
+)
 from solwyn_cli.commands._record import (
     CALL_ID_HINT,
     RecordingResult,
@@ -1083,7 +1093,22 @@ def _operation_error(
     error: Exception,
     *,
     invalid_response_code: str,
+    jwt_required: bool = False,
 ) -> ResultT:
+    if isinstance(error, AccountProjectConflictError):
+        return _error(
+            result_type,
+            code="invalid_cost_query",
+            message="The cost query was invalid.",
+            hint="Omit project_id for account=true, or set account=false for project costs.",
+        )
+    if isinstance(error, UnsupportedAccountCostFilterError):
+        return _error(
+            result_type,
+            code="invalid_cost_query",
+            message="The cost query was invalid.",
+            hint="Account costs support only model, provider, modality, group_by and range or paired from_/to bounds; remove project-only filters.",
+        )
     if isinstance(error, CostQueryError):
         return _error(
             result_type,
@@ -1132,6 +1157,8 @@ def _operation_error(
             hint=(
                 INGEST_UNKNOWN_HINT
                 if error.ingest_outcome_uncertain
+                else JWT_REQUIRED_HINT
+                if jwt_required or isinstance(error, JwtRequiredError)
                 else "Configure a project key or run solwyn login, then retry."
             ),
         )
@@ -1246,7 +1273,10 @@ def _alert_events_operation(
         )
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
-            _AlertEventsResult, error, invalid_response_code="invalid_alerts_response"
+            _AlertEventsResult,
+            error,
+            invalid_response_code="invalid_alerts_response",
+            jwt_required=account,
         )
 
 
@@ -1288,6 +1318,7 @@ def _budget_rules_operation(
             _BudgetRulesResult,
             error,
             invalid_response_code="invalid_budget_rules_response",
+            jwt_required=with_last_fired,
         )
 
 
@@ -1670,7 +1701,7 @@ def _costs_operation(
         with tool_call_client(launch_options) as (command_runtime, client):
             if account:
                 if project_id is not None:
-                    raise CostQueryError(
+                    raise AccountProjectConflictError(
                         "Account and project_id are mutually exclusive."
                     )
                 data = fetch_account_costs(
@@ -1693,6 +1724,7 @@ def _costs_operation(
             _CostsResult,
             error,
             invalid_response_code="invalid_costs_response",
+            jwt_required=account,
         )
 
 
@@ -1726,10 +1758,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
                     _ProjectsResult,
                     code="authentication_required",
                     message="User login is required to list projects.",
-                    hint=(
-                        "Unset SOLWYN_API_KEY and run solwyn login to establish JWT "
-                        "authentication, then retry."
-                    ),
+                    hint=JWT_REQUIRED_HINT,
                 )
             data = ProjectsListData(projects=fetch_projects(client=client))
         return _success(_ProjectsResult, data)
@@ -1738,6 +1767,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
             _ProjectsResult,
             error,
             invalid_response_code="invalid_projects_response",
+            jwt_required=True,
         )
 
 
@@ -1964,7 +1994,7 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
                     _OverviewResult,
                     code="authentication_required",
                     message="User login is required to read the account overview.",
-                    hint="Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+                    hint=JWT_REQUIRED_HINT,
                 )
             data = fetch_overview(client=client)
         return _success(_OverviewResult, data)
@@ -1973,6 +2003,7 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
             _OverviewResult,
             error,
             invalid_response_code="invalid_overview_response",
+            jwt_required=True,
         )
 
 
@@ -2005,6 +2036,7 @@ def _read_operation(
     project_id=None,
     project_read=False,
     identity=False,
+    jwt_required=False,
     **options,
 ):
     try:
@@ -2017,7 +2049,10 @@ def _read_operation(
         return _success(result_type, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
-            result_type, error, invalid_response_code="invalid_read_response"
+            result_type,
+            error,
+            invalid_response_code="invalid_read_response",
+            jwt_required=jwt_required,
         )
 
 
@@ -2793,6 +2828,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListAuditEventsResult,
                 fetch_audit_events,
                 launch,
+                jwt_required=True,
                 time_range=time_range,
                 action=action,
                 cursor=cursor,
@@ -2865,6 +2901,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetAccountPhoneResult,
                 fetch_phone,
                 launch,
+                jwt_required=True,
             )
         )
 
@@ -2886,6 +2923,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListAlertActivityResult,
                 request_account_alert_page,
                 launch,
+                jwt_required=True,
                 time_range=time_range,
                 event_type=event_type,
                 cursor=cursor,
@@ -2908,6 +2946,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListOpenAlertDeliveriesResult,
                 request_account_alert_page,
                 launch,
+                jwt_required=True,
                 pending=True,
                 cursor=cursor,
                 all_pages=all_pages,
@@ -2949,6 +2988,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetAccountAlertResult,
                 request_account_alert,
                 launch,
+                jwt_required=True,
                 with_last_fired=with_last_fired,
             )
         )

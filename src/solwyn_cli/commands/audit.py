@@ -17,6 +17,7 @@ from pydantic import (
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.auth import (
     AuthError,
+    JwtRequiredError,
     JwtCredential,
     ProjectKeyCredential,
     resolve_credential,
@@ -270,7 +271,7 @@ def fetch_audit_events(
 ) -> AuditEventListResponse:
     query = _AuditQuery(range=time_range, action=action, cursor=cursor)
     if not isinstance(client.current_credential, JwtCredential):
-        raise AuthError("Account audit requires JWT.")
+        raise JwtRequiredError("Account audit requires JWT.")
     events = []
     seen = set()
     while True:

@@ -478,7 +478,10 @@ def test_get_overview_requires_jwt_before_http(
     assert result.structured_content["error"] == {
         "code": "authentication_required",
         "message": "User login is required to read the account overview.",
-        "hint": "Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+        "hint": (
+            "This read requires JWT. Unset SOLWYN_API_KEY or remove the stored project key "
+            "with solwyn logout, then run solwyn login and retry."
+        ),
         "status_code": None,
     }
     assert requests == []

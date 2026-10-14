@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from solwyn_cli import _mcp_operation as operation
-from solwyn_cli.auth import AuthError, JwtCredential
+from solwyn_cli.auth import JwtRequiredError, JwtCredential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
     AccountAlertResponse,
@@ -59,7 +59,7 @@ class AccountAlertWithLatestResponse(AccountAlertResponse):
 
 def require_alert_jwt(client: SolwynClient) -> None:
     if not isinstance(client.current_credential, JwtCredential):
-        raise AuthError(
+        raise JwtRequiredError(
             "Account alert reads and latest firing require JWT. Run solwyn login."
         )
 

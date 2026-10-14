@@ -8,6 +8,14 @@ class CostQueryError(ValueError):
     """A local query error, distinct from a malformed API response."""
 
 
+class AccountProjectConflictError(CostQueryError):
+    """Explicit account and project modes cannot be combined."""
+
+
+class UnsupportedAccountCostFilterError(CostQueryError):
+    """Account costs support fewer dimensions than project costs."""
+
+
 def window_params(
     *, time_range: str = "7d", from_: str | None = None, to: str | None = None
 ) -> dict[str, str]:

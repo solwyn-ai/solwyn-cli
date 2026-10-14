@@ -16,7 +16,12 @@ from solwyn_cli._vendor.wire import (
     AccountAlertSnoozeRequest,
     AccountAlertUpdateRequest,
 )
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import (
+    AuthError,
+    JwtRequiredError,
+    JwtCredential,
+    resolve_credential,
+)
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._alert_models import (
@@ -137,7 +142,7 @@ def request_alert_events(
     params = alert_params(**filters)
     path = history_path(project_id, account)
     if account and not isinstance(client.current_credential, JwtCredential):
-        raise AuthError(
+        raise JwtRequiredError(
             "Account alert history requires JWT authentication. Run solwyn login."
         )
     seen: set[str] = set()
