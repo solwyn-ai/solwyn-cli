@@ -15,7 +15,7 @@ const readNames = [
   'list_provider_failovers', 'list_untracked_surfaces', 'list_audit_events',
   'plan_status', 'plan_catalog', 'get_whoami', 'get_account_phone',
   'list_alert_activity', 'list_open_alert_deliveries', 'budget_uncounted',
-  'get_account_alert', 'plan_preview',
+  'get_account_alert', 'plan_preview', 'list_team_members', 'list_team_invites',
 ];
 const readCatalog = () => ({ tools: readNames.map(name => ({ name, annotations: { readOnlyHint: true } })) });
 
@@ -31,6 +31,8 @@ test('incomplete, duplicate, extra and write-bearing inventories fail closed', (
     { tools: tools.filter(tool => tool.name !== 'budget_status') },
     { tools: tools.filter(tool => tool.name !== 'plan_catalog') },
     { tools: tools.filter(tool => tool.name !== 'plan_preview') },
+    { tools: tools.filter(tool => tool.name !== 'list_team_members') },
+    { tools: tools.filter(tool => tool.name !== 'list_team_invites') },
     { tools: [...tools, { name: 'unknown_read', annotations: { readOnlyHint: true } }] },
     { tools: [...tools.slice(0, -1), tools[0]] },
     { tools: [...tools.slice(0, -1), { name: 'budget_check', annotations: { readOnlyHint: true } }] },

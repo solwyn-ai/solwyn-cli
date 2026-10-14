@@ -50,10 +50,24 @@ from solwyn_cli.commands._billing import (
     PlanChangeRequest,
 )
 
+from solwyn_cli.commands._team import (
+    AccountUpdateRequest,
+    RoleUpdateRequest,
+    InviteRequest,
+    AcceptInvitationRequest,
+)
+
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 
 
 REQUEST_MIRRORS = {
+    # Complete account mirror: rename intentionally sends ONLY display_name.
+    # alert_email_override is declared for drift coverage, but its mutation
+    # belongs to the existing dedicated account alert-email commands.
+    AccountUpdateRequest: "AccountUpdateRequest",
+    RoleUpdateRequest: "RoleUpdateRequest",
+    InviteRequest: "InviteRequest",
+    AcceptInvitationRequest: "AcceptInvitationRequest",
     CheckoutRequest: "CheckoutRequest",
     PlanPreviewRequest: "PlanPreviewRequest",
     PlanChangeRequest: "PlanChangeRequest",

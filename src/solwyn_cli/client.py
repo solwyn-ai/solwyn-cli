@@ -1,6 +1,7 @@
 """Synchronous authenticated HTTP client with bounded retries."""
 
 import time
+import re
 from collections.abc import Callable, Mapping, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -222,12 +223,20 @@ class SolwynClient:
                     or method.upper() == "POST"
                     and endpoint == "api/v1/metadata/ingest"
                 )
-                login_capacity = (
+                # Core invitation JIT capacity rejects before password hashing,
+                # user creation and membership acceptance. Other invitation
+                # POST failures may follow commits or email I/O; never replay.
+                auth_capacity = (
                     method.upper() == "POST"
-                    and endpoint == "api/v1/auth/login"
+                    and (
+                        endpoint == "api/v1/auth/login"
+                        or re.fullmatch(
+                            r"api/v1/invitations/[A-Za-z0-9_-]{1,4096}/accept", endpoint
+                        )
+                    )
                     and error_from_response(response).code == "auth_capacity_exceeded"
                 )
-                if safe_busy_retry or login_capacity:
+                if safe_busy_retry or auth_capacity:
                     retryable = True
             if not retryable or evidence.capacity_retry_used:
                 return response

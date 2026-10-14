@@ -85,7 +85,7 @@ def test_profile_exclusions_and_cache_wire(monkeypatch, legacy):
         )
         async with raw_connection(server, legacy=legacy) as (request, _):
             listed = (await request("tools/list"))["result"]
-            assert len(listed["tools"]) == 31
+            assert len(listed["tools"]) == 33
             assert listed.get("ttlMs") == (None if legacy else 60_000)
             assert listed.get("cacheScope") == (None if legacy else "private")
             for name in sorted(WRITERS):
@@ -103,7 +103,7 @@ def test_profile_exclusions_and_cache_wire(monkeypatch, legacy):
     anyio.run(exercise)
 
 
-@pytest.mark.parametrize("profile,count", [("read", 31), ("guardrails", 35)])
+@pytest.mark.parametrize("profile,count", [("read", 33), ("guardrails", 37)])
 def test_actual_stdio_profile_discovery_and_rejection(tmp_path, profile, count):
     executable = Path(sys.executable).with_name(
         "solwyn.exe" if os.name == "nt" else "solwyn"
@@ -204,7 +204,11 @@ _UPDATED_READ_DECLARATIONS = {
 def _assert_catalog_allocations(definitions, *, ceiling_kib):
     names = [tool["name"] for tool in definitions]
     assert len(names) == len(set(names)), "Duplicate declaration"
+    assert set(names) == set(mcp_server.TOOL_NAMES) - (
+        WRITERS if len(names) == 33 else set()
+    )
     assert names.count("plan_preview") == 1
+    assert names.count("list_team_members") == names.count("list_team_invites") == 1
 
     def encoded(group):
         return json.dumps(group, separators=(",", ":"), ensure_ascii=False).encode(
@@ -214,7 +218,9 @@ def _assert_catalog_allocations(definitions, *, ceiling_kib):
     original = [
         t
         for t in definitions
-        if t["name"] not in _UPDATED_READ_DECLARATIONS | {"plan_preview"}
+        if t["name"]
+        not in _UPDATED_READ_DECLARATIONS
+        | {"plan_preview", "list_team_members", "list_team_invites"}
     ]
     adopted = [t for t in definitions if t["name"] in _UPDATED_READ_DECLARATIONS]
     billing = [t for t in definitions if t["name"] == "plan_preview"]
@@ -223,6 +229,12 @@ def _assert_catalog_allocations(definitions, *, ceiling_kib):
     assert len(encoded(original)) <= ceiling_kib * 1024
     assert len(encoded(adopted)) <= 112 * 1024
     assert len(encoded(billing)) <= 4 * 1024
+    team = [
+        t
+        for t in definitions
+        if t["name"] in {"list_team_members", "list_team_invites"}
+    ]
+    assert len(encoded(team)) <= 8 * 1024
 
 
 @pytest.mark.parametrize("profile,ceiling_kib", [("guardrails", 168), ("read", 72)])
@@ -240,17 +252,27 @@ def test_catalog_is_deterministic_and_has_a_payload_budget(profile, ceiling_kib)
 
 @pytest.mark.parametrize(
     "mutation",
-    ["duplicate", "billing_overflow", "original_overflow", "adopted_overflow"],
+    [
+        "duplicate",
+        "billing_overflow",
+        "original_overflow",
+        "adopted_overflow",
+        "team_overflow",
+        "unknown",
+    ],
 )
 def test_catalog_allocations_reject_duplication_and_each_overflow(mutation):
     definitions = [
         tool.definition.model_dump(mode="json", by_alias=True, exclude_none=True)
         for tool in mcp_server.get_tool_catalog()
     ]
-    if mutation == "duplicate":
+    if mutation == "unknown":
+        definitions[0]["name"] = "unknown"
+    elif mutation == "duplicate":
         definitions += definitions
     else:
         name = {
+            "team_overflow": "list_team_members",
             "billing_overflow": "plan_preview",
             "original_overflow": "budget_status",
             "adopted_overflow": "plan_status",

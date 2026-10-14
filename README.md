@@ -34,17 +34,18 @@ Calls made through the Solwyn Python SDK are enforced and attributed automatical
 `solwyn mcp` serves read, guardrail, and attribution tools to any MCP client over local stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
 ```console
-solwyn --project proj_0123456789abcdef01234567 mcp --profile read   # 31 read tools
-solwyn --project proj_0123456789abcdef01234567 mcp                  # default guardrails profile, all 35 tools
+solwyn --project proj_0123456789abcdef01234567 mcp --profile read   # 33 read tools
+solwyn --project proj_0123456789abcdef01234567 mcp                  # default guardrails profile, all 37 tools
 solwyn doctor --mcp                                                 # verify the wiring
 ```
 
 Customer reads include account-wide alert activity and open deliveries, last firing,
 advisory unpriced outage traffic, plan catalog/status/change preview, identity/email verification,
-phone/SMS prerequisites, cost analysis/simulation, provider visibility and audit.
-The 31 reads appear in both profiles; billing/team/member writes remain CLI-only.
+phone/SMS prerequisites, team roster/invitations, cost analysis/simulation, provider visibility and audit.
+The 33 reads appear in both profiles; billing/team/member writes remain CLI-only.
 See [alerts](docs/commands/alerts.mdx), [budget](docs/commands/budget.mdx),
-[plan](docs/commands/plan.mdx) and [account](docs/commands/account.mdx).
+[plan](docs/commands/plan.mdx), [account](docs/commands/account.mdx),
+[team](docs/commands/team.mdx) and [invitation acceptance](docs/commands/invite.mdx).
 
 Start with the [MCP quickstart](docs/mcp-quickstart.md). Profiles are fixed at launch and never grant permissions; see [MCP profiles and tool contracts](docs/mcp-profiles.md) and the [agent integration guide](https://docs.solwyn.ai/docs/cli/agents).
 

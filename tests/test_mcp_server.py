@@ -71,6 +71,8 @@ _TOOL_NAMES = [
     "budget_uncounted",
     "get_account_alert",
     "plan_preview",
+    "list_team_members",
+    "list_team_invites",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

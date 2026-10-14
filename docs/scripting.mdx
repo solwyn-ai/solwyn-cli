@@ -90,3 +90,23 @@ stdout holds one JSON result. Non-TTY use without `--yes` exits 2 before HTTP.
 Checkout/portal links always print, never open a browser without a terminal, and
 support `--no-browser`. Inspect known subscription/hosted state after write
 503/transport failures; do not blindly replay. See the [plan reference](commands/plan.mdx).
+
+Customer team/account reads need no selected project. MCP now exposes 33 reads in
+both profiles and 37 tools in `guardrails`, with four existing writers unchanged.
+`list_team_members` permits any account JWT role; `list_team_invites` requires an
+owner/admin JWT. Lists retain Core ordering and every invitation delivery status.
+Team writes, account rename and invitation acceptance remain CLI-only. Use
+`--yes` deliberately after reviewing their stderr effects; otherwise non-TTY writes
+exit 2 before credentials or HTTP. Success JSON is one flat schema-bearing object
+on stdout; error JSON is on stderr. See [team](commands/team.mdx),
+[invite](commands/invite.mdx) and [account](commands/account.mdx).
+
+`invite show` reads one private token from bounded stdin or a hidden prompt and
+never sends Authorization. Signed-in `invite accept --yes` sends exactly `{}` and
+stores the returned JWT pair without emitting it. `--new-user` explicitly requires
+a terminal for hidden password collection and no selected credentials. Accept
+retries only definite `auth_capacity_exceeded` once with the existing 10-second cap
+and shared capacity/429 retry budget. Generic 503/transport errors do not replay;
+acceptance or email delivery may already have happened. Parse/storage failures
+after acceptance have distinct fixed codes and guidance to log in and inspect
+identity. Never automatically accept again after an uncertain outcome.

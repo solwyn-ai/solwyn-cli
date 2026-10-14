@@ -477,7 +477,7 @@ def test_malformed_tool_envelope_has_safe_protocol_error_and_diagnostics(
                 )
             assert raised.value.code == types.INVALID_PARAMS
             assert CANARY not in str(raised.value)
-            assert len((await session.list_tools()).tools) == 35
+            assert len((await session.list_tools()).tools) == 37
 
     anyio.run(exercise)
     assert calls == []
@@ -503,7 +503,7 @@ def test_malformed_notification_is_private_and_session_remains_usable(
                     params={"requestId": {CANARY: CANARY}},
                 )
             )
-            assert len((await session.list_tools()).tools) == 35
+            assert len((await session.list_tools()).tools) == 37
 
     anyio.run(exercise)
     assert CANARY not in caplog.text

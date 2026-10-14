@@ -1,0 +1,7 @@
+Field       Value                                                               
+account_id  acct_one                                                            
+user_id     user_one                                                            
+removed     True                                                                
+self_leave  True                                                                
+hint        Log in again; use solwyn account recover deliberately if you need a 
+            personal account.                                                   

@@ -783,6 +783,105 @@ def _stages_between(rendered: str, start: str, end: str) -> tuple[str, ...]:
     return tuple(stages.split("; "))
 
 
+_TEAM_EXITS = (
+    "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found"
+)
+HELP_CONTRACTS.update(
+    {
+        ("team",): {
+            "endpoint": "/api/v1/accounts/me",
+            "auth": "JWT; account role enforced by Core",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "varies by command",
+        },
+        ("team", "members"): {
+            "endpoint": "/api/v1/accounts/me/members",
+            "auth": "JWT; account role enforced by Core",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.members.v1",
+        },
+        ("team", "invites"): {
+            "endpoint": "/api/v1/accounts/me/invitations",
+            "auth": "JWT; account role enforced by Core",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.invites.v1",
+        },
+        ("team", "members", "list"): {
+            "endpoint": "GET /api/v1/accounts/me/members",
+            "auth": "JWT; any account member",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.members.v1",
+        },
+        ("team", "members", "set-role"): {
+            "endpoint": "PATCH /api/v1/accounts/me/members/{user_id}",
+            "auth": "owner JWT",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.member.v1",
+        },
+        ("team", "members", "remove"): {
+            "endpoint": "DELETE /api/v1/accounts/me/members/{user_id}",
+            "auth": "JWT; owner/admin for allowed targets, or self",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.remove.v1",
+        },
+        ("team", "leave"): {
+            "endpoint": "DELETE /api/v1/accounts/me/members/{user_id}",
+            "auth": "JWT; your own membership",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.remove.v1",
+        },
+        ("team", "invites", "list"): {
+            "endpoint": "GET /api/v1/accounts/me/invitations",
+            "auth": "owner/admin JWT",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.invites.v1",
+        },
+        ("team", "invites", "send"): {
+            "endpoint": "POST /api/v1/accounts/me/invitations",
+            "auth": "owner/admin JWT",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.invitation.v1",
+        },
+        ("team", "invites", "resend"): {
+            "endpoint": "POST /api/v1/accounts/me/invitations/{invitation_id}/resend",
+            "auth": "owner/admin JWT",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.invitation-action.v1",
+        },
+        ("team", "invites", "revoke"): {
+            "endpoint": "DELETE /api/v1/accounts/me/invitations/{invitation_id}",
+            "auth": "owner/admin JWT",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.team.invitation-action.v1",
+        },
+        ("invite",): {
+            "endpoint": "/api/v1/invitations/{token}",
+            "auth": "public preview; optional JWT acceptance",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "varies by command",
+        },
+        ("invite", "show"): {
+            "endpoint": "GET /api/v1/invitations/{token}",
+            "auth": "none; public preview never reads stored credentials",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.invite.show.v1",
+        },
+        ("invite", "accept"): {
+            "endpoint": "GET /api/v1/invitations/{token}; POST /api/v1/invitations/{token}/accept",
+            "auth": "selected JWT; --new-user uses explicit interactive invitation-only credentials",
+            "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
+            "schema": "solwyn.invite.accept.v1",
+        },
+        ("account", "rename"): {
+            "endpoint": "PATCH /api/v1/accounts/me",
+            "auth": "owner JWT",
+            "exits": _TEAM_EXITS,
+            "schema": "solwyn.account.rename.v1",
+        },
+    }
+)
+
+
 def _assert_init_help_contract(rendered: str) -> None:
     assert (
         _stages_between(
@@ -882,7 +981,7 @@ def test_mcp_help_names_the_exact_tool_surface() -> None:
     rendered = _normalized_help(("mcp",))
 
     assert (
-        "Tools: budget_status, budget_check, budget_confirm, get_project_status, get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview, list_cost_events, get_cost_baseline, get_unit_economics, get_cost_drift, list_priced_models, simulate_costs, list_provider_failovers, list_untracked_surfaces, list_audit_events, plan_status, plan_catalog, get_whoami, get_account_phone, list_alert_activity, list_open_alert_deliveries, budget_uncounted, get_account_alert, plan_preview."
+        "Tools: budget_status, budget_check, budget_confirm, get_project_status, get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview, list_cost_events, get_cost_baseline, get_unit_economics, get_cost_drift, list_priced_models, simulate_costs, list_provider_failovers, list_untracked_surfaces, list_audit_events, plan_status, plan_catalog, get_whoami, get_account_phone, list_alert_activity, list_open_alert_deliveries, budget_uncounted, get_account_alert, plan_preview, list_team_members, list_team_invites."
         in rendered
     )
 

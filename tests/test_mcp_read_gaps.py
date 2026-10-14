@@ -352,8 +352,8 @@ def test_diagnostic_ipc_supports_complete_catalog_and_rejects_overflow():
         expected_tools=names,
         expected_version="synthetic",
     )
-    assert len(request.expected_tools) == 35
-    assert len(HelperResult(tools=names).tools) == 35
+    assert len(request.expected_tools) == 37
+    assert len(HelperResult(tools=names).tools) == 37
     with pytest.raises(ValidationError):
         HelperResult(tools=names + ["overflow"])
 

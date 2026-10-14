@@ -13,7 +13,7 @@ OUTPUT_LIMIT = 16384
 OPERATION_SECONDS = 10
 CLEANUP_SECONDS = 10
 TOOL_INVENTORY_LIMIT = (
-    35  # Exact supported guardrails catalog; byte limits remain fixed.
+    37  # Exact supported guardrails catalog; byte limits remain fixed.
 )
 Name = Annotated[str, Field(pattern=r"^[a-z_]{1,64}$")]
 

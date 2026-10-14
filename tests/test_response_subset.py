@@ -14,6 +14,20 @@ from solwyn_cli.commands import audit, budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "MemberOut": ("user_id", "email", "name", "role", "joined_at"),
+    "InvitationOut": (
+        "id",
+        "invited_email",
+        "invited_role",
+        "expires_at",
+        "delivery_status",
+    ),
+    "InvitationPreviewResponse": (
+        "account_name",
+        "inviter_email",
+        "role",
+        "expires_at",
+    ),
     "CheckoutResponse": ("checkout_url",),
     "PortalResponse": ("portal_url",),
     "PlanPreviewResponse": (
@@ -983,6 +997,17 @@ OPERATION_RESPONSE_BINDINGS = {
     ),
     ("GET", "/health"): ("200", "object", "HealthResponse"),
     ("GET", "/health/ready"): ("200", "object", "ReadinessResponse"),
+    ("GET", "/api/v1/accounts/me/members"): ("200", "array", "MemberOut"),
+    ("PATCH", "/api/v1/accounts/me/members/{user_id}"): ("200", "object", "MemberOut"),
+    ("GET", "/api/v1/accounts/me/invitations"): ("200", "array", "InvitationOut"),
+    ("POST", "/api/v1/accounts/me/invitations"): ("200", "object", "InvitationOut"),
+    ("GET", "/api/v1/invitations/{token}"): (
+        "200",
+        "object",
+        "InvitationPreviewResponse",
+    ),
+    ("POST", "/api/v1/invitations/{token}/accept"): ("200", "object", "TokenResponse"),
+    ("PATCH", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
     ("DELETE", "/api/v1/projects/{project_id}/budget/rule/{rule_key}"): (

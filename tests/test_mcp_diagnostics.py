@@ -197,7 +197,7 @@ def test_actual_key_identity_is_separate_from_wrong_selected_project(
         "kind": "project_key",
         "source": "environment",
     }
-    assert len(data["tools"]) == 35
+    assert len(data["tools"]) == 37
     assert "full" not in data["authority_note"] or "does not" in data["authority_note"]
     assert [r.headers["authorization"] for r in requests] == ["Bearer " + KEY] * 2
     assert len(launches) == 1 and launches[0].api_key.get_secret_value() == KEY

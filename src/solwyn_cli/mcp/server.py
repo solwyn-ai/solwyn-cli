@@ -126,6 +126,12 @@ from solwyn_cli.errors import (
 )
 
 
+from solwyn_cli.commands._team import (
+    TeamMembersData,
+    TeamInvitesData,
+    fetch_members,
+    fetch_invites,
+)
 from solwyn_cli.commands._account_reads import (
     AccountPhoneResponse,
     UncountedTallyResponse,
@@ -230,6 +236,8 @@ TOOL_NAMES = (
     "budget_uncounted",
     "get_account_alert",
     "plan_preview",
+    "list_team_members",
+    "list_team_invites",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -760,6 +768,18 @@ class _PlanCatalogResult(_ToolResult[BillingCatalogResponse]):
 class _PlanPreviewResult(_ToolResult[PlanPreviewResponse]):
     schema_name: Literal["solwyn.plan.preview.v1"] = Field(
         default="solwyn.plan.preview.v1", alias="schema"
+    )
+
+
+class _ListTeamMembersResult(_ToolResult[TeamMembersData]):
+    schema_name: Literal["solwyn.team.members.v1"] = Field(
+        default="solwyn.team.members.v1", alias="schema"
+    )
+
+
+class _ListTeamInvitesResult(_ToolResult[TeamInvitesData]):
+    schema_name: Literal["solwyn.team.invites.v1"] = Field(
+        default="solwyn.team.invites.v1", alias="schema"
     )
 
 
@@ -3045,6 +3065,40 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 transport_read_hint="The preview is read-only and has no billing effect; retry the preview when connectivity returns.",
                 tier=tier,
                 interval=interval,
+            )
+        )
+
+    @catalog.tool(
+        name="list_team_members",
+        title="List team members",
+        credential_requirement="jwt",
+        description="Read the complete active account roster in join order. Any account member may read it; no project selection is required.",
+    )
+    async def list_team_members() -> _ListTeamMembersResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListTeamMembersResult,
+                fetch_members,
+                launch,
+                jwt_required=True,
+            )
+        )
+
+    @catalog.tool(
+        name="list_team_invites",
+        title="List team invites",
+        credential_requirement="jwt",
+        description="Read all open account invitations and their delivery status, including expired invitations. Core requires owner/admin role; no project selection is required.",
+    )
+    async def list_team_invites() -> _ListTeamInvitesResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListTeamInvitesResult,
+                fetch_invites,
+                launch,
+                jwt_required=True,
             )
         )
 
