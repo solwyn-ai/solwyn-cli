@@ -1,10 +1,11 @@
 # MCP release preparation
 
-**Unpublished draft.** Package metadata currently says `solwyn-cli` 0.2.0; the
-source repository is private and no PyPI publication is established. The
-[Registry draft](registry/server.draft.json) proposes `ai.solwyn/solwyn`;
-namespace ownership is **unverified**. Neither local validation nor MCP
-discovery proves publication, ownership, safety certification or availability.
+**Unpublished Registry draft.** The `solwyn-cli` 0.2.0 package is published on
+PyPI (verified 2026-10-14), but that September release predates later changes
+in this checkout. The [Registry draft](registry/server.draft.json) proposes
+`ai.solwyn/solwyn`; namespace ownership is **unverified**. Neither local validation
+nor MCP discovery proves Registry publication, ownership, safety certification or
+availability of checkout-only features in the published wheel.
 
 ## Validate locally
 
@@ -59,8 +60,8 @@ releasing. The kit neither runs providers nor supplies production rollout proof.
    A successful source test is not evidence the deployment contains these paths.
 3. Choose the actual package version and update package, locks where needed,
    draft metadata and docs together. Validate the exact final wheel and both
-   entrypoints from outside the checkout. Keep the package unavailable claim
-   until publication is verified.
+   entrypoints from outside the checkout. Distinguish a prepared checkout from
+   the published distribution; update install guidance only after the new release is verified.
 4. Verify namespace ownership before adding any package README ownership marker.
    A domain namespace such as `ai.solwyn/*` needs the Registry's domain proof;
    package-index ownership is a separate prerequisite. If the namespace changes,
@@ -74,8 +75,9 @@ The eventual publication commands are `uv publish` for the reviewed `dist`
 artifacts and the Registry publisher's `mcp-publisher publish` from the directory
 containing the final `server.json`. Obtain credentials through the release
 system, and follow the publisher's current authentication/namespace verification
-instructions. Do not run these commands for `server.draft.json` or infer that
-0.2.0 is already installable from an index.
+instructions. Do not run these commands for `server.draft.json` or infer
+that the draft is an approved Registry listing or that the published 0.2.0
+wheel contains this checkout's later additions.
 
 ## Registry schema and ownership marker
 
@@ -103,8 +105,9 @@ package README marker would be:
 ```
 
 That marker is intentionally absent from the package README today. The offline
-validator enforces the current unpublished state; transition its tests and
-checks deliberately when preparing the verified release, rather than treating
+validator enforces this explicit unpublished Registry checkpoint and the absent
+README ownership marker, independently of PyPI package availability. Transition
+its tests and checks deliberately when preparing the verified release, rather than treating
 this draft as a ready-to-submit listing. The final marker must exactly match
 the verified Registry name. See official [Registry package types](https://modelcontextprotocol.io/registry/package-types),
 [authentication](https://modelcontextprotocol.io/registry/authentication), and
