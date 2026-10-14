@@ -51,7 +51,13 @@ def list_members(context: typer.Context):
         table=TableData(
             columns=("User ID", "Email", "Name", "Role", "Joined"),
             rows=tuple(
-                (m.user_id, m.email, m.name, m.role, m.joined_at.isoformat())
+                (
+                    m.user_id,
+                    m.email,
+                    m.name if m.name is not None else "none",
+                    m.role,
+                    m.joined_at.isoformat(),
+                )
                 for m in data.members
             ),
             fold_cells=True,
@@ -108,17 +114,18 @@ def set_role(
             f"Account {account.display_name} ({account.id}): change {target.email} ({target.user_id}) from {target.role} to {role.value}. A changed role invalidates existing access tokens; the member must refresh or log in for current permissions. Refresh sessions and project keys are not revoked by a role change."
         )
         shared.confirm(context, yes)
-        data = shared.MemberOut.model_validate(
-            shared.write_request(
-                context,
-                client,
-                "PATCH",
-                BASE + f"/members/{user_path}",
-                json=shared.RoleUpdateRequest(role=role.value).model_dump(),
-            ).json()
-        )
-        if data.user_id != user_id or data.role != role.value:
-            raise ValueError("Role response mismatch")
+        with shared.write_response(context):
+            data = shared.MemberOut.model_validate(
+                shared.write_request(
+                    context,
+                    client,
+                    "PATCH",
+                    BASE + f"/members/{user_path}",
+                    json=shared.RoleUpdateRequest(role=role.value).model_dump(),
+                ).json()
+            )
+            if data.user_id != user_id or data.role != role.value:
+                raise ValueError("Role response mismatch")
     shared.emit(context, "solwyn.team.member.v1", data)
 
 
@@ -127,13 +134,14 @@ def _remove(context, client, account, target, *, self_leave, yes):
         f"Account {account.display_name} ({account.id}): remove {target.email} ({target.user_id}, {target.role}){' — your current membership' if self_leave else ''}. The member's sessions AND project keys they created in this account are revoked. Existing access tokens are invalidated.{' You lose current account access. Log in again; use solwyn account recover deliberately if you need a personal account.' if self_leave else ''}"
     )
     shared.confirm(context, yes)
-    response = shared.write_request(
-        context,
-        client,
-        "DELETE",
-        BASE + "/members/" + shared.segment(context, target.user_id),
-    )
-    shared.empty_204(response)
+    with shared.write_response(context):
+        response = shared.write_request(
+            context,
+            client,
+            "DELETE",
+            BASE + "/members/" + shared.segment(context, target.user_id),
+        )
+        shared.empty_204(response)
     return {
         "account_id": account.id,
         "user_id": target.user_id,
@@ -247,16 +255,26 @@ def send(
             f"Account {account.display_name} ({account.id}): request an invitation for {email} as {role.value}. Core may create an invitation and attempt email, or return existing/member state. A successful response does not prove that a new email was sent; inspect delivery_status."
         )
         shared.confirm(context, yes)
-        data = shared.InvitationOut.model_validate(
-            shared.write_request(
-                context,
-                client,
-                "POST",
-                BASE + "/invitations",
-                json=shared.InviteRequest(email=email, role=role.value).model_dump(),
-            ).json()
-        )
-    shared.emit(context, "solwyn.team.invitation.v1", data)
+        with shared.write_response(context):
+            data = shared.InvitationOut.model_validate(
+                shared.write_request(
+                    context,
+                    client,
+                    "POST",
+                    BASE + "/invitations",
+                    json=shared.InviteRequest(
+                        email=email, role=role.value
+                    ).model_dump(),
+                ).json()
+            )
+    shared.emit(
+        context,
+        "solwyn.team.invitation.v1",
+        {
+            **data.model_dump(mode="json"),
+            "hint": "This response does not prove that a new invitation email was sent. Inspect solwyn team invites list for delivery_status.",
+        },
+    )
 
 
 def _invitation_action(context, invitation_id, yes, *, resend):
@@ -290,13 +308,14 @@ def _invitation_action(context, invitation_id, yes, *, resend):
             )
         )
         shared.confirm(context, yes)
-        response = shared.write_request(
-            context,
-            client,
-            "POST" if resend else "DELETE",
-            BASE + f"/invitations/{target_path}" + ("/resend" if resend else ""),
-        )
-        shared.empty_204(response)
+        with shared.write_response(context):
+            response = shared.write_request(
+                context,
+                client,
+                "POST" if resend else "DELETE",
+                BASE + f"/invitations/{target_path}" + ("/resend" if resend else ""),
+            )
+            shared.empty_204(response)
     shared.emit(
         context,
         "solwyn.team.invitation-action.v1",

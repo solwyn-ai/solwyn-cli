@@ -176,12 +176,13 @@ def show(context: typer.Context):
     try:
         data = _preview(context, token)
     except ApiError as error:
-        shared.safe_api_error(context, error)
+        shared.safe_api_error(context, error, preview=True)
     except (ValueError, TypeError):
         shared.fail(
             context,
             "invalid_invitation_response",
             "The invitation preview response was invalid.",
+            shared.READ_HINT,
         )
     shared.emit(context, "solwyn.invite.show.v1", data)
 
@@ -255,12 +256,13 @@ def accept(
     try:
         preview = _preview(context, token)
     except ApiError as error:
-        shared.safe_api_error(context, error)
+        shared.safe_api_error(context, error, preview=True)
     except (ValueError, TypeError):
         shared.fail(
             context,
             "invalid_invitation_response",
             "The invitation preview response was invalid.",
+            shared.READ_HINT,
         )
     shared.effects(
         f"Join account {preview.account_name} as {preview.role}; invited by {preview.inviter_email or 'unavailable'}, expires {preview.expires_at.isoformat()}. Acceptance requires the invited identity to have no active membership. It consumes the invitation, creates membership, verifies the invited email if needed, may send an acceptance email, and replaces stored JWT credentials with the returned pair."
@@ -276,7 +278,15 @@ def accept(
         try:
             email = _prompt("Invited email")
             display_name = _prompt("Display name")
-            password = _prompt("Password", hidden=True)
+            password = SecretStr(_prompt("Password", hidden=True))
+            confirmation = SecretStr(_prompt("Confirm password", hidden=True))
+            if password.get_secret_value() != confirmation.get_secret_value():
+                shared.fail(
+                    context,
+                    "invitation_password_mismatch",
+                    "Password confirmation did not match; acceptance was not submitted.",
+                    semantic=ErrorSemantic.USAGE,
+                )
             request = shared.AcceptInvitationRequest(
                 email=email, display_name=display_name, password=password
             )
@@ -312,7 +322,9 @@ def accept(
             )
         tokens = shared.InvitationTokenResponse.model_validate(response.json())
     except ApiError as error:
-        shared.safe_api_error(context, error, accepting=True, submitted=True)
+        shared.safe_api_error(
+            context, error, accepting=True, submitted=True, new_user=new_user
+        )
     except AuthError:
         shared.fail(
             context,

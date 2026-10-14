@@ -1,2 +1,2 @@
 User ID   Email                   Name  Role    Joined                   
-user_two  member@example.invalid  None  member  2026-10-14T00:00:00+00:00
+user_two  member@example.invalid  none  member  2026-10-14T00:00:00+00:00

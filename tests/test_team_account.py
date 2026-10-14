@@ -463,7 +463,13 @@ def test_new_user_explicit_interactive_payload_no_authorization(mock_team, monke
     monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(invite, "resolve_credential", lambda: None)
     answers = iter(
-        [TOKEN, "invited@example.invalid", "Invited Name", "private-password-canary"]
+        [
+            TOKEN,
+            "invited@example.invalid",
+            "Invited Name",
+            "private-password-canary",
+            "private-password-canary",
+        ]
     )
     monkeypatch.setattr(invite, "_prompt", lambda *args, **kwargs: next(answers))
     mock_team[0].extend([ok(PREVIEW), ok(TOKENS)])
@@ -778,7 +784,15 @@ def test_new_user_password_bounds_fixed_errors_no_accept(
 ):
     monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(invite, "resolve_credential", lambda: None)
-    answers = iter([TOKEN, "invited@example.invalid", "Name", "x" * secret_length])
+    answers = iter(
+        [
+            TOKEN,
+            "invited@example.invalid",
+            "Name",
+            "x" * secret_length,
+            "x" * secret_length,
+        ]
+    )
     monkeypatch.setattr(invite, "_prompt", lambda *args, **kwargs: next(answers))
     mock_team[0].append(ok(PREVIEW))
     result = invoke("invite", "accept", "--new-user", "--yes")
@@ -968,7 +982,7 @@ def test_new_user_actual_hidden_prompts_keep_stdout_one_result(mock_team, monkey
         "--new-user",
         "--yes",
         input=TOKEN
-        + "\ninvited@example.invalid\nInvited Name\nprivate-password-canary\n",
+        + "\ninvited@example.invalid\nInvited Name\nprivate-password-canary\nprivate-password-canary\n",
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["accepted"] is True
@@ -981,7 +995,13 @@ def test_new_user_capacity_retry_unauthenticated_once(mock_team, monkeypatch):
     monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(invite, "resolve_credential", lambda: None)
     answers = iter(
-        [TOKEN, "invited@example.invalid", "Invited Name", "private-password-canary"]
+        [
+            TOKEN,
+            "invited@example.invalid",
+            "Invited Name",
+            "private-password-canary",
+            "private-password-canary",
+        ]
     )
     monkeypatch.setattr(invite, "_prompt", lambda *args, **kwargs: next(answers))
     mock_team[0].extend(
@@ -1025,3 +1045,258 @@ def test_invitation_models_redact_password_and_token_pair_repr():
             TOKENS["refresh_token"],
         ):
             assert secret not in value
+
+
+@pytest.mark.parametrize(
+    "command,payloads",
+    [
+        (["team", "members", "list"], [[{**MEMBER, "unknown": "PRIVATE"}]]),
+        (["team", "invites", "list"], [[{**INVITATION, "unknown": "PRIVATE"}]]),
+        (
+            ["account", "rename", "New Team", "--yes"],
+            [{**ACCOUNT, "unknown": "PRIVATE"}],
+        ),
+        (["team", "leave", "--yes"], [ACCOUNT, {**IDENTITY, "unknown": "PRIVATE"}]),
+        (
+            ["team", "members", "set-role", "user_two", "--role", "admin", "--yes"],
+            [ACCOUNT, [{**MEMBER, "unknown": "PRIVATE"}]],
+        ),
+        (
+            ["team", "invites", "resend", "inv_one", "--yes"],
+            [ACCOUNT, [{**INVITATION, "unknown": "PRIVATE"}]],
+        ),
+    ],
+)
+def test_malformed_reads_and_prewrite_never_claim_submission(
+    mock_team, command, payloads
+):
+    mock_team[0].extend(ok(p) for p in payloads)
+    result = invoke(*command)
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)
+    assert error["code"] == "invalid_team_response"
+    assert "No write was submitted" in error["hint"]
+    assert "may already have completed" not in result.stderr
+    assert all(c.method == "GET" for c in mock_team[1])
+    assert "PRIVATE" not in result.output
+
+
+@pytest.mark.parametrize(
+    "command,payloads",
+    [
+        (
+            ["account", "rename", "New Team", "--yes"],
+            [ACCOUNT, {**ACCOUNT, "unknown": "PRIVATE"}],
+        ),
+        (
+            ["team", "members", "set-role", "user_two", "--role", "admin", "--yes"],
+            [ACCOUNT, [MEMBER], {**MEMBER, "unknown": "PRIVATE"}],
+        ),
+        (
+            ["team", "invites", "send", "invited@example.invalid", "--yes"],
+            [ACCOUNT, {**INVITATION, "unknown": "PRIVATE"}],
+        ),
+    ],
+)
+def test_malformed_postwrite_keeps_unknown_outcome_guidance(
+    mock_team, command, payloads
+):
+    mock_team[0].extend(ok(p) for p in payloads)
+    result = invoke(*command)
+    assert result.exit_code == 1
+    assert "The write may already have completed" in result.stderr
+    assert len([c for c in mock_team[1] if c.method != "GET"]) == 1
+    assert "PRIVATE" not in result.output
+
+
+@pytest.mark.parametrize("command", [["invite", "show"], ["invite", "accept", "--yes"]])
+def test_preview_error_has_private_invitation_wording(mock_team, command):
+    mock_team[0].append(httpx.Response(410, json={"detail": "PRIVATE"}))
+    result = invoke(*command, input=TOKEN)
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)
+    assert error["code"] == "invitation_gone"
+    assert error["message"] == "The invitation preview request failed."
+    assert all(
+        c.method == "GET" and "Authorization" not in c.headers for c in mock_team[1]
+    )
+    assert "PRIVATE" not in result.output
+    assert_private(result)
+
+
+def test_new_user_email_mismatch_has_no_login_or_key_advice(mock_team, monkeypatch):
+    monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(invite, "resolve_credential", lambda: None)
+    answers = iter(
+        [
+            TOKEN,
+            "wrong@example.invalid",
+            "Invited Name",
+            "private-password-canary",
+            "private-password-canary",
+        ]
+    )
+    monkeypatch.setattr(invite, "_prompt", lambda *a, **kw: next(answers))
+    mock_team[0].extend(
+        [ok(PREVIEW), httpx.Response(403, json={"detail": "forbidden"})]
+    )
+    result = invoke("invite", "accept", "--new-user", "--yes")
+    assert result.exit_code == 3
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "invitation_email_mismatch"
+    assert "invited email" in error["hint"]
+    assert "login" not in error["hint"] and "SOLWYN_API_KEY" not in error["hint"]
+    assert all("Authorization" not in c.headers for c in mock_team[1])
+    assert not mock_team[2]
+    assert "wrong@example.invalid" not in result.output
+    assert_private(result)
+
+
+@pytest.mark.parametrize("confirmation", ["different-private-canary\n", "", "\x03"])
+def test_new_user_hidden_password_confirmation_refuses_without_post(
+    mock_team, monkeypatch, confirmation
+):
+    monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(invite, "resolve_credential", lambda: None)
+    mock_team[0].append(ok(PREVIEW))
+    result = invoke(
+        "invite",
+        "accept",
+        "--new-user",
+        "--yes",
+        input=TOKEN
+        + "\ninvited@example.invalid\nInvited Name\nprivate-password-canary\n"
+        + confirmation,
+    )
+    assert result.exit_code == 2
+    assert len(mock_team[1]) == 1 and mock_team[1][0].method == "GET"
+    assert not mock_team[2]
+    assert "different-private-canary" not in result.output
+    assert "Confirm password" in result.stderr
+    assert_private(result)
+
+
+@pytest.mark.parametrize("status", ["sent", "send_failed"])
+def test_send_json_always_has_fixed_unproven_delivery_hint(mock_team, status):
+    mock_team[0].extend([ok(ACCOUNT), ok({**INVITATION, "delivery_status": status})])
+    result = invoke("team", "invites", "send", "invited@example.invalid", "--yes")
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["delivery_status"] == status
+    assert (
+        data["hint"]
+        == "This response does not prove that a new invitation email was sent. Inspect solwyn team invites list for delivery_status."
+    )
+
+
+def test_member_nullable_name_table_uses_none(mock_team):
+    mock_team[0].append(ok([MEMBER]))
+    result = runner.invoke(app, ["--no-color", "team", "members", "list"])
+    assert result.exit_code == 0
+    assert "none" in result.stdout and "None" not in result.stdout
+
+
+@pytest.mark.parametrize("command", [["invite", "show"], ["invite", "accept", "--yes"]])
+def test_malformed_invitation_preview_does_not_claim_acceptance(mock_team, command):
+    mock_team[0].append(httpx.Response(200, content=b"not JSON"))
+    result = invoke(*command, input=TOKEN)
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)
+    assert error["code"] == "invalid_invitation_response"
+    assert "No write was submitted" in error["hint"]
+    assert len(mock_team[1]) == 1 and mock_team[1][0].method == "GET"
+    assert not mock_team[2]
+    assert_private(result)
+
+
+@pytest.mark.parametrize(
+    "command,payloads",
+    [
+        (
+            ["team", "leave", "--yes"],
+            [ok(ACCOUNT), ok(IDENTITY), ok([{**MEMBER, "user_id": "user_one"}])],
+        ),
+        (
+            ["team", "invites", "resend", "inv_one", "--yes"],
+            [ok(ACCOUNT), ok([INVITATION])],
+        ),
+        (
+            ["team", "invites", "revoke", "inv_one", "--yes"],
+            [ok(ACCOUNT), ok([INVITATION])],
+        ),
+    ],
+)
+def test_malformed_empty_success_keeps_unknown_write_guidance(
+    mock_team, command, payloads
+):
+    mock_team[0].extend([*payloads, httpx.Response(204, content=b"unexpected")])
+    result = invoke(*command)
+    assert result.exit_code == 1
+    assert "The write may already have completed" in result.stderr
+    assert "No write was submitted" not in result.stderr
+    assert len([c for c in mock_team[1] if c.method != "GET"]) == 1
+
+
+@pytest.mark.parametrize("stage", ["Password", "Confirm password"])
+@pytest.mark.parametrize("failure", [EOFError, KeyboardInterrupt])
+def test_new_user_password_prompt_abort_never_accepts(
+    mock_team, monkeypatch, stage, failure
+):
+    monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(invite, "resolve_credential", lambda: None)
+
+    def prompt(label, **kwargs):
+        if label in {"Password", "Confirm password"}:
+            assert kwargs["hidden"] is True
+        if label == stage:
+            raise failure()
+        return {
+            "Invitation token": TOKEN,
+            "Invited email": "invited@example.invalid",
+            "Display name": "Invited Name",
+            "Password": "private-password-canary",
+        }[label]
+
+    monkeypatch.setattr(invite, "_prompt", prompt)
+    mock_team[0].append(ok(PREVIEW))
+    result = invoke("invite", "accept", "--new-user", "--yes")
+    assert result.exit_code == 2
+    assert "invitation_input_cancelled" in result.stderr
+    assert len(mock_team[1]) == 1 and mock_team[1][0].method == "GET"
+    assert not mock_team[2]
+    assert_private(result)
+
+
+def test_new_user_storage_failure_reports_completed_without_replay(
+    mock_team, monkeypatch
+):
+    monkeypatch.setattr(invite, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(invite, "resolve_credential", lambda: None)
+    answers = iter(
+        [
+            TOKEN,
+            "invited@example.invalid",
+            "Invited Name",
+            "private-password-canary",
+            "private-password-canary",
+        ]
+    )
+    monkeypatch.setattr(invite, "_prompt", lambda *a, **kw: next(answers))
+    stores = []
+
+    def broken(access, refresh):
+        stores.append((access, refresh))
+        raise auth.CredentialStorageError("PRIVATE backend error")
+
+    monkeypatch.setattr(invite, "store_jwt_pair", broken)
+    mock_team[0].extend([ok(PREVIEW), ok(TOKENS)])
+    result = invoke("invite", "accept", "--new-user", "--yes")
+    assert result.exit_code == 3
+    assert "invitation_credential_storage_failed" in result.stderr
+    assert "Invitation acceptance completed" in result.stderr
+    assert "do not automatically accept again" in result.stderr
+    assert len(mock_team[1]) == 2 and mock_team[1][-1].method == "POST"
+    assert all("Authorization" not in c.headers for c in mock_team[1])
+    assert stores == [(TOKENS["access_token"], TOKENS["refresh_token"])]
+    assert "PRIVATE" not in result.output
+    assert_private(result)

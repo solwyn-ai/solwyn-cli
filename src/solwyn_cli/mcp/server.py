@@ -127,6 +127,7 @@ from solwyn_cli.errors import (
 
 
 from solwyn_cli.commands._team import (
+    READ_HINT,
     TeamMembersData,
     TeamInvitesData,
     fetch_members,
@@ -1134,6 +1135,7 @@ def _operation_error(
     *,
     invalid_response_code: str,
     jwt_required: bool = False,
+    invalid_response_hint: str | None = None,
 ) -> ResultT:
     if isinstance(error, AccountProjectConflictError):
         return _error(
@@ -1221,6 +1223,7 @@ def _operation_error(
         result_type,
         code=invalid_response_code,
         message="The Solwyn API response was invalid.",
+        hint=invalid_response_hint,
     )
 
 
@@ -2105,6 +2108,7 @@ def _read_operation(
             error,
             invalid_response_code="invalid_read_response",
             jwt_required=jwt_required,
+            invalid_response_hint=READ_HINT,
         )
 
 

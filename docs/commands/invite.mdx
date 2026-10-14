@@ -31,7 +31,10 @@ A selected project key fails with JWT guidance; credential/refresh/storage failu
 never switches to new-user mode. Explicit `--new-user` is only the invitation JIT
 flow: it requires an interactive terminal and no selected credentials, then asks
 for the invited email, display name (1–120 characters) and hidden password
-(8–128 characters). Existing selected JWTs or keys cause a fixed ambiguity error;
+(8–128 characters), followed by a second hidden password prompt. A mismatch,
+EOF or Ctrl-C stops before the acceptance POST. If Core rejects the email in
+`--new-user` mode, enter the invited email or ask the owner/admin to verify the
+recipient. Existing selected JWTs or keys cause a fixed ambiguity error;
 unset the environment key and use `solwyn logout` deliberately first. This mode
 never sends existing credentials. Possession of the invitation proves control of
 the invited email; it is not standalone signup. Core may truncate a new user's

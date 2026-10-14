@@ -1241,6 +1241,9 @@ INFORMATIVE_OPERATION_RESPONSE_BINDINGS = {
     ("GET", "/health/ready"): ("503", "object", "ReadinessResponse"),
 }
 NO_CONTENT_OPERATION_BINDINGS = {
+    ("DELETE", "/api/v1/accounts/me/members/{user_id}"): "204",
+    ("POST", "/api/v1/accounts/me/invitations/{invitation_id}/resend"): "204",
+    ("DELETE", "/api/v1/accounts/me/invitations/{invitation_id}"): "204",
     ("DELETE", "/api/v1/account/notification-channels/{channel_id}"): "204",
     ("DELETE", "/api/v1/account/alerts"): "204",
     ("DELETE", "/api/v1/projects/{project_id}"): "204",
@@ -1790,12 +1793,21 @@ def test_every_consumed_no_content_operation_is_bodyless() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["/api/v1/projects/{project_id}/key/{key_id}", "/api/v1/account/alerts"]
+    "method,path",
+    [
+        ("delete", "/api/v1/projects/{project_id}/key/{key_id}"),
+        ("delete", "/api/v1/account/alerts"),
+        ("delete", "/api/v1/accounts/me/members/{user_id}"),
+        ("post", "/api/v1/accounts/me/invitations/{invitation_id}/resend"),
+        ("delete", "/api/v1/accounts/me/invitations/{invitation_id}"),
+    ],
 )
 @pytest.mark.parametrize("mutation", ["status", "body", "alternate"])
-def test_no_content_response_drift_trips_guard(path: str, mutation: str) -> None:
+def test_no_content_response_drift_trips_guard(
+    method: str, path: str, mutation: str
+) -> None:
     mutated = copy.deepcopy(_snapshot())
-    responses = mutated["paths"][path]["delete"]["responses"]
+    responses = mutated["paths"][path][method]["responses"]
     if mutation == "status":
         responses["200"] = responses.pop("204")
     elif mutation == "body":

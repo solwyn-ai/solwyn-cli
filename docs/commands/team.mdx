@@ -45,7 +45,8 @@ Owners/admins can list, send, resend and revoke invitations. Lists
 expired open rows and retain every `delivery_status` verbatim. Send defaults to
 `member`, accepts `admin`, and returns `solwyn.team.invitation.v1`. A 200 can be an
 existing pending invitation or synthetic existing-member result; it does not prove
-a new email was sent. An invitation may persist with `send_failed`.
+a new email was sent. Send JSON includes a fixed `hint` stating that delivery is
+unproven. An invitation may persist with `send_failed`.
 
 Resend/revoke require an exact empty 204. Their
 `solwyn.team.invitation-action.v1` acknowledgement contains no invented delivery

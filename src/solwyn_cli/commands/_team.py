@@ -29,6 +29,7 @@ from solwyn_cli.runtime import command_context, output_engine
 BASE = "/api/v1/accounts/me"
 Role = Literal["owner", "admin", "member"]
 InvitableRole = Literal["admin", "member"]
+READ_HINT = "No write was submitted. Retry the read; if it remains invalid, update the CLI or contact support about the API response."
 UNKNOWN_HINT = "The write may already have completed. Inspect team/account state before a deliberate retry; do not blindly replay."
 ACCEPT_UNKNOWN_HINT = "Acceptance may already have completed. Try solwyn login and inspect solwyn whoami before a deliberate retry; do not automatically accept again."
 JWT_HINT = "Run solwyn login; unset SOLWYN_API_KEY and clear any selected stored project key to use JWT."
@@ -72,7 +73,6 @@ class InviteRequest(TeamModel):
 
 class AccountUpdateRequest(TeamModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
-    alert_email_override: str | None = None
 
 
 class AcceptInvitationRequest(TeamModel):
@@ -198,7 +198,13 @@ _TEAM_HINTS = {
 
 
 def safe_api_error(
-    context: typer.Context, error: ApiError, *, accepting=False, submitted=False
+    context: typer.Context,
+    error: ApiError,
+    *,
+    accepting=False,
+    submitted=False,
+    preview=False,
+    new_user=False,
 ):
     # Team/invitation endpoints can reflect validation inputs or arbitrary error
     # bodies. Expose only fixed codes, status, and local guidance.
@@ -215,6 +221,16 @@ def safe_api_error(
             "invitation_gone",
             "The invitation is invalid, expired, revoked, or accepted. Ask the account owner/admin to inspect its state.",
         )
+    elif (
+        accepting
+        and new_user
+        and error.status_code == 403
+        and error.detail == "forbidden"
+    ):
+        code, hint = (
+            "invitation_email_mismatch",
+            "Enter the invited email for this invitation in --new-user mode. Ask the account owner/admin to verify the recipient if needed.",
+        )
     elif error.status_code in (401, 403) and code is None:
         code, hint = (
             "team_access_denied",
@@ -229,7 +245,9 @@ def safe_api_error(
     fail(
         context,
         code or ("rate_limited" if error.status_code == 429 else "team_request_failed"),
-        "The invitation request failed."
+        "The invitation preview request failed."
+        if preview
+        else "The invitation request failed."
         if accepting
         else "The team/account request failed.",
         hint,
@@ -265,7 +283,7 @@ def team_client(context: typer.Context):
             context,
             "invalid_team_response",
             "The team/account response was invalid.",
-            UNKNOWN_HINT,
+            READ_HINT,
         )
 
 
@@ -294,6 +312,20 @@ def segment(context: typer.Context, value: str) -> str:
 def empty_204(response: httpx.Response):
     if response.status_code != 204 or response.content:
         raise ValueError("Expected empty 204")
+
+
+@contextmanager
+def write_response(context: typer.Context):
+    """Keep malformed responses after a submitted mutation conservative."""
+    try:
+        yield
+    except (ValueError, TypeError):
+        fail(
+            context,
+            "invalid_team_response",
+            "The team/account response was invalid.",
+            UNKNOWN_HINT,
+        )
 
 
 def write_request(context: typer.Context, client: SolwynClient, method, path, **kwargs):

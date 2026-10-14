@@ -1,1 +1,1 @@
-{"schema":"solwyn.team.invitation.v1","id":"inv_one","invited_email":"invited@example.invalid","invited_role":"member","expires_at":"2026-10-21T00:00:00Z","delivery_status":"send_failed"}
+{"schema":"solwyn.team.invitation.v1","id":"inv_one","invited_email":"invited@example.invalid","invited_role":"member","expires_at":"2026-10-21T00:00:00Z","delivery_status":"send_failed","hint":"This response does not prove that a new invitation email was sent. Inspect solwyn team invites list for delivery_status."}

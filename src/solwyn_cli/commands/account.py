@@ -230,17 +230,17 @@ def rename(
             f"Rename account {account.id} from {account.display_name} to {name}. The account display name is used in invitation emails."
         )
         shared.confirm(context, yes)
-        # Complete mirror declares alert_email_override, but rename intentionally
-        # sends ONLY display_name. Override changes have dedicated alert-email commands.
-        data = shared._AccountSelf.model_validate(
-            shared.write_request(
-                context,
-                client,
-                "PATCH",
-                shared.BASE,
-                json=body.model_dump(include={"display_name"}),
-            ).json()
-        )
-        if data.id != account.id:
-            raise ValueError("Account mismatch")
+        # Override changes belong to the dedicated account alert-email commands.
+        with shared.write_response(context):
+            data = shared._AccountSelf.model_validate(
+                shared.write_request(
+                    context,
+                    client,
+                    "PATCH",
+                    shared.BASE,
+                    json=body.model_dump(include={"display_name"}),
+                ).json()
+            )
+            if data.id != account.id:
+                raise ValueError("Account mismatch")
     shared.emit(context, "solwyn.account.rename.v1", data)

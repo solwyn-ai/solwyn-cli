@@ -8391,6 +8391,7 @@
       "keys": [
         "delivery_status",
         "expires_at",
+        "hint",
         "id",
         "invited_email",
         "invited_role",
