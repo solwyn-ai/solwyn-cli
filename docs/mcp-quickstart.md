@@ -38,7 +38,7 @@ solwyn --json --project proj_0123456789abcdef01234567 budget status
 ```
 
 `mcp-config` runs offline and resolves the absolute executable for its installed
-interpreter. It defaults to the 13-tool `read` profile. Extract only `command`
+interpreter. It defaults to the 30-tool `read` profile. Extract only `command`
 and `args` from its `solwyn.mcp-config.v1` result into your host's documented
 configuration container. For example, the descriptor portion on POSIX is:
 
@@ -75,7 +75,7 @@ recording, provider call, JWT refresh or host edit occurs. Its exit codes are
 | Authenticated key project | Core's `GET /api/v1/auth/key` identifies the supplied key. Key-bound writes use this project; a read selector cannot redirect them. |
 | Credential kind/source | Environment project key, keychain project key, then keychain JWT, in that order. Empty/invalid environment key presence prevents fallback. A stored key can mask a JWT. |
 | Key scope | `full`, `read_only`, or unknown when it cannot be established. A successful read does not prove write scope. `full` does not promise a future allowed decision. |
-| Profile and annotations | Discovery aids. `read` exposes 13 tools; `guardrails` exposes all 17. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
+| Profile and annotations | Discovery aids. `read` exposes 30 tools; `guardrails` exposes all 34. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
 
 The [tool/auth matrix](mcp-profiles.md) lists exceptions: `list_projects` and
 `get_overview` need JWT, account alert history needs JWT, and tag discovery needs

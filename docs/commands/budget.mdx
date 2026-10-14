@@ -1,0 +1,20 @@
+# Budget advisory traffic
+
+```sh
+solwyn --project PROJECT budget uncounted
+solwyn --json --project PROJECT budget uncounted
+```
+
+`budget uncounted` reads the separate project resource using JWT or a project key,
+with `solwyn.budget.uncounted.v1`. Calls and tokens are cumulative advisory
+**unpriced upper bounds**, possibly overcounted by at-least-once reporting; they
+are never priced spend, current usage or authoritative billing totals.
+`last_reported_at` is null if the project has never reported. A proven zero is
+zero. A 503 leaves the tally unknown with retry guidance, never a zero tally or
+proof that no traffic occurred. Eligible GETs retain the shared bounded
+Retry-After policy. Existing budget/status reads do not depend on this endpoint.
+MCP provides `budget_uncounted` in both profiles.
+
+`budget rules list --with-last-fired` requires JWT and maps every fetched rule to
+its latest retained fired event or null, preserving percent matching after edits.
+See [alerts](alerts.mdx) for last-firing and pagination semantics.

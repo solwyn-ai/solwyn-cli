@@ -12,7 +12,7 @@ Global `--project` and `--api-url` options precede `mcp`. Its `--profile`
 option follows `mcp`. Credentials belong in the existing keychain workflow or
 the subprocess's `SOLWYN_API_KEY` environment, never in argv or repository JSON.
 
-`read` exposes 13 tools. `guardrails` exposes all 17 and remains the default for
+`read` exposes 30 tools. `guardrails` exposes all 34 and remains the default for
 compatibility with `solwyn mcp`. The choice stays fixed for the process lifetime.
 Excluded names fail both discovery and invocation: calling one returns the fixed
 MCP protocol error `-32602`, `Unknown tool`, before argument validation, credential
@@ -20,8 +20,13 @@ resolution or HTTP. A tool argument cannot switch profiles.
 
 | Tools | Profile | Credential requirement |
 | --- | --- | --- |
-| `budget_status`, `get_project_status`, `get_forecast`, `get_costs`, `get_cost_total`, `list_budget_rules`, `list_tags`, `list_tag_values`, `list_agent_runs`, `get_agent_run` | Both | Project API key or JWT with access to the selected project |
-| `list_alert_events` | Both | Project key or JWT for project history; `account=true` requires JWT and ignores `project_id` |
+| `budget_status`, `budget_uncounted`, `get_project_status`, `get_forecast`, `get_cost_total`, `list_tags`, `list_tag_values`, `list_agent_runs`, `get_agent_run`, `list_cost_events`, `get_cost_baseline`, `get_unit_economics`, `get_cost_drift`, `list_priced_models`, `simulate_costs`, `list_provider_failovers`, `list_untracked_surfaces` | Both | Project API key or JWT with access to the selected project |
+| `get_costs` | Both | Project key or JWT; `account=true` requires JWT and excludes explicit `project_id` |
+| `list_budget_rules` | Both | Project key or JWT; `with_last_fired=true` requires JWT |
+| `plan_status`, `plan_catalog` | Both | JWT or project key with account/user context; no selected project required |
+| `get_whoami` | Both | JWT reads identity including email verification; project keys return local context with no invented user or raw key |
+| `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert`, `get_account_phone`, `list_audit_events` | Both | JWT; reads do not impose owner-only write gates |
+| `list_alert_events` | Both | Project key or JWT for project history; `account=true` reads account-scope events, requires JWT and ignores `project_id` |
 | `list_projects`, `get_overview` | Both | JWT login |
 | `budget_check`, `budget_confirm`, `record_call` | `guardrails` | Write-scoped project API key |
 | `budget_check_batch` | `guardrails` | Project key; write scope for submit/record-only, read scope accepted for recovery-only |
@@ -36,7 +41,7 @@ key, then keychain JWT, freshly evaluated for every operation. A stored key can
 therefore mask a JWT needed for account tools.
 
 Discovery includes human titles, behavioral annotations, described input fields
-and typed output schemas. All 13 reads have `readOnlyHint=true`; the four writes
+and typed output schemas. All 30 reads have `readOnlyHint=true`; the four writes
 have `readOnlyHint=false`, `destructiveHint=true` and `idempotentHint=false`.
 The conservative write hints cover budget/accounting changes and composite
 operations; they do not claim that every retry duplicates an effect. Reads use
@@ -65,9 +70,11 @@ credentials, or permits reusing a reservation. Tests exercise the actual SDK2
 discovery cache while rotating a synthetic key and then removing it; each call
 resolves credentials again.
 
-The compact UTF-8 tool-array regression budgets are 152 KiB for `guardrails` and
-72 KiB for `read`, including output schemas. They allow measured growth while
-catching accidental schema/catalog duplication. This measures wire bytes, not
+The compact UTF-8 tool-array regression budgets retain 168 KiB for unchanged
+`guardrails` declarations and 72 KiB for unchanged `read` declarations, plus a
+separate 112 KiB for the 17 new reads and two extended read schemas. Complete
+inventory goldens pin every declaration, including output schemas. These bounds
+catch accidental schema/catalog duplication while accounting for the added surface. This measures wire bytes, not
 tokens sent by a host to its model. Hosts can keep output schemas for validation
 without including them in model context.
 
@@ -136,3 +143,46 @@ MCP recording stays `unknown` after a lost/invalid ingest reply or a `legacy_key
 acknowledgement: that duplicate lane alone cannot prove the intended call-ID ledger
 entry. Preserve the exact event and inspect attribution separately. An admission
 journal or settlement receipt does not establish recording durability.
+
+
+## Account inspection and bounded read pages
+
+`list_alert_activity` reads all projects plus account scope, with `time_range`
+7d/30d/90d and optional `event_type` fired/snoozed/unsnoozed/paused/resumed.
+`list_open_alert_deliveries` reads pending/retrying receipts, per-channel attempts
+and `next_attempt_at`, regardless of normal event retention. Both return 25-event
+cursor pages. `get_account_alert` and `list_budget_rules` accept opt-in
+`with_last_fired`; this uses a read-only POST with at most 100 selectors per
+request. Percent matching preserves threshold history after budget-limit edits.
+Null means no matching retained history in Core's default 30d window; account
+reads also return `latest_event` for lifecycle state. Without the option no
+latest-events request is made.
+
+`list_cost_events`, `list_audit_events` and the two new alert listings accept
+`cursor` and `all_pages`. MCP follows at most 10 pages within its existing
+30-second deadline and 1 MiB HTTP response budget; empty continued pages count.
+A limit or later-page error retains completed data and the first unread cursor.
+An error is never proof of a complete empty result. All reads also use the
+existing result-size and cancellation fences. See [bounded work](mcp-bounded-work.md).
+
+`get_costs(account=true)` defaults to project grouping and permits only model,
+provider, modality and paired custom-window/preset filters. Explicit `project_id`
+is mutually exclusive; configured default projects are irrelevant to the account
+query. Core still enforces plan entitlements, account access and role permissions.
+Project mode defaults to model grouping. Pricing simulation is a read-only POST;
+it makes no admission or billing change and does not automatically retry.
+
+`budget_uncounted` returns cumulative advisory calls/tokens and nullable
+`last_reported_at`, labelled an **unpriced upper bound**: possibly overcounted,
+never priced spend. Known zero is zero. A 503 is unknown and returns
+`service_busy` with retry guidance, never zero or an admission absence guarantee.
+Eligible GET 503s still use phase-2's single header-based retry; receive-time spend
+and safe/uncertain write semantics are unchanged.
+
+`get_account_phone` reads the authenticated user's phone state and SMS consent;
+verification and consent writes stay in the dashboard. `plan_catalog` preserves
+price/currency units (integer cents and string decimal cents) and nullable
+prices/overage. `plan_status` includes subscription lifecycle and capabilities.
+All 17 new tools are read-only, non-destructive and idempotent in both profiles;
+the four existing guardrails mutations are unchanged. Billing, team and member
+writes and account recovery remain CLI-only.

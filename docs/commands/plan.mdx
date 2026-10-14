@@ -1,0 +1,20 @@
+# Plan
+
+```sh
+solwyn plan
+solwyn --json plan
+solwyn plan list
+solwyn --json plan list
+```
+
+Bare `plan` preserves `solwyn.plan.v1`, showing current tier, subscription status,
+renewal/cancellation and grace timestamps, pending/scheduled changes, limits and
+capabilities. `plan list` reads the authenticated billing catalog with
+`solwyn.plan.catalog.v1`: monthly/yearly prices in integer cents, yearly monthly
+display cents, currency/tax metadata, included requests, published overage rate,
+string decimal cent metered price, limits and capabilities. Null prices/overage
+remain null. No currency conversion or floating-point money conversion occurs.
+
+Both reads accept JWT or project keys with the required account/user context;
+Core enforces access. No project selection is required. Group/subcommand help
+performs no API read. MCP offers `plan_status` and `plan_catalog` in both profiles.

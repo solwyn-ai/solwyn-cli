@@ -1,0 +1,22 @@
+# Account and identity reads
+
+```sh
+solwyn whoami
+solwyn --json whoami
+solwyn account phone show
+solwyn --json account phone show
+```
+
+JWT `whoami` shows email verification along with user/account identity, role,
+seats and projects (`solwyn.whoami.v1`). Its strict identity parser adopts
+`email_verified`, first name and marketing email subscription state. Project keys
+return local authentication and selected-project context without inventing a user
+or verified email, and never reveal raw key material. MCP provides `get_whoami`.
+
+`account phone show` (`solwyn.account.phone.v1`) requires JWT and reads the current
+user's state: none, pending, verified or verified_with_pending_change; verified
+and pending numbers, verification/resend timestamps, and SMS consent/disclosure
+state. Verified phone and SMS consent are prerequisites for SMS notifications.
+Absent timestamps remain null. Verification and consent changes stay in the
+dashboard. MCP provides `get_account_phone` in both profiles. Account recovery
+remains CLI-only.
