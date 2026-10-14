@@ -78,7 +78,7 @@ Run daily and allow `workflow_dispatch` for repair and testing:
    prevent the issue from being created; it can never turn the run into "no drift."
 
 The Core repository already proves that its own `shared/openapi.json` matches a fresh export in
-`scripts/check-openapi.sh:8-16`. The proposed job starts from that checked-in customer contract
+`scripts/check-openapi.sh:42-46`. The proposed job starts from that checked-in customer contract
 and uses the CLI's `scripts/sync_spec.py:73-94` for the cross-repository candidate. It does not
 duplicate API schema generation.
 
