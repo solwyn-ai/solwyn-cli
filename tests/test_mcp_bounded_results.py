@@ -93,17 +93,35 @@ def test_page_limit_delivers_completed_pages_and_exact_unread_cursor(monkeypatch
 def test_deadline_after_admission_keeps_known_state_and_blocks_recording(
     monkeypatch, tool
 ):
-    monkeypatch.setattr(operation, "DEADLINE_SECONDS", 0.07)
+    original_scope = operation.operation_scope
     original = _record.request_ingest
     finished = threading.Event()
+    arm_deadline = None
+
+    @asynccontextmanager
+    async def arranged_scope():
+        nonlocal arm_deadline
+        # Keep the real initial invocation deadline through setup and admission.
+        # Target the 70 ms expiry only once recording is entered, after the
+        # real settlement/journal and exact retry event have been retained.
+        async with original_scope() as control:
+            with anyio.fail_after(None) as deadline_scope:
+
+                def arm_deadline():
+                    control.deadline = min(control.deadline, time.monotonic() + 0.07)
+                    deadline_scope.deadline = anyio.current_time() + control.remaining()
+
+                yield control
 
     def delayed(**kwargs):
         try:
+            anyio.from_thread.run_sync(arm_deadline)
             time.sleep(0.12)
             return original(**kwargs)
         finally:
             finished.set()
 
+    monkeypatch.setattr(operation, "operation_scope", arranged_scope)
     monkeypatch.setattr(_record, "request_ingest", delayed)
     if tool == "budget_confirm":
         responses = [httpx.Response(204)]
