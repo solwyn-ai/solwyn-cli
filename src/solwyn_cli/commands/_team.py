@@ -182,8 +182,8 @@ def confirm(context: typer.Context, yes: bool) -> None:
 _TEAM_HINTS = {
     "seat_limit_exceeded": "Inspect solwyn whoami and solwyn plan list; the account needs enough seats before inviting or joining.",
     "email_provider_unavailable": "Email service is unavailable. Inspect solwyn team invites list before deliberately retrying; a previous attempt may have persisted invitation state.",
-    "last_owner_cannot_leave": "The last owner cannot leave. Keep this membership; arrange ownership with the dashboard or support before trying again. CLI role changes cannot transfer ownership.",
-    "owner_change_not_supported": "Owner role changes are unsupported. Use admin or member for non-owner targets; arrange ownership through the dashboard or support.",
+    "last_owner_cannot_leave": "The last owner cannot leave. Keep this membership and contact support about account ownership before trying again. CLI role changes cannot transfer ownership.",
+    "owner_change_not_supported": "Owner role changes are unsupported. Use admin or member for non-owner targets; contact support about account ownership.",
     "role_cannot_remove": "Owners may remove admins/members; admins may remove members. Any role may leave its own membership.",
     "user_already_has_account": "The invited user must have no active account membership. Inspect solwyn whoami before proceeding.",
     "user_already_exists": "This user already exists. Run solwyn login, then use signed-in invite accept.",

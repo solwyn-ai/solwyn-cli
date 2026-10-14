@@ -34,8 +34,8 @@ Owners can remove admins/members; admins can remove members. Any role may remove
 itself. Removal revokes the member's sessions, invalidates access tokens, and
 revokes project keys they created in this account. `team leave` resolves the actual
 JWT user's identity, never a supplied user ID. The last owner cannot leave (409).
-Arrange ownership through the dashboard or support; role changes cannot create
-another owner. `solwyn.team.remove.v1` acknowledges the confirmed removal and marks
+Keep the membership and contact support about ownership; role changes cannot
+create another owner. `solwyn.team.remove.v1` acknowledges the confirmed removal and marks
 `self_leave`. After leaving, log in again; deliberately use `account recover` if
 you need a personal account. The CLI does not clear unrelated credentials or
 recover automatically.
