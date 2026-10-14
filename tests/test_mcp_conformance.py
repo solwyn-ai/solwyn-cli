@@ -2202,13 +2202,27 @@ def test_mcp_record_details_populate_top_level_counts(monkeypatch):
     assert requests[0][2]["json"][0]["output_tokens"] == 3
 
 
-def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
+@pytest.mark.parametrize("known_rejection", [False, True])
+def test_mcp_confirm_ingest_failure_does_not_undo_settlement(
+    monkeypatch, known_rejection
+):
     key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[
             httpx.Response(204),
-            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+            *[
+                httpx.Response(
+                    503,
+                    headers={"Retry-After": "1"} if known_rejection else {},
+                    json={
+                        "detail": "Accounting maintenance is in progress; retry the batch."
+                    }
+                    if known_rejection
+                    else {"detail": "Proxy unavailable"},
+                )
+                for _ in range(2 if known_rejection else 1)
+            ],
         ],
         credentials=[key],
     )
@@ -2224,16 +2238,22 @@ def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
     )
     assert result.is_error is True
     assert result.structured_content["ok"] is False
-    assert result.structured_content["error"]["code"] == "service_busy"
-    assert "Nothing recorded" in result.structured_content["error"]["hint"]
+    assert result.structured_content["error"]["code"] == (
+        "service_busy" if known_rejection else "recording_unknown"
+    )
+    assert (
+        "Nothing recorded" in result.structured_content["error"]["hint"]
+    ) is known_rejection
     assert "settlement succeeded" in result.structured_content["error"]["message"]
     assert result.structured_content["data"]["reservation_id"] == "res"
     assert (
         result.structured_content["data"]["call_id"]
         == "12345678-1234-1234-1234-123456789abc"
     )
-    assert result.structured_content["data"]["recorded"]["status"] == "not_recorded"
-    assert len(requests) == 2
+    assert result.structured_content["data"]["recorded"]["status"] == (
+        "not_recorded" if known_rejection else "unknown"
+    )
+    assert len(requests) == (3 if known_rejection else 2)
 
 
 def test_list_alert_events_project_key_and_filters(monkeypatch):

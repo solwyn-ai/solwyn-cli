@@ -31,16 +31,32 @@ On a 503 with `Retry-After`, the shared client retries GET reads and metadata
 ingest once, sharing the existing 429 retry budget and waiting at most
 10 seconds (numeric seconds and HTTP dates are
 supported). It never retries a download after yielding output bytes. Other
-writes are not automatically retried on 503. Do not infer a write's outcome
+POSTs, including read-only cost simulation, are not automatically retried
+on 503. Simulation receives a service-busy read hint. `retry_rate_limit=False`
+controls only 429 retries; eligible GET/ingest 503 retries remain enabled.
+Do not infer a write's outcome
 from a generic service-busy response: inspect retained state before retrying.
 
 MCP exposes the fixed `service_busy` error code with a local retry hint.
-Budget admission's pre-auth load-shedding response means nothing was reserved;
-ingest 503 means nothing in that request batch was recorded, so the hint says
-it is safe to retry with the same call identities. MCP recording state is
-`not_recorded` for that known rejection and `unknown` for an ambiguous transport
-failure. Durable journal `outcome_unavailable` retains its existing code and
-unknown state; use the same operation ID with `recover_only` to inspect it.
+Single budget checks and durable journal admission receive a reservation-specific
+hint on Core's fixed budget-busy detail: no reservation was made, so admission
+is safe to retry. This does not promise zero side effects: advisory uncounted
+tallies may already have been folded and can overcount on retry. The CLI's legacy
+batch endpoint can return the identical busy detail after committing earlier
+items; its failed chunk remains unknown even on the first chunk. Keep completed
+results and do not blindly replay the failed chunk; later chunks were not submitted.
+
+Ingest `not_recorded` requires status 503, `Retry-After: 1`, and exactly one of
+Core's three rejection details: `Budget admission is busy; retry shortly`,
+`Account tag registry is busy; retry the batch.`, or
+`Accounting maintenance is in progress; retry the batch.` Only these responses
+prove that the request batch was unaccepted. Missing/different headers,
+unrecognized HTML/JSON proxy responses, and transport failures keep MCP
+`recording=unknown` and CLI `status=failed` with retained call IDs. Retry
+attribution with the same call identities and attempt indices regardless of
+whether absence is proven. Durable journal `outcome_unavailable` retains its
+existing code and unknown state; use the same operation ID with `recover_only`
+to inspect it.
 Other 503s, including accounting-gauge rebuilds, carry no absence guarantee.
 CLI service-busy failures use existing exit 1, not an auth or budget-denied exit.
 

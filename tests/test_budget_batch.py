@@ -285,7 +285,7 @@ def test_whole_request_failures_are_not_item_errors(
 
 
 @pytest.mark.parametrize("interface", ["cli", "mcp"])
-@pytest.mark.parametrize("recording", ["ingested", "skipped", "not_recorded"])
+@pytest.mark.parametrize("recording", ["ingested", "skipped", "not_recorded", "failed"])
 def test_batch_stopped_run_terminal_outcome_and_attribution(
     monkeypatch, interface, recording
 ):
@@ -301,8 +301,16 @@ def test_batch_stopped_run_terminal_outcome_and_attribution(
         responses.append(
             httpx.Response(202, json={"ingested": 1})
             if recording == "ingested"
-            else httpx.Response(503, json={"detail": "Unavailable"})
+            else httpx.Response(
+                503,
+                headers={"Retry-After": "1"} if recording == "not_recorded" else {},
+                json={"detail": "Account tag registry is busy; retry the batch."}
+                if recording == "not_recorded"
+                else {"detail": "Proxy unavailable"},
+            )
         )
+    if recording == "not_recorded":
+        responses.append(responses[-1])
     result, payload, requests, _ = invoke(
         monkeypatch,
         interface,
@@ -316,9 +324,13 @@ def test_batch_stopped_run_terminal_outcome_and_attribution(
     outcome = data["results"][0]["result"]
     assert outcome["reason"] == "run_terminated"
     assert outcome["run_control"] == directive
-    assert outcome["recorded"]["status"] == recording
+    assert outcome["recorded"]["status"] == (
+        "unknown" if recording == "failed" and interface == "mcp" else recording
+    )
     assert requests[0][2]["json"]["checks"][0]["run_directive_version"] == "1"
-    assert len(requests) == (1 if recording == "skipped" else 2)
+    assert len(requests) == (
+        1 if recording == "skipped" else 3 if recording == "not_recorded" else 2
+    )
 
 
 @pytest.mark.parametrize("interface", ["cli", "mcp"])

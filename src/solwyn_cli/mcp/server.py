@@ -104,6 +104,8 @@ from solwyn_cli.errors import (
     ApiError,
     BUDGET_BUSY_HINT,
     INGEST_BUSY_HINT,
+    INGEST_UNKNOWN_HINT,
+    LEGACY_BATCH_BUSY_HINT,
     MEMBERSHIP_RECOVERY_HINT,
     SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
@@ -993,6 +995,8 @@ def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
     if code == "service_busy" and error.hint in {
         BUDGET_BUSY_HINT,
         INGEST_BUSY_HINT,
+        INGEST_UNKNOWN_HINT,
+        LEGACY_BATCH_BUSY_HINT,
         WRITE_BUSY_HINT,
     }:
         return error.hint

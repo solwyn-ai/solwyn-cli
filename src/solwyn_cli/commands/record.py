@@ -27,7 +27,7 @@ from solwyn_cli.commands._record import (
 )
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands._tags import parse_tags
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import ApiError, is_ingest_unaccepted
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
@@ -336,7 +336,7 @@ def record(
         ):
             result.status = (
                 "not_recorded"
-                if error.status_code == 503
+                if is_ingest_unaccepted(error)
                 and not (result.ingested or result.rejected or result.duplicates)
                 else "failed"
             )

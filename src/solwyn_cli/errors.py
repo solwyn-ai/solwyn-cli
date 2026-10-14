@@ -15,9 +15,24 @@ WRITE_BUSY_HINT = (
     "before retrying in a moment."
 )
 BUDGET_BUSY_DETAIL = "Budget admission is busy; retry shortly"
-BUDGET_BUSY_HINT = "Nothing reserved by this request; safe to retry in a moment."
+BUDGET_BUSY_HINT = "No reservation was made by this request; safe to retry in a moment."
+LEGACY_BATCH_BUSY_HINT = (
+    "Completed results remain valid; do not replay completed checks. "
+    "Reservation state within the failed chunk is unknown; later chunks were not submitted."
+)
 INGEST_BUSY_HINT = (
     "Nothing recorded by this batch; safe to retry in a moment with the same call_ids."
+)
+INGEST_UNKNOWN_HINT = (
+    "Recording outcome may be unknown; preserve call identity and retry in a moment "
+    "with the same call_ids and attempt indices."
+)
+_INGEST_UNACCEPTED_DETAILS = frozenset(
+    {
+        BUDGET_BUSY_DETAIL,
+        "Account tag registry is busy; retry the batch.",
+        "Accounting maintenance is in progress; retry the batch.",
+    }
 )
 MEMBERSHIP_RECOVERY_HINT = "Run solwyn account recover to recover a personal account."
 
@@ -33,6 +48,7 @@ class ApiError(RuntimeError):
         message: str,
         hint: str | None,
         detail: RawDetail | None,
+        retry_after: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -40,6 +56,7 @@ class ApiError(RuntimeError):
         self.message = message
         self.hint = hint
         self.detail = detail
+        self.retry_after = retry_after
 
 
 def _safe_cta_path(value: object) -> str | None:
@@ -171,13 +188,36 @@ def error_from_response(
         message=message,
         hint=hint,
         detail=detail,
+        retry_after=response.headers.get("Retry-After"),
     )
 
 
-def is_budget_admission_busy(error: BaseException) -> bool:
-    """Recognize Core's pre-auth shedding, not a mid-batch backend failure."""
+def is_budget_admission_busy(error: BaseException, *, path: str) -> bool:
+    """Prove no reservation only on single checks and the durable journal.
+
+    The legacy batch loop can commit earlier reservations before Core's global
+    handler returns the same detail as the pre-auth capacity middleware.
+    """
+    return (
+        urlsplit(path).path.strip("/")
+        in {"api/v1/budgets/check", "api/v1/budgets/check/batches"}
+        and isinstance(error, ApiError)
+        and error.status_code == 503
+        and error.detail == BUDGET_BUSY_DETAIL
+    )
+
+
+def is_ingest_unaccepted(error: BaseException) -> bool:
+    """Recognize Core's three rolled-back ingest capacity responses.
+
+    Exact fixed details plus Retry-After: 1 are the current runtime contract.
+    Generic/proxy 503s and missing headers do not prove absence. Eligibility
+    for an identical-call-ID replay is a separate client policy.
+    """
     return (
         isinstance(error, ApiError)
         and error.status_code == 503
-        and error.detail == BUDGET_BUSY_DETAIL
+        and error.retry_after == "1"
+        and isinstance(error.detail, str)
+        and error.detail in _INGEST_UNACCEPTED_DETAILS
     )

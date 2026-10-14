@@ -27,14 +27,20 @@ replays succeed, while rejections and legacy timestamp collisions exit 1. On an 
 or partial write, retain the returned `call_ids` in input order before retrying; the
 result has `status=failed` and preserves the dispositions already received.
 
-Core's ingest 503 means nothing in that request batch was recorded. The client
-retries once when `Retry-After` is present, sharing the existing 429 retry budget
-and 10-second wait cap.
-If it remains busy, `record` exits 1 with a retry hint and `status=not_recorded`
-when no earlier chunk completed. A partial multi-chunk invocation retains
-`status=failed` and all known dispositions; only the failed chunk is unaccepted.
-Retry with the original `call_ids` and attempt indices. A transport failure
-remains uncertain; MCP reports `recording=unknown`, never an absence guarantee.
+Core's explicitly unaccepted ingest capacity responses use one of three fixed
+`detail` strings with `Retry-After: 1`: `Budget admission is busy; retry shortly`,
+`Account tag registry is busy; retry the batch.`, or
+`Accounting maintenance is in progress; retry the batch.` These prove no events
+in that request batch were recorded. The client retries ingest once when any
+`Retry-After` is present, sharing the existing 429 retry budget and 10-second
+wait cap; this replay policy does not itself prove absence.
+If a recognized rejection remains, `record` exits 1 with a retry hint and
+`status=not_recorded` when no earlier chunk completed. A partial multi-chunk
+invocation retains `status=failed` and all known dispositions; the recognized
+rejection proves only the failed chunk was unaccepted. A generic/proxy 503,
+a missing or different header, or a transport failure remains uncertain:
+CLI retains `status=failed` and MCP reports `recording=unknown`. Always retry
+attribution with the original `call_ids` and attempt indices.
 
 Budget and quota periods use Core's server receive time (`received_at`), while
 cost analytics use the stored event `timestamp`. A backdated `record --batch`
@@ -80,13 +86,21 @@ either a nullable `result`, or `error_code` and `error_message`. Unknown models 
 per-item errors. All allowed exits 0, any denial exits 4, and errors without a denial
 exit 1. A request-level 404 or 503 fails the chunk. If an earlier chunk completed,
 its results and reservation IDs remain in output, alongside `failed_chunk_start`
-and `total_checks`; later chunks were not submitted. A middleware
-load-shedding 503 (`Budget admission is busy; retry shortly`) happens before
-authentication/admission: nothing was reserved in that chunk, and it is safe to
-retry that chunk in a moment. The CLI does not automatically replay budget
-checks. Other legacy batch 503s can occur after earlier items reserve funds;
-reservation state within that chunk remains unknown. Do not replay completed
-checks or assume rollback.
+and `total_checks`; later chunks were not submitted. Every legacy batch 503
+leaves reservation state within the failed chunk unknown, including
+`Budget admission is busy; retry shortly` with `Retry-After: 1`. Core uses that
+same response both before admission and after the legacy loop has committed
+earlier item reservations, so the response cannot distinguish those cases.
+This uncertainty applies even to the first chunk. Do not replay completed
+checks, assume rollback, or blindly resubmit the failed chunk. The CLI does not
+automatically replay budget checks.
+
+For single `/budgets/check` and durable `/budgets/check/batches`, that fixed
+busy detail proves no reservation was made by the request; retrying admission
+in a moment is safe. This is a reservation guarantee: single checks can already
+have folded advisory `uncounted_calls`/`uncounted_tokens` before lock contention.
+A retry can overcount this advisory upper-bound telemetry. Preserve caller
+values; the hint does not promise an absence of all side effects.
 The MCP `budget_check_batch` tool submits at most 32 checks to Core’s durable
 journal with a caller-retained UUIDv7. Recovery uses GET only; explicit denial
 attribution retry preserves its exact event. See [bounded MCP work and recovery](mcp-bounded-work.md)

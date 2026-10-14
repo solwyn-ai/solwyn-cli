@@ -22,9 +22,13 @@ from solwyn_cli.errors import (
     ApiError,
     BUDGET_BUSY_HINT,
     INGEST_BUSY_HINT,
+    INGEST_UNKNOWN_HINT,
+    LEGACY_BATCH_BUSY_HINT,
+    SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
     error_from_response,
     is_budget_admission_busy,
+    is_ingest_unaccepted,
 )
 
 
@@ -176,7 +180,10 @@ class SolwynClient:
         retry_rate_limit: bool = True,
         stream: bool = False,
     ) -> httpx.Response:
-        """Share one bounded 429/eligible-503 retry across JWT rotation."""
+        """Share one bounded 429/eligible-503 retry across JWT rotation.
+
+        retry_rate_limit controls only 429; eligible 503 retries remain enabled.
+        """
 
         def send() -> httpx.Response:
             if not stream:
@@ -234,18 +241,27 @@ class SolwynClient:
                 if error.code != "auth_capacity_exceeded":
                     error.hint = WRITE_BUSY_HINT
                 if method.upper() == "POST" and endpoint == "api/v1/metadata/ingest":
-                    error.hint = INGEST_BUSY_HINT
-                elif (
-                    method.upper() == "POST"
-                    and endpoint
-                    in {
-                        "api/v1/budgets/check",
-                        "api/v1/budgets/check/batch",
-                        "api/v1/budgets/check/batches",
-                    }
-                    and is_budget_admission_busy(error)
-                ):
-                    error.hint = BUDGET_BUSY_HINT
+                    error.hint = (
+                        INGEST_BUSY_HINT
+                        if is_ingest_unaccepted(error)
+                        else INGEST_UNKNOWN_HINT
+                    )
+                elif method.upper() == "POST":
+                    if endpoint == "api/v1/budgets/check/batch":
+                        error.hint = LEGACY_BATCH_BUSY_HINT
+                    elif is_budget_admission_busy(error, path=endpoint):
+                        error.hint = BUDGET_BUSY_HINT
+                    else:
+                        parts = endpoint.split("/")
+                        if (
+                            len(parts) == 6
+                            and parts[:3] == ["api", "v1", "projects"]
+                            and parts[3]
+                            and parts[4:] == ["costs", "simulate"]
+                        ):
+                            # Core's simulation route only reads historical usage.
+                            # Keep its service/read hint without enabling POST replay.
+                            error.hint = SERVICE_BUSY_HINT
             raise error
 
     def request_unauthenticated(
@@ -290,7 +306,11 @@ class SolwynClient:
         _stream: bool = False,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Make one logical request with bounded rate-limit and auth retries."""
+        """Make one logical request with bounded capacity and auth retries.
+
+        retry_rate_limit=False disables 429 retries only; eligible GET/ingest
+        503 responses still share the single capacity retry budget.
+        """
         relative_path, request_headers = self._prepare_request(path, kwargs)
         credential = self._resolve_credential()
         retry_state = [False]

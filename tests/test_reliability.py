@@ -120,10 +120,10 @@ def test_busy_without_retry_after_is_not_automatically_replayed():
 
 
 @pytest.mark.parametrize(
-    "detail,safe",
-    [(BUSY, True), ("Budget backend temporarily unavailable; retry", False)],
+    "detail",
+    [BUSY, "Budget backend temporarily unavailable; retry"],
 )
-def test_budget_absence_guarantee_only_for_pre_admission_shedding(detail, safe):
+def test_legacy_budget_busy_never_guarantees_no_reservation(detail):
     with SolwynClient(
         api_url="https://example.test",
         credential=KEY,
@@ -136,7 +136,8 @@ def test_budget_absence_guarantee_only_for_pre_admission_shedding(detail, safe):
         with pytest.raises(ApiError) as failure:
             client.request("POST", "/api/v1/budgets/check/batch")
     assert failure.value.hint is not None
-    assert ("Nothing reserved" in failure.value.hint) is safe
+    assert "Reservation state within the failed chunk is unknown" in failure.value.hint
+    assert "safe to retry" not in failure.value.hint
 
 
 @pytest.mark.parametrize("busy", [True, False])
@@ -144,7 +145,7 @@ def test_best_effort_recording_distinguishes_unaccepted_from_transport(busy):
     def handler(request):
         if busy:
             return httpx.Response(
-                503, headers={"Retry-After": "0"}, json={"detail": "busy"}
+                503, headers={"Retry-After": "1"}, json={"detail": BUSY}
             )
         raise httpx.ReadError("private failure")
 
@@ -294,12 +295,12 @@ def test_simulation_fallback_matches_core_pricing():
             "budget_check",
             {"model": "gpt-4o", "provider": "openai", "estimated_input_tokens": 1},
             BUSY,
-            "Nothing reserved",
+            "No reservation",
         ),
         (
             "record_call",
             {"model": "local", "provider": "ollama"},
-            "busy",
+            BUSY,
             "Nothing recorded",
         ),
     ],
@@ -310,7 +311,7 @@ def test_mcp_busy_is_fixed_safe_code_with_retry_hint(
     requests = _install_http(
         monkeypatch,
         responses=[
-            httpx.Response(503, headers={"Retry-After": "0"}, json={"detail": detail})
+            httpx.Response(503, headers={"Retry-After": "1"}, json={"detail": detail})
             for _ in range(1 if tool == "budget_check" else 2)
         ],
         credentials=[KEY],
@@ -330,7 +331,7 @@ def test_mcp_busy_is_fixed_safe_code_with_retry_hint(
         assert result.structured_content["recovery"]["recording"] == "not_recorded"
 
 
-@pytest.mark.parametrize("status,recording", [(503, "not_recorded"), (None, "unknown")])
+@pytest.mark.parametrize("status,recording", [(503, "unknown"), (None, "unknown")])
 def test_mcp_recording_preserves_transport_uncertainty(monkeypatch, status, recording):
     if status is None:
         from solwyn_cli.mcp import server
@@ -643,9 +644,7 @@ def test_record_cli_busy_is_known_unaccepted_and_preserves_identity(monkeypatch)
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(
-            503, headers={"Retry-After": "0"}, json={"detail": "busy"}
-        )
+        return httpx.Response(503, headers={"Retry-After": "1"}, json={"detail": BUSY})
 
     monkeypatch.setattr(
         record,
@@ -676,17 +675,19 @@ def test_record_cli_busy_is_known_unaccepted_and_preserves_identity(monkeypatch)
     assert len(requests) == 2
 
 
-def test_legacy_batch_completed_chunks_do_not_make_shedding_ambiguous():
+def test_legacy_batch_completed_chunks_keep_failed_chunk_uncertain():
     from solwyn_cli.commands.budget import BudgetCheckBatchData, BudgetCheckBatchFailure
     from solwyn_cli.errors import error_from_response
 
-    safe = error_from_response(httpx.Response(503, json={"detail": BUSY}))
+    busy = error_from_response(
+        httpx.Response(503, headers={"Retry-After": "1"}, json={"detail": BUSY})
+    )
     ambiguous = error_from_response(
         httpx.Response(
             503, json={"detail": "Budget backend temporarily unavailable; retry"}
         )
     )
     data = BudgetCheckBatchData(results=[], failed_chunk_start=32, total_checks=33)
-    assert "Nothing reserved" in BudgetCheckBatchFailure(safe, data).hint
-    assert "unknown" not in BudgetCheckBatchFailure(safe, data).hint
+    assert "No reservation" not in BudgetCheckBatchFailure(busy, data).hint
+    assert "unknown" in BudgetCheckBatchFailure(busy, data).hint
     assert "unknown" in BudgetCheckBatchFailure(ambiguous, data).hint

@@ -128,9 +128,21 @@ finding on this page.
   omits this status. This requires a Core change, not a CLI snapshot edit.
 - Give pre-auth budget-capacity shedding a typed machine code in OpenAPI,
   distinct from a mid-batch backend failure. At this Core HEAD, the middleware
-  returns the fixed string `Budget admission is busy; retry shortly` with
-  `Retry-After: 1`. Only this response proves no reservation was made. The
-  legacy `/budgets/check/batch` loop can return a different 503 after committing
-  earlier items; journal `outcome_unavailable` can also require GET recovery.
-  The CLI recognizes the current fixed middleware detail and preserves
-  uncertainty elsewhere. Do not broaden that guarantee to the uncounted tally.
+  and global `BudgetProjectBusyError` handler both return
+  `Budget admission is busy; retry shortly` with `Retry-After: 1`. The legacy
+  `/budgets/check/batch` loop can commit earlier item reservations before that
+  handler fires: the identical response does not prove no reservation for any
+  failed legacy chunk. The CLI preserves that uncertainty, completed results,
+  and later unsubmitted chunks. Single `/budgets/check` lock/floor errors precede
+  reservation; durable `/budgets/check/batches` converts route failures to
+  structured `outcome_unavailable`, requiring same-ID GET recovery. Only these
+  two paths receive the fixed-detail no-reservation hint. Advisory uncounted
+  tallies can already be folded before a single-check lock failure; retries may
+  overcount their upper bound. Do not broaden reservation absence to all effects.
+- Give explicitly unaccepted ingest capacity responses stable machine codes
+  and declare their rollback guarantee. The CLI currently requires status 503,
+  `Retry-After: 1`, and one of the exact budget-busy, tag-registry-busy, or
+  accounting-maintenance details from Core's three handlers. Unrecognized proxy
+  responses or missing/different headers retain recording uncertainty. Identical
+  call-ID replay remains separately safe under ingest deduplication; it cannot
+  establish that the earlier request recorded nothing.

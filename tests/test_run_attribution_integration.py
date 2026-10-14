@@ -84,7 +84,7 @@ def _check(
 
 
 @pytest.mark.parametrize("interface", ["cli", "mcp"])
-@pytest.mark.parametrize("recording", ["ingested", "skipped", "not_recorded"])
+@pytest.mark.parametrize("recording", ["ingested", "skipped", "not_recorded", "failed"])
 @pytest.mark.parametrize("from_environment", [False, True])
 def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
     monkeypatch, interface, recording, from_environment
@@ -94,8 +94,16 @@ def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
         responses.append(
             httpx.Response(202, json={"ingested": 1})
             if recording == "ingested"
-            else httpx.Response(503, json={"detail": "temporarily unavailable"})
+            else httpx.Response(
+                503,
+                headers={"Retry-After": "1"} if recording == "not_recorded" else {},
+                json={"detail": "Account tag registry is busy; retry the batch."}
+                if recording == "not_recorded"
+                else {"detail": "Proxy unavailable"},
+            )
         )
+    if recording == "not_recorded":
+        responses.append(responses[-1])
     result, payload, requests, clients, remaining = _check(
         monkeypatch,
         interface,
@@ -111,7 +119,9 @@ def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
         data = payload["data"]
     assert data["reason"] == "run_terminated"
     assert data["run_control"] == STOPPED["run_control"]
-    assert data["recorded"]["status"] == recording
+    assert data["recorded"]["status"] == (
+        "unknown" if recording == "failed" and interface == "mcp" else recording
+    )
     assert data["call_id"] == data["recorded"]["call_ids"][0]
     check = requests[0][2]["json"]
     assert check["run_directive_version"] == "1"
@@ -119,7 +129,12 @@ def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
     assert check["tags"] == {"env": "prod"}
     assert [r[:2] for r in requests] == [
         ("POST", "/api/v1/budgets/check"),
-        *([] if recording == "skipped" else [("POST", "/api/v1/metadata/ingest")]),
+        *(
+            []
+            if recording == "skipped"
+            else [("POST", "/api/v1/metadata/ingest")]
+            * (2 if recording == "not_recorded" else 1)
+        ),
     ]
     if recording != "skipped":
         events = requests[1][2]["json"]

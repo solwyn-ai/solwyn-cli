@@ -13,7 +13,7 @@ from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent, TokenD
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._tags import validate_tags
-from solwyn_cli.errors import ApiError, INGEST_BUSY_HINT
+from solwyn_cli.errors import ApiError, INGEST_BUSY_HINT, is_ingest_unaccepted
 
 CALL_ID_HINT = "Use a canonical lowercase UUID: uuidgen | tr A-F a-f"
 _REJECTION_HINTS = {
@@ -115,7 +115,7 @@ def request_ingest(
             json=[event.model_dump(mode="json", exclude_none=True) for event in events],
         )
     except ApiError as error:
-        if error.status_code == 503:
+        if is_ingest_unaccepted(error):
             operation.remember(recording="not_recorded")
         raise
     if response.status_code != 202:
@@ -190,7 +190,7 @@ def record_best_effort(
     except operation.OperationLimit:
         raise
     except ApiError as error:
-        if error.status_code == 503:
+        if is_ingest_unaccepted(error):
             typer.echo(f"Warning: {INGEST_BUSY_HINT}", err=True)
             return RecordingResult(
                 status="not_recorded", ingested=0, call_ids=[event.call_id]
