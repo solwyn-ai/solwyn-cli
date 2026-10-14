@@ -151,7 +151,7 @@ def stream_export(*, client: SolwynClient, path: str, params: dict[str, Any]) ->
             "Effective-From",
             "Effective-To",
             "Retention-Clamped",
-            "Truncated",
+            "Export-Snapshot",
         ):
             name = f"X-Solwyn-{suffix}"
             if name in response.headers:

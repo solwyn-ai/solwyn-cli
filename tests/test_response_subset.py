@@ -14,6 +14,7 @@ from solwyn_cli.commands import audit, budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "PersonalAccountResponse": ("account_id",),
     "AccountSelfResponse": (
         "id",
         "display_name",
@@ -794,6 +795,11 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("POST", "/api/v1/accounts/me/personal"): (
+        "200",
+        "object",
+        "PersonalAccountResponse",
+    ),
     ("GET", "/api/v1/projects/{project_id}/spend-control-attestation"): (
         "200",
         "object",

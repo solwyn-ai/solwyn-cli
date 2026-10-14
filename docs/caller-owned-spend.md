@@ -27,6 +27,23 @@ replays succeed, while rejections and legacy timestamp collisions exit 1. On an 
 or partial write, retain the returned `call_ids` in input order before retrying; the
 result has `status=failed` and preserves the dispositions already received.
 
+Core's ingest 503 means nothing in that request batch was recorded. The client
+retries once when `Retry-After` is present, sharing the existing 429 retry budget
+and 10-second wait cap.
+If it remains busy, `record` exits 1 with a retry hint and `status=not_recorded`
+when no earlier chunk completed. A partial multi-chunk invocation retains
+`status=failed` and all known dispositions; only the failed chunk is unaccepted.
+Retry with the original `call_ids` and attempt indices. A transport failure
+remains uncertain; MCP reports `recording=unknown`, never an absence guarantee.
+
+Budget and quota periods use Core's server receive time (`received_at`), while
+cost analytics use the stored event `timestamp`. A backdated `record --batch`
+event counts against the budget and quota period in which Core receives it,
+but appears on its original day in `costs` if that timestamp is within Core's
+accepted clock bounds. Core clamps excessive future skew and, when a past
+horizon is configured, older timestamps; retention can also hide old analytics.
+Backdating records does not move spend out of the current budget period.
+
 Repeat `--tag key=value` to override environment tags. Keys and values preserve
 whitespace and case; empty values and equals signs in values are legal, commas in
 flag values are not. Tags allow at most 10 keys, keys of 1–64 characters, and values
@@ -63,8 +80,13 @@ either a nullable `result`, or `error_code` and `error_message`. Unknown models 
 per-item errors. All allowed exits 0, any denial exits 4, and errors without a denial
 exit 1. A request-level 404 or 503 fails the chunk. If an earlier chunk completed,
 its results and reservation IDs remain in output, alongside `failed_chunk_start`
-and `total_checks`; later chunks were not submitted. Reservation state inside a
-503-failed chunk is unknown. Do not replay completed checks or assume rollback.
+and `total_checks`; later chunks were not submitted. A middleware
+load-shedding 503 (`Budget admission is busy; retry shortly`) happens before
+authentication/admission: nothing was reserved in that chunk, and it is safe to
+retry that chunk in a moment. The CLI does not automatically replay budget
+checks. Other legacy batch 503s can occur after earlier items reserve funds;
+reservation state within that chunk remains unknown. Do not replay completed
+checks or assume rollback.
 The MCP `budget_check_batch` tool submits at most 32 checks to Core’s durable
 journal with a caller-retained UUIDv7. Recovery uses GET only; explicit denial
 attribution retry preserves its exact event. See [bounded MCP work and recovery](mcp-bounded-work.md)

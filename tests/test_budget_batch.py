@@ -285,7 +285,7 @@ def test_whole_request_failures_are_not_item_errors(
 
 
 @pytest.mark.parametrize("interface", ["cli", "mcp"])
-@pytest.mark.parametrize("recording", ["ingested", "skipped", "failed"])
+@pytest.mark.parametrize("recording", ["ingested", "skipped", "not_recorded"])
 def test_batch_stopped_run_terminal_outcome_and_attribution(
     monkeypatch, interface, recording
 ):
@@ -316,9 +316,7 @@ def test_batch_stopped_run_terminal_outcome_and_attribution(
     outcome = data["results"][0]["result"]
     assert outcome["reason"] == "run_terminated"
     assert outcome["run_control"] == directive
-    assert outcome["recorded"]["status"] == (
-        "unknown" if interface == "mcp" and recording == "failed" else recording
-    )
+    assert outcome["recorded"]["status"] == recording
     assert requests[0][2]["json"]["checks"][0]["run_directive_version"] == "1"
     assert len(requests) == (1 if recording == "skipped" else 2)
 

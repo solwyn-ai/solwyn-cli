@@ -2224,14 +2224,15 @@ def test_mcp_confirm_ingest_failure_does_not_undo_settlement(monkeypatch):
     )
     assert result.is_error is True
     assert result.structured_content["ok"] is False
-    assert result.structured_content["error"]["code"] == "recording_unknown"
+    assert result.structured_content["error"]["code"] == "service_busy"
+    assert "Nothing recorded" in result.structured_content["error"]["hint"]
     assert "settlement succeeded" in result.structured_content["error"]["message"]
     assert result.structured_content["data"]["reservation_id"] == "res"
     assert (
         result.structured_content["data"]["call_id"]
         == "12345678-1234-1234-1234-123456789abc"
     )
-    assert result.structured_content["data"]["recorded"]["status"] == "unknown"
+    assert result.structured_content["data"]["recorded"]["status"] == "not_recorded"
     assert len(requests) == 2
 
 

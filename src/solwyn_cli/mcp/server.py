@@ -100,7 +100,14 @@ from solwyn_cli.commands.runs import (
     resolve_agent_run_id,
 )
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import (
+    ApiError,
+    BUDGET_BUSY_HINT,
+    INGEST_BUSY_HINT,
+    MEMBERSHIP_RECOVERY_HINT,
+    SERVICE_BUSY_HINT,
+    WRITE_BUSY_HINT,
+)
 
 
 DataT = TypeVar("DataT", bound=BaseModel)
@@ -160,6 +167,9 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
     }
 )
 _SAFE_REMOTE_HINTS = {
+    "service_busy": SERVICE_BUSY_HINT,
+    "account_membership_revoked": MEMBERSHIP_RECOVERY_HINT,
+    "outcome_unavailable": "Recover with the same operation_id using recover_only; admission may have applied.",
     "authentication_failed": "Run solwyn login again, then retry.",
     "authentication_required": "Run solwyn login, then retry.",
     "forbidden": "Check account access for this operation, then retry.",
@@ -785,6 +795,7 @@ def _execution_outcome(result: ResultT) -> ResultT:
         "failed",
         "unknown",
         "stopped",
+        "not_recorded",
     }:
         settled = (
             isinstance(result.data, BudgetConfirmData)
@@ -794,7 +805,9 @@ def _execution_outcome(result: ResultT) -> ResultT:
             update={
                 "ok": False,
                 "error": _ToolError(
-                    code="recording_rejected"
+                    code="service_busy"
+                    if recorded.status == "not_recorded"
+                    else "recording_rejected"
                     if recorded.status == "rejected"
                     else "recording_unknown"
                     if recorded.status == "unknown"
@@ -807,6 +820,11 @@ def _execution_outcome(result: ResultT) -> ResultT:
                         else "Attribution recording did not complete."
                     ),
                     hint=(
+                        (INGEST_BUSY_HINT + " ")
+                        if recorded.status == "not_recorded"
+                        else ""
+                    )
+                    + (
                         "After known settlement success, use budget_confirm record_only with the FIRST retained recording_retry; never replace it with a settlement-only replay's unused new event. Keep the earlier settlement state separately and do not reserve again."
                         if isinstance(result.data, BudgetConfirmData)
                         else "Preserve the call identity and retry attribution with the same call_id and attempt; do not reserve again."
@@ -957,8 +975,12 @@ def _normalized_remote_error_code(error: ApiError) -> str:
     """Return only fixed semantic codes; never reflect arbitrary server values."""
     if error.status_code == 429:
         return "rate_limited"
+    if error.code == "account_membership_revoked":
+        return "account_membership_revoked"
     if error.code in _SAFE_REMOTE_ERROR_CODES:
         return error.code
+    if error.status_code == 503:
+        return "service_busy"
     if error.status_code == 401:
         return "authentication_failed"
     if error.status_code == 403:
@@ -968,6 +990,12 @@ def _normalized_remote_error_code(error: ApiError) -> str:
 
 def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
     """Keep only local allowlisted CTA paths from shared sanitized hints."""
+    if code == "service_busy" and error.hint in {
+        BUDGET_BUSY_HINT,
+        INGEST_BUSY_HINT,
+        WRITE_BUSY_HINT,
+    }:
+        return error.hint
     prefix = _ENTITLEMENT_HINT_PREFIXES.get(code)
     if prefix is None:
         return _SAFE_REMOTE_HINTS.get(code)
@@ -1236,15 +1264,20 @@ def _budget_check_batch_operation(
                 estimated_output_tokens=estimated_output_tokens,
             )
         if data.mode == "record_only" and any(
-            item.status in {"failed", "rejected", "unknown", "stopped"}
+            item.status in {"failed", "rejected", "unknown", "stopped", "not_recorded"}
             for item in data.recordings
         ):
             return _error(
                 _BudgetCheckBatchResult,
-                code="recording_unknown"
+                code="service_busy"
+                if all(item.status == "not_recorded" for item in data.recordings)
+                else "recording_unknown"
                 if any(item.status == "unknown" for item in data.recordings)
                 else "recording_failed",
                 message="Attribution retry did not complete; admission was not retried.",
+                hint=INGEST_BUSY_HINT
+                if all(item.status == "not_recorded" for item in data.recordings)
+                else None,
             ).model_copy(update={"data": data})
         failed = any(item.state != "completed" for item in data.items)
         if failed:

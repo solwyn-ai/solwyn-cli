@@ -13,6 +13,7 @@ from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent, TokenD
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._tags import validate_tags
+from solwyn_cli.errors import ApiError, INGEST_BUSY_HINT
 
 CALL_ID_HINT = "Use a canonical lowercase UUID: uuidgen | tr A-F a-f"
 _REJECTION_HINTS = {
@@ -61,6 +62,7 @@ class RecordingResult(IngestResponse):
         "failed",
         "stopped",
         "unknown",
+        "not_recorded",
     ]
     call_ids: list[str] = Field(default_factory=list)
 
@@ -102,15 +104,20 @@ def build_event(**inputs: object) -> IngestMetadataEvent:
 def request_ingest(
     *, client: SolwynClient, events: list[IngestMetadataEvent]
 ) -> RecordingResult:
-    """Post one batch through the client's bounded 429 retry path."""
+    """Post one batch through the client's bounded capacity retry path."""
     operation.checkpoint()
     if len(events) == 1:
         operation.remember(call_id=events[0].call_id, recording="unknown")
-    response = client.request(
-        "POST",
-        "/api/v1/metadata/ingest",
-        json=[event.model_dump(mode="json", exclude_none=True) for event in events],
-    )
+    try:
+        response = client.request(
+            "POST",
+            "/api/v1/metadata/ingest",
+            json=[event.model_dump(mode="json", exclude_none=True) for event in events],
+        )
+    except ApiError as error:
+        if error.status_code == 503:
+            operation.remember(recording="not_recorded")
+        raise
     if response.status_code != 202:
         raise ValueError("Metadata ingest did not return 202.")
     data = IngestResponse.model_validate(response.json())
@@ -182,6 +189,21 @@ def record_best_effort(
         return result
     except operation.OperationLimit:
         raise
+    except ApiError as error:
+        if error.status_code == 503:
+            typer.echo(f"Warning: {INGEST_BUSY_HINT}", err=True)
+            return RecordingResult(
+                status="not_recorded", ingested=0, call_ids=[event.call_id]
+            )
+        typer.echo(
+            "Warning: attribution recording failed; preserve the call identity for recovery.",
+            err=True,
+        )
+        return RecordingResult(
+            status="unknown" if operation.current() else "failed",
+            ingested=0,
+            call_ids=[event.call_id],
+        )
     except Exception:
         # Settlement/denial already succeeded. Preserve that known state even on
         # an unexpected recording failure, without printing its private details.

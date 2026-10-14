@@ -1301,6 +1301,7 @@
                   "enum": [
                     "not_submitted",
                     "unknown",
+                    "not_recorded",
                     "ingested",
                     "deduplicated",
                     "failed",
@@ -1390,7 +1391,8 @@
                 "skipped",
                 "failed",
                 "stopped",
-                "unknown"
+                "unknown",
+                "not_recorded"
               ],
               "title": "Status",
               "type": "string"
@@ -3201,6 +3203,7 @@
                   "enum": [
                     "not_submitted",
                     "unknown",
+                    "not_recorded",
                     "ingested",
                     "deduplicated",
                     "failed",
@@ -3290,7 +3293,8 @@
                 "skipped",
                 "failed",
                 "stopped",
-                "unknown"
+                "unknown",
+                "not_recorded"
               ],
               "title": "Status",
               "type": "string"
@@ -6831,6 +6835,7 @@
                   "enum": [
                     "not_submitted",
                     "unknown",
+                    "not_recorded",
                     "ingested",
                     "deduplicated",
                     "failed",
@@ -6894,7 +6899,8 @@
                 "skipped",
                 "failed",
                 "stopped",
-                "unknown"
+                "unknown",
+                "not_recorded"
               ],
               "title": "Status",
               "type": "string"
@@ -10360,6 +10366,7 @@
                   "enum": [
                     "not_submitted",
                     "unknown",
+                    "not_recorded",
                     "ingested",
                     "deduplicated",
                     "failed",
@@ -10449,7 +10456,8 @@
                 "skipped",
                 "failed",
                 "stopped",
-                "unknown"
+                "unknown",
+                "not_recorded"
               ],
               "title": "Status",
               "type": "string"

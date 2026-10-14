@@ -118,3 +118,19 @@ and closed `solwyn-ai/core` issues found no earlier matches on 2026-09-05. They 
 No finding from the wave-0 list was obsolete at the verified commit. When Core resolves one,
 move it to a resolved section with the fixing issue or commit instead of leaving a stale current
 finding on this page.
+
+
+## Reliability audit at Core `4925784d` (2026-10-14)
+
+- Declare the accounting-rebuild 503 from `GET /api/v1/account/costs` in OpenAPI.
+  `_load_account_project_metadata` already refuses to publish a partial gauge
+  when durable accounting is rebuilding; the route's response declaration
+  omits this status. This requires a Core change, not a CLI snapshot edit.
+- Give pre-auth budget-capacity shedding a typed machine code in OpenAPI,
+  distinct from a mid-batch backend failure. At this Core HEAD, the middleware
+  returns the fixed string `Budget admission is busy; retry shortly` with
+  `Retry-After: 1`. Only this response proves no reservation was made. The
+  legacy `/budgets/check/batch` loop can return a different 503 after committing
+  earlier items; journal `outcome_unavailable` can also require GET recovery.
+  The CLI recognizes the current fixed middleware detail and preserves
+  uncertainty elsewhere. Do not broaden that guarantee to the uncounted tally.

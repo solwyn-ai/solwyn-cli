@@ -9,6 +9,18 @@ import httpx
 
 RawDetail: TypeAlias = str | dict[str, Any]
 
+SERVICE_BUSY_HINT = "Service is busy; retry in a moment."
+WRITE_BUSY_HINT = (
+    "Service is busy. This write's outcome may be unknown; inspect known state "
+    "before retrying in a moment."
+)
+BUDGET_BUSY_DETAIL = "Budget admission is busy; retry shortly"
+BUDGET_BUSY_HINT = "Nothing reserved by this request; safe to retry in a moment."
+INGEST_BUSY_HINT = (
+    "Nothing recorded by this batch; safe to retry in a moment with the same call_ids."
+)
+MEMBERSHIP_RECOVERY_HINT = "Run solwyn account recover to recover a personal account."
+
 
 class ApiError(RuntimeError):
     """A structured request failure whose repr does not expose raw detail."""
@@ -142,10 +154,30 @@ def error_from_response(
                 "Your role cannot perform this action; use solwyn whoami to inspect it."
             )
 
+    if response.status_code == 401 and (
+        code == "account_membership_revoked" or detail == "account_membership_revoked"
+    ):
+        code = "account_membership_revoked"
+        hint = MEMBERSHIP_RECOVERY_HINT
+
+    if response.status_code == 503:
+        if code == "http_error":
+            code = "service_busy"
+        hint = SERVICE_BUSY_HINT
+
     return ApiError(
         status_code=response.status_code,
         code=code,
         message=message,
         hint=hint,
         detail=detail,
+    )
+
+
+def is_budget_admission_busy(error: BaseException) -> bool:
+    """Recognize Core's pre-auth shedding, not a mid-batch backend failure."""
+    return (
+        isinstance(error, ApiError)
+        and error.status_code == 503
+        and error.detail == BUDGET_BUSY_DETAIL
     )

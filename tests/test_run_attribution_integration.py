@@ -84,7 +84,7 @@ def _check(
 
 
 @pytest.mark.parametrize("interface", ["cli", "mcp"])
-@pytest.mark.parametrize("recording", ["ingested", "skipped", "failed"])
+@pytest.mark.parametrize("recording", ["ingested", "skipped", "not_recorded"])
 @pytest.mark.parametrize("from_environment", [False, True])
 def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
     monkeypatch, interface, recording, from_environment
@@ -111,10 +111,7 @@ def test_stopped_run_keeps_terminal_outcome_and_exactly_one_receipt(
         data = payload["data"]
     assert data["reason"] == "run_terminated"
     assert data["run_control"] == STOPPED["run_control"]
-    expected_recording = (
-        "unknown" if interface == "mcp" and recording == "failed" else recording
-    )
-    assert data["recorded"]["status"] == expected_recording
+    assert data["recorded"]["status"] == recording
     assert data["call_id"] == data["recorded"]["call_ids"][0]
     check = requests[0][2]["json"]
     assert check["run_directive_version"] == "1"

@@ -62,6 +62,7 @@ class OperationRecovery(BaseModel):
         Literal[
             "not_submitted",
             "unknown",
+            "not_recorded",
             "ingested",
             "deduplicated",
             "failed",

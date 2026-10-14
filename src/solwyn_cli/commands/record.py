@@ -334,7 +334,12 @@ def record(
             or result.rejected
             or result.duplicates
         ):
-            result.status = "failed"
+            result.status = (
+                "not_recorded"
+                if error.status_code == 503
+                and not (result.ingested or result.rejected or result.duplicates)
+                else "failed"
+            )
             output_engine(context).write_success(
                 schema="solwyn.record.v1", data=result, table=recording_table(result)
             )

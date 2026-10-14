@@ -111,7 +111,7 @@ class SimulationExcludedCounts(_Response):
 
 
 class SimulationCaveats(_Response):
-    pricing_version: str = "2026-08-06"
+    pricing_version: str = "2026-09-23"
     current_rates_snapshot: bool = True
     baseline_uses_stored_actual_cost: bool = True
     tokenizer_equivalence_approximation: bool = True

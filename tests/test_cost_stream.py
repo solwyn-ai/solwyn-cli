@@ -75,7 +75,8 @@ def test_export_command_preserves_bytes_and_reports_headers(monkeypatch):
                 stream=Body(),
                 headers={
                     "X-Solwyn-Retention-Clamped": "true",
-                    "X-Solwyn-Truncated": "true",
+                    "X-Solwyn-Truncated": "false",
+                    "X-Solwyn-Export-Snapshot": "statement",
                     "X-Solwyn-Effective-From": "2026-08-01T00:00:00Z",
                 },
             )
@@ -99,7 +100,8 @@ def test_export_command_preserves_bytes_and_reports_headers(monkeypatch):
     assert result.exit_code == 0, result.exception
     assert result.stdout == "name,cost\n'=SUM(A1),2\n"
     assert "X-Solwyn-Retention-Clamped: true" in result.stderr
-    assert "X-Solwyn-Truncated: true" in result.stderr
+    assert "X-Solwyn-Export-Snapshot: statement" in result.stderr
+    assert "X-Solwyn-Truncated" not in result.stderr
     assert captured == [
         (
             "GET",
@@ -164,3 +166,32 @@ def test_stream_interruption_does_not_replay_partial_body():
                 next(iterator)
     assert len(calls) == 1
     assert body.closed
+
+
+def test_stream_busy_retries_before_yielding_any_export_bytes():
+    first = Body()
+    second = Body()
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(
+            503 if len(requests) == 1 else 200,
+            headers={"Retry-After": "0"},
+            stream=first if len(requests) == 1 else second,
+        )
+
+    with SolwynClient(
+        api_url="https://example.test",
+        credential=ProjectKeyCredential(
+            api_key="sk_proj_" + "a1" * 32, source="environment"
+        ),
+        transport=httpx.MockTransport(handle),
+        sleeper=lambda _: None,
+    ) as client:
+        with client.stream("GET", "/api/v1/projects/p/costs/export") as response:
+            assert first.closed
+            assert second.reads == 0
+            assert b"".join(response.iter_bytes()) == b"name,cost\n'=SUM(A1),2\n"
+    assert len(requests) == 2
+    assert second.closed

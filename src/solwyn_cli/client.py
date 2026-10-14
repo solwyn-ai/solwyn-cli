@@ -18,7 +18,14 @@ from solwyn_cli.auth import (
     request_with_refresh_retry,
     resolve_credential,
 )
-from solwyn_cli.errors import ApiError, error_from_response
+from solwyn_cli.errors import (
+    ApiError,
+    BUDGET_BUSY_HINT,
+    INGEST_BUSY_HINT,
+    WRITE_BUSY_HINT,
+    error_from_response,
+    is_budget_admission_busy,
+)
 
 
 CONNECT_TIMEOUT_SECONDS = 5.0
@@ -158,7 +165,7 @@ class SolwynClient:
         request_headers["User-Agent"] = f"solwyn-cli/{__version__}"
         return path.lstrip("/"), request_headers
 
-    def _send_with_rate_limit_retry(
+    def _send_with_capacity_retry(
         self,
         *,
         method: str,
@@ -169,7 +176,7 @@ class SolwynClient:
         retry_rate_limit: bool = True,
         stream: bool = False,
     ) -> httpx.Response:
-        """Send with the one shared bounded 429 retry budget."""
+        """Share one bounded 429/eligible-503 retry across JWT rotation."""
 
         def send() -> httpx.Response:
             if not stream:
@@ -186,8 +193,25 @@ class SolwynClient:
             return response
 
         response = send()
-        if retry_rate_limit and response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            if retry_state[0]:
+        while True:
+            retryable = False
+            if retry_rate_limit and response.status_code == 429:
+                retryable = True
+            elif response.status_code == 503:
+                endpoint = urlsplit(path).path.rstrip("/")
+                safe_busy_retry = "Retry-After" in response.headers and (
+                    method.upper() == "GET"
+                    or method.upper() == "POST"
+                    and endpoint == "api/v1/metadata/ingest"
+                )
+                login_capacity = (
+                    method.upper() == "POST"
+                    and endpoint == "api/v1/auth/login"
+                    and error_from_response(response).code == "auth_capacity_exceeded"
+                )
+                if safe_busy_retry or login_capacity:
+                    retryable = True
+            if not retryable or retry_state[0]:
                 return response
             retry_state[0] = True
             delay = _retry_after_seconds(
@@ -196,14 +220,33 @@ class SolwynClient:
             self._sleeper(delay)
             response.close()
             response = send()
-        return response
 
     @staticmethod
-    def _raise_for_unsuccessful_response(response: httpx.Response) -> None:
+    def _raise_for_unsuccessful_response(
+        response: httpx.Response, *, method: str, path: str
+    ) -> None:
         if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
             raise error_from_response(response, code_override="rate_limited")
         if not response.is_success:
-            raise error_from_response(response)
+            error = error_from_response(response)
+            if response.status_code == 503 and method.upper() != "GET":
+                endpoint = urlsplit(path).path.rstrip("/")
+                if error.code != "auth_capacity_exceeded":
+                    error.hint = WRITE_BUSY_HINT
+                if method.upper() == "POST" and endpoint == "api/v1/metadata/ingest":
+                    error.hint = INGEST_BUSY_HINT
+                elif (
+                    method.upper() == "POST"
+                    and endpoint
+                    in {
+                        "api/v1/budgets/check",
+                        "api/v1/budgets/check/batch",
+                        "api/v1/budgets/check/batches",
+                    }
+                    and is_budget_admission_busy(error)
+                ):
+                    error.hint = BUDGET_BUSY_HINT
+            raise error
 
     def request_unauthenticated(
         self,
@@ -216,7 +259,7 @@ class SolwynClient:
         """Make a guarded request without resolving or sending credentials."""
         relative_path, request_headers = self._prepare_request(path, kwargs)
         try:
-            response = self._send_with_rate_limit_retry(
+            response = self._send_with_capacity_retry(
                 method=method,
                 path=relative_path,
                 headers=request_headers,
@@ -232,7 +275,9 @@ class SolwynClient:
                 detail=None,
             ) from None
         if response.status_code not in accepted_statuses:
-            self._raise_for_unsuccessful_response(response)
+            self._raise_for_unsuccessful_response(
+                response, method=method, path=relative_path
+            )
         return response
 
     def request(
@@ -257,7 +302,7 @@ class SolwynClient:
         def send(resolved: ResolvedCredential) -> httpx.Response:
             headers = request_headers.copy()
             headers["Authorization"] = f"Bearer {resolved.bearer_value()}"
-            return self._send_with_rate_limit_retry(
+            return self._send_with_capacity_retry(
                 method=method,
                 path=relative_path,
                 headers=headers,
@@ -288,7 +333,9 @@ class SolwynClient:
                 detail=None,
             ) from None
 
-        self._raise_for_unsuccessful_response(response)
+        self._raise_for_unsuccessful_response(
+            response, method=method, path=relative_path
+        )
         return response
 
     @contextmanager

@@ -181,6 +181,19 @@
     {
       "hidden": false,
       "is_group": false,
+      "json_schema": "solwyn.account.recover.v1",
+      "name": "recover",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "recover"
+      ],
+      "summary": "Recover a personal account after membership removal."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
       "json_schema": null,
       "name": "agent-context",
       "output_kind": "plain-text",
@@ -6358,6 +6371,15 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.account.alert-email.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.account.recover.v1",
       "universal_error_envelope": false
     },
     {

@@ -57,7 +57,7 @@ from solwyn_cli.commands._record import (
 )
 from solwyn_cli.commands._tags import parse_tags, validate_tags
 from solwyn_cli.commands._shared import exit_with_error, required_credential
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import ApiError, BUDGET_BUSY_HINT, is_budget_admission_busy
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
@@ -437,6 +437,11 @@ class BudgetCheckBatchFailure(Exception):
         self.hint = (
             _BATCH_ATTRIBUTION_FAILURE_HINT
             if attribution_failed
+            else (
+                "Completed results remain valid; do not replay completed checks. "
+                f"{BUDGET_BUSY_HINT} Later chunks were not submitted."
+            )
+            if is_budget_admission_busy(cause)
             else BATCH_FAILURE_HINT
         )
 
@@ -668,13 +673,18 @@ def request_recoverable_budget_batch(
     else:
         body = RecoverableBudgetCheckRequest(operation_id=operation_id, checks=checks)
         operation.remember(state="unknown")
-        response = client.request(
-            "POST",
-            "/api/v1/budgets/check/batches",
-            json=body.model_dump(mode="json", exclude_none=True),
-            retry_rate_limit=False,
-            retry_auth=False,
-        )
+        try:
+            response = client.request(
+                "POST",
+                "/api/v1/budgets/check/batches",
+                json=body.model_dump(mode="json", exclude_none=True),
+                retry_rate_limit=False,
+                retry_auth=False,
+            )
+        except ApiError as error:
+            if is_budget_admission_busy(error):
+                operation.remember(state="not_submitted")
+            raise
     snapshot = RecoverableBudgetCheckResponse[_JournalBudgetDecision].model_validate(
         response.json()
     )
