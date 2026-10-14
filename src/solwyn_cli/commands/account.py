@@ -124,3 +124,63 @@ def set_email(context: typer.Context, email: Annotated[str, typer.Argument()]) -
 def clear(context: typer.Context) -> None:
     """Remove the override and use the login email again (owner only)."""
     emit(context, SCHEMA, request(context, "DELETE", BASE, AlertEmailResponse))
+
+
+phone_app = typer.Typer(
+    help="Inspect phone verification and SMS consent.",
+    epilog=help_contract(
+        endpoint="GET /api/v1/account/phone",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.account.phone.v1",
+    ),
+)
+app.add_typer(phone_app, name="phone")
+
+
+@phone_app.command(
+    "show",
+    epilog=help_contract(
+        endpoint="GET /api/v1/account/phone",
+        auth="JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.account.phone.v1",
+    ),
+)
+def phone_show(context: typer.Context) -> None:
+    """Show phone and SMS prerequisites; verify and consent in the dashboard."""
+    from solwyn_cli.commands._account_reads import fetch_phone
+
+    credential = required_credential(context, resolve=resolve_credential)
+    try:
+        with SolwynClient(
+            api_url=command_context(context).api_url, credential=credential
+        ) as client:
+            data = fetch_phone(client=client)
+    except ApiError as error:
+        exit_with_error(context, error)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_required", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_phone_response", message="The phone response was invalid."
+            ),
+        )
+    output_engine(context).write_success(
+        schema="solwyn.account.phone.v1",
+        data=data,
+        table=TableData(
+            columns=("Field", "Value"),
+            rows=tuple(
+                (k, str(v) if v is not None else "none")
+                for k, v in data.model_dump(mode="json").items()
+            ),
+            fold_cells=True,
+        ),
+    )

@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class _Response(BaseModel):
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class CostGroup(_Response):

@@ -9,7 +9,7 @@ from solwyn_cli.commands._cost_models import CostWindow
 
 
 class _Response(BaseModel):
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class BaselineResult(_Response):

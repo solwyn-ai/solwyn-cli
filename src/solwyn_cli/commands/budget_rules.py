@@ -8,10 +8,11 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
+from solwyn_cli.commands._alert_models import AlertEventEntry, AlertEventWindow
 from urllib.parse import quote
 
 import typer
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, TypeAdapter, Field
 
 from solwyn_cli._vendor.wire import (
     BudgetMode,
@@ -90,6 +91,16 @@ class BudgetRulesData(BaseModel):
     model_config = ConfigDict(extra="forbid")
     project_id: str
     rules: list[_ThresholdState]
+    last_fired: dict[str, AlertEventEntry | None] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    latest_window: AlertEventWindow | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+
+BudgetRulesWithLatestData = BudgetRulesData
 
 
 class RuleActionResponse(BaseModel):
@@ -182,9 +193,39 @@ def _client(
         )
 
 
-def request_budget_rules(*, client: SolwynClient, project_id: str) -> BudgetRulesData:
+def request_budget_rules(
+    *, client: SolwynClient, project_id: str, with_last_fired: bool = False
+) -> BudgetRulesData:
+    if with_last_fired:
+        from solwyn_cli.commands._alert_reads import require_alert_jwt
+
+        require_alert_jwt(client)
     status = request_budget_status(client=client, project_id=project_id)
-    return BudgetRulesData(project_id=project_id, rules=status.thresholds)
+    data = BudgetRulesData(project_id=project_id, rules=status.thresholds)
+    if not with_last_fired:
+        return data
+    from solwyn_cli.commands._alert_reads import AlertRuleLookup, request_latest_events
+
+    latest, window = request_latest_events(
+        client=client,
+        rules=[
+            AlertRuleLookup(
+                rule_key=r.rule_key,
+                project_id=project_id,
+                rule_type=r.type,
+                percent=getattr(r, "percent", None),
+            )
+            for r in data.rules
+        ],
+    )
+    return BudgetRulesWithLatestData(
+        **data.model_dump(),
+        latest_window=window,
+        last_fired={
+            rule.rule_key: firing.last_fired
+            for rule, firing in zip(data.rules, latest, strict=True)
+        },
+    )
 
 
 def _rules_table(data: BudgetRulesData) -> TableData:
@@ -224,6 +265,17 @@ def _rules_table(data: BudgetRulesData) -> TableData:
                 usage_limit,
             )
         )
+    with_latest = data.last_fired is not None
+    if with_latest:
+        rows = [
+            (
+                *row,
+                data.last_fired[row[0]].emitted_at.isoformat()
+                if data.last_fired[row[0]]
+                else "—",
+            )
+            for row in rows
+        ]
     return TableData(
         columns=(
             "Rule key",
@@ -236,7 +288,8 @@ def _rules_table(data: BudgetRulesData) -> TableData:
             "Channels",
             "Muted reason",
             "Usage / limit",
-        ),
+        )
+        + (("Last fired",) if with_latest else ()),
         rows=tuple(rows),
         fold_cells=True,
     )
@@ -270,10 +323,21 @@ def _write_rules(
         schema="solwyn.budget.rules.v1",
     ),
 )
-def list_rules(context: typer.Context) -> None:
+def list_rules(
+    context: typer.Context,
+    with_last_fired: Annotated[
+        bool,
+        typer.Option(
+            "--with-last-fired",
+            help="JWT only: include latest firing within Core’s 30d retention window.",
+        ),
+    ] = False,
+) -> None:
     """List conditions, routing, and separate paused and snoozed states."""
     with _client(context, write=False) as (client, project):
-        data = request_budget_rules(client=client, project_id=project)
+        data = request_budget_rules(
+            client=client, project_id=project, with_last_fired=with_last_fired
+        )
     _write_rules(context, data)
 
 

@@ -13,6 +13,7 @@ from solwyn_cli.commands._entitlement import (
     ScheduledPlanChange,
     TierCapabilities,
     fetch_billing_status,
+    fetch_billing_catalog,
 )
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
@@ -172,8 +173,26 @@ def _table(data: _PlanData) -> TableData:
     )
 
 
+app = typer.Typer(
+    invoke_without_command=True,
+    help="Inspect plans and entitlements.",
+    epilog=PLAN_HELP,
+)
+
+
+def fetch_plan(*, client: SolwynClient) -> _PlanData:
+    status = fetch_billing_status(client=client)
+    return _PlanData(
+        **status.model_dump(exclude={"stripe_customer_id", "recent_invoices"}),
+        cta_path=_CTA_PATH,
+    )
+
+
+@app.callback()
 def plan(context: typer.Context) -> None:
     """Show the current plan, subscription lifecycle, limits, and capabilities."""
+    if context.invoked_subcommand is not None:
+        return
     runtime = command_context(context)
     credential = required_credential(context, resolve=resolve_credential)
     try:
@@ -181,20 +200,7 @@ def plan(context: typer.Context) -> None:
             api_url=runtime.api_url,
             credential=credential,
         ) as client:
-            status = fetch_billing_status(client=client)
-        data = _PlanData(
-            tier=status.tier,
-            billing_interval=status.billing_interval,
-            status=status.status,
-            current_period_end=status.current_period_end,
-            cancel_at=status.cancel_at,
-            grace_period_until=status.grace_period_until,
-            scheduled_plan_change=status.scheduled_plan_change,
-            pending_plan=status.pending_plan,
-            limits=status.limits,
-            capabilities=status.capabilities,
-            cta_path=_CTA_PATH,
-        )
+            data = fetch_plan(client=client)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -215,4 +221,71 @@ def plan(context: typer.Context) -> None:
         schema="solwyn.plan.v1",
         data=data,
         table=_table(data),
+    )
+
+
+@app.command(
+    "list",
+    epilog=help_contract(
+        endpoint="GET /api/v1/billing/catalog",
+        auth="JWT or project key with user context",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth",
+        schema="solwyn.plan.catalog.v1",
+    ),
+)
+def list_plans(context: typer.Context) -> None:
+    """Compare catalog prices in cents, included requests, limits and capabilities."""
+    credential = required_credential(context, resolve=resolve_credential)
+    try:
+        with SolwynClient(
+            api_url=command_context(context).api_url, credential=credential
+        ) as client:
+            data = fetch_billing_catalog(client=client)
+    except ApiError as error:
+        exit_with_error(context, error)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_plan_catalog_response",
+                message="The plan catalog response was invalid.",
+            ),
+        )
+    output_engine(context).write_success(
+        schema="solwyn.plan.catalog.v1",
+        data=data,
+        table=TableData(
+            columns=(
+                "Tier",
+                "Currency",
+                "Month cents",
+                "Year cents",
+                "Included requests",
+                "Overage decimal cents",
+                "Limits",
+                "Capabilities",
+            ),
+            rows=tuple(
+                (
+                    tier.tier,
+                    data.currency,
+                    str(tier.prices.month.amount_cents)
+                    if tier.prices.month
+                    else "none",
+                    str(tier.prices.year.amount_cents) if tier.prices.year else "none",
+                    str(tier.overage.included_requests) if tier.overage else "none",
+                    tier.overage.unit_amount_decimal_cents if tier.overage else "none",
+                    str(tier.limits),
+                    tier.capabilities.model_dump_json(),
+                )
+                for tier in data.tiers.values()
+            ),
+            fold_cells=True,
+        ),
     )

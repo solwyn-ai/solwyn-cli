@@ -32,8 +32,13 @@ WHOAMI_HELP = help_contract(
 
 
 class _Identity(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
+    email_verified: bool
+    first_name: str
+    marketing_emails_subscribed: bool
+    account_id: str
+    alert_email_override: str | None
     user_id: str
     email: str
     display_name: str
@@ -96,19 +101,41 @@ def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiD
     )
 
 
+def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _WhoamiData:
+    credential = client.current_credential
+    if isinstance(credential, ProjectKeyCredential):
+        return _key_data(credential, project)
+    identity = _Identity.model_validate(
+        client.request("GET", "/api/v1/account/me").json()
+    )
+    account = _AccountSelf.model_validate(
+        client.request("GET", "/api/v1/accounts/me").json()
+    )
+    projects = _PROJECTS.validate_python(
+        client.request("GET", "/api/v1/projects").json()
+    )
+    if identity.account_id != account.id:
+        raise ValueError("Identity account did not match.")
+    return _WhoamiData(
+        auth_type="jwt",
+        auth_source="keyring",
+        configured_project=None,
+        account_id=account.id,
+        your_role=account.your_role,
+        seats_used=account.seats_used,
+        seat_limit=account.seat_limit,
+        user=identity,
+        projects=projects,
+        hint=None,
+    )
+
+
 def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
-    runtime = command_context(context)
     try:
         with SolwynClient(
-            api_url=runtime.api_url,
-            credential=credential,
+            api_url=command_context(context).api_url, credential=credential
         ) as client:
-            identity_response = client.request("GET", "/api/v1/account/me")
-            account_response = client.request("GET", "/api/v1/accounts/me")
-            projects_response = client.request("GET", "/api/v1/projects")
-        identity = _Identity.model_validate(identity_response.json())
-        account = _AccountSelf.model_validate(account_response.json())
-        projects = _PROJECTS.validate_python(projects_response.json())
+            return fetch_identity(client=client)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -125,18 +152,6 @@ def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
                 message="The identity response was invalid.",
             ),
         )
-    return _WhoamiData(
-        auth_type="jwt",
-        auth_source="keyring",
-        configured_project=None,
-        account_id=account.id,
-        your_role=account.your_role,
-        seats_used=account.seats_used,
-        seat_limit=account.seat_limit,
-        user=identity,
-        projects=projects,
-        hint=None,
-    )
 
 
 def _table(data: _WhoamiData) -> TableData:
@@ -153,6 +168,7 @@ def _table(data: _WhoamiData) -> TableData:
             [
                 ("User", data.user.display_name),
                 ("Email", data.user.email),
+                ("Email verified", "yes" if data.user.email_verified else "no"),
                 ("Tier", data.user.subscription_tier),
                 ("Account ID", data.account_id or "unavailable"),
                 ("Role", data.your_role or "unavailable"),

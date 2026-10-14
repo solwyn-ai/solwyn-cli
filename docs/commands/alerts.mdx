@@ -40,4 +40,37 @@ Account configuration uses `solwyn.alerts.account.v1`. Any account member with J
 
 A definite 401 rejection may refresh JWT once; a definite 429 rejection uses the client's bounded rate-limit retry. Mutations are never replayed after 503 or transport failures. If a mutation's outcome is uncertain, inspect `alerts account show` before deciding whether to retry. Role failures exit 3 and point to `whoami`; key authentication failures point to login. Upgrade errors preserve Core's message, allowed values when present, and safe dashboard path. No checkout URL is opened.
 
-The default MCP surface adds only `list_alert_events`, with project/account selection, window and rule filters, cursor/all-pages options, and local failed-only filtering. It exposes the same typed history and receipt fields. Account configuration mutation tools are not registered.
+The MCP surface includes `list_alert_events`, with project/account selection, window and rule filters, cursor/all-pages options, and local failed-only filtering. It exposes the same typed history and receipt fields. Account configuration mutation tools are not registered.
+
+
+```sh
+solwyn alerts activity --range 7d --event-type fired --all
+solwyn alerts activity --cursor CURSOR
+solwyn alerts pending --all
+solwyn --json alerts pending --fail-if-open
+solwyn budget rules list --with-last-fired
+solwyn alerts account show --with-last-fired
+```
+
+Activity is the JWT-only feed across **all projects plus account scope**, unlike
+`alerts list --account`. It supports range 7d/30d/90d (default 30d), event type
+fired/snoozed/unsnoozed/paused/resumed, cursor and all-pages options. Pending reads
+operationally open deliveries without a retention window, with full receipt legs,
+attempt counts and next retry timestamps. Default listing exits 0; `--fail-if-open`
+prints data first then exits 1 with `open_alert_deliveries` and local retry guidance
+when the listed data contains open deliveries. Use `--all` for a complete health
+check. These outputs use `solwyn.alerts.activity.v1` and `solwyn.alerts.pending.v1`.
+
+Last firing is opt-in and requires JWT, including project rules. Selectors come
+from the fetched rules, are chunked at 100, and match thresholds by percent so
+budget-limit edits preserve history. Budget output maps rule keys to firing events
+or null; account output includes last firing and latest lifecycle event, merging
+current account-ID and legacy `account_spend` history by timestamp and event ID.
+Core's
+default 30d window and plan retention apply; null does not prove a rule never
+fired. Without the flag there is no extra request. MCP exposes
+`list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert` and the
+same option on `list_budget_rules`; latest-events POST is a read. No alert
+mutations are exposed. MCP pagination remains bounded, with first unread cursor
+preserved on errors; CLI `--all` fails without printing a false complete result
+if a later page cannot be read.

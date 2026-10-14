@@ -1,9 +1,56 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryTransport, SdkError, SdkErrorCode } from '@modelcontextprotocol/client';
-import { createReadClient, decodeResult, providerGate, safeErrorCode, serverEnvironment } from './client.js';
+import { createReadClient, decodeResult, providerGate, safeErrorCode, serverEnvironment, validateReadCatalog } from './client.js';
 
 const envelope = (data: unknown, ok = true, error: unknown = null, schema = 'solwyn.mcp.budget-check.v1') => ({ schema, ok, data, error });
+
+// Public read inventory, independently fixed here to catch a stale client gate.
+const readNames = [
+  'budget_status', 'get_project_status', 'get_forecast', 'get_costs',
+  'list_projects', 'get_cost_total', 'list_budget_rules', 'list_tags',
+  'list_tag_values', 'list_agent_runs', 'get_agent_run', 'list_alert_events',
+  'get_overview', 'list_cost_events', 'get_cost_baseline', 'get_unit_economics',
+  'get_cost_drift', 'list_priced_models', 'simulate_costs',
+  'list_provider_failovers', 'list_untracked_surfaces', 'list_audit_events',
+  'plan_status', 'plan_catalog', 'get_whoami', 'get_account_phone',
+  'list_alert_activity', 'list_open_alert_deliveries', 'budget_uncounted',
+  'get_account_alert',
+];
+const readCatalog = () => ({ tools: readNames.map(name => ({ name, annotations: { readOnlyHint: true } })) });
+
+test('complete expanded read inventory permits discovery regardless of ordering', () => {
+  validateReadCatalog(readCatalog());
+  validateReadCatalog({ tools: readCatalog().tools.reverse() });
+});
+
+test('incomplete, duplicate, extra and write-bearing inventories fail closed', () => {
+  const tools = readCatalog().tools;
+  for (const invalid of [
+    { tools: tools.slice(0, 13) },
+    { tools: tools.filter(tool => tool.name !== 'budget_status') },
+    { tools: tools.filter(tool => tool.name !== 'plan_catalog') },
+    { tools: [...tools, { name: 'unknown_read', annotations: { readOnlyHint: true } }] },
+    { tools: [...tools.slice(0, -1), tools[0]] },
+    { tools: [...tools.slice(0, -1), { name: 'budget_check', annotations: { readOnlyHint: true } }] },
+    { tools: [...tools.slice(0, -1), { name: 'get_account_alert', annotations: { readOnlyHint: false } }] },
+  ]) assert.throws(() => validateReadCatalog(invalid), /Unexpected read catalog/);
+});
+
+test('malformed annotations, catalog shapes and continuations cannot pass discovery', () => {
+  const tools = readCatalog().tools;
+  for (const invalid of [
+    null, {}, { tools: null }, { tools: [null, ...tools.slice(1)] },
+    { tools: [...tools.slice(0, -1), { name: 'get_account_alert' }] },
+    { tools: [...tools.slice(0, -1), { name: 'get_account_alert', annotations: {} }] },
+    { tools: [...tools.slice(0, -1), { name: 'get_account_alert', annotations: { readOnlyHint: 'true' } }] },
+    { tools, nextCursor: 'PRIVATE_CURSOR_CANARY' },
+  ]) assert.throws(() => validateReadCatalog(invalid), error => {
+    assert(error instanceof Error);
+    assert.equal(error.message, 'Unexpected read catalog');
+    return true;
+  });
+});
 
 for (const [name, replyDelay, timeout, succeeds] of [
   ['allows discovery after a slow startup', 2_500, 6_000, true],

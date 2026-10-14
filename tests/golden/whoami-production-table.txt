@@ -3,6 +3,7 @@ Authentication                 jwt
 Source                     keyring
 User                Person Example
 Email           person@example.com
+Email verified                 yes
 Tier                    production
 Account ID                acct_123
 Role                         owner

@@ -38,7 +38,7 @@ solwyn --json --project proj_0123456789abcdef01234567 budget status
 ```
 
 `mcp-config` runs offline and resolves the absolute executable for its installed
-interpreter. It defaults to the 13-tool `read` profile. Extract only `command`
+interpreter. It defaults to the 30-tool `read` profile. Extract only `command`
 and `args` from its `solwyn.mcp-config.v1` result into your host's documented
 configuration container. For example, the descriptor portion on POSIX is:
 
@@ -75,7 +75,7 @@ recording, provider call, JWT refresh or host edit occurs. Its exit codes are
 | Authenticated key project | Core's `GET /api/v1/auth/key` identifies the supplied key. Key-bound writes use this project; a read selector cannot redirect them. |
 | Credential kind/source | Environment project key, keychain project key, then keychain JWT, in that order. Empty/invalid environment key presence prevents fallback. A stored key can mask a JWT. |
 | Key scope | `full`, `read_only`, or unknown when it cannot be established. A successful read does not prove write scope. `full` does not promise a future allowed decision. |
-| Profile and annotations | Discovery aids. `read` exposes 13 tools; `guardrails` exposes all 17. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
+| Profile and annotations | Discovery aids. `read` exposes 30 tools; `guardrails` exposes all 34. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
 
 The [tool/auth matrix](mcp-profiles.md) lists exceptions: `list_projects` and
 `get_overview` need JWT, account alert history needs JWT, and tag discovery needs
@@ -100,6 +100,12 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 
 ## Run the actual clients
 
+The copied Python/TypeScript examples and verification fixtures pin a verified
+CLI/MCP tool inventory: exact names and cardinality, read-only annotations and
+privacy/discovery checks. They intentionally fail closed when the catalog
+changes. Update these clients and fixtures together with the server version
+when tools are added; keep all discovery and annotation checks intact.
+
 The checked-in [Python client](../examples/mcp/python/client.py) uses public MCP
 2.1.1 and its own `uv.lock`, with Python 3.11+. From the CLI checkout, substitute
 your installed executable and project:
@@ -123,7 +129,10 @@ npm start -- --executable /absolute/path/to/solwyn --project proj_0123456789abcd
 
 Both programs discover the read catalog, make one successful read, validate the
 Solwyn envelope/project, and print only typed selected fields as JSON. They
-check both MCP `isError` and envelope `ok`. Execution failures return a fixed
+require all 30 current read tool names, exactly once, with explicit read-only
+annotations and no continuation cursor; incomplete or write-bearing catalogs
+fail before a budget read. They check both MCP `isError` and envelope `ok`.
+Execution failures return a fixed
 allowlisted code and exit 1. Add `--validation-error` to deliberately demonstrate
 `invalid_arguments` without HTTP. Add `--api-url` for a selected authorized API.
 These are example-client options, not Solwyn global options.

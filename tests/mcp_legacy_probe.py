@@ -11,10 +11,48 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.exceptions import McpError
 
 
+READ_TOOL_NAMES = frozenset(
+    {
+        "budget_status",
+        "get_project_status",
+        "get_forecast",
+        "get_costs",
+        "list_projects",
+        "get_cost_total",
+        "list_budget_rules",
+        "list_tags",
+        "list_tag_values",
+        "list_agent_runs",
+        "get_agent_run",
+        "list_alert_events",
+        "get_overview",
+        "list_cost_events",
+        "get_cost_baseline",
+        "get_unit_economics",
+        "get_cost_drift",
+        "list_priced_models",
+        "simulate_costs",
+        "list_provider_failovers",
+        "list_untracked_surfaces",
+        "list_audit_events",
+        "plan_status",
+        "plan_catalog",
+        "get_whoami",
+        "get_account_phone",
+        "list_alert_activity",
+        "list_open_alert_deliveries",
+        "budget_uncounted",
+        "get_account_alert",
+    }
+)
+
+
 async def main():
     assert importlib.metadata.version("mcp") == "1.28.1"
     profile = sys.argv[3] if len(sys.argv) > 3 else "guardrails"
-    count = 13 if profile == "read" else 17
+    writers = {"budget_check", "budget_confirm", "record_call", "budget_check_batch"}
+    expected_names = READ_TOOL_NAMES if profile == "read" else READ_TOOL_NAMES | writers
+    count = len(expected_names)
     server = StdioServerParameters(
         command=sys.argv[1],
         args=[
@@ -46,6 +84,13 @@ async def main():
                     assert initialized.capabilities.resources is None
                     assert initialized.capabilities.prompts is None
                     assert len(catalog.tools) == count
+                    assert {tool.name for tool in catalog.tools} == expected_names
+                    assert catalog.nextCursor is None
+                    assert all(
+                        tool.annotations is not None
+                        and tool.annotations.readOnlyHint is (tool.name not in writers)
+                        for tool in catalog.tools
+                    )
                     assert "ttlMs" not in catalog.model_dump(by_alias=True)
                     assert "cacheScope" not in catalog.model_dump(by_alias=True)
                     assert all(
@@ -54,7 +99,8 @@ async def main():
                     )
                     if profile == "read":
                         assert all(
-                            tool.annotations.readOnlyHint for tool in catalog.tools
+                            tool.annotations.readOnlyHint is True
+                            for tool in catalog.tools
                         )
                         try:
                             await client.call_tool("budget_check", {})

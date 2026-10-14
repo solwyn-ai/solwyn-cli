@@ -134,6 +134,10 @@ class FakeClient:
         self.requests: list[tuple[str, str, dict[str, Any]]] = []
         self.__class__.instances.append(self)
 
+    @property
+    def current_credential(self):
+        return self.credential
+
     def __enter__(self) -> "FakeClient":
         return self
 

@@ -2,6 +2,7 @@
 
 import threading
 import time
+from contextlib import asynccontextmanager
 
 import anyio
 import httpx
@@ -214,18 +215,53 @@ def test_tag_values_oversized_output_preserves_its_input_cursor(monkeypatch):
 def test_deadline_after_atomic_retention_preserves_compact_known_reservation(
     monkeypatch, tool
 ):
-    monkeypatch.setattr(operation, "DEADLINE_SECONDS", 0.08)
+    original_scope = operation.operation_scope
     original = operation.retain
+    original_bounded_result = server._bounded_protocol_result
     entered = threading.Event()
     finished = threading.Event()
+    release = threading.Event()
+    deadline_errors = []
+    worker_errors = []
+    arm_deadline = None
+
+    @asynccontextmanager
+    async def arranged_scope():
+        nonlocal arm_deadline
+        # Keep the real invocation scope and its initial production deadline.
+        # This test targets expiry AFTER known state, so arm the same 80 ms
+        # interval at publication, independent of pool/worker/parser setup.
+        async with original_scope() as control:
+            with anyio.fail_after(None) as deadline_scope:
+
+                def arm_deadline():
+                    control.deadline = min(control.deadline, time.monotonic() + 0.08)
+                    deadline_scope.deadline = anyio.current_time() + control.remaining()
+
+                yield control
+
+    def observe_bounded_result(result, control):
+        if result.error is not None:
+            deadline_errors.append(result.error.code)
+        return original_bounded_result(result, control)
 
     def suspend_after_known_data(data, **recovery):
         original(data, **recovery)
         entered.set()
-        time.sleep(0.20)
-        finished.set()
+        try:
+            anyio.from_thread.run_sync(arm_deadline)
+            # The caller releases us only after receiving the deadline result.
+            # A broken deadline still terminates this test, but fails below.
+            release.wait(2)
+            operation.checkpoint()
+        except operation.OperationLimit as error:
+            worker_errors.append(error.code)
+        finally:
+            finished.set()
 
+    monkeypatch.setattr(operation, "operation_scope", arranged_scope)
     monkeypatch.setattr(operation, "retain", suspend_after_known_data)
+    monkeypatch.setattr(server, "_bounded_protocol_result", observe_bounded_result)
     decision = {**CHECK_RESPONSE, "project_id": "🧪" * 200_000}
     body = journal([decision]) if tool == "budget_check_batch" else decision
     assert len(httpx.Response(200, json=body).content) < operation.MAX_RESPONSE_BYTES
@@ -235,9 +271,15 @@ def test_deadline_after_atomic_retention_preserves_compact_known_reservation(
         if tool == "budget_check_batch"
         else CHECK
     )
-    result = anyio.run(_call_tool, tool, arguments)
-    assert entered.is_set()
-    assert finished.wait(1)
+    try:
+        result = anyio.run(_call_tool, tool, arguments)
+        assert entered.is_set()
+        assert not finished.is_set()
+        assert deadline_errors == ["operation_deadline"]
+    finally:
+        release.set()
+        assert finished.wait(1)
+    assert worker_errors == ["operation_deadline"]
     assert len(requests) == 1
     payload = result.structured_content
     assert result.is_error

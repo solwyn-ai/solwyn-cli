@@ -12,6 +12,9 @@ INPUT_LIMIT = 8192
 OUTPUT_LIMIT = 16384
 OPERATION_SECONDS = 10
 CLEANUP_SECONDS = 10
+TOOL_INVENTORY_LIMIT = (
+    34  # Exact supported guardrails catalog; byte limits remain fixed.
+)
 Name = Annotated[str, Field(pattern=r"^[a-z_]{1,64}$")]
 
 
@@ -22,7 +25,7 @@ class PrivateRequest(BaseModel):
     project: str | None = Field(default=None, max_length=128)
     api_url: str = Field(min_length=1, max_length=2048)
     profile: Profile
-    expected_tools: list[Name] = Field(max_length=32)
+    expected_tools: list[Name] = Field(max_length=TOOL_INVENTORY_LIMIT)
     expected_version: str = Field(max_length=32)
     api_key: SecretStr | None = None
 
@@ -47,7 +50,7 @@ class HelperResult(BaseModel):
         Literal["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
         | None
     ) = None
-    tools: list[Name] = Field(default_factory=list, max_length=32)
+    tools: list[Name] = Field(default_factory=list, max_length=TOOL_INVENTORY_LIMIT)
     unexpected_tools: int = Field(default=0, ge=0, le=10000)
     inventory: Literal["match", "mismatch", "unknown"] = "unknown"
     read: Literal["ok", "failed", "skipped"] = "skipped"

@@ -26,7 +26,7 @@ from solwyn_cli.commands.init import INIT_HELP, init
 from solwyn_cli.commands.login import LOGIN_HELP, LOGOUT_HELP, login, logout
 from solwyn_cli.commands.mcp import MCP_HELP, McpLaunchOptions, mcp
 from solwyn_cli.commands.mcp_config import MCP_CONFIG_HELP, mcp_config
-from solwyn_cli.commands.plan import PLAN_HELP, plan
+from solwyn_cli.commands.plan import app as plan_app
 from solwyn_cli.commands.keys import app as keys_app
 from solwyn_cli.commands.projects import app as projects_app
 from solwyn_cli.commands.providers import app as providers_app
@@ -86,7 +86,7 @@ app.command("logout", epilog=LOGOUT_HELP)(logout)
 app.command("mcp", epilog=MCP_HELP)(mcp)
 app.command("mcp-config", epilog=MCP_CONFIG_HELP)(mcp_config)
 app.command("record", epilog=RECORD_HELP)(record)
-app.command("plan", epilog=PLAN_HELP)(plan)
+app.add_typer(plan_app, name="plan")
 app.command("overview", epilog=OVERVIEW_HELP)(overview)
 app.command("status", epilog=STATUS_HELP)(status)
 app.command("whoami", epilog=WHOAMI_HELP)(whoami)

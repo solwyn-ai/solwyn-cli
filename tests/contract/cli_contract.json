@@ -180,6 +180,33 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": "solwyn.account.phone.v1",
+      "name": "phone",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "phone"
+      ],
+      "summary": "Inspect phone verification and SMS consent."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.account.phone.v1",
+      "name": "show",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "account",
+        "phone",
+        "show"
+      ],
+      "summary": "Show phone and SMS prerequisites; verify and consent in the dashboard."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.account.recover.v1",
       "name": "recover",
@@ -337,7 +364,22 @@
       "json_schema": "solwyn.alerts.account.v1",
       "name": "show",
       "output_kind": "json-envelope",
-      "params": [],
+      "params": [
+        {
+          "cli_names": [
+            "--with-last-fired"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "with_last_fired",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
       "path": [
         "alerts",
         "account",
@@ -387,6 +429,76 @@
         "unsnooze"
       ],
       "summary": "Clear the account spend alert snooze."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.activity.v1",
+      "name": "activity",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--range"
+          ],
+          "default": "30d",
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "time_range",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--event-type"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "event_type",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_pages",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "alerts",
+        "activity"
+      ],
+      "summary": "Read account-wide activity across every project and account scope."
     },
     {
       "hidden": false,
@@ -611,6 +723,62 @@
         "list"
       ],
       "summary": "List history. Delivery is Core's worst-leg rollup; JSON includes every leg."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.alerts.pending.v1",
+      "name": "pending",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--cursor"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "cursor",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--all"
+          ],
+          "default": false,
+          "help": null,
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "all_pages",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--fail-if-open"
+          ],
+          "default": false,
+          "help": "Exit 1 after printing data when open deliveries exist.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "fail_if_open",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "alerts",
+        "pending"
+      ],
+      "summary": "Read pending/retrying deliveries, regardless of event retention."
     },
     {
       "hidden": false,
@@ -2501,7 +2669,22 @@
       "json_schema": "solwyn.budget.rules.v1",
       "name": "list",
       "output_kind": "json-envelope",
-      "params": [],
+      "params": [
+        {
+          "cli_names": [
+            "--with-last-fired"
+          ],
+          "default": false,
+          "help": "JWT only: include latest firing within Core\u2019s 30d retention window.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "with_last_fired",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
       "path": [
         "budget",
         "rules",
@@ -2692,6 +2875,19 @@
         "unsnooze"
       ],
       "summary": "Clear a threshold's notification snooze."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.budget.uncounted.v1",
+      "name": "uncounted",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "budget",
+        "uncounted"
+      ],
+      "summary": "Read advisory offline traffic: an unpriced upper bound, possibly overcounted."
     },
     {
       "hidden": false,
@@ -4935,7 +5131,7 @@
     },
     {
       "hidden": false,
-      "is_group": false,
+      "is_group": true,
       "json_schema": "solwyn.plan.v1",
       "name": "plan",
       "output_kind": "json-envelope",
@@ -4943,7 +5139,20 @@
       "path": [
         "plan"
       ],
-      "summary": "Show the current plan, subscription lifecycle, limits, and capabilities."
+      "summary": "Inspect plans and entitlements."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.plan.catalog.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "plan",
+        "list"
+      ],
+      "summary": "Compare catalog prices in cents, included requests, limits and capabilities."
     },
     {
       "hidden": false,
@@ -6375,6 +6584,23 @@
     },
     {
       "keys": [
+        "pending_phone_number",
+        "phone_number",
+        "resend_available_at",
+        "schema",
+        "sms_alerts_consented_at",
+        "sms_alerts_disclosure_version",
+        "state",
+        "verification_expires_at",
+        "verified",
+        "verified_at"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.account.phone.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "account_id",
         "schema"
       ],
@@ -6434,6 +6660,27 @@
         "will_send"
       ],
       "schema": "solwyn.alerts.account.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "events",
+        "next_cursor",
+        "schema",
+        "window"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.alerts.activity.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "events",
+        "next_cursor",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.alerts.pending.v1",
       "universal_error_envelope": false
     },
     {
@@ -6613,6 +6860,18 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.budget.rules.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "last_reported_at",
+        "project_id",
+        "schema",
+        "uncounted_calls",
+        "uncounted_tokens"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.budget.uncounted.v1",
       "universal_error_envelope": false
     },
     {
@@ -6987,6 +7246,18 @@
         "window_start"
       ],
       "schema": "solwyn.overview.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "currency",
+        "schema",
+        "tax_behavior",
+        "tax_code",
+        "tiers"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.plan.catalog.v1",
       "universal_error_envelope": false
     },
     {

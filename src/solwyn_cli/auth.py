@@ -40,6 +40,16 @@ class CredentialStorageError(AuthError):
     """The operating-system credential store could not be updated."""
 
 
+class JwtRequiredError(AuthError):
+    """A local JWT-only operation was masked by a project key."""
+
+
+JWT_REQUIRED_HINT = (
+    "This read requires JWT. Unset SOLWYN_API_KEY or remove the stored project key "
+    "with solwyn logout, then run solwyn login and retry."
+)
+
+
 class ProjectKeyCredential(BaseModel):
     """A validated project API key with an explicitly retrievable secret."""
 

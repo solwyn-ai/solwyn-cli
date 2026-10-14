@@ -57,7 +57,7 @@ def test_leaf_helper_discovers_with_parent_pipe_still_open():
         assert result["identity"] == "match"
         assert result["protocol"] == "2026-07-28"
         assert result["read"] == "skipped"
-        assert len(result["tools"]) == 13
+        assert len(result["tools"]) == 30
         assert proc.stderr.read() == b""
     finally:
         if proc.poll() is None:

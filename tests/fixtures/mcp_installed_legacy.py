@@ -14,6 +14,42 @@ from mcp.client.stdio import (
 )
 
 
+READ_TOOL_NAMES = frozenset(
+    {
+        "budget_status",
+        "get_project_status",
+        "get_forecast",
+        "get_costs",
+        "list_projects",
+        "get_cost_total",
+        "list_budget_rules",
+        "list_tags",
+        "list_tag_values",
+        "list_agent_runs",
+        "get_agent_run",
+        "list_alert_events",
+        "get_overview",
+        "list_cost_events",
+        "get_cost_baseline",
+        "get_unit_economics",
+        "get_cost_drift",
+        "list_priced_models",
+        "simulate_costs",
+        "list_provider_failovers",
+        "list_untracked_surfaces",
+        "list_audit_events",
+        "plan_status",
+        "plan_catalog",
+        "get_whoami",
+        "get_account_phone",
+        "list_alert_activity",
+        "list_open_alert_deliveries",
+        "budget_uncounted",
+        "get_account_alert",
+    }
+)
+
+
 async def main() -> None:
     assert importlib.metadata.version("mcp") == "1.28.1"
     environment = get_default_environment()
@@ -39,8 +75,13 @@ async def main() -> None:
                 assert hello.serverInfo.name == "solwyn"
                 assert hello.serverInfo.version == "0.2.0"
                 catalog = await client.list_tools()
-                assert len(catalog.tools) == 13
-                assert all(tool.annotations.readOnlyHint for tool in catalog.tools)
+                assert len(catalog.tools) == len(READ_TOOL_NAMES)
+                assert {tool.name for tool in catalog.tools} == READ_TOOL_NAMES
+                assert catalog.nextCursor is None
+                assert all(
+                    tool.annotations and tool.annotations.readOnlyHint is True
+                    for tool in catalog.tools
+                )
                 good = await client.call_tool("budget_status", {})
                 assert not good.isError and good.structuredContent["ok"] is True
                 assert good.structuredContent["data"]["project_id"] == sys.argv[3]

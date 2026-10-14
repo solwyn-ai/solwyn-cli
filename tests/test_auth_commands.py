@@ -39,6 +39,10 @@ class FakeClient:
         self.requests: list[tuple[str, str, dict[str, Any]]] = []
         self.__class__.instances.append(self)
 
+    @property
+    def current_credential(self):
+        return self.credential
+
     def __enter__(self) -> "FakeClient":
         return self
 
@@ -551,6 +555,7 @@ def test_whoami_jwt_fetches_and_validates_identity_and_projects(
             200,
             json={
                 "user_id": "user_123",
+                "email_verified": True,
                 "email": "person@example.com",
                 "first_name": "Person",
                 "marketing_emails_subscribed": True,
@@ -644,6 +649,7 @@ def test_whoami_jwt_table_matches_golden(
             200,
             json={
                 "user_id": "user_123",
+                "email_verified": True,
                 "email": "person@example.com",
                 "first_name": "Person",
                 "marketing_emails_subscribed": True,
@@ -721,9 +727,14 @@ def test_whoami_production_tier(output_format, monkeypatch):
             200,
             json={
                 "user_id": "user_123",
+                "email_verified": True,
                 "email": "person@example.com",
                 "display_name": "Person Example",
                 "subscription_tier": "production",
+                "first_name": "Person",
+                "marketing_emails_subscribed": True,
+                "account_id": "acct_123",
+                "alert_email_override": None,
             },
         ),
         httpx.Response(
