@@ -15,7 +15,6 @@ from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._cost_advice_models import (
     CostSimulationResponse,
-    PricedModelsResponse,
 )
 from solwyn_cli.commands._cost_filters import window_params
 from solwyn_cli.commands._shared import exit_with_error, required_credential
@@ -103,19 +102,13 @@ def _report_simulation_caveats(data: CostSimulationResponse) -> None:
 
 def priced_models(context: typer.Context) -> None:
     """List exact models available to the current pricing catalog."""
-    runtime, project_path = _runtime_project(context)
+    runtime, _ = _runtime_project(context)
     credential = required_credential(context, resolve=resolve_credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            data = PricedModelsResponse.model_validate(
-                client.request(
-                    "GET", f"/api/v1/projects/{project_path}/costs/priced-models"
-                ).json()
-            )
-        if data.project_id != runtime.project:
-            raise ValueError(
-                "Priced-models response project did not match the request."
-            )
+            from solwyn_cli.commands._cost_reads import fetch_priced_models
+
+            data = fetch_priced_models(client=client, project_id=runtime.project)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         _handle_failure(context, error)
     output_engine(context).write_success(
@@ -198,21 +191,19 @@ def simulate(
             OutputError(code="invalid_cost_simulation", message=str(error)),
             semantic=ErrorSemantic.USAGE,
         )
-    runtime, project_path = _runtime_project(context)
+    runtime, _ = _runtime_project(context)
     credential = required_credential(context, resolve=resolve_credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            data = CostSimulationResponse.model_validate(
-                client.request(
-                    "POST",
-                    f"/api/v1/projects/{project_path}/costs/simulate",
-                    params=params,
-                    json=request.model_dump(mode="json"),
-                ).json()
-            )
-        if data.project_id != runtime.project:
-            raise ValueError(
-                "Cost simulation response project did not match the request."
+            from solwyn_cli.commands._cost_reads import fetch_project_read
+
+            data = fetch_project_read(
+                client=client,
+                project_id=runtime.project,
+                path="costs/simulate",
+                params=params,
+                body=request,
+                response_model=CostSimulationResponse,
             )
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         _handle_failure(context, error)

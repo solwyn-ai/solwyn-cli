@@ -53,18 +53,18 @@ def _request(
     params: dict[str, Any],
     response_model: type[BaselineResult | UnitEconomicsResponse | CostDriftResponse],
 ) -> BaselineResult | UnitEconomicsResponse | CostDriftResponse:
-    runtime, project_path = _project_path(context)
+    runtime, _ = _project_path(context)
     credential = required_credential(context, resolve=resolve_credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            data = response_model.model_validate(
-                client.request(
-                    "GET", f"/api/v1/projects/{project_path}/{path}", params=params
-                ).json()
-            )
-        if hasattr(data, "project_id") and data.project_id != runtime.project:
-            raise ValueError(
-                "Cost analysis response project did not match the request."
+            from solwyn_cli.commands._cost_reads import fetch_project_read
+
+            data = fetch_project_read(
+                client=client,
+                project_id=runtime.project,
+                path=path,
+                params=params,
+                response_model=response_model,
             )
         return data
     except ApiError as error:

@@ -58,6 +58,15 @@ COMMON = {
     "limit": "Maximum entries in this page, integer 1–100; defaults to 25. Continue using the returned cursor.",
     "cursor": "Opaque cursor from a previous page of the same query; preserve filters and ordering when continuing.",
     "time_range": "Preset query window; paired custom start/end timestamps override this preset. Available values are declared by the schema.",
+    "with_last_fired": "Include latest firing within Core's default 30d retention window; requires JWT even for project budget rules. Null means no matching history in that window.",
+    "account": "True reads account costs with JWT; mutually exclusive with explicit project_id. Supports only model/provider/modality/group_by and window filters.",
+    "event_type": "Exact activity event type: fired, snoozed, unsnoozed, paused or resumed; omit for all events.",
+    "all_pages": "True follows at most 10 pages within the 30-second/1 MiB response budget, including empty continued pages; limits retain the first unread cursor. False returns one page.",
+    "days": "Baseline lookback days from 3 through 30, excluding today; defaults to 7.",
+    "vs_prev": "Compare unit economics with the previous equal-length window when true.",
+    "cause": "Include server-inferred suspected cost drivers when true; no provider payloads are read.",
+    "action": "Exact audit action string of 1–100 characters; omit to include all actions.",
+    "region": "Explicit Bedrock target region paired with service_tier; unavailable for other providers.",
     "from_": "Custom window start: timezone-aware ISO timestamp paired with to; the pair overrides time_range.",
     "to": "Custom window end: timezone-aware ISO timestamp paired with from_, strictly later than from_; overrides time_range.",
     **TOKEN_COUNTS,
@@ -77,6 +86,30 @@ COST_FILTERS = {
     "group_by": "Core grouping dimension (for example model, provider or modality), or tag:<key> with key 1–64 characters and no NUL. Core validates dimensions.",
 }
 SPECIFIC = {
+    "list_cost_events": {
+        "limit": "Maximum events per page, integer 1–100 (default 50); preserve all filters when continuing with the returned cursor."
+    },
+    "list_alert_activity": {
+        "time_range": "Activity preset 7d, 30d or 90d (default 30d); no custom timestamps. Core clamps retained account-wide history."
+    },
+    "get_unit_economics": {
+        "time_range": "Unit-economics preset 7d, 30d or 90d (default 30d); optional vs_prev compares the previous equal-length window."
+    },
+    "list_provider_failovers": {
+        "time_range": "Failover aggregation window 24h, 7d or 30d (default 7d); Core returns at most 50 groups, with no cursor."
+    },
+    "list_untracked_surfaces": {
+        "time_range": "Untracked observation window 7d, 30d or 90d (default 7d); effective retention is reported and Core returns at most 25 observations."
+    },
+    "list_audit_events": {
+        "time_range": "Audit window 7d, 30d, 90d or 365d (default 30d); exact action and cursor filters preserve this window."
+    },
+    "simulate_costs": {
+        "provider": "Target priced provider to replay historical usage against, without spending or reserving.",
+        "model": "Exact target model (1–2048 characters) from list_priced_models; Core rejects unavailable or unsupported targets.",
+        "service_tier": "Explicit Bedrock target service tier paired with region; unavailable for other providers.",
+    },
+    "list_budget_rules": {"with_last_fired": COMMON["with_last_fired"]},
     "budget_check": {
         "no_record": "True skips denial attribution ingest only; the reservation decision still runs. False records denied calls by default.",
     },
@@ -124,7 +157,7 @@ SPECIFIC = {
         "run": "Run storage ID or exact raw caller run name, 1–255 characters; ambiguous names fail with guidance to list IDs.",
     },
     "list_alert_events": {
-        "account": "True reads account-wide history and requires JWT login; project_id is ignored. False reads the selected project using a project key or JWT.",
+        "account": "True reads account-scope history and requires JWT login; project_id is ignored. False reads the selected project using a project key or JWT.",
         "time_range": "Alert-history preset: 7d, 30d or 90d (default 30d); paired custom timestamps override it. Core may clamp retention.",
         "rule_type": "Filter by alert rule type, at most 32 characters and no NUL; omit to include all types.",
         "scope": "Filter by rule scope, at most 32 characters and no NUL; this is not project/account selection (use account).",
@@ -137,7 +170,11 @@ SPECIFIC = {
 def parameter_descriptions(name: str, names: list[str]) -> dict[str, str]:
     descriptions = (
         COMMON
-        | (COST_FILTERS if name in {"get_costs", "get_cost_total"} else {})
+        | (
+            COST_FILTERS
+            if name in {"get_costs", "get_cost_total", "list_cost_events"}
+            else {}
+        )
         | SPECIFIC.get(name, {})
     )
     return {field: descriptions[field] for field in names}

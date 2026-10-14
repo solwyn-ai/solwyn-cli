@@ -85,7 +85,7 @@ def test_profile_exclusions_and_cache_wire(monkeypatch, legacy):
         )
         async with raw_connection(server, legacy=legacy) as (request, _):
             listed = (await request("tools/list"))["result"]
-            assert len(listed["tools"]) == 13
+            assert len(listed["tools"]) == 30
             assert listed.get("ttlMs") == (None if legacy else 60_000)
             assert listed.get("cacheScope") == (None if legacy else "private")
             for name in sorted(WRITERS):
@@ -103,7 +103,7 @@ def test_profile_exclusions_and_cache_wire(monkeypatch, legacy):
     anyio.run(exercise)
 
 
-@pytest.mark.parametrize("profile,count", [("read", 13), ("guardrails", 17)])
+@pytest.mark.parametrize("profile,count", [("read", 30), ("guardrails", 34)])
 def test_actual_stdio_profile_discovery_and_rejection(tmp_path, profile, count):
     executable = Path(sys.executable).with_name(
         "solwyn.exe" if os.name == "nt" else "solwyn"
@@ -180,23 +180,49 @@ def test_actual_stdio_profile_discovery_and_rejection(tmp_path, profile, count):
 
 @pytest.mark.parametrize("profile,ceiling_kib", [("guardrails", 168), ("read", 72)])
 def test_catalog_is_deterministic_and_has_a_payload_budget(profile, ceiling_kib):
-    def encoded():
+    def encoded(selected=None):
         return json.dumps(
             [
                 tool.definition.model_dump(
                     mode="json", by_alias=True, exclude_none=True
                 )
                 for tool in mcp_server.get_tool_catalog(profile=profile)
+                if selected is None or (tool.definition.name in updated) == selected
             ],
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
 
+    updated = {
+        "get_costs",
+        "list_budget_rules",
+        "list_cost_events",
+        "get_cost_baseline",
+        "get_unit_economics",
+        "get_cost_drift",
+        "list_priced_models",
+        "simulate_costs",
+        "list_provider_failovers",
+        "list_untracked_surfaces",
+        "list_audit_events",
+        "plan_status",
+        "plan_catalog",
+        "get_whoami",
+        "get_account_phone",
+        "list_alert_activity",
+        "list_open_alert_deliveries",
+        "budget_uncounted",
+        "get_account_alert",
+    }
     first = encoded()
     assert first == encoded()
     # Includes useful output schemas. Budgets allow deliberate feature growth,
     # but catch an accidental duplicated catalog or verbose schema expansion.
-    assert len(first) <= ceiling_kib * 1024
+    # Keep the existing ceilings for unchanged tools. Allocate a separate
+    # 112 KiB for the 17 adopted reads and two extended read schemas; the exact
+    # inventory and complete golden independently pin every declaration.
+    assert len(encoded(False)) <= ceiling_kib * 1024
+    assert len(encoded(True)) <= 112 * 1024
 
 
 def test_cached_discovery_does_not_cache_calls(monkeypatch):

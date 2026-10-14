@@ -44,7 +44,10 @@ from solwyn_cli.commands.alerts import (
     AlertQueryError,
     request_alert_events,
 )
-from solwyn_cli.commands.budget_rules import BudgetRulesData, request_budget_rules
+from solwyn_cli.commands.budget_rules import (
+    BudgetRulesData,
+    request_budget_rules,
+)
 from solwyn_cli.commands.budget import (
     BudgetCheckData,
     BudgetCheckBatchData,
@@ -112,6 +115,62 @@ from solwyn_cli.errors import (
 )
 
 
+from solwyn_cli.commands._account_reads import (
+    AccountPhoneResponse,
+    UncountedTallyResponse,
+    fetch_phone,
+    fetch_uncounted,
+)
+from solwyn_cli.commands._alert_reads import (
+    AlertOpenResponse,
+    AccountAlertWithLatestResponse,
+    AlertRange,
+    ActivityType,
+    request_account_alert,
+    request_account_alert_page,
+)
+from solwyn_cli.commands.alerts import AccountAlertResponse
+from solwyn_cli.commands._entitlement import (
+    BillingCatalogResponse,
+    fetch_billing_catalog,
+)
+from solwyn_cli.commands.plan import _PlanData, fetch_plan
+from solwyn_cli.commands.whoami import _WhoamiData, fetch_identity
+from solwyn_cli.commands._cost_advice_models import (
+    BaselineResult,
+    UnitEconomicsResponse,
+    CostDriftResponse,
+    PricedModelsResponse,
+    CostSimulationResponse,
+)
+from solwyn_cli.commands._cost_models import (
+    CostEventsResponse,
+    AccountCostQueryResponse,
+)
+from solwyn_cli.commands._cost_filters import window_params
+from solwyn_cli.commands.costs import fetch_account_costs
+from solwyn_cli.commands._cost_reads import (
+    fetch_cost_events,
+    fetch_priced_models,
+    fetch_project_read,
+    fetch_simulation,
+    simulation_request,
+)
+from solwyn_cli.commands.providers import (
+    ProviderFailoversData,
+    UntrackedSurfacesData,
+    FailoverRange,
+    UntrackedRange,
+    fetch_provider_failovers,
+    fetch_untracked_surfaces,
+)
+from solwyn_cli.commands.audit import (
+    AuditRange,
+    AuditEventListResponse,
+    fetch_audit_events,
+)
+
+
 DataT = TypeVar("DataT", bound=BaseModel)
 ResultT = TypeVar("ResultT", bound="_ToolResult[BaseModel]")
 BudgetCheckModel = Annotated[str, Field(max_length=2048)]
@@ -136,6 +195,23 @@ TOOL_NAMES = (
     "list_alert_events",
     "budget_check_batch",
     "get_overview",
+    "list_cost_events",
+    "get_cost_baseline",
+    "get_unit_economics",
+    "get_cost_drift",
+    "list_priced_models",
+    "simulate_costs",
+    "list_provider_failovers",
+    "list_untracked_surfaces",
+    "list_audit_events",
+    "plan_status",
+    "plan_catalog",
+    "get_whoami",
+    "get_account_phone",
+    "list_alert_activity",
+    "list_open_alert_deliveries",
+    "budget_uncounted",
+    "get_account_alert",
 )
 _SAFE_REMOTE_ERROR_CODES = frozenset(
     {
@@ -545,7 +621,7 @@ class _ForecastResult(_ToolResult[ForecastData]):
     )
 
 
-class _CostsResult(_ToolResult[CostsData]):
+class _CostsResult(_ToolResult[CostsData | AccountCostQueryResponse]):
     schema_name: Literal["solwyn.mcp.costs.v1"] = Field(
         default="solwyn.mcp.costs.v1",
         alias="schema",
@@ -588,6 +664,110 @@ class _AgentRunResult(_ToolResult[AgentRunEntry]):
 class _OverviewResult(_ToolResult[OverviewData]):
     schema_name: Literal["solwyn.mcp.overview.v1"] = Field(
         default="solwyn.mcp.overview.v1", alias="schema"
+    )
+
+
+class _ListCostEventsResult(_ToolResult[CostEventsResponse]):
+    schema_name: Literal["solwyn.costs.events.v1"] = Field(
+        default="solwyn.costs.events.v1", alias="schema"
+    )
+
+
+class _GetCostBaselineResult(_ToolResult[BaselineResult]):
+    schema_name: Literal["solwyn.costs.baseline.v1"] = Field(
+        default="solwyn.costs.baseline.v1", alias="schema"
+    )
+
+
+class _GetUnitEconomicsResult(_ToolResult[UnitEconomicsResponse]):
+    schema_name: Literal["solwyn.costs.unit-economics.v1"] = Field(
+        default="solwyn.costs.unit-economics.v1", alias="schema"
+    )
+
+
+class _GetCostDriftResult(_ToolResult[CostDriftResponse]):
+    schema_name: Literal["solwyn.costs.drift.v1"] = Field(
+        default="solwyn.costs.drift.v1", alias="schema"
+    )
+
+
+class _ListPricedModelsResult(_ToolResult[PricedModelsResponse]):
+    schema_name: Literal["solwyn.costs.priced-models.v1"] = Field(
+        default="solwyn.costs.priced-models.v1", alias="schema"
+    )
+
+
+class _SimulateCostsResult(_ToolResult[CostSimulationResponse]):
+    schema_name: Literal["solwyn.costs.simulation.v1"] = Field(
+        default="solwyn.costs.simulation.v1", alias="schema"
+    )
+
+
+class _ListProviderFailoversResult(_ToolResult[ProviderFailoversData]):
+    schema_name: Literal["solwyn.providers.failovers.v1"] = Field(
+        default="solwyn.providers.failovers.v1", alias="schema"
+    )
+
+
+class _ListUntrackedSurfacesResult(_ToolResult[UntrackedSurfacesData]):
+    schema_name: Literal["solwyn.providers.untracked.v1"] = Field(
+        default="solwyn.providers.untracked.v1", alias="schema"
+    )
+
+
+class _ListAuditEventsResult(_ToolResult[AuditEventListResponse]):
+    schema_name: Literal["solwyn.audit.v1"] = Field(
+        default="solwyn.audit.v1", alias="schema"
+    )
+
+
+class _PlanStatusResult(_ToolResult[_PlanData]):
+    schema_name: Literal["solwyn.plan.v1"] = Field(
+        default="solwyn.plan.v1", alias="schema"
+    )
+
+
+class _PlanCatalogResult(_ToolResult[BillingCatalogResponse]):
+    schema_name: Literal["solwyn.plan.catalog.v1"] = Field(
+        default="solwyn.plan.catalog.v1", alias="schema"
+    )
+
+
+class _GetWhoamiResult(_ToolResult[_WhoamiData]):
+    schema_name: Literal["solwyn.whoami.v1"] = Field(
+        default="solwyn.whoami.v1", alias="schema"
+    )
+
+
+class _GetAccountPhoneResult(_ToolResult[AccountPhoneResponse]):
+    schema_name: Literal["solwyn.account.phone.v1"] = Field(
+        default="solwyn.account.phone.v1", alias="schema"
+    )
+
+
+class _ListAlertActivityResult(_ToolResult[AlertEventListResponse]):
+    schema_name: Literal["solwyn.alerts.activity.v1"] = Field(
+        default="solwyn.alerts.activity.v1", alias="schema"
+    )
+
+
+class _ListOpenAlertDeliveriesResult(_ToolResult[AlertOpenResponse]):
+    schema_name: Literal["solwyn.alerts.pending.v1"] = Field(
+        default="solwyn.alerts.pending.v1", alias="schema"
+    )
+
+
+class _BudgetUncountedResult(_ToolResult[UncountedTallyResponse]):
+    schema_name: Literal["solwyn.budget.uncounted.v1"] = Field(
+        default="solwyn.budget.uncounted.v1", alias="schema"
+    )
+
+
+class _GetAccountAlertResult(
+    _ToolResult[AccountAlertWithLatestResponse | AccountAlertResponse]
+):
+    schema_name: Literal["solwyn.alerts.account.v1"] = Field(
+        default="solwyn.alerts.account.v1", alias="schema"
     )
 
 
@@ -634,7 +814,7 @@ def _canonical_guidance_line(fragment: str) -> str:
 
 
 PROJECT_STATUS_DESCRIPTION = "Read the configured project's budget and provider health without authorizing spend."
-COSTS_DESCRIPTION = "Read project costs grouped by a Core dimension or tag:<key>, with shared cost filters and timezone-aware custom windows."
+COSTS_DESCRIPTION = "Read project costs grouped by a Core dimension or tag:<key>, or account costs grouped by project by default. Shared filters/custom windows apply; account mode permits only model/provider/modality and window filters."
 FORECAST_DESCRIPTION = (
     "Read the configured project's month-to-date spend forecast without "
     "authorizing spend."
@@ -1091,12 +1271,16 @@ def _budget_status_operation(
 
 
 def _budget_rules_operation(
-    project_id: str | None, launch_options: McpLaunchOptions
+    project_id: str | None,
+    launch_options: McpLaunchOptions,
+    with_last_fired: bool = False,
 ) -> _BudgetRulesResult:
     try:
         with tool_call_client(launch_options) as (command_runtime, client):
             data = request_budget_rules(
-                client=client, project_id=_project_id(command_runtime, project_id)
+                client=client,
+                project_id=_project_id(command_runtime, project_id),
+                with_last_fired=with_last_fired,
             )
         return _success(_BudgetRulesResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
@@ -1478,19 +1662,31 @@ def _costs_operation(
     launch_options: McpLaunchOptions,
     project_id: str | None,
     time_range: CostRange,
-    group_by: str,
+    group_by: str | None,
+    account: bool = False,
     **filters: Any,
 ) -> _CostsResult:
     try:
         with tool_call_client(launch_options) as (command_runtime, client):
-            resolved_project = _project_id(command_runtime, project_id)
-            data = fetch_costs(
-                client=client,
-                project_id=resolved_project,
-                time_range=time_range,
-                group_by=group_by,
-                **filters,
-            )
+            if account:
+                if project_id is not None:
+                    raise CostQueryError(
+                        "Account and project_id are mutually exclusive."
+                    )
+                data = fetch_account_costs(
+                    client=client,
+                    time_range=time_range,
+                    group_by=group_by or "project",
+                    **filters,
+                )
+            else:
+                data = fetch_costs(
+                    client=client,
+                    project_id=_project_id(command_runtime, project_id),
+                    time_range=time_range,
+                    group_by=group_by or "model",
+                    **filters,
+                )
         return _success(_CostsResult, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
@@ -1780,6 +1976,51 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
         )
 
 
+def fetch_simulation_options(
+    *, client, project_id, provider, model, region, service_tier, **window
+):
+    request = simulation_request(
+        provider=provider, model=model, region=region, service_tier=service_tier
+    )
+    return fetch_simulation(
+        client=client, project_id=project_id, request=request, **window
+    )
+
+
+def fetch_drift_options(*, client, project_id, **window):
+    return fetch_project_read(
+        client=client,
+        project_id=project_id,
+        path="costs/drift",
+        response_model=CostDriftResponse,
+        params=window_params(**window),
+    )
+
+
+def _read_operation(
+    result_type,
+    reader,
+    launch,
+    *,
+    project_id=None,
+    project_read=False,
+    identity=False,
+    **options,
+):
+    try:
+        with tool_call_client(launch) as (command_runtime, client):
+            if project_read:
+                options["project_id"] = _project_id(command_runtime, project_id)
+            if identity:
+                options["project"] = command_runtime.project
+            data = reader(client=client, **options)
+        return _success(result_type, data)
+    except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
+        return _operation_error(
+            result_type, error, invalid_response_code="invalid_read_response"
+        )
+
+
 def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     """Construct declarations without resolving configuration or credentials."""
     catalog = _ToolCatalog(launch.profile)
@@ -1969,11 +2210,13 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         name="get_costs",
         title="Read grouped costs",
         description=COSTS_DESCRIPTION,
+        credential_note="Project mode accepts a project key or JWT; account=true requires JWT and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
     )
     async def get_costs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
         time_range: CostRange = CostRange.SEVEN_DAYS,
-        group_by: str = "model",
+        group_by: str | None = None,
+        account: bool = False,
         from_: str | None = None,
         to: str | None = None,
         model: str | None = None,
@@ -1995,6 +2238,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 project_id=project_id,
                 time_range=time_range,
                 group_by=group_by,
+                account=account,
                 from_=from_,
                 to=to,
                 model=model,
@@ -2067,13 +2311,15 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_budget_rules",
         title="List budget rules",
+        credential_note="Project keys or JWT can list rules; with_last_fired=true requires JWT for the account latest-events read.",
         description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
     )
     async def list_budget_rules(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
+        with_last_fired: bool = False,
     ) -> _BudgetRulesResult:
         return await operation.run_sync(
-            partial(_budget_rules_operation, project_id, launch)
+            partial(_budget_rules_operation, project_id, launch, with_last_fired)
         )
 
     @catalog.tool(
@@ -2215,7 +2461,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_alert_events",
         title="Read alert history",
-        credential_note="Project history accepts a project key or JWT; account=true requires login/JWT and ignores project_id.",
+        credential_note="Project history accepts a project key or JWT; account=true reads account-scope history, requires login/JWT and ignores project_id. Use list_alert_activity for all projects plus account scope.",
         description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
     )
     async def list_alert_events(
@@ -2300,6 +2546,412 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     )
     async def get_overview() -> _OverviewResult:
         return await operation.run_sync(partial(_overview_operation, launch))
+
+    @catalog.tool(
+        name="list_cost_events",
+        title="List cost events",
+        credential_requirement="either",
+        description="Read cursor-paginated cost events with shared filters and bounded all_pages.",
+    )
+    async def list_cost_events(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: str = "7d",
+        from_: str | None = None,
+        to: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        modality: str | None = None,
+        status: str | None = None,
+        service_tier: str | None = None,
+        provider_region: str | None = None,
+        agent_run: str | None = None,
+        failover_reason: str | None = None,
+        model_fallback: bool | None = None,
+        provider_fallback: bool | None = None,
+        tag: list[str] | None = None,
+        limit: Annotated[int, Field(ge=1, le=100)] = 50,
+        cursor: str | None = None,
+        all_pages: bool = False,
+    ) -> _ListCostEventsResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListCostEventsResult,
+                fetch_cost_events,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+                model=model,
+                provider=provider,
+                modality=modality,
+                status=status,
+                service_tier=service_tier,
+                provider_region=provider_region,
+                agent_run=agent_run,
+                failover_reason=failover_reason,
+                model_fallback=model_fallback,
+                provider_fallback=provider_fallback,
+                tag=tag,
+                limit=limit,
+                cursor=cursor,
+                all_pages=all_pages,
+            )
+        )
+
+    @catalog.tool(
+        name="get_cost_baseline",
+        title="Get cost baseline",
+        credential_requirement="either",
+        description="Read committed daily spend baseline excluding today.",
+    )
+    async def get_cost_baseline(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        days: Annotated[int, Field(ge=3, le=30)] = 7,
+    ) -> _GetCostBaselineResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _GetCostBaselineResult,
+                fetch_project_read,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                path="spend-baseline",
+                response_model=BaselineResult,
+                params={"days": days},
+            )
+        )
+
+    @catalog.tool(
+        name="get_unit_economics",
+        title="Get unit economics",
+        credential_requirement="either",
+        description="Read unit-cost metrics and optional server-inferred causes.",
+    )
+    async def get_unit_economics(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: AlertRange = "30d",
+        vs_prev: bool = True,
+        cause: bool = False,
+    ) -> _GetUnitEconomicsResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _GetUnitEconomicsResult,
+                fetch_project_read,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                path="unit-economics",
+                response_model=UnitEconomicsResponse,
+                params={"range": time_range, "vs_prev": vs_prev, "cause": cause},
+            )
+        )
+
+    @catalog.tool(
+        name="get_cost_drift",
+        title="Get cost drift",
+        credential_requirement="either",
+        description="Compare historical stored spend and estimates with coverage and caveats.",
+    )
+    async def get_cost_drift(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: str = "7d",
+        from_: str | None = None,
+        to: str | None = None,
+    ) -> _GetCostDriftResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _GetCostDriftResult,
+                fetch_drift_options,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+            )
+        )
+
+    @catalog.tool(
+        name="list_priced_models",
+        title="List priced models",
+        credential_requirement="either",
+        description="List exact available priced targets and current pricing version.",
+    )
+    async def list_priced_models(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _ListPricedModelsResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListPricedModelsResult,
+                fetch_priced_models,
+                launch,
+                project_id=project_id,
+                project_read=True,
+            )
+        )
+
+    @catalog.tool(
+        name="simulate_costs",
+        title="Simulate costs",
+        credential_requirement="either",
+        description="Read-only POST replay of historical usage at current prices. Never reserves or bills, never automatically retried.",
+    )
+    async def simulate_costs(
+        provider: ProviderName,
+        model: Annotated[str, Field(min_length=1, max_length=2048)],
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        region: Annotated[str | None, Field(max_length=32)] = None,
+        service_tier: ServiceTier | None = None,
+        time_range: str = "7d",
+        from_: str | None = None,
+        to: str | None = None,
+    ) -> _SimulateCostsResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _SimulateCostsResult,
+                fetch_simulation_options,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                provider=provider,
+                model=model,
+                region=region,
+                service_tier=service_tier,
+                time_range=time_range,
+                from_=from_,
+                to=to,
+            )
+        )
+
+    @catalog.tool(
+        name="list_provider_failovers",
+        title="List provider failovers",
+        credential_requirement="either",
+        description="Read recent provider/model failover groups, capped by Core at 50 groups.",
+    )
+    async def list_provider_failovers(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: FailoverRange = FailoverRange.SEVEN_DAYS,
+    ) -> _ListProviderFailoversResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListProviderFailoversResult,
+                fetch_provider_failovers,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                time_range=time_range,
+            )
+        )
+
+    @catalog.tool(
+        name="list_untracked_surfaces",
+        title="List untracked surfaces",
+        credential_requirement="either",
+        description="Read untracked surfaces with effective retention window, capped by Core at 25 observations.",
+    )
+    async def list_untracked_surfaces(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        time_range: UntrackedRange = UntrackedRange.SEVEN_DAYS,
+    ) -> _ListUntrackedSurfacesResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListUntrackedSurfacesResult,
+                fetch_untracked_surfaces,
+                launch,
+                project_id=project_id,
+                project_read=True,
+                time_range=time_range,
+            )
+        )
+
+    @catalog.tool(
+        name="list_audit_events",
+        title="List audit events",
+        credential_requirement="jwt",
+        description="Read account audit events newest first with exact action filters and bounded pagination.",
+    )
+    async def list_audit_events(
+        time_range: AuditRange = AuditRange.DAYS_30,
+        action: Annotated[str | None, Field(min_length=1, max_length=100)] = None,
+        cursor: str | None = None,
+        all_pages: bool = False,
+    ) -> _ListAuditEventsResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListAuditEventsResult,
+                fetch_audit_events,
+                launch,
+                time_range=time_range,
+                action=action,
+                cursor=cursor,
+                all_pages=all_pages,
+            )
+        )
+
+    @catalog.tool(
+        name="plan_status",
+        credential_note="Accepts JWT or a project key with account context; no project selection is required.",
+        title="Plan status",
+        credential_requirement="either",
+        description="Read current plan limits, capabilities and subscription lifecycle state.",
+    )
+    async def plan_status() -> _PlanStatusResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _PlanStatusResult,
+                fetch_plan,
+                launch,
+            )
+        )
+
+    @catalog.tool(
+        name="plan_catalog",
+        credential_note="Accepts JWT or project keys with authenticated user context; no project selection is required.",
+        title="Plan catalog",
+        credential_requirement="either",
+        description="Read plan catalog: prices in cents, currency, included requests, decimal cent overage, limits and capabilities.",
+    )
+    async def plan_catalog() -> _PlanCatalogResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _PlanCatalogResult,
+                fetch_billing_catalog,
+                launch,
+            )
+        )
+
+    @catalog.tool(
+        name="get_whoami",
+        credential_note="JWT reads user/account/project identity; project keys return only local auth and selected-project context without revealing the key.",
+        title="Get whoami",
+        credential_requirement="either",
+        description="Read account identity and email verification; project keys return local key context without a user identity.",
+    )
+    async def get_whoami() -> _GetWhoamiResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _GetWhoamiResult,
+                fetch_identity,
+                launch,
+                identity=True,
+            )
+        )
+
+    @catalog.tool(
+        name="get_account_phone",
+        title="Get account phone",
+        credential_requirement="jwt",
+        description="Read user phone verification and SMS consent state. Verification and consent writes stay in the dashboard.",
+    )
+    async def get_account_phone() -> _GetAccountPhoneResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _GetAccountPhoneResult,
+                fetch_phone,
+                launch,
+            )
+        )
+
+    @catalog.tool(
+        name="list_alert_activity",
+        title="List alert activity",
+        credential_requirement="jwt",
+        description="Read account-wide activity across all projects plus account scope with delivery receipts.",
+    )
+    async def list_alert_activity(
+        time_range: AlertRange = "30d",
+        event_type: ActivityType | None = None,
+        cursor: str | None = None,
+        all_pages: bool = False,
+    ) -> _ListAlertActivityResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListAlertActivityResult,
+                request_account_alert_page,
+                launch,
+                time_range=time_range,
+                event_type=event_type,
+                cursor=cursor,
+                all_pages=all_pages,
+            )
+        )
+
+    @catalog.tool(
+        name="list_open_alert_deliveries",
+        title="List open alert deliveries",
+        credential_requirement="jwt",
+        description="Read pending/retrying deliveries and attempts regardless of event retention.",
+    )
+    async def list_open_alert_deliveries(
+        cursor: str | None = None, all_pages: bool = False
+    ) -> _ListOpenAlertDeliveriesResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _ListOpenAlertDeliveriesResult,
+                request_account_alert_page,
+                launch,
+                pending=True,
+                cursor=cursor,
+                all_pages=all_pages,
+            )
+        )
+
+    @catalog.tool(
+        name="budget_uncounted",
+        title="Budget uncounted",
+        credential_requirement="either",
+        description="Read advisory unpriced upper-bound offline traffic, possibly overcounted. A 503 means unknown; retry the read, never assume zero or no past traffic.",
+    )
+    async def budget_uncounted(
+        project_id: Annotated[str | None, Field(min_length=1)] = None,
+    ) -> _BudgetUncountedResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _BudgetUncountedResult,
+                fetch_uncounted,
+                launch,
+                project_id=project_id,
+                project_read=True,
+            )
+        )
+
+    @catalog.tool(
+        name="get_account_alert",
+        title="Get account alert",
+        credential_requirement="jwt",
+        description="Read account spend alert configuration, optionally latest firing and lifecycle history within Core’s 30d retention window.",
+    )
+    async def get_account_alert(
+        with_last_fired: bool = False,
+    ) -> _GetAccountAlertResult:
+        return await operation.run_sync(
+            partial(
+                _read_operation,
+                _GetAccountAlertResult,
+                request_account_alert,
+                launch,
+                with_last_fired=with_last_fired,
+            )
+        )
 
     return catalog
 

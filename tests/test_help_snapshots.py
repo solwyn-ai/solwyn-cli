@@ -14,6 +14,42 @@ runner = CliRunner()
 
 
 HELP_CONTRACTS = {
+    ("plan", "list"): {
+        "endpoint": "GET /api/v1/billing/catalog",
+        "auth": "JWT or project key with user context",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
+        "schema": "solwyn.plan.catalog.v1",
+    },
+    ("account", "phone"): {
+        "endpoint": "GET /api/v1/account/phone",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
+        "schema": "solwyn.account.phone.v1",
+    },
+    ("account", "phone", "show"): {
+        "endpoint": "GET /api/v1/account/phone",
+        "auth": "JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
+        "schema": "solwyn.account.phone.v1",
+    },
+    ("budget", "uncounted"): {
+        "endpoint": "GET /api/v1/projects/{project_id}/budget/uncounted",
+        "auth": "key or JWT",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.budget.uncounted.v1",
+    },
+    ("alerts", "activity"): {
+        "endpoint": "GET /api/v1/account/alerts/activity",
+        "auth": "JWT; any account member",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.activity.v1",
+    },
+    ("alerts", "pending"): {
+        "endpoint": "GET /api/v1/account/alerts/open-deliveries",
+        "auth": "JWT; any account member",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.alerts.pending.v1",
+    },
     ("account", "recover"): {
         "endpoint": "POST /api/v1/accounts/me/personal",
         "auth": "JWT; active membership not required",
@@ -795,10 +831,9 @@ def test_mcp_help_names_the_exact_tool_surface() -> None:
     rendered = _normalized_help(("mcp",))
 
     assert (
-        "Tools: budget_status, budget_check, budget_confirm, get_project_status, "
-        "get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, "
-        "record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview."
-    ) in rendered
+        "Tools: budget_status, budget_check, budget_confirm, get_project_status, get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview, list_cost_events, get_cost_baseline, get_unit_economics, get_cost_drift, list_priced_models, simulate_costs, list_provider_failovers, list_untracked_surfaces, list_audit_events, plan_status, plan_catalog, get_whoami, get_account_phone, list_alert_activity, list_open_alert_deliveries, budget_uncounted, get_account_alert."
+        in rendered
+    )
 
 
 def test_auth_and_key_help_is_secret_safe() -> None:

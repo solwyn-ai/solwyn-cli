@@ -56,3 +56,57 @@ def test_drift_detects_query_removal(name):
     assert parameter_contract(snapshot) != json.loads(
         QUERY_PARAMETER_MIRRORS.read_text()
     )
+
+
+READ_PATHS = {
+    "/api/v1/account/alerts/activity": "get",
+    "/api/v1/account/alerts/open-deliveries": "get",
+    "/api/v1/account/alerts/latest-events": "post",
+}
+
+
+def read_parameter_contract(snapshot):
+    # Reuse the same structural serializer by presenting each route as a
+    # history operation; endpoint names/methods remain pinned independently.
+    def structural(value):
+        if isinstance(value, dict):
+            return {
+                k: structural(v)
+                for k, v in value.items()
+                if k not in {"description", "title", "examples"}
+            }
+        if isinstance(value, list):
+            return [structural(v) for v in value]
+        return value
+
+    return {
+        path: {
+            p["name"]: structural(p)
+            for p in snapshot["paths"][path][method].get("parameters", [])
+            if p["in"] == "query"
+        }
+        for path, method in READ_PATHS.items()
+    }
+
+
+def test_new_alert_read_query_contract():
+    snapshot = json.loads(SNAPSHOT.read_text())
+    expected = json.loads(
+        Path("tests/contract/alert_read_query_parameters.json").read_text()
+    )
+    assert read_parameter_contract(snapshot) == expected
+    assert set(expected["/api/v1/account/alerts/activity"]) == {
+        "range",
+        "event_type",
+        "cursor",
+    }
+    assert set(expected["/api/v1/account/alerts/open-deliveries"]) == {"cursor"}
+    assert set(expected["/api/v1/account/alerts/latest-events"]) == {"range"}
+
+
+@pytest.mark.parametrize("path,method", list(READ_PATHS.items()))
+def test_new_read_query_drift_is_detected(path, method):
+    snapshot = json.loads(SNAPSHOT.read_text())
+    expected = read_parameter_contract(snapshot)
+    snapshot["paths"][path][method]["parameters"].pop()
+    assert read_parameter_contract(snapshot) != expected

@@ -5,7 +5,7 @@ import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from urllib.parse import quote
 
 import typer
@@ -19,8 +19,15 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
+from solwyn_cli.commands._alert_models import (
+    AlertEventWindow as AlertEventWindow,
+    AlertDeliveryLegEntry as AlertDeliveryLegEntry,
+    AlertDeliveryStatus as AlertDeliveryStatus,
+    AlertEventEntry,
+    AlertEventListResponse,
+)
+
 from solwyn_cli.commands._cost_filters import window_params
-from solwyn_cli.commands._cost_models import CostWindow
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.budget import _AlertRouting
 from solwyn_cli.commands.budget_rules import parse_until
@@ -34,60 +41,6 @@ from solwyn_cli.runtime import command_context, output_engine
 
 class AlertQueryError(ValueError):
     """Invalid local history query."""
-
-
-class AlertEventWindow(CostWindow):
-    """Alert history uses the same requested/effective window shape as costs."""
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class AlertDeliveryLegEntry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    leg_key: str
-    channel_type: str
-    channel_name: str | None = None
-    status: Literal["pending", "retrying", "accepted", "delivered", "failed"]
-    attempt_count: int
-    last_attempted_at: datetime | None = None
-    delivered_at: datetime | None = None
-    error: str | None = None
-
-
-class AlertDeliveryStatus(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    status: Literal[
-        "pending", "retrying", "processed", "delivered", "partial", "failed"
-    ]
-    attempt_count: int
-    next_attempt_at: datetime | None = None
-    dead_lettered_at: datetime | None = None
-    legs: list[AlertDeliveryLegEntry]
-
-
-class AlertEventEntry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str
-    project_id: str | None = None
-    account_id: str
-    scope: str
-    rule_key: str
-    emitted_at: datetime
-    event_type: str
-    rule_type: str | None = None
-    value_at_event: float | None = None
-    threshold_at_event: float | None = None
-    period_key: str | None = None
-    linked_event_ids: list[str] = Field(default_factory=list)
-    metadata_json: dict[str, Any] = Field(default_factory=dict)
-    delivery: AlertDeliveryStatus | None = None
-
-
-class AlertEventListResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    events: list[AlertEventEntry]
-    next_cursor: str | None = None
-    window: AlertEventWindow
 
 
 class AccountAlertResponse(BaseModel):
@@ -544,9 +497,29 @@ def _account(
 
 
 @account_app.command("show", epilog=_account_help("GET"))
-def account_show(context: typer.Context) -> None:
+def account_show(
+    context: typer.Context,
+    with_last_fired: Annotated[bool, typer.Option("--with-last-fired")] = False,
+) -> None:
     """Show the configured account spend alert (404 if absent)."""
-    _account(context, "show")
+    if not with_last_fired:
+        _account(context, "show")
+        return
+    from solwyn_cli.commands._alert_reads import request_account_alert
+
+    with _client(context, account=True) as client:
+        data = request_account_alert(client=client, with_last_fired=True)
+    output_engine(context).write_success(
+        schema="solwyn.alerts.account.v1",
+        data=data,
+        table=TableData(
+            columns=("Field", "Value"),
+            rows=tuple(
+                (k, json.dumps(v)) for k, v in data.model_dump(mode="json").items()
+            ),
+            fold_cells=True,
+        ),
+    )
 
 
 @account_app.command("set", epilog=_account_help("PUT", owner=True))
@@ -604,3 +577,98 @@ def account_preview(
 ) -> None:
     """Preview unsaved account routing; ungated and available to any member."""
     _account(context, "preview", AccountAlertPreviewRequest(channel_ids=channel or []))
+
+
+@app.command(
+    "activity",
+    epilog=_help(
+        "GET /api/v1/account/alerts/activity",
+        "JWT; any account member",
+        "solwyn.alerts.activity.v1",
+    ),
+)
+def activity(
+    context: typer.Context,
+    time_range: Annotated[str, typer.Option("--range")] = "30d",
+    event_type: Annotated[str | None, typer.Option("--event-type")] = None,
+    cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+    all_pages: Annotated[bool, typer.Option("--all")] = False,
+) -> None:
+    """Read account-wide activity across every project and account scope."""
+    from solwyn_cli.commands._alert_reads import (
+        activity_params,
+        request_account_alert_page,
+    )
+
+    try:
+        activity_params(time_range, event_type)
+    except AlertQueryError as error:
+        exit_with_error(
+            context,
+            OutputError(code="invalid_alert_query", message=str(error)),
+            semantic=ErrorSemantic.USAGE,
+        )
+    with _client(context, account=True) as client:
+        data = request_account_alert_page(
+            client=client,
+            time_range=time_range,
+            event_type=event_type,
+            cursor=cursor,
+            all_pages=all_pages,
+        )
+    report_window(data.window)
+    _write_account_events(context, data, "solwyn.alerts.activity.v1")
+
+
+def _write_account_events(context: typer.Context, data: BaseModel, schema: str) -> None:
+    if (
+        data.next_cursor
+        and command_context(context).output_format is OutputFormat.TABLE
+    ):
+        typer.echo(
+            "More events are available. Next cursor (pass with --cursor): "
+            + json.dumps(data.next_cursor),
+            err=True,
+        )
+    output_engine(context).write_success(
+        schema=schema, data=data, table=_table(data.events)
+    )
+
+
+@app.command(
+    "pending",
+    epilog=_help(
+        "GET /api/v1/account/alerts/open-deliveries",
+        "JWT; any account member",
+        "solwyn.alerts.pending.v1",
+    ),
+)
+def pending(
+    context: typer.Context,
+    cursor: Annotated[str | None, typer.Option("--cursor")] = None,
+    all_pages: Annotated[bool, typer.Option("--all")] = False,
+    fail_if_open: Annotated[
+        bool,
+        typer.Option(
+            "--fail-if-open",
+            help="Exit 1 after printing data when open deliveries exist.",
+        ),
+    ] = False,
+) -> None:
+    """Read pending/retrying deliveries, regardless of event retention."""
+    from solwyn_cli.commands._alert_reads import request_account_alert_page
+
+    with _client(context, account=True) as client:
+        data = request_account_alert_page(
+            client=client, pending=True, cursor=cursor, all_pages=all_pages
+        )
+    _write_account_events(context, data, "solwyn.alerts.pending.v1")
+    if fail_if_open and data.events:
+        exit_with_error(
+            context,
+            OutputError(
+                code="open_alert_deliveries",
+                message="Open alert deliveries remain.",
+                hint="Inspect delivery attempts and next_attempt_at; retry this read after delivery processing.",
+            ),
+        )

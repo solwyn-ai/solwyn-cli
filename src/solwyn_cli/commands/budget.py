@@ -2228,3 +2228,62 @@ def status(
     )
     if max_utilization is not None and data.utilization_pct >= max_utilization:
         raise typer.Exit(code=ExitCode.BUDGET_DENIED)
+
+
+@app.command(
+    "uncounted",
+    epilog=help_contract(
+        endpoint="GET /api/v1/projects/{project_id}/budget/uncounted",
+        auth="key or JWT",
+        exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        schema="solwyn.budget.uncounted.v1",
+    ),
+)
+def uncounted(context: typer.Context) -> None:
+    """Read advisory offline traffic: an unpriced upper bound, possibly overcounted."""
+    from solwyn_cli.commands._account_reads import UNCOUNTED_NOTICE, fetch_uncounted
+
+    runtime = command_context(context)
+    if not runtime.project:
+        exit_with_error(
+            context,
+            OutputError(
+                code="project_required",
+                message="Select a project with --project or SOLWYN_PROJECT_ID.",
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    credential = required_credential(context, resolve=resolve_credential)
+    try:
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            data = fetch_uncounted(client=client, project_id=runtime.project)
+    except ApiError as error:
+        if error.status_code == 503:
+            error.hint = (error.hint or "Retry the read.") + " " + UNCOUNTED_NOTICE
+        exit_with_error(context, error)
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(code="authentication_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except (ValueError, TypeError):
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_uncounted_response",
+                message="The uncounted tally response was invalid.",
+            ),
+        )
+    typer.echo(UNCOUNTED_NOTICE, err=True)
+    output_engine(context).write_success(
+        schema="solwyn.budget.uncounted.v1",
+        data=data,
+        table=TableData(
+            columns=("Field", "Value"),
+            rows=tuple(
+                (k, str(v) if v is not None else "none")
+                for k, v in data.model_dump(mode="json").items()
+            ),
+        ),
+    )

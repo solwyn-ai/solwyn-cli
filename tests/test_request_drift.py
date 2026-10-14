@@ -36,6 +36,7 @@ from solwyn_cli._vendor.wire import (
     ProjectAlertsPreviewRequest,
     WebhookCreateRequest,
 )
+from solwyn_cli.commands._alert_reads import AlertLatestRequest, AlertRuleLookup
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
 from solwyn_cli.commands.costs import CostRange
@@ -44,7 +45,10 @@ from solwyn_cli.commands.audit import AuditRange
 
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
+
 REQUEST_MIRRORS = {
+    AlertLatestRequest: "AlertLatestRequest",
+    AlertRuleLookup: "AlertRuleLookup",
     NotificationConfigUpdate: "NotificationConfigUpdate",
     NotificationChannelCreate: "NotificationChannelCreate",
     NotificationChannelUpdate: "NotificationChannelUpdate",

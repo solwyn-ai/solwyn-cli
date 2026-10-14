@@ -14,6 +14,44 @@ from solwyn_cli.commands import audit, budget, init, projects
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 # P3+ command tasks extend this registry when they begin reading response fields.
 RESPONSE_READS = {
+    "UncountedTallyResponse": (
+        "project_id",
+        "uncounted_calls",
+        "uncounted_tokens",
+        "last_reported_at",
+    ),
+    "AccountPhoneResponse": (
+        "state",
+        "phone_number",
+        "verified",
+        "verified_at",
+        "pending_phone_number",
+        "verification_expires_at",
+        "resend_available_at",
+        "sms_alerts_consented_at",
+        "sms_alerts_disclosure_version",
+    ),
+    "AlertOpenResponse": ("events", "next_cursor"),
+    "AlertLatestResponse": ("events", "window"),
+    "BillingCatalogResponse": ("currency", "tax_behavior", "tax_code", "tiers"),
+    "BillingCatalogTier": (
+        "tier",
+        "display_name",
+        "description",
+        "most_popular",
+        "prices",
+        "overage",
+        "limits",
+        "capabilities",
+    ),
+    "BillingCatalogPrices": ("month", "year"),
+    "BillingCatalogPriceMonth": ("amount_cents", "currency"),
+    "BillingCatalogPriceYear": ("amount_cents", "monthly_display_cents", "currency"),
+    "BillingCatalogOverage": (
+        "included_requests",
+        "published_rate",
+        "unit_amount_decimal_cents",
+    ),
     "PersonalAccountResponse": ("account_id",),
     "AccountSelfResponse": (
         "id",
@@ -256,8 +294,13 @@ RESPONSE_READS = {
     "MeResponse": (
         "user_id",
         "email",
+        "email_verified",
+        "first_name",
+        "marketing_emails_subscribed",
+        "account_id",
         "display_name",
         "subscription_tier",
+        "alert_email_override",
     ),
     "ProjectResponse": (
         "id",
@@ -795,6 +838,28 @@ RESPONSE_READS = {
 }
 # method/path -> (success status, JSON shape, consumed response component)
 OPERATION_RESPONSE_BINDINGS = {
+    ("GET", "/api/v1/projects/{project_id}/budget/uncounted"): (
+        "200",
+        "object",
+        "UncountedTallyResponse",
+    ),
+    ("GET", "/api/v1/account/phone"): ("200", "object", "AccountPhoneResponse"),
+    ("GET", "/api/v1/account/alerts/activity"): (
+        "200",
+        "object",
+        "AlertEventListResponse",
+    ),
+    ("GET", "/api/v1/account/alerts/open-deliveries"): (
+        "200",
+        "object",
+        "AlertOpenResponse",
+    ),
+    ("POST", "/api/v1/account/alerts/latest-events"): (
+        "200",
+        "object",
+        "AlertLatestResponse",
+    ),
+    ("GET", "/api/v1/billing/catalog"): ("200", "object", "BillingCatalogResponse"),
     ("POST", "/api/v1/accounts/me/personal"): (
         "200",
         "object",

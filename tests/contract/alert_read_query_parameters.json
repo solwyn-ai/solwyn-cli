@@ -1,0 +1,88 @@
+{
+  "/api/v1/account/alerts/activity": {
+    "cursor": {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "event_type": {
+      "in": "query",
+      "name": "event_type",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "enum": [
+              "fired",
+              "snoozed",
+              "unsnoozed",
+              "paused",
+              "resumed"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "range": {
+      "in": "query",
+      "name": "range",
+      "required": false,
+      "schema": {
+        "default": "30d",
+        "enum": [
+          "7d",
+          "30d",
+          "90d"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "/api/v1/account/alerts/latest-events": {
+    "range": {
+      "in": "query",
+      "name": "range",
+      "required": false,
+      "schema": {
+        "default": "30d",
+        "enum": [
+          "7d",
+          "30d",
+          "90d"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "/api/v1/account/alerts/open-deliveries": {
+    "cursor": {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  }
+}

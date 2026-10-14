@@ -11,7 +11,7 @@ from solwyn_cli.errors import ApiError
 
 
 class _Response(BaseModel):
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class AnalyticsCapabilities(_Response):
@@ -116,3 +116,49 @@ def get_capabilities(*, client: SolwynClient) -> TierCapabilities | None:
         capabilities = None
     client._capabilities = capabilities
     return capabilities
+
+
+class BillingCatalogPriceMonth(_Response):
+    amount_cents: int
+    currency: str
+
+
+class BillingCatalogPriceYear(_Response):
+    amount_cents: int
+    monthly_display_cents: int
+    currency: str
+
+
+class BillingCatalogPrices(_Response):
+    month: BillingCatalogPriceMonth | None = None
+    year: BillingCatalogPriceYear | None = None
+
+
+class BillingCatalogOverage(_Response):
+    included_requests: int
+    published_rate: str
+    unit_amount_decimal_cents: str
+
+
+class BillingCatalogTier(_Response):
+    tier: Literal["free", "production", "team", "scale"]
+    display_name: str
+    description: str
+    most_popular: bool
+    prices: BillingCatalogPrices
+    overage: BillingCatalogOverage | None
+    limits: dict[str, int]
+    capabilities: TierCapabilities
+
+
+class BillingCatalogResponse(_Response):
+    currency: str
+    tax_behavior: str
+    tax_code: str
+    tiers: dict[Literal["free", "production", "team", "scale"], BillingCatalogTier]
+
+
+def fetch_billing_catalog(*, client: SolwynClient) -> BillingCatalogResponse:
+    return BillingCatalogResponse.model_validate(
+        client.request("GET", "/api/v1/billing/catalog").json()
+    )

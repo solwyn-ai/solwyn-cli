@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.auth import (
     AuthError,
     JwtCredential,
@@ -209,7 +210,7 @@ def audit(
 ) -> None:
     """List account audit events newest first."""
     try:
-        query = _AuditQuery(range=range_, action=action, cursor=cursor)
+        _AuditQuery(range=range_, action=action, cursor=cursor)
     except ValidationError:
         exit_with_error(
             context,
@@ -222,35 +223,15 @@ def audit(
         )
     credential = _jwt_credential(context)
     runtime = command_context(context)
-    events: list[AuditEventEntry] = []
-    seen_cursors = {query.cursor} if query.cursor is not None else set()
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            while True:
-                response = client.request(
-                    "GET",
-                    "/api/v1/account/audit-events",
-                    params=_request_params(query),
-                )
-                if response.status_code != 200:
-                    raise ValueError("Audit request did not return 200")
-                page = AuditEventListResponse.model_validate(response.json())
-                events.extend(page.events)
-                if not all_ or not page.has_more:
-                    data = (
-                        AuditEventListResponse(
-                            events=events,
-                            next_cursor=None,
-                            has_more=False,
-                        )
-                        if all_
-                        else page
-                    )
-                    break
-                if page.next_cursor is None or page.next_cursor in seen_cursors:
-                    raise ValueError("Audit pagination did not advance")
-                seen_cursors.add(page.next_cursor)
-                query = query.model_copy(update={"cursor": page.next_cursor})
+            data = fetch_audit_events(
+                client=client,
+                time_range=range_,
+                action=action,
+                cursor=cursor,
+                all_pages=all_,
+            )
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -277,3 +258,38 @@ def audit(
             "Run `solwyn audit --all` to fetch all remaining events.",
             err=True,
         )
+
+
+def fetch_audit_events(
+    *,
+    client: SolwynClient,
+    time_range: AuditRange = AuditRange.DAYS_30,
+    action: str | None = None,
+    cursor: str | None = None,
+    all_pages: bool = False,
+) -> AuditEventListResponse:
+    query = _AuditQuery(range=time_range, action=action, cursor=cursor)
+    if not isinstance(client.current_credential, JwtCredential):
+        raise AuthError("Account audit requires JWT.")
+    events = []
+    seen = set()
+    while True:
+        operation.page(query.cursor)
+        if query.cursor is not None:
+            if query.cursor in seen:
+                raise ValueError("Audit pagination repeated a cursor.")
+            seen.add(query.cursor)
+        response = client.request(
+            "GET", "/api/v1/account/audit-events", params=_request_params(query)
+        )
+        if response.status_code != 200:
+            raise ValueError("Audit request did not return 200")
+        page = AuditEventListResponse.model_validate(response.json())
+        events.extend(page.events)
+        data = AuditEventListResponse(
+            events=events, next_cursor=page.next_cursor, has_more=page.has_more
+        )
+        operation.retain(data, cursor=page.next_cursor)
+        if not all_pages or not page.has_more:
+            return data
+        query = query.model_copy(update={"cursor": page.next_cursor})

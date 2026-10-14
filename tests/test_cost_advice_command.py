@@ -300,6 +300,8 @@ def test_cost_advice_requests_use_exact_paths_params_and_body() -> None:
                     "from": "2026-09-01T00:00:00Z",
                     "to": "2026-09-02T00:00:00Z",
                 },
+                "retry_rate_limit": False,
+                "retry_auth": False,
                 "json": {
                     "target_provider": "bedrock",
                     "target_model": "amazon.nova-pro-v1:0",

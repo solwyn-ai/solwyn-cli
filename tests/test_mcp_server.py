@@ -53,6 +53,23 @@ _TOOL_NAMES = [
     "list_alert_events",
     "budget_check_batch",
     "get_overview",
+    "list_cost_events",
+    "get_cost_baseline",
+    "get_unit_economics",
+    "get_cost_drift",
+    "list_priced_models",
+    "simulate_costs",
+    "list_provider_failovers",
+    "list_untracked_surfaces",
+    "list_audit_events",
+    "plan_status",
+    "plan_catalog",
+    "get_whoami",
+    "get_account_phone",
+    "list_alert_activity",
+    "list_open_alert_deliveries",
+    "budget_uncounted",
+    "get_account_alert",
 ]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

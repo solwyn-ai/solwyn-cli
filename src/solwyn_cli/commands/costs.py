@@ -13,7 +13,11 @@ from pydantic import ValidationError
 from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
-from solwyn_cli.commands._cost_filters import cost_params, validate_group_by
+from solwyn_cli.commands._cost_filters import (
+    CostQueryError,
+    cost_params,
+    validate_group_by,
+)
 from solwyn_cli.commands._cost_models import (
     AccountCostQueryResponse,
     CostGroup,
@@ -113,6 +117,24 @@ def _request_account_costs(
     **filters: Any,
 ) -> tuple[AccountCostsData, httpx.Headers]:
     """Read account costs and retain Core's effective-window headers."""
+    if not isinstance(client.current_credential, JwtCredential):
+        raise AuthError("Account costs require JWT.")
+    if any(
+        filters.get(name) is not None
+        for name in (
+            "status",
+            "service_tier",
+            "provider_region",
+            "agent_run",
+            "failover_reason",
+            "model_fallback",
+            "provider_fallback",
+            "tag",
+        )
+    ):
+        raise CostQueryError(
+            "Account costs support only model, provider, modality, group_by and window filters."
+        )
     params = cost_params(time_range=time_range, **filters)
     params["group_by"] = group_by
     response = client.request("GET", "/api/v1/account/costs", params=params)
@@ -245,7 +267,12 @@ def _account_table(data: AccountCostsData) -> TableData:
             range=data.range,
             group_by=data.group_by,
             groups=[
-                CostGroup.model_validate(group.model_dump()) for group in data.groups
+                CostGroup.model_validate(
+                    group.model_dump(
+                        exclude={"project_name", "current_period_cost", "daily"}
+                    )
+                )
+                for group in data.groups
             ],
             truncated=data.truncated,
             savings=data.savings,
@@ -419,14 +446,15 @@ def _run(
                 stream_export(client=client, path=path + "/export", params=params)
                 return
             if not account and operation == "events":
-                params["limit"] = limit
-                if cursor is not None:
-                    params["cursor"] = cursor
-                data = CostEventsResponse.model_validate(
-                    client.request("GET", path + "/events", params=params).json()
+                from solwyn_cli.commands._cost_reads import fetch_cost_events
+
+                data = fetch_cost_events(
+                    client=client,
+                    project_id=runtime.project,
+                    limit=limit,
+                    cursor=cursor,
+                    **filters,
                 )
-                if any(item.project_id != runtime.project for item in data.items):
-                    raise ValueError("Costs event project did not match the request.")
                 table = _events_table(data)
             elif not account and operation == "total":
                 data = fetch_cost_total(
