@@ -6,6 +6,23 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from solwyn_cli.commands._billing import (
+    CancelResponse,
+    CheckoutRequest,
+    CheckoutResponse,
+    PortalResponse,
+    PlanPreviewRequest,
+    PlanChangeRequest,
+    PlanPreviewLineResponse,
+    PlanPreviewResponse,
+    PlanChangeResponse,
+)
+from solwyn_cli.errors import (
+    BillingConflictDetail,
+    BillingUnavailableDetail,
+    BillingNotFoundDetail,
+    BillingValidationDetail,
+)
 from solwyn_cli.commands._entitlement import (
     PendingPlan,
     ScheduledPlanChange,
@@ -16,6 +33,24 @@ from solwyn_cli.commands._entitlement import (
 @pytest.mark.parametrize(
     ("model", "component"),
     [
+        *[
+            (model, model.__name__)
+            for model in (
+                CancelResponse,
+                CheckoutRequest,
+                CheckoutResponse,
+                PortalResponse,
+                PlanPreviewRequest,
+                PlanChangeRequest,
+                PlanPreviewLineResponse,
+                PlanPreviewResponse,
+                PlanChangeResponse,
+                BillingConflictDetail,
+                BillingUnavailableDetail,
+                BillingNotFoundDetail,
+                BillingValidationDetail,
+            )
+        ],
         (SubscriptionStatusResponse, "SubscriptionStatusResponse"),
         (PendingPlan, "PendingPlan"),
         (ScheduledPlanChange, "ScheduledPlanChangeResponse"),

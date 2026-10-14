@@ -225,7 +225,7 @@ def test_delivered_client_discovers_expanded_server_before_budget_read(
     assert output == {
         "status": "ok",
         "protocol": "2025-11-25" if mode == "legacy" else "2026-07-28",
-        "tools": 30,
+        "tools": 31,
         "project_id": project,
         "remaining_budget": 87.5,
     }
@@ -239,6 +239,7 @@ def test_delivered_client_discovers_expanded_server_before_budget_read(
         "old_inventory",
         "missing_budget",
         "missing_new_read",
+        "missing_preview",
         "extra_read",
         "duplicate",
         "writer",
@@ -263,6 +264,8 @@ def test_delivered_client_rejects_incomplete_write_or_malformed_catalog(
         catalog.tools = [tool for tool in tools if tool.name != "budget_status"]
     elif mutation == "missing_new_read":
         catalog.tools = [tool for tool in tools if tool.name != "plan_catalog"]
+    elif mutation == "missing_preview":
+        catalog.tools = [tool for tool in tools if tool.name != "plan_preview"]
     elif mutation == "extra_read":
         catalog.tools = [*tools, tools[0].model_copy(update={"name": "unknown_read"})]
     elif mutation == "duplicate":

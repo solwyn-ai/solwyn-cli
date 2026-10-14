@@ -694,6 +694,57 @@ HELP_CONTRACTS = {
     },
 }
 
+_BILLING_EXITS = (
+    "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found"
+)
+HELP_CONTRACTS.update(
+    {
+        ("plan", "cancel"): {
+            "endpoint": "GET /api/v1/billing/status then POST /api/v1/billing/cancel",
+            "auth": "owner JWT (billing.manage)",
+            "exits": _BILLING_EXITS,
+            "schema": "solwyn.plan.cancel.v1",
+        },
+        ("plan", "resume"): {
+            "endpoint": "GET /api/v1/billing/status then DELETE /api/v1/billing/cancel",
+            "auth": "owner JWT (billing.manage)",
+            "exits": _BILLING_EXITS,
+            "schema": "solwyn.plan.resume.v1",
+        },
+        ("plan", "change"): {
+            "endpoint": "POST /api/v1/billing/plan-preview then POST /api/v1/billing/plan-change; --discard uses GET status then DELETE /api/v1/billing/plan-change",
+            "auth": "JWT for preview; owner JWT (billing.manage) for writes",
+            "exits": _BILLING_EXITS,
+            "schema": "solwyn.plan.change.v1; solwyn.plan.discard.v1",
+        },
+        ("plan", "upgrade"): {
+            "endpoint": "POST /api/v1/billing/checkout",
+            "auth": "owner JWT (billing.manage)",
+            "exits": _BILLING_EXITS,
+            "schema": "solwyn.plan.upgrade.v1",
+        },
+        ("plan", "portal"): {
+            "endpoint": "POST /api/v1/billing/portal",
+            "auth": "owner JWT (billing.manage)",
+            "exits": _BILLING_EXITS,
+            "schema": "solwyn.plan.portal.v1",
+        },
+        ("plan", "pending"): {
+            "endpoint": "composite router for pending plan intent",
+            "auth": "owner JWT (billing.manage)",
+            "exits": "0 success; 2 usage",
+            "schema": "varies by subcommand",
+        },
+        ("plan", "pending", "dismiss"): {
+            "endpoint": "GET /api/v1/billing/status then DELETE /api/v1/billing/plan-intent",
+            "auth": "owner JWT (billing.manage)",
+            "exits": _BILLING_EXITS,
+            "schema": "solwyn.plan.pending.dismiss.v1",
+        },
+    }
+)
+
+
 _INIT_REMOTE_OPERATIONS = (
     "conditional POST /api/v1/auth/login",
     "GET /api/v1/projects",
@@ -831,7 +882,7 @@ def test_mcp_help_names_the_exact_tool_surface() -> None:
     rendered = _normalized_help(("mcp",))
 
     assert (
-        "Tools: budget_status, budget_check, budget_confirm, get_project_status, get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview, list_cost_events, get_cost_baseline, get_unit_economics, get_cost_drift, list_priced_models, simulate_costs, list_provider_failovers, list_untracked_surfaces, list_audit_events, plan_status, plan_catalog, get_whoami, get_account_phone, list_alert_activity, list_open_alert_deliveries, budget_uncounted, get_account_alert."
+        "Tools: budget_status, budget_check, budget_confirm, get_project_status, get_forecast, get_costs, list_projects, get_cost_total, list_budget_rules, record_call, list_tags, list_tag_values, list_agent_runs, get_agent_run, list_alert_events, budget_check_batch, get_overview, list_cost_events, get_cost_baseline, get_unit_economics, get_cost_drift, list_priced_models, simulate_costs, list_provider_failovers, list_untracked_surfaces, list_audit_events, plan_status, plan_catalog, get_whoami, get_account_phone, list_alert_activity, list_open_alert_deliveries, budget_uncounted, get_account_alert, plan_preview."
         in rendered
     )
 

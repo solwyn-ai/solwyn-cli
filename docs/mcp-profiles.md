@@ -12,7 +12,7 @@ Global `--project` and `--api-url` options precede `mcp`. Its `--profile`
 option follows `mcp`. Credentials belong in the existing keychain workflow or
 the subprocess's `SOLWYN_API_KEY` environment, never in argv or repository JSON.
 
-`read` exposes 30 tools. `guardrails` exposes all 34 and remains the default for
+`read` exposes 31 tools. `guardrails` exposes all 35 and remains the default for
 compatibility with `solwyn mcp`. The choice stays fixed for the process lifetime.
 Excluded names fail both discovery and invocation: calling one returns the fixed
 MCP protocol error `-32602`, `Unknown tool`, before argument validation, credential
@@ -24,6 +24,7 @@ resolution or HTTP. A tool argument cannot switch profiles.
 | `get_costs` | Both | Project key or JWT; `account=true` requires JWT and excludes explicit `project_id` |
 | `list_budget_rules` | Both | Project key or JWT; `with_last_fired=true` requires JWT |
 | `plan_status`, `plan_catalog` | Both | JWT or project key with account/user context; no selected project required |
+| `plan_preview` | Both | JWT at any account role; no selected project required |
 | `get_whoami` | Both | JWT reads identity including email verification; project keys return local context with no invented user or raw key |
 | `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert`, `get_account_phone`, `list_audit_events` | Both | JWT; reads do not impose owner-only write gates |
 | `list_alert_events` | Both | Project key or JWT for project history; `account=true` reads account-scope events, requires JWT and ignores `project_id` |
@@ -41,7 +42,7 @@ key, then keychain JWT, freshly evaluated for every operation. A stored key can
 therefore mask a JWT needed for account tools.
 
 Discovery includes human titles, behavioral annotations, described input fields
-and typed output schemas. All 30 reads have `readOnlyHint=true`; the four writes
+and typed output schemas. All 31 reads have `readOnlyHint=true`; the four writes
 have `readOnlyHint=false`, `destructiveHint=true` and `idempotentHint=false`.
 The conservative write hints cover budget/accounting changes and composite
 operations; they do not claim that every retry duplicates an effect. Reads use
@@ -189,3 +190,29 @@ prices/overage. `plan_status` includes subscription lifecycle and capabilities.
 All 17 new tools are read-only, non-destructive and idempotent in both profiles;
 the four existing guardrails mutations are unchanged. Billing, team and member
 writes and account recovery remain CLI-only.
+
+## Subscription preview
+
+`plan_preview(tier, interval)` is the only billing capability added beyond status
+and catalog. It appears in both profiles and reads Core's plan-change estimate
+with JWT at any account role, including member. No project selection is required;
+a selected project key masks stored JWT and is refused. The preview POST does
+not change the subscription, create an invoice, or charge the customer. It has
+`readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, and
+`openWorldHint=true`.
+
+Inputs use the same paid tiers (`production|team|scale`) and intervals
+(`month|year`) as CLI flags. `solwyn.plan.preview.v1` preserves immediate/scheduled
+mode, nullable effective date, proration date, signed integer cent amounts,
+currency, and line periods/proration flags. It is an estimate, not a price lock.
+To act on it, deliberately run the CLI `plan change` flow, which obtains a fresh
+preview and requires confirmation or `--yes`. Cancel/resume, discard, checkout,
+portal creation and pending-intent dismissal are CLI-only and require owner JWT.
+
+The common 30-second useful-work deadline, 1 MiB HTTP and 2 MiB result fences apply.
+503/transport failures never replay the preview POST automatically; it receives
+read guidance. Definite 401/429 rejection handling retains the shared bounds.
+Billing errors use fixed local MCP hints, never remote Stripe detail. The new
+declaration has a separate 4 KiB allocation; the previous declaration allocations
+and runtime limits stay unchanged. Diagnostics accept exactly the 35-name
+catalog (36 entries are rejected).

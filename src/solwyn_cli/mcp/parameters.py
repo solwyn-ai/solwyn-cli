@@ -30,6 +30,8 @@ TOKEN_COUNTS = {
     "tool_use_input_tokens": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
 }
 COMMON = {
+    "tier": "Target paid plan tier: production, team or scale. Preview only; does not change the plan.",
+    "interval": "Target billing interval, month or year. Preview only; does not create a charge.",
     "project_id": PROJECT,
     "tags": TAGS,
     "agent_run_id": RUN_ID,
