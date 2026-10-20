@@ -55,6 +55,12 @@ def _job_block(workflow: str, job_name: str) -> str:
     return remainder if next_job is None else remainder[: next_job.start()]
 
 
+def _job_condition(job: str) -> str:
+    condition = re.search(r"(?m)^    if: (.+(?:\n      .+)*)", job)
+    assert condition is not None, "Job is missing its event/draft guard"
+    return " ".join(condition[1].removeprefix(">-").split())
+
+
 def _metadata(requirements: tuple[str, ...] = RUNTIME_REQUIREMENTS) -> str:
     lines = [
         "Metadata-Version: 2.5",
@@ -114,6 +120,48 @@ def test_protected_job_names_and_real_legacy_client_stay_maintained():
         assert f'- "{version}"' in tests
     assert "SOLWYN_TEST_LEGACY_PYTHON:" in tests
     assert "--require-hashes scripts/locks/mcp-legacy.txt" in tests
+    for job_name in ("quality", "tests"):
+        assert not re.search(r"(?m)^    needs:", _job_block(workflow, job_name))
+
+
+def test_ci_concurrency_cancels_only_pr_runs_and_isolates_other_runs() -> None:
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    concurrency = re.search(r"(?m)^concurrency:\n((?:  .*\n)+)", workflow)
+    assert concurrency is not None
+    assert (
+        "  group: ${{ github.workflow }}-"
+        "${{ github.event_name == 'pull_request' && github.ref || github.run_id }}\n"
+    ) in concurrency[1]
+    assert (
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
+    ) in concurrency[1]
+
+
+@pytest.mark.parametrize("job_name", ["changes", "quality", "packaging-smoke"])
+def test_ci_jobs_skip_draft_prs(job_name: str) -> None:
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert _job_condition(_job_block(workflow, job_name)) == (
+        "github.event_name != 'pull_request' || !github.event.pull_request.draft"
+    )
+    assert "types: [opened, synchronize, reopened, ready_for_review]" in workflow
+
+
+def test_ci_python_tests_skip_only_pushes_and_draft_prs() -> None:
+    job = _job_block(WORKFLOW_PATH.read_text(encoding="utf-8"), "tests")
+
+    assert _job_condition(job) == (
+        "github.event_name != 'push' && "
+        "(github.event_name != 'pull_request' || !github.event.pull_request.draft)"
+    )
+
+
+def test_ci_selector_fetches_full_history_only_for_prs() -> None:
+    job = _job_block(WORKFLOW_PATH.read_text(encoding="utf-8"), "changes")
+
+    assert (
+        "fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}"
+    ) in job
 
 
 def test_packaging_smoke_job_pins_actions_and_inspects_distribution() -> None:
@@ -154,6 +202,41 @@ def test_publish_workflow_tests_wheel_with_all_locked_test_dependencies() -> Non
 
     assert "uv sync --locked --all-groups --no-install-project" in job
     assert "uv pip install --python .venv/bin/python --no-deps dist/*.whl" in job
+
+
+def test_publish_requires_cross_platform_wheel_acceptance() -> None:
+    workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    publish = _job_block(workflow, "publish")
+    needs = re.search(r"(?m)^    needs: \[([^\]]+)\]$", publish)
+    assert needs is not None
+    assert {"build", "test", "packaging-smoke"} <= {
+        job.strip() for job in needs[1].split(",")
+    }
+
+    smoke = _job_block(workflow, "packaging-smoke")
+    assert "    needs: build\n" in smoke
+    assert "        os: [macos-latest, windows-latest]\n" in smoke
+    assert '        python-version: ["3.11"]\n' in smoke
+    assert "    defaults:\n      run:\n        shell: bash\n" in smoke
+    assert all(
+        shell == "bash" for shell in re.findall(r"(?m)^        shell: (.+)$", smoke)
+    )
+    assert "          name: Packages\n          path: dist\n" in smoke
+    assert (
+        "        run: uv run --no-sync python scripts/mcp_wheel_smoke.py "
+        '--python "${{ matrix.python-version }}" --wheel dist/*.whl\n'
+    ) in smoke
+
+
+@pytest.mark.parametrize("action", ["actions/checkout", "actions/setup-python"])
+def test_release_wheel_gate_uses_the_existing_publish_action_pins(action: str) -> None:
+    workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    pin = rf"(?m)^      - uses: {re.escape(action)}@([0-9a-f]{{40}})\b"
+    existing = re.search(pin, _job_block(workflow, "test"))
+    smoke = re.search(pin, _job_block(workflow, "packaging-smoke"))
+
+    assert existing is not None and smoke is not None
+    assert smoke[1] == existing[1]
 
 
 def test_wheel_inspector_accepts_complete_distribution(tmp_path: Path) -> None:

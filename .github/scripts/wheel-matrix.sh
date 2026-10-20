@@ -15,13 +15,14 @@ if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
   while IFS= read -r -d '' path; do
     case "$path" in
       # Build inputs, acceptance clients/locks, and the CI policy itself.
-      .github/*|scripts/*|examples/mcp/*|docs/registry/*|\
+      .github/workflows/*|.github/scripts/*|examples/mcp/*|tests/fixtures/*|\
+      scripts/mcp_wheel_smoke.py|scripts/inspect_wheel.py|scripts/locks/*|\
       pyproject.toml|uv.lock|hatch*|build*|setup.*|MANIFEST*|\
-      requirements*.txt|constraints*.txt|.python-version|.gitattributes|\
-      README.md|LICENSE*)
+      requirements*.txt|constraints*.txt|.python-version|.gitattributes)
         os="$all_os" ;;
-      # New platform helpers and shell scripts should default to cross-OS.
-      *windows*|*macos*|*darwin*|*posix*|*.ps1|*.bat|*.cmd|*.sh)
+      # Platform helpers in source should default to cross-OS.
+      src/*windows*|src/*macos*|src/*darwin*|src/*posix*|\
+      src/*.ps1|src/*.bat|src/*.cmd|src/*.sh)
         os="$all_os" ;;
       # Commands that launch MCP/browsers, use keychains, or handle paths.
       src/solwyn_cli/commands/mcp*|src/solwyn_cli/commands/config.py|\
@@ -35,14 +36,9 @@ if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
       src/solwyn_cli/commands/*|src/solwyn_cli/_vendor/*|src/solwyn_cli/spec/*)
         ;;
       # All other shared/new source includes startup, config, auth, MCP and
-      # native atomic artifacts. Their regression tests must also opt in.
-      src/*|tests/*mcp*|tests/fixtures/*|tests/conftest.py|tests/test_ci_*|\
-      tests/test_config*|tests/test_auth*|tests/test_runtime.py|\
-      tests/test_foundation.py|tests/test_smoke.py|tests/test_doctor*|\
-      tests/test_init*|tests/test_atomic*|tests/test_agent_artifacts.py|\
-      tests/test_budget*|tests/test_record*|tests/test_shared_command_auth.py|\
-      tests/test_projects*|tests/test_plan*|tests/test_invite*|\
-      tests/test_billing*|tests/test_team*|tests/test_reliability*)
+      # native atomic artifacts. Wheel acceptance does not run pytest; test-only
+      # changes retain all Python tests and the Linux wheel leg.
+      src/*)
         os="$all_os" ;;
     esac
     if [[ "$os" == "$all_os" ]]; then
