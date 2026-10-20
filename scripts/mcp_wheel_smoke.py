@@ -1,6 +1,7 @@
-"""Build/install one wheel outside checkout and run the delivered MCP clients.
+"""Install one wheel outside checkout and run the delivered MCP clients.
 
 Run with uv run python scripts/mcp_wheel_smoke.py --python 3.11.
+Builds from checkout unless --wheel supplies an existing release artifact.
 Only synthetic loopback HTTP, credentials and processes are used. Node24 is required.
 """
 
@@ -477,11 +478,24 @@ def acceptance(
     }
 
 
+def prepare_wheel(uv: str, root: Path, wheel: Path | None) -> Path:
+    if wheel is not None:
+        return wheel.resolve(strict=True)
+    checked(
+        [uv, "build", "--wheel", "--out-dir", str(root / "dist"), str(ROOT)],
+        cwd=root,
+    )
+    wheels = list((root / "dist").glob("*.whl"))
+    assert len(wheels) == 1, "Expected exactly one built wheel"
+    return wheels[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", default="3.11", help="Python floor to install/test")
     parser.add_argument("--report", type=Path, help="Optional JSON evidence output")
     parser.add_argument("--npm-cache", type=Path, help="Optional npm cache directory")
+    parser.add_argument("--wheel", type=Path, help="Existing release wheel to test")
     args = parser.parse_args()
     uv, node, npm = shutil.which("uv"), shutil.which("node"), shutil.which("npm")
     assert uv and node and npm, "uv, Node24 and npm must be installed"
@@ -496,12 +510,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="solwyn wheel acceptance ") as directory:
         root = Path(directory).resolve()
         assert not root.is_relative_to(ROOT), "Wheel work must be outside checkout"
-        checked(
-            [uv, "build", "--wheel", "--out-dir", str(root / "dist"), str(ROOT)],
-            cwd=root,
-        )
-        wheels = list((root / "dist").glob("*.whl"))
-        assert len(wheels) == 1, "Expected exactly one built wheel"
+        wheel = prepare_wheel(uv, root, args.wheel)
         checked(
             [
                 uv,
@@ -511,7 +520,7 @@ def main() -> None:
                 "--no-sync",
                 "python",
                 str(ROOT / "scripts/inspect_wheel.py"),
-                str(wheels[0]),
+                str(wheel),
             ],
             cwd=root,
         )
@@ -556,7 +565,7 @@ def main() -> None:
                 "--python",
                 str(python),
                 "--no-deps",
-                str(wheels[0]),
+                str(wheel),
             ],
             cwd=root,
         )

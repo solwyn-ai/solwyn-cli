@@ -23,6 +23,29 @@ def runner():
     return module
 
 
+def test_release_uses_the_supplied_wheel_without_rebuilding(
+    runner, monkeypatch, tmp_path
+):
+    wheel = tmp_path / "release artifacts" / "solwyn_cli-0.3.0-py3-none-any.whl"
+    wheel.parent.mkdir()
+    wheel.write_bytes(b"exact release artifact")
+
+    def no_rebuild(*args, **kwargs):
+        raise AssertionError("A supplied release wheel must never be rebuilt")
+
+    monkeypatch.setattr(runner, "checked", no_rebuild)
+
+    selected = runner.prepare_wheel("uv", tmp_path, wheel)
+
+    assert selected == wheel.resolve()
+    assert selected.read_bytes() == b"exact release artifact"
+
+
+def test_missing_release_wheel_fails_instead_of_rebuilding(runner, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        runner.prepare_wheel("uv", tmp_path, tmp_path / "missing.whl")
+
+
 class ToolhelpKernel:
     """Only the documented snapshot boundary; never opens another process."""
 
