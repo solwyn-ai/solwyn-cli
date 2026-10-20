@@ -99,7 +99,7 @@ def test_packaging_smoke_job_tests_the_wheel_not_the_source_tree() -> None:
 
     assert "uv sync --locked --all-groups" in job
     assert "scripts/mcp_wheel_smoke.py --python" in job
-    assert "ubuntu-latest, macos-latest, windows-latest" in job
+    assert "os: ${{ fromJSON(needs.changes.outputs.wheel-os) }}" in job
     assert 'python-version: ["3.11"]' in job
     assert 'node-version: "24"' in job
     assert not re.search(r"\buv run(?:\s+--\S+)*\s+solwyn(?:-cli)?\b", job)
