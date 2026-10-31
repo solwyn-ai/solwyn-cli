@@ -170,7 +170,9 @@ def report_window(window: CostWindow) -> None:
     """Warn only when retention changes the requested analytics window."""
     if window.retention_clamped:
         typer.echo(
-            f"Retention clamped window: {window.effective_from} to {window.effective_to} (requested {window.requested_from} to {window.requested_to}).",
+            _terminal_safe(
+                f"Retention clamped window: {window.effective_from} to {window.effective_to} (requested {window.requested_from} to {window.requested_to})."
+            ),
             err=True,
         )
 

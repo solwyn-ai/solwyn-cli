@@ -267,10 +267,6 @@ _EXEMPT_WRITES = {
     ),
     (
         "costs.py",
-        "f'Retention clamped window: {window.effective_from} to {window.effective_to} (requested {window.requested_from} to {window.requested_to}).'",
-    ),
-    (
-        "costs.py",
         "f'Savings: ${savings.saved_cost:.6f}; upper {upper}; blocked calls {savings.blocked_call_count}.'",
     ),
     ("init.py", "f'Project ({project_ids}, or create)'"),
@@ -408,3 +404,23 @@ def test_direct_write_guard_sees_keywords_aliases_and_print(tmp_path: Path) -> N
         ("notice.py", "f'confirm {data.f}'"),
         ("notice.py", "f'print {data.g}'"),
     }
+
+
+def test_retention_clamp_notice_redacts_window_strings(capsys) -> None:
+    from solwyn_cli.commands._cost_models import CostWindow
+    from solwyn_cli.commands.costs import report_window
+
+    report_window(
+        CostWindow(
+            requested_from=LEAKED_TOKEN,
+            requested_to="2026-10-31",
+            effective_from="2026-10-01",
+            effective_to=DEVICE_CODE,
+            retention_clamped=True,
+        )
+    )
+
+    err = capsys.readouterr().err
+    assert "Retention clamped window" in err
+    assert LEAKED_TOKEN not in err
+    assert DEVICE_CODE not in err
