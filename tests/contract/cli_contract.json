@@ -5324,18 +5324,26 @@
           "type": "choice"
         },
         {
+          "choices": [
+            "budget_threshold",
+            "budget_exceeded",
+            "circuit_breaker_opened",
+            "circuit_breaker_closed",
+            "provider_outage",
+            "provider_recovered"
+          ],
           "cli_names": [
             "--event"
           ],
           "default": null,
-          "help": "Event type; repeat. Core accepts future event names.",
+          "help": "Event type; repeat.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
           "multiple": true,
           "name": "event",
           "required": false,
-          "type": "text"
+          "type": "choice"
         },
         {
           "cli_names": [

@@ -164,7 +164,10 @@ def test_command_goldens(api, format, args, body, golden):
         (["--channel", "one", "--channel", "two"], {"channel_ids": ["one", "two"]}),
         (["--clear-channels"], {"channel_ids": []}),
         (["--all-events"], {"enabled_event_types": []}),
-        (["--event", "future_event"], {"enabled_event_types": ["future_event"]}),
+        (
+            ["--event", "provider_outage", "--event", "budget_exceeded"],
+            {"enabled_event_types": ["budget_exceeded", "provider_outage"]},
+        ),
         (["--severity", "critical"], {"severity_threshold": "critical"}),
         (
             ["--no-email", "--sms"],
@@ -187,7 +190,9 @@ def test_config_partial_update(api, flags, expected):
     [
         [],
         ["--channel", "one", "--clear-channels"],
-        ["--event", "x", "--all-events"],
+        ["--event", "budget_exceeded", "--all-events"],
+        # Core's NotificationEventType enum rejects unknown names; so does the CLI.
+        ["--event", "future_event"],
         ["--email", "--reset-email"],
         ["--sms", "--reset-sms"],
         ["--severity", "invalid"],

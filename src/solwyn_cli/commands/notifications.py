@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from solwyn_cli._vendor.notification_wire import (
+    NotificationEventType,
     NotificationConfigUpdate,
     PagerDutyTestRequest,
     Severity,
@@ -95,10 +96,8 @@ def set_config(
     ] = False,
     severity: Annotated[Severity | None, typer.Option("--severity")] = None,
     event: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--event", help="Event type; repeat. Core accepts future event names."
-        ),
+        list[NotificationEventType] | None,
+        typer.Option("--event", help="Event type; repeat."),
     ] = None,
     all_events: Annotated[
         bool, typer.Option("--all-events", help="Allow all event types.")

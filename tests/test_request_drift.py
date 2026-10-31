@@ -26,13 +26,12 @@ from solwyn_cli._vendor.wire import (
     BudgetConfirmRequest,
     BudgetUpdateRequest,
     CostSimulationRequest,
-    LoginRequest,
     IngestMetadataEvent,
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
     ProjectUpdateRequest,
-    RefreshRequest,
     SnoozeRequest,
+    TokenDetails,
     ProjectAlertsPreviewRequest,
     WebhookCreateRequest,
 )
@@ -79,8 +78,6 @@ REQUEST_MIRRORS = {
     AccountAlertUpdateRequest: "AccountAlertUpdateRequest",
     AccountAlertPreviewRequest: "AccountAlertPreviewRequest",
     AccountAlertSnoozeRequest: "AccountAlertSnoozeRequest",
-    LoginRequest: "LoginRequest",
-    RefreshRequest: "RefreshRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
     ProjectKeyRotateRequest: "ProjectKeyRotateRequest",
     WebhookCreateRequest: "WebhookCreateRequest",
@@ -128,6 +125,10 @@ UNADOPTED_OPTIONAL_FIELDS = {
         "requested_model",
         # Reservation-only wave: the CLI has no lease plane, including batch input.
         "lease_id",
+        # Declined: SDK OpenTelemetry correlation; the CLI observes no trace.
+        "span_id",
+        "trace_id",
+        "trace_sampled",
     ),
     "BudgetCheckRequest": (
         # Declined: the directive it requests only tunes SDK-side retry and
@@ -144,6 +145,18 @@ UNADOPTED_OPTIONAL_FIELDS = {
         # Declined: same as check — inert on this endpoint.
         "modality",
     ),
+    # Declined for now: the CLI's confirm and record flags have no compaction
+    # buckets yet. Optional on the wire; adopting them is SDK-parity follow-up.
+    "TokenDetails": (
+        "compaction_input_tokens",
+        "compaction_output_tokens",
+        "compaction_cached_input_tokens",
+        "compaction_cache_creation_5m_tokens",
+        "compaction_cache_creation_1h_tokens",
+    ),
+    # Declined: trace link templates are a dashboard setting; projects rename
+    # sends only the name.
+    "ProjectUpdateRequest": ("trace_url_template",),
 }
 # Threshold rule configs the CLI cannot construct.
 #
@@ -162,6 +175,8 @@ UNADOPTED_FIELD_OWNERS = {
     "IngestMetadataEvent": IngestMetadataEvent,
     "BudgetCheckRequest": BudgetCheckRequest,
     "BudgetConfirmRequest": BudgetConfirmRequest,
+    "TokenDetails": TokenDetails,
+    "ProjectUpdateRequest": ProjectUpdateRequest,
 }
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 
@@ -1128,17 +1143,17 @@ def test_costs_query_unparseable_pattern_fails_closed() -> None:
 
 def test_removed_request_field_trips_drift_guard() -> None:
     mutated = copy.deepcopy(_snapshot())
-    _schema(mutated, "LoginRequest")["properties"].pop("email")
+    _schema(mutated, "InviteRequest")["properties"].pop("email")
 
-    with pytest.raises(AssertionError, match="LoginRequest: field set"):
+    with pytest.raises(AssertionError, match="InviteRequest: field set"):
         assert_request_mirrors_match(mutated)
 
 
 def test_changed_request_requiredness_trips_drift_guard() -> None:
     mutated = copy.deepcopy(_snapshot())
-    _schema(mutated, "LoginRequest")["required"].remove("email")
+    _schema(mutated, "InviteRequest")["required"].remove("email")
 
-    with pytest.raises(AssertionError, match="LoginRequest: required set"):
+    with pytest.raises(AssertionError, match="InviteRequest: required set"):
         assert_request_mirrors_match(mutated)
 
 

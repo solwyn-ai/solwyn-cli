@@ -9,23 +9,15 @@ from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
-    LoginRequest,
     MediaUsage,
     ProjectCreateRequest,
     ProjectKeyRotateRequest,
-    RefreshRequest,
 )
 
 
 @pytest.mark.parametrize(
     ("model", "fields", "required"),
     [
-        (
-            LoginRequest,
-            {"email", "password", "plan", "billing_interval"},
-            {"email", "password"},
-        ),
-        (RefreshRequest, {"refresh_token"}, {"refresh_token"}),
         (
             ProjectCreateRequest,
             {"name", "budget_limit", "budget_period", "budget_mode", "scope"},
@@ -95,8 +87,6 @@ def test_request_model_field_sets_and_required_fields(
 @pytest.mark.parametrize(
     ("model", "payload"),
     [
-        (LoginRequest, {"email": "dev@example.com", "password": "secret"}),
-        (RefreshRequest, {"refresh_token": "refresh"}),
         (ProjectCreateRequest, {"name": "Example"}),
         (
             BudgetUpdateRequest,
@@ -132,16 +122,9 @@ def test_request_models_forbid_unknown_fields(model: type, payload: dict) -> Non
         model.model_validate({**payload, "unexpected": True})
 
 
-def test_login_and_project_create_preserve_wire_defaults() -> None:
-    login = LoginRequest(email="dev@example.com", password="secret")
+def test_project_create_preserves_wire_defaults() -> None:
     project = ProjectCreateRequest(name="Example")
 
-    assert login.model_dump() == {
-        "email": "dev@example.com",
-        "password": "secret",
-        "plan": None,
-        "billing_interval": None,
-    }
     assert project.model_dump() == {
         "name": "Example",
         "budget_limit": 100.0,
@@ -155,16 +138,6 @@ def test_login_and_project_create_preserve_wire_defaults() -> None:
     assert ProjectCreateRequest(name="Example", scope="read_only").model_dump(
         exclude_unset=True
     ) == {"name": "Example", "scope": "read_only"}
-
-
-def test_login_request_redacts_password_but_serializes_wire_value() -> None:
-    password = "synthetic-password-value"
-
-    request = LoginRequest(email="dev@example.com", password=password)
-
-    assert password not in repr(request)
-    assert password not in str(request)
-    assert request.model_dump()["password"] == password
 
 
 def test_budget_update_accepts_each_rule_union_and_preserves_defaults() -> None:

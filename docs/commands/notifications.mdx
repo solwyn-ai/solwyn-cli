@@ -7,7 +7,9 @@ login; settings writes need a full-scope key, or a login plus a one-time browser
 approval (see [approvals](approvals.mdx)). Omitted options keep current
 settings. `--clear-channels` clears channel references and `--all-events` clears the
 event filter to allow all events;
-email/SMS resets send explicit null. Core accepts future event names.
+email/SMS resets send explicit null. `--event` takes one of Core's event types:
+`budget_threshold`, `budget_exceeded`, `circuit_breaker_opened`,
+`circuit_breaker_closed`, `provider_outage` or `provider_recovered`.
 
 ```sh
 solwyn --project proj_example notifications show
@@ -50,7 +52,7 @@ Usage: solwyn notifications set [OPTIONS]
 | `--channel` | `Channel ID; repeat to replace the reference list. (STRING; repeatable)` | `None` |
 | `--clear-channels` | `Remove every channel reference. (BOOL)` | `False` |
 | `--severity` | ` (Choice(['info', 'low', 'warning', 'medium', 'high', 'critical']))` | `None` |
-| `--event` | `Event type; repeat. Core accepts future event names. (STRING; repeatable)` | `None` |
+| `--event` | `Event type; repeat. (Choice(['budget_threshold', 'budget_exceeded', 'circuit_breaker_opened', 'circuit_breaker_closed', 'provider_outage', 'provider_recovered']); repeatable)` | `None` |
 | `--all-events` | `Allow all event types. (BOOL)` | `False` |
 | `--email/--no-email` | ` (BOOL)` | `None` |
 | `--sms/--no-sms` | ` (BOOL)` | `None` |
