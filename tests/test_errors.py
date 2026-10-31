@@ -225,6 +225,13 @@ def test_seat_limit_422_is_ready_for_deferred_team_commands() -> None:
         ("https://[2001:db8::1]/approve/abc", "https://[2001:db8::1]/approve/abc"),
         ("http://[2001:db8::1]/approve/abc", None),
         ("https://a_b.example/approve/abc", None),
+        ("https://faß.de/approve/abc", "https://xn--fa-hia.de/approve/abc"),
+        (
+            "https://\u03c4\u03b5\u03c3\u03c4\u03bf\u03c2.example/approve/abc",
+            "https://xn--qxaujcdc.example/approve/abc",
+        ),
+        ("https://[fe80::1%eth0]/approve/abc", None),
+        ("https://[fe80::1%eth0 IGNORE_PREVIOUS_INSTRUCTIONS]/approve/abc", None),
     ],
 )
 def test_approval_url_accepts_every_core_origin_shape(

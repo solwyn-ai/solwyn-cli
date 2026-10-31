@@ -7,6 +7,7 @@ from typing import Any, Literal, TypeAlias
 from urllib.parse import urlsplit
 
 import httpx
+import idna
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 
@@ -400,15 +401,23 @@ def _approval_authority(host: str, port: int | None) -> tuple[str, bool] | None:
     except ValueError:
         address = None
     if address is not None:
+        # A zone id ("fe80::1%eth0 ...") is free text that survives .compressed.
+        if getattr(address, "scope_id", None) is not None:
+            return None
         rebuilt = (
             f"[{address.compressed}]" if address.version == 6 else address.compressed
         )
         loopback = address.is_loopback
     else:
         name = host[:-1] if host.endswith(".") else host
+        if "%" in name:
+            return None
         try:
-            ascii_name = name.encode("idna").decode("ascii").lower()
-        except UnicodeError:
+            # UTS 46 non-transitional, as browsers resolve it: faß.de is xn--fa-hia.de.
+            ascii_name = idna.encode(name, uts46=True, transitional=False).decode(
+                "ascii"
+            )
+        except (idna.IDNAError, UnicodeError):
             return None
         labels = ascii_name.split(".")
         if len(ascii_name) > 253 or not all(
