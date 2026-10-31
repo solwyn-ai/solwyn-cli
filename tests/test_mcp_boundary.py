@@ -200,10 +200,7 @@ def test_query_errors_are_private_execution_errors(
 )
 def test_api_failures_set_protocol_error(monkeypatch, caplog, capsys, status, code):
     responses = [
-        httpx.Response(
-            status,
-            json={"detail": {"code": code, "message": "Denied.", "private": CANARY}},
-        )
+        httpx.Response(status, json={"detail": {"code": code, "message": CANARY}})
     ]
     if status == 429:
         responses *= 2
@@ -214,7 +211,6 @@ def test_api_failures_set_protocol_error(monkeypatch, caplog, capsys, status, co
     _assert_private(result, caplog, capsys)
     assert result.is_error is True
     assert result.structured_content["error"]["code"] == code
-    assert result.structured_content["error"]["message"] == "Denied."
     assert result.structured_content["error"]["status_code"] == status
     assert remaining == []
     assert len(requests) == (2 if status == 429 else 1)

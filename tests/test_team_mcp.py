@@ -95,8 +95,7 @@ def test_team_mcp_errors_fail_closed_private_and_respect_key_mask(
             json={
                 "detail": {
                     "code": "PRIVATE_TEAM_CANARY",
-                    "message": "Only admins can read the team.",
-                    "private": "PRIVATE_TEAM_CANARY",
+                    "message": "PRIVATE_TEAM_CANARY",
                 }
             },
         )
@@ -131,10 +130,6 @@ def test_team_mcp_errors_fail_closed_private_and_respect_key_mask(
                 if failure == "remote"
                 else "invalid_read_response"
             )
-            if failure == "remote":
-                assert result.structured_content["error"]["message"] == (
-                    "Only admins can read the team."
-                )
 
     anyio.run(exercise)
     assert len(calls) == (0 if failure in ("extra_argument", "project_key") else 1)
