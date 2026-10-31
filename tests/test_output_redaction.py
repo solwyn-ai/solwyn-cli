@@ -1,8 +1,8 @@
-"""CLI tokens and device codes are redacted from everything the CLI renders.
+"""CLI tokens and device codes returned by the Solwyn API are redacted.
 
-Human and JSON output, error messages, prompts and MCP results (spec section
-4). Raw exports (costs and alerts) are byte-for-byte copies of server data and are
-not covered.
+Command output (human and JSON), error messages, prompts and MCP results (spec
+section 4). Raw data commands (costs export, alerts export, attest) return the
+server's data byte-for-byte and are not covered.
 """
 
 import ast
@@ -236,9 +236,21 @@ def test_mcp_error_results_redact_tokens(monkeypatch: pytest.MonkeyPatch) -> Non
 # Direct terminal writes that interpolate a value must pass it through the
 # redactor. Each exemption below carries only constants, numbers, dates, local
 # config, the version, or text already sanitized.
-_DIRECT_WRITES = {"typer.echo", "typer.prompt", "typer.confirm", "click.echo"}
+# Terminal writers by canonical name, with the parameter that carries the text.
+_WRITERS = {
+    f"{module}.{name}": parameter
+    for module in ("typer", "click", "typer._click", "typer._click.termui")
+    for name, parameter in (
+        ("echo", "message"),
+        ("secho", "message"),
+        ("prompt", "text"),
+        ("confirm", "text"),
+    )
+} | {"print": None}
 _REDACTORS = {"_terminal_safe", "redact_secrets"}
 _EXEMPT_WRITES = {
+    # The isolated doctor helper's result line to its parent pipe, not a terminal.
+    ("_mcp_doctor_helper.py", "outcome.model_dump_json()"),
     ("_record.py", "f'Warning: {INGEST_BUSY_HINT}'"),
     ("_tags.py", "f'Duplicate tag {key!r}: last value wins.'"),
     ("agent_context.py", "render_surface(ArtifactSurface.AGENT_CONTEXT)"),
@@ -264,7 +276,6 @@ _EXEMPT_WRITES = {
     ("init.py", "f'Project ({project_ids}, or create)'"),
     ("invite.py", "label"),
     ("keys.py", "line"),
-    ("projects.py", "f\"Type the project name '{shown}' to confirm\""),
     (
         "record.py",
         "f'Recorded batch progress: {min(offset + 1000, len(events))}/{len(events)} events processed.'",
@@ -300,17 +311,49 @@ def _interpolates(node: ast.expr) -> bool:
     return True
 
 
+def _writer_names(tree: ast.Module) -> dict[str, str]:
+    """Map each local spelling of a terminal writer to its canonical name."""
+    names = {"print": "print"}
+    modules = {"typer": "typer", "click": "click"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in ("typer", "click", "typer._click"):
+                    modules[alias.asname or alias.name] = alias.name
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                canonical = f"{node.module}.{alias.name}"
+                if canonical in _WRITERS:
+                    names[alias.asname or alias.name] = canonical
+    for local, module in modules.items():
+        for canonical in _WRITERS:
+            prefix, _, name = canonical.rpartition(".")
+            if prefix == module:
+                names[f"{local}.{name}"] = canonical
+    return names
+
+
 def _unredacted_writes(root: Path) -> set[tuple[str, str]]:
     found = set()
     for path in sorted(root.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if (
-                isinstance(node, ast.Call)
-                and ast.unparse(node.func) in _DIRECT_WRITES
-                and node.args
-                and _interpolates(node.args[0])
-            ):
-                found.add((path.name, ast.unparse(node.args[0])))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names = _writer_names(tree)
+        for node in ast.walk(tree):
+            # Re-binding a writer to a new name would hide its calls: forbid it.
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value:
+                if ast.unparse(node.value) in names:
+                    found.add((path.name, "alias " + ast.unparse(node)))
+            if not isinstance(node, ast.Call):
+                continue
+            canonical = names.get(ast.unparse(node.func))
+            if canonical is None:
+                continue
+            parameter = _WRITERS[canonical]
+            texts = list(node.args if parameter is None else node.args[:1])
+            texts += [k.value for k in node.keywords if k.arg == parameter]
+            for text in texts:
+                if _interpolates(text):
+                    found.add((path.name, ast.unparse(text)))
     return found
 
 
@@ -333,3 +376,35 @@ def test_direct_write_guard_catches_an_unredacted_notice(tmp_path: Path) -> None
     )
 
     assert _unredacted_writes(tmp_path) == {("notice.py", "f'Cause: {data.summary}'")}
+
+
+def test_direct_write_guard_sees_keywords_aliases_and_print(tmp_path: Path) -> None:
+    (tmp_path / "notice.py").write_text(
+        "import typer\n"
+        "import typer as t\n"
+        "import click\n"
+        "from typer import echo as say, prompt\n"
+        "from click import secho\n"
+        "shout = typer.echo\n"
+        "def show(data):\n"
+        "    typer.echo(message=f'keyword {data.a}', err=True)\n"
+        "    t.echo(f'module alias {data.b}')\n"
+        "    say(f'name alias {data.c}')\n"
+        "    prompt(text=f'prompt {data.d}')\n"
+        "    secho(f'secho {data.e}')\n"
+        "    click.confirm(f'confirm {data.f}')\n"
+        "    print('label', f'print {data.g}')\n"
+        "    say(message=_terminal_safe(f'safe {data.h}'))\n"
+        "    data.console.print(f'not a terminal writer {data.i}')\n"
+    )
+
+    assert _unredacted_writes(tmp_path) == {
+        ("notice.py", "alias shout = typer.echo"),
+        ("notice.py", "f'keyword {data.a}'"),
+        ("notice.py", "f'module alias {data.b}'"),
+        ("notice.py", "f'name alias {data.c}'"),
+        ("notice.py", "f'prompt {data.d}'"),
+        ("notice.py", "f'secho {data.e}'"),
+        ("notice.py", "f'confirm {data.f}'"),
+        ("notice.py", "f'print {data.g}'"),
+    }

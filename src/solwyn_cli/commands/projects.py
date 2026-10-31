@@ -647,18 +647,28 @@ def delete_project(
                     raise ValueError("Project lookup did not return 200")
                 project = _Project.model_validate(response.json())
                 shown = _terminal_safe(project.name)
+                # A sanitized name can equal another project's real name, so it
+                # never confirms; the ID being deleted does instead.
+                if shown == project.name:
+                    label, expected = f"project name '{shown}'", project.name
+                else:
+                    label = f"project ID '{_terminal_safe(validated_project_id)}'"
+                    expected = validated_project_id
                 confirmation = typer.prompt(
-                    f"Type the project name '{shown}' to confirm",
+                    _terminal_safe(f"Type the {label} to confirm"),
                     err=True,
                     hide_input=True,
                 )
-                # The name as shown also confirms when redaction changed it.
-                if confirmation not in {project.name, shown}:
+                if confirmation != expected:
                     exit_with_error(
                         context,
                         OutputError(
                             code="confirmation_failed",
-                            message="The project name did not match; nothing was deleted.",
+                            message=(
+                                "The project name did not match; nothing was deleted."
+                                if shown == project.name
+                                else "The project ID did not match; nothing was deleted."
+                            ),
                         ),
                         semantic=ErrorSemantic.USAGE,
                     )
