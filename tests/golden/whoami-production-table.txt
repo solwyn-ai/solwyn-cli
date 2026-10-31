@@ -1,10 +1,11 @@
-Field                        Value
-Authentication                 jwt
-Source                     keyring
-User                Person Example
-Email           person@example.com
-Email verified                 yes
-Tier                    production
-Account ID                acct_123
-Role                         owner
-Seats                          1/2
+Field                                                              Value
+Credential      CLI login dev-laptop (read, contain), expires 2099-01-01
+Authentication                                                     login
+Source                                                           keyring
+User                                                      Person Example
+Email                                                 person@example.com
+Email verified                                                       yes
+Tier                                                          production
+Account ID                                                      acct_123
+Role                                                               owner
+Seats                                                                1/2

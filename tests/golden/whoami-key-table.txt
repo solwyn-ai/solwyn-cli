@@ -1,4 +1,5 @@
-Field                     Value
-Authentication      project_key
-Source              environment
-Configured project   proj_alpha
+Field                                   Value
+Credential          project key (environment)
+Authentication                    project_key
+Source                            environment
+Configured project                 proj_alpha

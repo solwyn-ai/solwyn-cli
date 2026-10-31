@@ -1,3 +1,2 @@
 Error [read_only_key]: This project key is read-only.
-Hint: Set SOLWYN_API_KEY to a write-scoped key, or run solwyn login and solwyn 
-keys rotate --scope full to replace this project's key with one.
+Hint: Set SOLWYN_API_KEY to a write-scoped key, or run solwyn login and solwyn keys rotate --scope full to replace this project's key with one.

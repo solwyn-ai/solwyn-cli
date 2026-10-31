@@ -23,6 +23,7 @@ from solwyn_cli._vendor.notification_wire import (
     TelegramConfig,
     Severity,
 )
+from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.auth import AuthError, ProjectKeyCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
@@ -128,7 +129,7 @@ def command_help(
     endpoint: str,
     schema: str,
     *,
-    auth: str = "JWT; owner for mutations",
+    auth: str = "login; owner for mutations",
     guidance: tuple[str, ...] = (),
 ) -> str:
     return help_contract(
@@ -166,6 +167,13 @@ def secret_input(context: typer.Context, *, stdin: bool, required: bool) -> str 
         usage(
             context, "Supply a secret through --secret-stdin or SOLWYN_CHANNEL_SECRET."
         )
+    if value is not None:
+        # Retry commands never carry secrets; the user supplies them again.
+        add_retry_note(
+            "Supply the channel secret again the same way ("
+            + ("pipe it to --secret-stdin" if stdin else "set SOLWYN_CHANNEL_SECRET")
+            + ")."
+        )
     return value
 
 
@@ -196,19 +204,19 @@ def request(
     model: type[T],
     *,
     body: BaseModel | None = None,
-    jwt: bool = True,
+    login: bool = True,
     secrets: tuple[str, ...] = (),
     list_response: bool = False,
     deleted_id: str | None = None,
 ) -> T:
     credential = required_credential(context, resolve=resolve_credential)
-    if jwt and isinstance(credential, ProjectKeyCredential):
+    if login and isinstance(credential, ProjectKeyCredential):
         exit_with_error(
             context,
             OutputError(
                 code="authentication_required",
                 message="This operation requires user login.",
-                hint="Unset SOLWYN_API_KEY and run solwyn login; mutations require the account owner.",
+                hint="Run solwyn login; mutations require the account owner.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -223,7 +231,7 @@ def request(
                 options["json"]["enabled_event_types"] = sorted(
                     options["json"]["enabled_event_types"]
                 )
-        # Preserve the client's bounded 429 and JWT-refresh defaults. Core
+        # Preserve the client's bounded 429 defaults. Core
         # rejects these requests before entering the mutation/delivery handler.
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential

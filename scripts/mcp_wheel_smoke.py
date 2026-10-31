@@ -389,7 +389,10 @@ def acceptance(
                         env=environment,
                         expected=1,
                     )
-                    assert bad["code"] == "invalid_arguments"
+                    assert bad["code"] == "invalid_arguments", (
+                        f"{lane} validation: expected invalid_arguments",
+                        bad,
+                    )
                     assert_request_count(
                         api, before, 1, lane=f"{lane} after validation"
                     )

@@ -72,7 +72,7 @@ solwyn --json --project proj_0123456789abcdef01234567 --api-url https://api.solw
 
 `doctor --mcp` checks discovery plus one authenticated MCP `budget_status` read
 when it has a project key and selected project. No reservation, settlement,
-recording, provider call, JWT refresh or host edit occurs. Its exit codes are
+recording, provider call, credential refresh or host edit occurs. Its exit codes are
 0 for all selected-key checks passing, 1 for degraded checks, and 2 for usage.
 
 ## Read identity and permission separately
@@ -81,18 +81,18 @@ recording, provider call, JWT refresh or host edit occurs. Its exit codes are
 | --- | --- |
 | Selected read project | Explicit global `--project`, then `SOLWYN_PROJECT_ID`, then configured default. A read tool's `project_id` can override it. |
 | Authenticated key project | Core's `GET /api/v1/auth/key` identifies the supplied key. Key-bound writes use this project; a read selector cannot redirect them. |
-| Credential kind/source | Environment project key, keychain project key, then keychain JWT, in that order. Empty/invalid environment key presence prevents fallback. A stored key can mask a JWT. |
+| Credential kind/source | Metering tools (`budget_check`, `budget_check_batch`, `budget_confirm`, `record_call`) use only a project key: `SOLWYN_API_KEY`, then the keychain key. Every other tool uses the stored Solwyn login, then `SOLWYN_API_KEY`, then the keychain key. `SOLWYN_AUTH=project_key` skips the login; `SOLWYN_AUTH=login` requires it. Without a login, an empty or invalid environment key prevents fallback. |
 | Key scope | `full`, `read_only`, or unknown when it cannot be established. A successful read does not prove write scope. `full` does not promise a future allowed decision. |
 | Profile and annotations | Discovery aids. `read` exposes 33 tools; `guardrails` exposes all 37. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
 
 The [tool/auth matrix](mcp-profiles.md) lists exceptions: `list_projects` and
-`get_overview` need JWT, account alert history needs JWT, and tag discovery needs
+`get_overview` need a Solwyn login, account alert history needs a login, and tag discovery needs
 Team. Project-key writes need write scope, except batch GET recovery accepts a
 read-only key. Profile choice cannot grant authorization.
 
-JWT-only diagnostics perform a parent HTTP read with the captured JWT, but skip
+Login-only diagnostics perform a parent HTTP read with the captured login, but skip
 the authenticated **MCP** read: the server has no supported environment interface
-for forwarding that captured JWT. Discovery still runs and the result is
+for forwarding that captured login. Discovery still runs and the result is
 `degraded`/exit 1. It must not be interpreted as verified MCP authentication.
 See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 
@@ -103,7 +103,7 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 | Locked/unavailable keychain | Unlock the same OS account's keychain, or deliberately provide the intended key in the host environment. |
 | Read/key project mismatch | Correct the read selector or choose the intended key. Do not test identity by reserving budget. |
 | Identity endpoint unsupported/404 | Deploy the dependent Core release. Scope stays unknown on older Core. |
-| Read-only key or JWT cannot write | Use the appropriate authorized project key for the caller-owned workflow; changing profiles does not change scope. |
+| Read-only key or login cannot write | Use the appropriate authorized project key for the caller-owned workflow; changing profiles does not change scope. |
 | Parent HTTP fails but helper discovery/read works | Check proxy/certificate settings. Invalid proxy or unavailable certificate settings safely degrade parent checks; the isolated helper has its own environment. |
 
 ## Run the actual clients
@@ -264,13 +264,12 @@ No clean-machine onboarding timing or particular desktop-host version is claimed
 Package release and Registry submission remain [preparation only](mcp-release.md).
 
 For a subscription estimate, call `plan_preview` with `tier` (`production|team|scale`)
-and `interval` (`month|year`). It is a JWT read at any role with no selected project
-requirement; a configured project key masks JWT. To apply a change, use CLI
+and `interval` (`month|year`). It is a login read at any role with no selected project
+requirement. To apply a change, use CLI
 `plan change` and review its fresh estimate before confirming or passing `--yes`.
 All billing writes stay CLI-only; see the [plan reference](commands/plan.mdx).
 
-Account reads also include `list_team_members` (any account JWT role) and
-`list_team_invites` (owner/admin JWT), without a selected project. A project key
-can mask stored JWT credentials. Team/account writes and the private CLI
-invitation token workflow are not MCP tools; see [team](commands/team.mdx) and
-[invitation acceptance](commands/invite.mdx).
+Account reads also include `list_team_members` (any account role, with a login) and
+`list_team_invites` (owner/admin login), without a selected project. Team/account
+writes and the private CLI invitation preview are not MCP tools; see
+[team](commands/team.mdx) and [invitation preview](commands/invite.mdx).

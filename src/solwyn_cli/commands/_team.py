@@ -13,15 +13,20 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
 
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
-    JwtRequiredError,
+    LoginCredential,
+    LoginRequiredError,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.whoami import _AccountSelf, _Identity
-from solwyn_cli.errors import ApiError
-from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.errors import (
+    APPROVAL_INVALID_MESSAGES,
+    MEMBERSHIP_RECOVERY_HINT,
+    ApiError,
+    approval_url_from,
+)
+from solwyn_cli.exit_codes import APPROVAL_ERROR_CODES, ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
@@ -32,7 +37,7 @@ InvitableRole = Literal["admin", "member"]
 READ_HINT = "No write was submitted. Retry the read; if it remains invalid, update the CLI or contact support about the API response."
 UNKNOWN_HINT = "The write may already have completed. Inspect team/account state before a deliberate retry; do not blindly replay."
 ACCEPT_UNKNOWN_HINT = "Acceptance may already have completed. Try solwyn login and inspect solwyn whoami before a deliberate retry; do not automatically accept again."
-JWT_HINT = "Run solwyn login; unset SOLWYN_API_KEY and clear any selected stored project key to use JWT."
+LOGIN_HINT = "Run solwyn login. If SOLWYN_AUTH=project_key is set, unset it."
 
 
 class TeamModel(BaseModel):
@@ -99,13 +104,13 @@ _MEMBERS = TypeAdapter(list[MemberOut])
 _INVITES = TypeAdapter(list[InvitationOut])
 
 
-def require_team_jwt(client: SolwynClient) -> None:
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError(JWT_HINT)
+def require_team_login(client: SolwynClient) -> None:
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError(LOGIN_HINT)
 
 
 def fetch_members(*, client: SolwynClient) -> TeamMembersData:
-    require_team_jwt(client)
+    require_team_login(client)
     return TeamMembersData(
         members=_MEMBERS.validate_python(
             client.request("GET", BASE + "/members").json()
@@ -114,7 +119,7 @@ def fetch_members(*, client: SolwynClient) -> TeamMembersData:
 
 
 def fetch_invites(*, client: SolwynClient) -> TeamInvitesData:
-    require_team_jwt(client)
+    require_team_login(client)
     return TeamInvitesData(
         invitations=_INVITES.validate_python(
             client.request("GET", BASE + "/invitations").json()
@@ -193,8 +198,46 @@ _TEAM_HINTS = {
     "invitation_resend_unavailable": "This invitation cannot be resent. Inspect the dashboard before creating a replacement.",
     "cannot_invite_self": "Choose another recipient; inspect solwyn whoami for your identity.",
     "auth_capacity_exceeded": "Authentication is busy; retry in a moment. No invitation acceptance occurred for this capacity rejection.",
-    "account_membership_revoked": "Run solwyn login, then solwyn account recover if you need a personal account.",
+    "account_membership_revoked": MEMBERSHIP_RECOVERY_HINT,
 }
+
+
+_APPROVAL_MESSAGES = {
+    "approval_required": "This change needs your approval in the browser.",
+    "approval_limit_reached": "Too many approvals are pending for this login.",
+    "approval_invalid": "The approval could not be used.",
+}
+_APPROVAL_DETAIL_KEYS = ("approval_id", "approval_url", "expires_at", "reason")
+
+
+def safe_approval_error(error: ApiError) -> OutputError:
+    """Keep an approval outcome's code, continuation and exit 6, nothing else."""
+    detail = error.detail if isinstance(error.detail, dict) else {}
+    kept: dict[str, object] = {
+        key: detail[key]
+        for key in _APPROVAL_DETAIL_KEYS
+        if isinstance(detail.get(key), str) and len(detail[key]) <= 2048
+    }
+    retry_argv = detail.get("retry_argv")
+    if (
+        isinstance(detail.get("retry_command"), str)
+        and isinstance(retry_argv, list)
+        and all(isinstance(item, str) for item in retry_argv)
+    ):
+        # Built locally from the user's own arguments; never from the server.
+        kept["retry_command"] = detail["retry_command"]
+        kept["retry_argv"] = retry_argv
+    if "approval_url" in kept and approval_url_from(kept) is None:
+        del kept["approval_url"]
+    reason = kept.get("reason")
+    message = (
+        APPROVAL_INVALID_MESSAGES.get(reason or "", _APPROVAL_MESSAGES[error.code])
+        if error.code == "approval_invalid"
+        else _APPROVAL_MESSAGES.get(error.code, error.message)
+    )
+    return OutputError(
+        code=error.code, message=message, hint=error.hint, detail=kept or None
+    )
 
 
 def safe_api_error(
@@ -208,6 +251,8 @@ def safe_api_error(
 ):
     # Team/invitation endpoints can reflect validation inputs or arbitrary error
     # bodies. Expose only fixed codes, status, and local guidance.
+    if error.code in APPROVAL_ERROR_CODES:
+        exit_with_error(context, safe_approval_error(error))
     code = (
         error.code
         if error.code in _TEAM_HINTS
@@ -234,7 +279,7 @@ def safe_api_error(
     elif error.status_code in (401, 403) and code is None:
         code, hint = (
             "team_access_denied",
-            JWT_HINT + " Check your account role and invited identity.",
+            LOGIN_HINT + " Check your account role and invited identity.",
         )
     if (
         submitted
@@ -242,6 +287,8 @@ def safe_api_error(
         and code != "auth_capacity_exceeded"
     ):
         hint = ACCEPT_UNKNOWN_HINT if accepting else UNKNOWN_HINT
+    if error.approval_note:
+        hint = f"{hint} {error.approval_note}" if hint else error.approval_note
     fail(
         context,
         code or ("rate_limited" if error.status_code == 429 else "team_request_failed"),
@@ -266,7 +313,7 @@ def team_client(context: typer.Context):
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential
         ) as client:
-            require_team_jwt(client)
+            require_team_login(client)
             yield client
     except ApiError as error:
         safe_api_error(context, error)
@@ -275,7 +322,7 @@ def team_client(context: typer.Context):
             context,
             "authentication_required",
             "Team/account management requires a valid user login.",
-            JWT_HINT,
+            LOGIN_HINT,
             ErrorSemantic.AUTH,
         )
     except (ValueError, TypeError):
@@ -353,7 +400,7 @@ def emit(context, schema, data):
     )
 
 
-def command_help(endpoint, schema, auth="JWT; account role enforced by Core"):
+def command_help(endpoint, schema, auth="login; account role enforced by Core"):
     return help_contract(
         endpoint=endpoint,
         auth=auth,

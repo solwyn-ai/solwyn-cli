@@ -17,7 +17,7 @@ from solwyn_cli._vendor.wire import (
     ServiceTier,
     TokenDetails,
 )
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._record import (
     CALL_ID_HINT,
@@ -280,17 +280,11 @@ def record(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, JwtCredential):
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_key_required",
-                message="Recording requires a project API key.",
-                hint="Set SOLWYN_API_KEY to a write-scoped project key.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    credential = required_credential(
+        context,
+        resolve=lambda: resolve_credential(purpose="metering"),
+        purpose="metering",
+    )
     runtime = command_context(context)
     result = RecordingResult(
         status="ingested", ingested=0, call_ids=[event.call_id for event in events]

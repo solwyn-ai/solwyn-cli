@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict
 
-from solwyn_cli.auth import JwtRequiredError, JwtCredential
+from solwyn_cli.auth import LoginRequiredError, LoginCredential
 from solwyn_cli.client import SolwynClient
 
 UNCOUNTED_NOTICE = "Advisory unpriced upper bound: possibly overcounted, never priced spend. An unavailable tally is unknown; retry the read."
@@ -45,8 +45,10 @@ def fetch_uncounted(*, client: SolwynClient, project_id: str) -> UncountedTallyR
 
 
 def fetch_phone(*, client: SolwynClient) -> AccountPhoneResponse:
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError("Phone state requires JWT. Run solwyn login.")
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError(
+            "Phone state requires a Solwyn login. Run solwyn login."
+        )
     return AccountPhoneResponse.model_validate(
         client.request("GET", "/api/v1/account/phone").json()
     )

@@ -15,6 +15,7 @@ from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -155,7 +156,7 @@ def _queue_budget_response(**overrides: object) -> None:
     FakeClient.responses = [httpx.Response(200, json={**BUDGET_RESPONSE, **overrides})]
 
 
-def _key() -> auth.ProjectKeyCredential:
+def _key(**_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
@@ -176,10 +177,7 @@ def test_budget_group_registers_status_check_confirm_and_set() -> None:
     "credential",
     [
         auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        login_credential(ACCESS_TOKEN),
     ],
 )
 def test_budget_status_supports_both_auth_modes_with_one_get_and_no_reservation(
@@ -187,7 +185,7 @@ def test_budget_status_supports_both_auth_modes_with_one_get_and_no_reservation(
     credential: auth.ResolvedCredential,
 ) -> None:
     monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: credential, raising=False
+        budget_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue_budget_response()
 
@@ -322,7 +320,7 @@ def test_invalid_max_utilization_is_rejected_before_auth_or_request(
     monkeypatch: pytest.MonkeyPatch,
     threshold: str,
 ) -> None:
-    def fail_if_resolved() -> None:
+    def fail_if_resolved(**_: object) -> None:
         raise AssertionError("credentials must not be resolved")
 
     monkeypatch.setattr(
@@ -425,7 +423,7 @@ def test_budget_status_missing_credentials_is_auth_error_without_api_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: None, raising=False
+        budget_module, "resolve_credential", lambda **_: None, raising=False
     )
 
     result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
@@ -458,12 +456,9 @@ def test_budget_status_preserves_structured_api_errors(
 def test_budget_status_rejects_invalid_response_without_leaking_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: credential, raising=False
+        budget_module, "resolve_credential", lambda **_: credential, raising=False
     )
     invalid = dict(BUDGET_RESPONSE)
     invalid.pop("remaining_budget")
@@ -520,7 +515,7 @@ def test_current_rules_render_and_round_trip(output_format, monkeypatch):
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
         raising=False,
     )
     response = {

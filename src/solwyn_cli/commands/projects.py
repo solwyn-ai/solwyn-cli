@@ -30,7 +30,7 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
     store_project_key,
@@ -41,6 +41,7 @@ from solwyn_cli.config import ConfigLoadError, ConfigWriteError, clear_default_p
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
+from solwyn_cli.commands.keys import export_line
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
 
@@ -112,7 +113,7 @@ ProjectCreateResponse = _ProjectCreateResponse
 
 
 def fetch_projects(*, client: SolwynClient) -> list[Project]:
-    """Fetch and validate the projects visible to a JWT credential."""
+    """Fetch and validate the projects visible to a login."""
     response = client.request("GET", "/api/v1/projects")
     return _PROJECTS.validate_python(response.json())
 
@@ -131,7 +132,6 @@ def request_project_creation(
         # pins.
         json=request.model_dump(mode="json", exclude_unset=True),
         retry_rate_limit=False,
-        retry_auth=False,
     )
     if response.status_code != 201:
         raise ValueError("Project creation did not return 201")
@@ -227,14 +227,10 @@ def _delete_table(data: _ProjectDeleteData) -> TableData:
     )
 
 
-def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
+def _login_credential_for_create(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects create."
-            if credential.source == "environment"
-            else "Run solwyn logout, then solwyn login, and retry projects create."
-        )
+        hint = "Run solwyn login, then retry projects create."
         exit_with_error(
             context,
             OutputError(
@@ -247,16 +243,12 @@ def _jwt_credential_for_create(context: typer.Context) -> JwtCredential:
     return credential
 
 
-def _jwt_credential_for_mutation(
+def _login_credential_for_mutation(
     context: typer.Context, *, operation: str
-) -> JwtCredential:
+) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            f"Unset SOLWYN_API_KEY, run solwyn login, then retry projects {operation}."
-            if credential.source == "environment"
-            else f"Run solwyn logout, then solwyn login, and retry projects {operation}."
-        )
+        hint = f"Run solwyn login, then retry projects {operation}."
         exit_with_error(
             context,
             OutputError(
@@ -301,7 +293,7 @@ def _invalid_projects_response(context: typer.Context) -> None:
     "create",
     epilog=help_contract(
         endpoint="POST /api/v1/projects",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.projects-create.v1",
         guidance=(
@@ -368,7 +360,7 @@ def create_project(
             semantic=ErrorSemantic.USAGE,
         )
 
-    credential = _jwt_credential_for_create(context)
+    credential = _login_credential_for_create(context)
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -420,6 +412,7 @@ def create_project(
         one_time_secret=OneTimeSecretPanel(
             title="One-time project key",
             value=created.key,
+            footer=export_line(raw_key),
         ),
     )
 
@@ -428,7 +421,7 @@ def create_project(
     "list",
     epilog=help_contract(
         endpoint="GET /api/v1/projects",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.projects-list.v1",
     ),
@@ -437,11 +430,7 @@ def list_projects(context: typer.Context) -> None:
     """List projects available to the logged-in user."""
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects list."
-            if credential.source == "environment"
-            else "Run solwyn logout, then solwyn login, and retry projects list."
-        )
+        hint = "Run solwyn login, then retry projects list."
         exit_with_error(
             context,
             OutputError(
@@ -546,7 +535,7 @@ def show_project(context: typer.Context) -> None:
     "rename",
     epilog=help_contract(
         endpoint="PUT /api/v1/projects/{id}",
-        auth="JWT (owner or admin)",
+        auth="login (owner or admin)",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.projects-rename.v1",
     ),
@@ -570,7 +559,7 @@ def rename_project(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    credential = _jwt_credential_for_mutation(context, operation="rename")
+    credential = _login_credential_for_mutation(context, operation="rename")
     runtime = command_context(context)
     path = quote(validated_project_id, safe="")
     try:
@@ -610,7 +599,7 @@ def rename_project(
     "delete",
     epilog=help_contract(
         endpoint="DELETE /api/v1/projects/{id}",
-        auth="JWT (owner or admin)",
+        auth="login (owner or admin)",
         exits=(
             "0 success; 1 generic/API or local config cleanup; "
             "2 usage or confirmation; 3 auth; 5 not found"
@@ -642,7 +631,7 @@ def delete_project(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    credential = _jwt_credential_for_mutation(context, operation="delete")
+    credential = _login_credential_for_mutation(context, operation="delete")
     runtime = command_context(context)
     path = quote(validated_project_id, safe="")
     try:

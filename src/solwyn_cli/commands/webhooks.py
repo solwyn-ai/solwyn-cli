@@ -1,4 +1,4 @@
-"""JWT-authenticated webhook target commands."""
+"""Login-authenticated webhook target commands."""
 
 import re
 from datetime import datetime
@@ -21,7 +21,7 @@ from pydantic import (
 from solwyn_cli._vendor.wire import WebhookCreateRequest
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
 )
@@ -47,7 +47,7 @@ app = typer.Typer(
     help="Manage project webhook targets.",
     epilog=help_contract(
         endpoint="composite router for webhook target subcommands",
-        auth="JWT",
+        auth="login",
         exits="0 success; 2 usage",
         schema="varies by subcommand",
         guidance=(
@@ -169,16 +169,10 @@ def _validated_identifier(
     return value.strip()
 
 
-def _jwt_credential(context: typer.Context, *, operation: str) -> JwtCredential:
+def _login_credential(context: typer.Context, *, operation: str) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            f"Unset SOLWYN_API_KEY, run solwyn login, then retry webhooks {operation}."
-            if credential.source == "environment"
-            else (
-                f"Run solwyn logout, then solwyn login, and retry webhooks {operation}."
-            )
-        )
+        hint = f"Run solwyn login, then retry webhooks {operation}."
         exit_with_error(
             context,
             OutputError(
@@ -280,7 +274,7 @@ def _delete_table(data: _WebhookDeleteData) -> TableData:
     "list",
     epilog=help_contract(
         endpoint="GET /api/v1/projects/{project}/webhooks",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.webhooks-list.v1",
         guidance=(
@@ -293,7 +287,7 @@ def list_webhooks(context: typer.Context) -> None:
     """List active webhook targets with masked secret prefixes."""
     runtime = command_context(context)
     project_id = _validated_identifier(context, runtime.project, label="project")
-    credential = _jwt_credential(context, operation="list")
+    credential = _login_credential(context, operation="list")
     project_path = quote(project_id, safe="")
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -325,7 +319,7 @@ def list_webhooks(context: typer.Context) -> None:
     "create",
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/webhooks",
-        auth="owner/admin JWT (project.write)",
+        auth="owner/admin login (project.write)",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.webhooks-create.v1",
         guidance=(
@@ -363,7 +357,7 @@ def create_webhook(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    credential = _jwt_credential(context, operation="create")
+    credential = _login_credential(context, operation="create")
     project_path = quote(project_id, safe="")
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -401,7 +395,7 @@ def create_webhook(
     "rotate",
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
-        auth="owner/admin JWT (project.write)",
+        auth="owner/admin login (project.write)",
         exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.webhooks-rotate.v1",
         guidance=(
@@ -429,7 +423,7 @@ def rotate_webhook(
     )
     effect = f"Rotate webhook {validated_webhook_id!r} in project {project_id!r}: the old signing secret becomes invalid immediately; its replacement is shown once."
     check_confirmation(context, yes=yes, effect=effect)
-    credential = _jwt_credential(context, operation="rotate")
+    credential = _login_credential(context, operation="rotate")
     confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     webhook_path = quote(validated_webhook_id, safe="")
@@ -468,7 +462,7 @@ def rotate_webhook(
     "delete",
     epilog=help_contract(
         endpoint="DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
-        auth="owner/admin JWT (project.write)",
+        auth="owner/admin login (project.write)",
         exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
         guidance=(
@@ -495,7 +489,7 @@ def delete_webhook(
     )
     effect = f"Deactivate webhook {validated_webhook_id!r} in project {project_id!r}: disables this delivery target."
     check_confirmation(context, yes=yes, effect=effect)
-    credential = _jwt_credential(context, operation="delete")
+    credential = _login_credential(context, operation="delete")
     confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     webhook_path = quote(validated_webhook_id, safe="")

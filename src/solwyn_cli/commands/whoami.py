@@ -1,5 +1,6 @@
 """Current identity command."""
 
+from datetime import datetime
 from typing import Literal
 
 import typer
@@ -7,12 +8,12 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -64,11 +65,22 @@ class _AccountSelf(BaseModel):
     your_role: Literal["owner", "admin", "member"]
 
 
+class _CredentialSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["login", "project_key"]
+    source: Literal["keyring", "environment"]
+    label: str | None
+    scope: list[str] | None
+    expires_at: datetime | None
+
+
 class _WhoamiData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    auth_type: Literal["jwt", "project_key"]
+    auth_type: Literal["login", "project_key"]
     auth_source: Literal["keyring", "environment"]
+    credential: _CredentialSummary
     configured_project: str | None
     account_id: str | None
     your_role: Literal["owner", "admin", "member"] | None
@@ -86,6 +98,13 @@ def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiD
     return _WhoamiData(
         auth_type="project_key",
         auth_source=credential.source,
+        credential=_CredentialSummary(
+            kind="project_key",
+            source=credential.source,
+            label=None,
+            scope=None,
+            expires_at=None,
+        ),
         configured_project=project,
         account_id=None,
         your_role=None,
@@ -116,9 +135,17 @@ def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _Whoa
     )
     if identity.account_id != account.id:
         raise ValueError("Identity account did not match.")
+    meta = credential.meta
     return _WhoamiData(
-        auth_type="jwt",
+        auth_type="login",
         auth_source="keyring",
+        credential=_CredentialSummary(
+            kind="login",
+            source="keyring",
+            label=meta.label,
+            scope=meta.scopes,
+            expires_at=meta.expires_at,
+        ),
         configured_project=None,
         account_id=account.id,
         your_role=account.your_role,
@@ -130,7 +157,7 @@ def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _Whoa
     )
 
 
-def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
+def _jwt_data(context: typer.Context, credential: LoginCredential) -> _WhoamiData:
     try:
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential
@@ -154,8 +181,21 @@ def _jwt_data(context: typer.Context, credential: JwtCredential) -> _WhoamiData:
         )
 
 
+def _credential_text(credential: _CredentialSummary) -> str:
+    if credential.kind == "project_key":
+        return f"project key ({credential.source})"
+    scope = ", ".join(credential.scope or [])
+    expires = (
+        credential.expires_at.date().isoformat()
+        if credential.expires_at is not None
+        else "unknown"
+    )
+    return f"CLI login {credential.label} ({scope}), expires {expires}"
+
+
 def _table(data: _WhoamiData) -> TableData:
     rows: list[tuple[str, str]] = [
+        ("Credential", _credential_text(data.credential)),
         ("Authentication", data.auth_type),
         ("Source", data.auth_source),
     ]
@@ -194,24 +234,7 @@ def _table(data: _WhoamiData) -> TableData:
 
 def whoami(context: typer.Context) -> None:
     """Show the current Solwyn identity and project context."""
-    try:
-        credential = resolve_credential()
-    except AuthError as error:
-        exit_with_error(
-            context,
-            OutputError(code="authentication_failed", message=str(error)),
-            semantic=ErrorSemantic.AUTH,
-        )
-    if credential is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="authentication_required",
-                message="Authentication is required.",
-                hint="Set SOLWYN_API_KEY or run solwyn login.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    credential = required_credential(context, resolve=resolve_credential)
     runtime = command_context(context)
     data = (
         _key_data(credential, runtime.project)

@@ -17,8 +17,8 @@ from pydantic import (
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.auth import (
     AuthError,
-    JwtRequiredError,
-    JwtCredential,
+    LoginRequiredError,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
 )
@@ -70,7 +70,7 @@ AUDIT_ACTIONS = (
 
 AUDIT_HELP = help_contract(
     endpoint="GET /api/v1/account/audit-events",
-    auth="JWT",
+    auth="login",
     exits="0 success; 1 generic/API; 2 usage; 3 auth",
     schema="solwyn.audit.v1",
     guidance=(
@@ -116,14 +116,10 @@ class AuditEventListResponse(BaseModel):
         return self
 
 
-def _jwt_credential(context: typer.Context) -> JwtCredential:
+def _login_credential(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry audit."
-            if credential.source == "environment"
-            else "Run solwyn logout, then solwyn login, and retry audit."
-        )
+        hint = "Run solwyn login, then retry audit."
         exit_with_error(
             context,
             OutputError(
@@ -222,7 +218,7 @@ def audit(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    credential = _jwt_credential(context)
+    credential = _login_credential(context)
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -270,8 +266,8 @@ def fetch_audit_events(
     all_pages: bool = False,
 ) -> AuditEventListResponse:
     query = _AuditQuery(range=time_range, action=action, cursor=cursor)
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError("Account audit requires JWT.")
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError("Account audit requires a Solwyn login.")
     events = []
     seen = set()
     while True:

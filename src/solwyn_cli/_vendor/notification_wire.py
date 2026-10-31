@@ -59,12 +59,23 @@ class EmailConfigUpdate(NotificationWire):
     enabled: bool | None = None
 
 
+class NotificationEventType(StrEnum):
+    """Customer-subscribable project events; Core rejects any other name."""
+
+    BUDGET_THRESHOLD = "budget_threshold"
+    BUDGET_EXCEEDED = "budget_exceeded"
+    CIRCUIT_BREAKER_OPENED = "circuit_breaker_opened"
+    CIRCUIT_BREAKER_CLOSED = "circuit_breaker_closed"
+    PROVIDER_OUTAGE = "provider_outage"
+    PROVIDER_RECOVERED = "provider_recovered"
+
+
 class NotificationConfigUpdate(NotificationWire):
     channel_ids: list[str] | None = None
     sms_config: SmsConfigUpdate | None = None
     email_config: EmailConfigUpdate | None = None
     severity_threshold: Severity | None = None
-    enabled_event_types: set[str] | None = None
+    enabled_event_types: set[NotificationEventType] | None = None
 
 
 def _channel_create_schema(schema: dict) -> None:

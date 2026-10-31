@@ -3,8 +3,9 @@ title: Tags
 ---
 
 Tag discovery is account-scoped even through a selected project's URL. Reads
-accept a project key or JWT and require Team; sending and enforcing tags works
-on every tier. Retire requires owner/admin JWT.
+accept a project key or a Solwyn login and require Team; sending and enforcing tags works
+on every tier. Retire requires an owner/admin login and a one-time browser approval
+(see [approvals](approvals.mdx)).
 
 ```sh
 solwyn --project proj_example tags list
@@ -80,8 +81,8 @@ Usage: solwyn tags retire [OPTIONS] KEY
 
 ```text
 Endpoint: DELETE /api/v1/account/tags
-Auth: JWT admin/owner
-Exit codes: 0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered
+Auth: login admin/owner
+Exit codes: 0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.tags.v1
 Retirement frees an active key slot; later ingest may reactivate the key. Available on every tier.
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.

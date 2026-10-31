@@ -19,10 +19,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import ApiError, redact_secrets
 
 
-_COMMAND_SCHEMA = re.compile(r"^solwyn\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\.v1$")
+_COMMAND_SCHEMA = re.compile(
+    r"^solwyn\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\.v[1-9][0-9]*$"
+)
 _JSON_ADAPTER = TypeAdapter(Any)
 
 
@@ -79,6 +81,7 @@ class OneTimeSecretPanel(BaseModel):
 
     title: str
     value: SecretStr
+    footer: SecretStr | None = None
 
 
 def _parse_format(value: str | OutputFormat, *, source: str) -> OutputFormat:
@@ -130,12 +133,12 @@ def _json_value(value: object) -> Any:
 
 
 def _terminal_safe(value: object) -> str:
-    """Neutralize terminal control characters in caller-provided human text."""
+    """Neutralize control characters and redact CLI tokens in human text."""
     return "".join(
         "\N{REPLACEMENT CHARACTER}"
         if ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
         else character
-        for character in str(value)
+        for character in redact_secrets(str(value))
     )
 
 
@@ -210,7 +213,7 @@ class OutputEngine:
         """Write one schema-bearing JSON object or its explicit human table."""
         if _COMMAND_SCHEMA.fullmatch(schema) is None:
             raise OutputUsageError("Invalid command schema.")
-        payload = _success_data(data)
+        payload = redact_secrets(_success_data(data))
         if self.output_format is OutputFormat.JSON:
             self._write_json({"schema": schema, **payload}, error=False)
             return
@@ -240,16 +243,24 @@ class OutputEngine:
                     expand=False,
                 )
             )
+            if one_time_secret.footer is not None:
+                # Never wrap: the footer is a shell line meant to be copied.
+                console.print(
+                    Text(_terminal_safe(one_time_secret.footer.get_secret_value())),
+                    soft_wrap=True,
+                )
 
     def write_error(self, error: ApiError | OutputError) -> None:
         """Write a stable machine envelope or a detail-free human error."""
-        payload = {
-            "schema": "solwyn.error.v1",
-            "code": error.code,
-            "message": error.message,
-            "hint": error.hint,
-            "detail": error.detail,
-        }
+        payload = redact_secrets(
+            {
+                "schema": "solwyn.error.v1",
+                "code": error.code,
+                "message": error.message,
+                "hint": error.hint,
+                "detail": error.detail,
+            }
+        )
         if self.output_format is OutputFormat.JSON:
             self._write_json(payload, error=True)
             return
@@ -262,7 +273,8 @@ class OutputEngine:
         if error.hint is not None:
             hint = Text("Hint: ", style="bold yellow")
             hint.append(Text(_terminal_safe(error.hint)))
-            console.print(hint)
+            # Hints can carry a command to copy; never insert line breaks.
+            console.print(hint, soft_wrap=True)
 
 
 def write_byte_stream(*, chunks: Iterable[bytes], output: BinaryIO) -> None:

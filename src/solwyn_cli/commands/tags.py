@@ -7,7 +7,7 @@ from urllib.parse import quote
 import typer
 from pydantic import BaseModel, ConfigDict, Field
 
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._pagination import read_pages
 from solwyn_cli.commands._shared import exit_with_error, required_credential
@@ -277,7 +277,7 @@ def tag_values(
     "retire",
     epilog=help_contract(
         endpoint="DELETE /api/v1/account/tags",
-        auth="JWT admin/owner",
+        auth="login admin/owner",
         exits="0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered",
         schema="solwyn.tags.v1",
         guidance=(
@@ -311,13 +311,13 @@ def retire_tag(
     )
     check_confirmation(context, yes=yes, effect=effect)
     credential = required_credential(context, resolve=resolve_credential)
-    if not isinstance(credential, JwtCredential):
+    if not isinstance(credential, LoginCredential):
         exit_with_error(
             context,
             OutputError(
-                code="jwt_required",
-                message="Tag retirement requires JWT authentication with admin or owner role.",
-                hint="Unset SOLWYN_API_KEY and run solwyn login.",
+                code="login_required",
+                message="Tag retirement requires a Solwyn login with admin or owner role.",
+                hint="Run solwyn login.",
             ),
             semantic=ErrorSemantic.AUTH,
         )

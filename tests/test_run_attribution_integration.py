@@ -40,7 +40,7 @@ def _check(
         monkeypatch, responses=responses, credentials=[credential]
     )
     monkeypatch.setattr(budget, "SolwynClient", mcp_server.SolwynClient)
-    monkeypatch.setattr(budget, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(budget, "resolve_credential", lambda **_: credential)
     monkeypatch.delenv("SOLWYN_TAGS", raising=False)
     monkeypatch.delenv("SOLWYN_AGENT_RUN_ID", raising=False)
     if from_environment:

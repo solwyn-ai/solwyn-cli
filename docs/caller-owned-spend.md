@@ -14,7 +14,7 @@ Use `record` for completed calls that have no reservation, including local provi
 export SOLWYN_AGENT_RUN_ID="job-42"
 export SOLWYN_TAGS="environment=prod,team=ops"
 solwyn record --provider ollama --model llama3 --input-tokens 120 --output-tokens 30
-solwyn record --batch events.json --json
+solwyn --json record --batch events.json
 solwyn --project YOUR_PROJECT_ID tags list
 ```
 
@@ -39,7 +39,7 @@ If a recognized rejection remains, `record` exits 1 with a retry hint and
 for the failed chunk is provably nonaccepting. Recognized rejections and Core's
 pre-ingest 429/401 responses meet that boundary. An earlier potentially accepted
 attempt stays uncertain even if the final retry is a recognized rejection;
-JWT refresh cannot erase that uncertainty or replenish the shared retry allowance.
+no later attempt can erase that uncertainty or replenish the shared retry allowance.
 A valid 202 with complete canonical dispositions resolves the call normally.
 A partial multi-chunk invocation retains `status=failed` and all known
 dispositions; the recognized

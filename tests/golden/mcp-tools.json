@@ -2,7 +2,7 @@
   {
     "name": "budget_status",
     "title": "Read budget status",
-    "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -1098,7 +1098,7 @@
             }
           ],
           "default": null,
-          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1\u201364 characters, values at most 256, no NUL. Whitespace and case are preserved.",
+          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved.",
           "title": "Tags"
         },
         "estimated_output_tokens": {
@@ -1113,7 +1113,7 @@
             }
           ],
           "default": null,
-          "description": "Optional output token bound, integer 0\u2013100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
+          "description": "Optional output token bound, integer 0–100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
           "title": "Estimated Output Tokens"
         },
         "no_record": {
@@ -1814,14 +1814,14 @@
               "description": "Original value; preserve exactly. Provider used for this call; use the actual served provider when recording or confirming."
             },
             "input_tokens": {
-              "description": "Original value; preserve exactly. Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Original value; preserve exactly. Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
               "type": "integer"
             },
             "output_tokens": {
-              "description": "Original value; preserve exactly. Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
+              "description": "Original value; preserve exactly. Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -2230,7 +2230,7 @@
           "properties": {
             "input_tokens": {
               "default": 0,
-              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
@@ -2238,7 +2238,7 @@
             },
             "output_tokens": {
               "default": 0,
-              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -2246,7 +2246,7 @@
             },
             "cached_input_tokens": {
               "default": 0,
-              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cached Input Tokens",
@@ -2254,7 +2254,7 @@
             },
             "cache_creation_5m_tokens": {
               "default": 0,
-              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 5M Tokens",
@@ -2262,7 +2262,7 @@
             },
             "cache_creation_1h_tokens": {
               "default": 0,
-              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 1H Tokens",
@@ -2270,7 +2270,7 @@
             },
             "reasoning_tokens": {
               "default": 0,
-              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Reasoning Tokens",
@@ -2278,7 +2278,7 @@
             },
             "audio_input_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Input Tokens",
@@ -2286,7 +2286,7 @@
             },
             "audio_output_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Output Tokens",
@@ -2294,7 +2294,7 @@
             },
             "image_input_tokens": {
               "default": 0,
-              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Input Tokens",
@@ -2302,7 +2302,7 @@
             },
             "image_output_tokens": {
               "default": 0,
-              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Output Tokens",
@@ -2310,7 +2310,7 @@
             },
             "accepted_prediction_tokens": {
               "default": 0,
-              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
+              "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Accepted Prediction Tokens",
@@ -2318,7 +2318,7 @@
             },
             "rejected_prediction_tokens": {
               "default": 0,
-              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
+              "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Rejected Prediction Tokens",
@@ -2326,7 +2326,7 @@
             },
             "tool_use_input_tokens": {
               "default": 0,
-              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Tool Use Input Tokens",
@@ -2473,7 +2473,7 @@
         },
         "input_tokens": {
           "default": 0,
-          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
+          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Input Tokens",
@@ -2481,7 +2481,7 @@
         },
         "output_tokens": {
           "default": 0,
-          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
+          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Output Tokens",
@@ -2489,7 +2489,7 @@
         },
         "cached_input_tokens": {
           "default": 0,
-          "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+          "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Cached Input Tokens",
@@ -2497,7 +2497,7 @@
         },
         "cache_creation_5m_tokens": {
           "default": 0,
-          "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
+          "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Cache Creation 5M Tokens",
@@ -2505,7 +2505,7 @@
         },
         "cache_creation_1h_tokens": {
           "default": 0,
-          "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
+          "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Cache Creation 1H Tokens",
@@ -2513,7 +2513,7 @@
         },
         "reasoning_tokens": {
           "default": 0,
-          "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
+          "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Reasoning Tokens",
@@ -2521,7 +2521,7 @@
         },
         "audio_input_tokens": {
           "default": 0,
-          "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+          "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Audio Input Tokens",
@@ -2529,7 +2529,7 @@
         },
         "audio_output_tokens": {
           "default": 0,
-          "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+          "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Audio Output Tokens",
@@ -2537,7 +2537,7 @@
         },
         "image_input_tokens": {
           "default": 0,
-          "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+          "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Image Input Tokens",
@@ -2545,7 +2545,7 @@
         },
         "image_output_tokens": {
           "default": 0,
-          "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+          "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Image Output Tokens",
@@ -2553,7 +2553,7 @@
         },
         "accepted_prediction_tokens": {
           "default": 0,
-          "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
+          "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Accepted Prediction Tokens",
@@ -2561,7 +2561,7 @@
         },
         "rejected_prediction_tokens": {
           "default": 0,
-          "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
+          "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Rejected Prediction Tokens",
@@ -2569,7 +2569,7 @@
         },
         "tool_use_input_tokens": {
           "default": 0,
-          "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+          "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
           "maximum": 100000000,
           "minimum": 0,
           "title": "Tool Use Input Tokens",
@@ -2653,7 +2653,7 @@
             }
           ],
           "default": null,
-          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1\u201364 characters, values at most 256, no NUL. Whitespace and case are preserved.",
+          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved.",
           "title": "Tags"
         },
         "no_record": {
@@ -3680,7 +3680,7 @@
   {
     "name": "get_project_status",
     "title": "Read project health",
-    "description": "Read the configured project's budget and provider health without authorizing spend. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read the configured project's budget and provider health without authorizing spend. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -3986,7 +3986,7 @@
   {
     "name": "get_forecast",
     "title": "Read spend forecast",
-    "description": "Read the configured project's month-to-date spend forecast without authorizing spend. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read the configured project's month-to-date spend forecast without authorizing spend. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -4205,7 +4205,7 @@
   {
     "name": "get_costs",
     "title": "Read grouped costs",
-    "description": "Read project costs grouped by a Core dimension or tag:<key>, or account costs grouped by project by default. Shared filters/custom windows apply; account mode permits only model/provider/modality and window filters. Project mode accepts a project key or JWT; account=true requires JWT and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
+    "description": "Read project costs grouped by a Core dimension or tag:<key>, or account costs grouped by project by default. Shared filters/custom windows apply; account mode permits only model/provider/modality and window filters. Project mode accepts a project key or a Solwyn login; account=true requires a Solwyn login and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -4251,12 +4251,12 @@
             }
           ],
           "default": null,
-          "description": "Core grouping dimension (for example model, provider or modality), or tag:<key> with key 1\u201364 characters and no NUL. Core validates dimensions.",
+          "description": "Core grouping dimension (for example model, provider or modality), or tag:<key> with key 1–64 characters and no NUL. Core validates dimensions.",
           "title": "Group By"
         },
         "account": {
           "default": false,
-          "description": "True reads account costs with JWT; mutually exclusive with explicit project_id. Supports only model/provider/modality/group_by and window filters.",
+          "description": "True reads account costs with a Solwyn login; mutually exclusive with explicit project_id. Supports only model/provider/modality/group_by and window filters.",
           "title": "Account",
           "type": "boolean"
         },
@@ -4429,7 +4429,7 @@
             }
           ],
           "default": null,
-          "description": "AND filters as key=value strings; unique keys 1\u201364 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
+          "description": "AND filters as key=value strings; unique keys 1–64 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
           "title": "Tag"
         }
       },
@@ -4979,7 +4979,7 @@
   {
     "name": "list_projects",
     "title": "List account projects",
-    "description": "List projects visible to the logged-in user. Requires login/JWT authentication. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "List projects visible to the logged-in user. Requires a Solwyn login. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -5175,7 +5175,7 @@
   {
     "name": "get_cost_total",
     "title": "Read cost total",
-    "description": "Read uncapped project cost totals with the same cost filters and custom windows as get_costs. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read uncapped project cost totals with the same cost filters and custom windows as get_costs. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -5380,7 +5380,7 @@
             }
           ],
           "default": null,
-          "description": "AND filters as key=value strings; unique keys 1\u201364 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
+          "description": "AND filters as key=value strings; unique keys 1–64 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
           "title": "Tag"
         }
       },
@@ -5653,7 +5653,7 @@
   {
     "name": "list_budget_rules",
     "title": "List budget rules",
-    "description": "Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited. Project keys or JWT can list rules; with_last_fired=true requires JWT for the account latest-events read.",
+    "description": "Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited. Project keys or a Solwyn login can list rules; with_last_fired=true requires a Solwyn login for the account latest-events read.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -5674,7 +5674,7 @@
         },
         "with_last_fired": {
           "default": false,
-          "description": "Include latest firing within Core's default 30d retention window; requires JWT even for project budget rules. Null means no matching history in that window.",
+          "description": "Include latest firing within Core's default 30d retention window; requires a Solwyn login even for project budget rules. Null means no matching history in that window.",
           "title": "With Last Fired",
           "type": "boolean"
         }
@@ -6932,7 +6932,7 @@
           "properties": {
             "input_tokens": {
               "default": 0,
-              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
@@ -6940,7 +6940,7 @@
             },
             "output_tokens": {
               "default": 0,
-              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -6948,7 +6948,7 @@
             },
             "cached_input_tokens": {
               "default": 0,
-              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cached Input Tokens",
@@ -6956,7 +6956,7 @@
             },
             "cache_creation_5m_tokens": {
               "default": 0,
-              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 5M Tokens",
@@ -6964,7 +6964,7 @@
             },
             "cache_creation_1h_tokens": {
               "default": 0,
-              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 1H Tokens",
@@ -6972,7 +6972,7 @@
             },
             "reasoning_tokens": {
               "default": 0,
-              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Reasoning Tokens",
@@ -6980,7 +6980,7 @@
             },
             "audio_input_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Input Tokens",
@@ -6988,7 +6988,7 @@
             },
             "audio_output_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Output Tokens",
@@ -6996,7 +6996,7 @@
             },
             "image_input_tokens": {
               "default": 0,
-              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Input Tokens",
@@ -7004,7 +7004,7 @@
             },
             "image_output_tokens": {
               "default": 0,
-              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Output Tokens",
@@ -7012,7 +7012,7 @@
             },
             "accepted_prediction_tokens": {
               "default": 0,
-              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
+              "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Accepted Prediction Tokens",
@@ -7020,7 +7020,7 @@
             },
             "rejected_prediction_tokens": {
               "default": 0,
-              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
+              "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Rejected Prediction Tokens",
@@ -7028,7 +7028,7 @@
             },
             "tool_use_input_tokens": {
               "default": 0,
-              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Tool Use Input Tokens",
@@ -7084,7 +7084,7 @@
             }
           ],
           "default": null,
-          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total. If omitted, use token_details.input_tokens or zero; when both are supplied they must match.",
+          "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total. If omitted, use token_details.input_tokens or zero; when both are supplied they must match.",
           "title": "Input Tokens"
         },
         "output_tokens": {
@@ -7099,7 +7099,7 @@
             }
           ],
           "default": null,
-          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000. If omitted, use token_details.output_tokens or zero; when both are supplied they must match.",
+          "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000. If omitted, use token_details.output_tokens or zero; when both are supplied they must match.",
           "title": "Output Tokens"
         },
         "token_details": {
@@ -7229,7 +7229,7 @@
             }
           ],
           "default": null,
-          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1\u201364 characters, values at most 256, no NUL. Whitespace and case are preserved.",
+          "description": "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved.",
           "title": "Tags"
         }
       },
@@ -7688,7 +7688,7 @@
   {
     "name": "list_tags",
     "title": "List attribution tag keys",
-    "description": "List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -7937,13 +7937,13 @@
   {
     "name": "list_tag_values",
     "title": "List attribution tag values",
-    "description": "Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read one page of account-scoped values for a verbatim tag key. Team required; prefix is case-sensitive. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "key": {
-          "description": "Verbatim tag key, 1\u201364 characters and no NUL; whitespace and case are significant. Team plan required.",
+          "description": "Verbatim tag key, 1–64 characters and no NUL; whitespace and case are significant. Team plan required.",
           "maxLength": 64,
           "minLength": 1,
           "title": "Key",
@@ -7979,7 +7979,7 @@
         },
         "limit": {
           "default": 25,
-          "description": "Maximum entries in this page, integer 1\u2013100; defaults to 25. Continue using the returned cursor.",
+          "description": "Maximum entries in this page, integer 1–100; defaults to 25. Continue using the returned cursor.",
           "maximum": 100,
           "minimum": 1,
           "title": "Limit",
@@ -8202,7 +8202,7 @@
   {
     "name": "list_agent_runs",
     "title": "List agent runs",
-    "description": "List project agent runs. Costs are lifetime totals; the window only selects which runs qualify. Accepts a project key or login. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "List project agent runs. Costs are lifetime totals; the window only selects which runs qualify. Accepts a project key or login. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -8301,7 +8301,7 @@
             }
           ],
           "default": null,
-          "description": "Parent run storage ID or raw caller run ID, 1\u2013256 characters; selects children of this parent.",
+          "description": "Parent run storage ID or raw caller run ID, 1–256 characters; selects children of this parent.",
           "title": "Parent"
         },
         "sort": {
@@ -8311,7 +8311,7 @@
         },
         "limit": {
           "default": 25,
-          "description": "Maximum entries in this page, integer 1\u2013100; defaults to 25. Continue using the returned cursor.",
+          "description": "Maximum entries in this page, integer 1–100; defaults to 25. Continue using the returned cursor.",
           "maximum": 100,
           "minimum": 1,
           "title": "Limit",
@@ -8661,13 +8661,13 @@
   {
     "name": "get_agent_run",
     "title": "Read agent run",
-    "description": "Read one agent run by storage ID or exact raw run name. Accepts a project key or login. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read one agent run by storage ID or exact raw run name. Accepts a project key or login. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "run": {
-          "description": "Run storage ID or exact raw caller run name, 1\u2013255 characters; ambiguous names fail with guidance to list IDs.",
+          "description": "Run storage ID or exact raw caller run name, 1–255 characters; ambiguous names fail with guidance to list IDs.",
           "maxLength": 255,
           "minLength": 1,
           "title": "Run",
@@ -8945,7 +8945,7 @@
   {
     "name": "list_alert_events",
     "title": "Read alert history",
-    "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed. Project history accepts a project key or JWT; account=true reads account-scope history, requires login/JWT and ignores project_id. Use list_alert_activity for all projects plus account scope.",
+    "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires a Solwyn login. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed. Project history accepts a project key or a Solwyn login; account=true reads account-scope history, requires a Solwyn login and ignores project_id. Use list_alert_activity for all projects plus account scope.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -8966,7 +8966,7 @@
         },
         "account": {
           "default": false,
-          "description": "True reads account-scope history and requires JWT login; project_id is ignored. False reads the selected project using a project key or JWT.",
+          "description": "True reads account-scope history and requires a Solwyn login; project_id is ignored. False reads the selected project using a project key or a Solwyn login.",
           "title": "Account",
           "type": "boolean"
         },
@@ -9527,7 +9527,7 @@
   {
     "name": "budget_check_batch",
     "title": "Check or recover a bounded batch",
-    "description": "Submit 1\u201332 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation. Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
+    "description": "Submit 1–32 checks once to Core's durable batch journal. Retain a caller-prepared UUIDv7 operation_id before calling so an entirely lost MCP reply is recoverable. Omission generates an ID returned when a reply can be delivered. recover_only with that ID performs GET only: no admission, recording, resumption or renewed reservation authority. Indexed completed, failed, unknown and unattempted outcomes remain distinct; reservations expire at their original checked_at + 300 seconds and journal IDs expire after 24 hours. Never replay an unknown outcome or unattempted suffix automatically, or replace an ID to evade conflicts/expiry. Denials are successful decisions and record attribution unless no_record; retain each recording_retry payload for explicit record_only retry, which only ingests that identical event. Settlement remains separate. All calls share a fixed 30-second work deadline, 1 MiB HTTP response budget and 2 MiB result limit. An admitted request may remain effective after cancellation. Requires a project API key. Submission and record_only require write scope; recover_only GET accepts read-only scope. Uses the key's project, not the selected read project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -9563,7 +9563,7 @@
                 }
               ],
               "default": null,
-              "description": "Attribution tags replace SOLWYN_TAGS for this item when supplied (including null); omission uses ambient tags. At most 10 keys, keys 1\u201364 characters, values at most 256, no NUL; preserve whitespace/case.",
+              "description": "Attribution tags replace SOLWYN_TAGS for this item when supplied (including null); omission uses ambient tags. At most 10 keys, keys 1–64 characters, values at most 256, no NUL; preserve whitespace/case.",
               "title": "Tags"
             },
             "price_hints_version": {
@@ -9676,7 +9676,7 @@
           "additionalProperties": false,
           "properties": {
             "index": {
-              "description": "Original check index, 0\u201331, retained with its exact denial event.",
+              "description": "Original check index, 0–31, retained with its exact denial event.",
               "maximum": 31,
               "minimum": 0,
               "title": "Index",
@@ -10123,7 +10123,7 @@
           "properties": {
             "input_tokens": {
               "default": 0,
-              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0\u2013100,000,000. The sum of the three cache buckets must not exceed this total.",
+              "description": "Total observed input tokens, including cached, cache creation, audio, image and tool-use input subsets; integer 0–100,000,000. The sum of the three cache buckets must not exceed this total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Input Tokens",
@@ -10131,7 +10131,7 @@
             },
             "output_tokens": {
               "default": 0,
-              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0\u2013100,000,000.",
+              "description": "Total observed output tokens, including reasoning, audio, image and prediction subsets; integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Output Tokens",
@@ -10139,7 +10139,7 @@
             },
             "cached_input_tokens": {
               "default": 0,
-              "description": "Cached-read input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Cached-read input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cached Input Tokens",
@@ -10147,7 +10147,7 @@
             },
             "cache_creation_5m_tokens": {
               "default": 0,
-              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "description": "Input tokens written to the five-minute cache; subset of input_tokens, integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 5M Tokens",
@@ -10155,7 +10155,7 @@
             },
             "cache_creation_1h_tokens": {
               "default": 0,
-              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0\u2013100,000,000.",
+              "description": "Input tokens written to the one-hour cache; subset of input_tokens, integer 0–100,000,000.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Cache Creation 1H Tokens",
@@ -10163,7 +10163,7 @@
             },
             "reasoning_tokens": {
               "default": 0,
-              "description": "Reasoning token subset already included in output_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Reasoning token subset already included in output_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Reasoning Tokens",
@@ -10171,7 +10171,7 @@
             },
             "audio_input_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in input_tokens; integer 0–100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Input Tokens",
@@ -10179,7 +10179,7 @@
             },
             "audio_output_tokens": {
               "default": 0,
-              "description": "Audio token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from audio seconds.",
+              "description": "Audio token subset already included in output_tokens; integer 0–100,000,000. Distinct from audio seconds.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Audio Output Tokens",
@@ -10187,7 +10187,7 @@
             },
             "image_input_tokens": {
               "default": 0,
-              "description": "Image token subset already included in input_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in input_tokens; integer 0–100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Input Tokens",
@@ -10195,7 +10195,7 @@
             },
             "image_output_tokens": {
               "default": 0,
-              "description": "Image token subset already included in output_tokens; integer 0\u2013100,000,000. Distinct from image count.",
+              "description": "Image token subset already included in output_tokens; integer 0–100,000,000. Distinct from image count.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Image Output Tokens",
@@ -10203,7 +10203,7 @@
             },
             "accepted_prediction_tokens": {
               "default": 0,
-              "description": "Accepted prediction token subset of output_tokens; integer 0\u2013100,000,000. Do not add again to output total.",
+              "description": "Accepted prediction token subset of output_tokens; integer 0–100,000,000. Do not add again to output total.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Accepted Prediction Tokens",
@@ -10211,7 +10211,7 @@
             },
             "rejected_prediction_tokens": {
               "default": 0,
-              "description": "Rejected prediction token bucket reported by the provider; integer 0\u2013100,000,000. Preserve provider usage without double-counting totals.",
+              "description": "Rejected prediction token bucket reported by the provider; integer 0–100,000,000. Preserve provider usage without double-counting totals.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Rejected Prediction Tokens",
@@ -10219,7 +10219,7 @@
             },
             "tool_use_input_tokens": {
               "default": 0,
-              "description": "Tool-use input token subset already included in input_tokens; integer 0\u2013100,000,000, not additional tokens.",
+              "description": "Tool-use input token subset already included in input_tokens; integer 0–100,000,000, not additional tokens.",
               "maximum": 100000000,
               "minimum": 0,
               "title": "Tool Use Input Tokens",
@@ -10253,7 +10253,7 @@
             }
           ],
           "default": null,
-          "description": "1\u201332 ordered check bodies for one durable admission operation; omit entirely for recover_only or record_only. Validate before submission; never automatically replay unknown outcomes.",
+          "description": "1–32 ordered check bodies for one durable admission operation; omit entirely for recover_only or record_only. Validate before submission; never automatically replay unknown outcomes.",
           "title": "Checks"
         },
         "no_record": {
@@ -10274,7 +10274,7 @@
             }
           ],
           "default": null,
-          "description": "Optional output token bound, integer 0\u2013100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
+          "description": "Optional output token bound, integer 0–100,000,000, for denial attribution only; does not set the reservation amount or provider generation limit.",
           "title": "Estimated Output Tokens"
         },
         "operation_id": {
@@ -10388,7 +10388,7 @@
           "description": "Caller-retained exact denial event for a separate attribution-only retry.",
           "properties": {
             "index": {
-              "description": "Original check index, 0\u201331; preserve with its exact event payload.",
+              "description": "Original check index, 0–31; preserve with its exact event payload.",
               "maximum": 31,
               "minimum": 0,
               "title": "Index",
@@ -11672,7 +11672,7 @@
   {
     "name": "get_overview",
     "title": "Read account overview",
-    "description": "Read calendar-month account spend, requests, trend, savings, and free-tier quota metadata. Requires login/JWT authentication. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read calendar-month account spend, requests, trend, savings, and free-tier quota metadata. Requires a Solwyn login. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -11954,7 +11954,7 @@
   {
     "name": "list_cost_events",
     "title": "List cost events",
-    "description": "Read cursor-paginated cost events with shared filters and bounded all_pages. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read cursor-paginated cost events with shared filters and bounded all_pages. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -12148,12 +12148,12 @@
             }
           ],
           "default": null,
-          "description": "AND filters as key=value strings; unique keys 1\u201364 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
+          "description": "AND filters as key=value strings; unique keys 1–64 characters, values at most 256, no NUL. Empty values, whitespace and case are preserved.",
           "title": "Tag"
         },
         "limit": {
           "default": 50,
-          "description": "Maximum events per page, integer 1\u2013100 (default 50); preserve all filters when continuing with the returned cursor.",
+          "description": "Maximum events per page, integer 1–100 (default 50); preserve all filters when continuing with the returned cursor.",
           "maximum": 100,
           "minimum": 1,
           "title": "Limit",
@@ -12757,7 +12757,7 @@
   {
     "name": "get_cost_baseline",
     "title": "Get cost baseline",
-    "description": "Read committed daily spend baseline excluding today. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read committed daily spend baseline excluding today. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -12959,7 +12959,7 @@
   {
     "name": "get_unit_economics",
     "title": "Get unit economics",
-    "description": "Read unit-cost metrics and optional server-inferred causes. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read unit-cost metrics and optional server-inferred causes. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -13323,7 +13323,7 @@
   {
     "name": "get_cost_drift",
     "title": "Get cost drift",
-    "description": "Compare historical stored spend and estimates with coverage and caveats. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Compare historical stored spend and estimates with coverage and caveats. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -13670,7 +13670,7 @@
   {
     "name": "list_priced_models",
     "title": "List priced models",
-    "description": "List exact available priced targets and current pricing version. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "List exact available priced targets and current pricing version. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -13914,7 +13914,7 @@
   {
     "name": "simulate_costs",
     "title": "Simulate costs",
-    "description": "Read-only historical repricing; never reserves or bills. Definite 401: one JWT refresh/replay; 429: one bounded retry. No 503/transport replay. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read-only historical repricing; never reserves or bills. 429: one bounded retry. No 503/transport replay. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -13966,7 +13966,7 @@
           "description": "Target priced provider to replay historical usage against, without spending or reserving."
         },
         "model": {
-          "description": "Exact target model (1\u20132048 characters) from list_priced_models; Core rejects unavailable or unsupported targets.",
+          "description": "Exact target model (1–2048 characters) from list_priced_models; Core rejects unavailable or unsupported targets.",
           "maxLength": 2048,
           "minLength": 1,
           "title": "Model",
@@ -14445,7 +14445,7 @@
   {
     "name": "list_provider_failovers",
     "title": "List provider failovers",
-    "description": "Read recent provider/model failover groups, capped by Core at 50 groups. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read recent provider/model failover groups, capped by Core at 50 groups. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -14743,7 +14743,7 @@
   {
     "name": "list_untracked_surfaces",
     "title": "List untracked surfaces",
-    "description": "Read untracked surfaces with effective retention window, capped by Core at 25 observations. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read untracked surfaces with effective retention window, capped by Core at 25 observations. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -15054,7 +15054,7 @@
   {
     "name": "list_audit_events",
     "title": "List audit events",
-    "description": "Read account audit events newest first with exact action filters and bounded pagination. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read account audit events newest first with exact action filters and bounded pagination. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -15088,7 +15088,7 @@
             }
           ],
           "default": null,
-          "description": "Exact audit action string of 1\u2013100 characters; omit to include all actions.",
+          "description": "Exact audit action string of 1–100 characters; omit to include all actions.",
           "title": "Action"
         },
         "cursor": {
@@ -15330,7 +15330,7 @@
   {
     "name": "plan_status",
     "title": "Plan status",
-    "description": "Read current plan limits, capabilities and subscription lifecycle state. Accepts JWT or a project key with account context; no project selection is required.",
+    "description": "Read current plan limits, capabilities and subscription lifecycle state. Accepts a Solwyn login or a project key with account context; no project selection is required.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -15880,7 +15880,7 @@
   {
     "name": "plan_catalog",
     "title": "Plan catalog",
-    "description": "Read plan catalog: prices in cents, currency, included requests, decimal cent overage, limits and capabilities. Accepts JWT or project keys with authenticated user context; no project selection is required.",
+    "description": "Read plan catalog: prices in cents, currency, included requests, decimal cent overage, limits and capabilities. Accepts a Solwyn login or project keys with authenticated user context; no project selection is required.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -16426,7 +16426,7 @@
   {
     "name": "get_whoami",
     "title": "Get whoami",
-    "description": "Read account identity and email verification; project keys return local key context without a user identity. JWT reads user/account/project identity; project keys return only local auth and selected-project context without revealing the key.",
+    "description": "Read account identity and email verification; project keys return local key context without a user identity. A Solwyn login reads user/account/project identity; project keys return only local auth and selected-project context without revealing the key.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -16454,6 +16454,73 @@
             }
           },
           "title": "ReadRecovery",
+          "type": "object"
+        },
+        "_CredentialSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "login",
+                "project_key"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "keyring",
+                "environment"
+              ],
+              "title": "Source",
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            },
+            "expires_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expires At"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "label",
+            "scope",
+            "expires_at"
+          ],
+          "title": "_CredentialSummary",
           "type": "object"
         },
         "_Identity": {
@@ -16590,7 +16657,7 @@
           "properties": {
             "auth_type": {
               "enum": [
-                "jwt",
+                "login",
                 "project_key"
               ],
               "title": "Auth Type",
@@ -16603,6 +16670,9 @@
               ],
               "title": "Auth Source",
               "type": "string"
+            },
+            "credential": {
+              "$ref": "#/$defs/_CredentialSummary"
             },
             "configured_project": {
               "anyOf": [
@@ -16696,6 +16766,7 @@
           "required": [
             "auth_type",
             "auth_source",
+            "credential",
             "configured_project",
             "account_id",
             "your_role",
@@ -16774,7 +16845,7 @@
   {
     "name": "get_account_phone",
     "title": "Get account phone",
-    "description": "Read user phone verification and SMS consent state. Verification and consent writes stay in the dashboard. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read user phone verification and SMS consent state. Verification and consent writes stay in the dashboard. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -17027,7 +17098,7 @@
   {
     "name": "list_alert_activity",
     "title": "List alert activity",
-    "description": "Read account-wide activity across all projects plus account scope with delivery receipts. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read account-wide activity across all projects plus account scope with delivery receipts. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -17556,7 +17627,7 @@
   {
     "name": "list_open_alert_deliveries",
     "title": "List open alert deliveries",
-    "description": "Read pending/retrying deliveries and attempts regardless of event retention. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read pending/retrying deliveries and attempts regardless of event retention. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -18015,7 +18086,7 @@
   {
     "name": "budget_uncounted",
     "title": "Budget uncounted",
-    "description": "Read advisory unpriced upper-bound offline traffic, possibly overcounted. A 503 means unknown; retry the read, never assume zero or no past traffic. Accepts a project API key or login/JWT with access to the selected project.",
+    "description": "Read advisory unpriced upper-bound offline traffic, possibly overcounted. A 503 means unknown; retry the read, never assume zero or no past traffic. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -18207,14 +18278,14 @@
   {
     "name": "get_account_alert",
     "title": "Get account alert",
-    "description": "Read account spend alert configuration, optionally latest firing and lifecycle history within Core\u2019s 30d retention window. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read account spend alert configuration, optionally latest firing and lifecycle history within Core’s 30d retention window. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "with_last_fired": {
           "default": false,
-          "description": "Include latest firing within Core's default 30d retention window; requires JWT even for project budget rules. Null means no matching history in that window.",
+          "description": "Include latest firing within Core's default 30d retention window; requires a Solwyn login even for project budget rules. Null means no matching history in that window.",
           "title": "With Last Fired",
           "type": "boolean"
         }
@@ -18920,7 +18991,7 @@
   {
     "name": "plan_preview",
     "title": "Plan preview",
-    "description": "Read a plan-change estimate: immediate proration or scheduling at term end, integer cents, currency and line periods. Never changes a subscription or bills; not a price lock. No 503/transport replay. Requires login/JWT at any account role; no selected project required. A selected project key takes precedence over login.",
+    "description": "Read a plan-change estimate: immediate proration or scheduling at term end, integer cents, currency and line periods. Never changes a subscription or bills; not a price lock. No 503/transport replay. Requires a Solwyn login at any account role; no selected project required.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -19217,7 +19288,7 @@
   {
     "name": "list_team_members",
     "title": "List team members",
-    "description": "Read the complete active account roster in join order. Any account member may read it; no project selection is required. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read the complete active account roster in join order. Any account member may read it; no project selection is required. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -19421,7 +19492,7 @@
   {
     "name": "list_team_invites",
     "title": "List team invites",
-    "description": "Read all open account invitations and their delivery status, including expired invitations. Core requires owner/admin role; no project selection is required. Requires login/JWT; a configured project key takes precedence over stored login.",
+    "description": "Read all open account invitations and their delivery status, including expired invitations. Core requires owner/admin role; no project selection is required. Requires a Solwyn login.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,

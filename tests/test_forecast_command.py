@@ -14,6 +14,7 @@ from solwyn_cli import auth
 from solwyn_cli.commands import forecast as forecast_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -81,7 +82,7 @@ def test_forecast_command_is_registered() -> None:
     "credential",
     [
         auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN),
+        login_credential(ACCESS_TOKEN),
     ],
 )
 def test_forecast_supports_key_and_jwt_with_one_mtd_get(
@@ -89,7 +90,7 @@ def test_forecast_supports_key_and_jwt_with_one_mtd_get(
     credential: auth.ResolvedCredential,
 ) -> None:
     monkeypatch.setattr(
-        forecast_module, "resolve_credential", lambda: credential, raising=False
+        forecast_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [httpx.Response(200, json=FORECAST_RESPONSE)]
 
@@ -115,7 +116,7 @@ def test_forecast_table_shows_numbers_even_when_data_is_insufficient(
     monkeypatch.setattr(
         forecast_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
         raising=False,
     )
     FakeClient.responses = [httpx.Response(200, json=FORECAST_RESPONSE)]
@@ -139,7 +140,7 @@ def test_forecast_rejects_missing_project_before_authentication(
     monkeypatch.setattr(
         forecast_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -154,12 +155,9 @@ def test_forecast_rejects_missing_project_before_authentication(
 def test_forecast_invalid_or_extended_payload_fails_closed_without_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        forecast_module, "resolve_credential", lambda: credential, raising=False
+        forecast_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         httpx.Response(200, json={**FORECAST_RESPONSE, "future_field": "unsafe"})
@@ -180,7 +178,7 @@ def test_forecast_cross_project_key_403_has_an_actionable_project_hint(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
-        forecast_module, "resolve_credential", lambda: credential, raising=False
+        forecast_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         error_from_response(

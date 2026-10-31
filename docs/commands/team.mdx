@@ -1,8 +1,9 @@
 # Team members and invitations
 
-Team commands use the selected user JWT and current account, without a selected
-project. A selected environment or stored project key masks JWT credentials;
-unset `SOLWYN_API_KEY` and clear a stored key with `solwyn logout`, then log in.
+Team commands use your Solwyn login and current account, without a selected
+project. A stored login is used before any project key. Team writes (invitations,
+role changes and removals) need a one-time browser approval for each change; see
+[approvals](approvals.mdx).
 Core authorizes every request, including requests after a captured effects preview.
 
 ```sh
@@ -22,23 +23,24 @@ interactive confirmation or `--yes`. Non-TTY use without `--yes` exits 2 before
 credential resolution or HTTP. Decline, EOF and Ctrl-C never submit the write.
 JSON successes occupy one stdout object; errors use stderr and existing exit codes.
 HTTP 401/403 use exit 3, 404 uses 5, and conflicts/503/unknown write outcomes use 1.
+A write still waiting for, or refused, browser approval uses exit 6.
 Inspect state after an uncertain write before deliberately retrying.
 
 Any member may list the full active roster (`solwyn.team.members.v1`, `members`),
 in Core's join order. Only owners can change a non-owner to `admin` or `member`
-(`solwyn.team.member.v1`). Changed roles invalidate existing access tokens;
-refresh sessions remain available to obtain current permissions. The CLI cannot
+(`solwyn.team.member.v1`). Core checks the role on every request, so a CLI
+login sees a changed role on its next request. The CLI cannot
 assign or transfer ownership.
 
 Owners can remove admins/members; admins can remove members. Any role may remove
 itself. Removal revokes the member's sessions, invalidates access tokens, and
 revokes project keys they created in this account. `team leave` resolves the actual
-JWT user's identity, never a supplied user ID. The last owner cannot leave (409).
+logged-in user's identity, never a supplied user ID. The last owner cannot leave (409).
 Keep the membership and contact support about ownership; role changes cannot
 create another owner. `solwyn.team.remove.v1` acknowledges the confirmed removal and marks
-`self_leave`. After leaving, log in again; deliberately use `account recover` if
-you need a personal account. The CLI does not clear unrelated credentials or
-recover automatically.
+`self_leave`. After leaving, create a personal account in the dashboard at
+https://app.solwyn.ai/no-account if you need one, then run `solwyn login`. The
+CLI does not clear unrelated credentials or recover automatically.
 
 Owners/admins can list, send, resend and revoke invitations. Lists
 (`solwyn.team.invites.v1`, `invitations`) preserve Core's newest-first order, include

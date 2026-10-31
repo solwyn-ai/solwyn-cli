@@ -9,8 +9,6 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
-    SecretStr,
-    field_serializer,
     model_validator,
 )
 
@@ -208,24 +206,6 @@ class MediaUsage(_WireModel):
     resolution: Annotated[str, Field(max_length=32)] | None = None
     quality: Annotated[str, Field(max_length=32)] | None = None
     is_estimated: bool = False
-
-
-class LoginRequest(_WireModel):
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-
-    email: str
-    password: Annotated[SecretStr, Field(max_length=128)]
-    plan: Literal["production", "team", "scale"] | None = None
-    billing_interval: Literal["month", "year"] | None = None
-
-    @field_serializer("password")
-    def serialize_password(self, value: SecretStr) -> str:
-        """Reveal the password only while constructing the login wire body."""
-        return value.get_secret_value()
-
-
-class RefreshRequest(_WireModel):
-    refresh_token: str
 
 
 class ProjectCreateRequest(_WireModel):

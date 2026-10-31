@@ -142,6 +142,8 @@ def test_cli_checks_expected_denial_and_isolates_ambient_solwyn_env(smoke, monke
     )
     assert result["allowed"] is False
     assert seen["env"]["SOLWYN_API_KEY"] == "fixture-key"
+    # An operator's stored Solwyn login must not replace the fixture key.
+    assert seen["env"]["SOLWYN_AUTH"] == "project_key"
     assert not {"SOLWYN_JWT", "SOLWYN_AGENT_RUN_ID", "SOLWYN_TAGS"} & seen["env"].keys()
     assert seen["timeout"] == 10
 

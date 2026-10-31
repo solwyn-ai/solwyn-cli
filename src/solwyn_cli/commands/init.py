@@ -12,10 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from solwyn_cli._vendor.wire import ProjectCreateRequest
 from solwyn_cli.artifacts import ArtifactRecoveryError, write_agent_artifacts
+from solwyn_cli.approvals import add_retry_note, continue_with
 from solwyn_cli.auth import (
     AuthError,
+    auth_selection,
     CredentialStorageError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     ResolvedCredential,
     resolve_credential,
@@ -26,8 +28,8 @@ from solwyn_cli.commands._shared import exit_with_error
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
 from solwyn_cli.commands.budget_rules import build_rule, request_rule_add
 from solwyn_cli.commands.login import (
-    authenticate_with_password,
     authenticate_with_project_key,
+    device_login,
 )
 from solwyn_cli.commands.projects import (
     fetch_projects,
@@ -72,11 +74,12 @@ Provider = Literal["openai", "anthropic", "google-genai", "boto3"]
 
 INIT_HELP = help_contract(
     endpoint="composite onboarding workflow",
-    auth="any or interactive bootstrap",
-    exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+    auth="any, or a browser login when none is stored",
+    exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found; 6 approval or login pending",
     schema="solwyn.init.v1",
     guidance=(
-        "Remote operations: conditional POST /api/v1/auth/login; "
+        "Remote operations: conditional browser login (POST /oauth/device_authorization, "
+        "POST /oauth/token); "
         "GET /api/v1/projects; optional POST /api/v1/projects; "
         "final GET /api/v1/projects/{project}/budget; --run-cap adds a rule with "
         "GET/GET/PUT /api/v1/projects/{project}/budget after creation.",
@@ -127,26 +130,33 @@ def _stdin_is_tty() -> bool:
     return sys.stdin.isatty()
 
 
-def _authentication_required(context: typer.Context) -> None:
-    exit_with_error(
-        context,
-        OutputError(
-            code="interactive_auth_required",
-            message="Authentication is required to initialize Solwyn.",
-            hint="Set SOLWYN_API_KEY or rerun init in an interactive terminal.",
-        ),
-        semantic=ErrorSemantic.AUTH,
-    )
+_INIT_CONTINUE = "solwyn login --continue, then run solwyn init again"
 
 
 def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
-    if not _stdin_is_tty():
-        _authentication_required(context)
+    try:
+        selection = auth_selection()
+    except ValueError:
+        selection = None
+    if selection == "project_key":
+        if not _stdin_is_tty():
+            exit_with_error(
+                context,
+                OutputError(
+                    code="authentication_required",
+                    message="SOLWYN_AUTH=project_key needs a project key.",
+                    hint="Set SOLWYN_API_KEY, or pipe a key to solwyn login --with-key.",
+                ),
+                semantic=ErrorSemantic.AUTH,
+            )
+        return _prompt_for_key(context)
+    if selection == "login" or not _stdin_is_tty():
+        return device_login(context, continue_command=_INIT_CONTINUE)
 
     method = (
         typer.prompt(
-            "Authentication method (key/login)",
-            default="key",
+            "Authentication method (login/key)",
+            default="login",
             err=True,
         )
         .strip()
@@ -157,54 +167,32 @@ def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
             context,
             OutputError(
                 code="invalid_auth_method",
-                message="Authentication method must be key or login.",
+                message="Authentication method must be login or key.",
             ),
             semantic=ErrorSemantic.USAGE,
         )
 
     if method == "key":
-        project_key = typer.prompt("Project key", hide_input=True, err=True)
-        try:
-            return authenticate_with_project_key(project_key)
-        except CredentialStorageError as error:
-            exit_with_error(
-                context,
-                OutputError(code="credential_storage_failed", message=str(error)),
-                semantic=ErrorSemantic.AUTH,
-            )
-        except AuthError:
-            exit_with_error(
-                context,
-                OutputError(
-                    code="invalid_project_key",
-                    message="The project key is empty or malformed.",
-                ),
-                semantic=ErrorSemantic.AUTH,
-            )
+        return _prompt_for_key(context)
+    return device_login(context, continue_command=_INIT_CONTINUE)
 
-    email = typer.prompt("Email", err=True)
-    password = typer.prompt("Password", hide_input=True, err=True)
-    runtime = command_context(context)
+
+def _prompt_for_key(context: typer.Context) -> ResolvedCredential:
+    project_key = typer.prompt("Project key", hide_input=True, err=True)
     try:
-        return authenticate_with_password(
-            api_url=runtime.api_url,
-            email=email,
-            password=password,
-        )
-    except ApiError as error:
-        exit_with_error(context, error, semantic=ErrorSemantic.AUTH)
+        return authenticate_with_project_key(project_key)
     except CredentialStorageError as error:
         exit_with_error(
             context,
             OutputError(code="credential_storage_failed", message=str(error)),
             semantic=ErrorSemantic.AUTH,
         )
-    except (ValidationError, ValueError, TypeError):
+    except AuthError:
         exit_with_error(
             context,
             OutputError(
-                code="invalid_auth_response",
-                message="The authentication response was invalid.",
+                code="invalid_project_key",
+                message="The project key is empty or malformed.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -231,6 +219,7 @@ def _create_project(
 ) -> tuple[str, ResolvedCredential | None]:
     name = typer.prompt("Project name", err=True).strip()
     budget = typer.prompt("Initial monthly budget", type=float, default=100.0, err=True)
+    add_retry_note("Enter the same project name and budget again.")
     if not name or not math.isfinite(budget) or budget <= 0:
         exit_with_error(
             context,
@@ -254,6 +243,23 @@ def _create_project(
         )
         stored_credential = store_project_key(created.key.get_secret_value())
         if run_cap is not None:
+            # Re-running init cannot add a cap to an existing project, so a
+            # pending approval here continues with the rule add itself.
+            continue_with(
+                [
+                    "budget",
+                    "rule",
+                    "add",
+                    "--type",
+                    "runaway_run",
+                    "--spend",
+                    str(run_cap),
+                    "--mode",
+                    "hard_deny",
+                ],
+                project=created.id,
+                note=f"Project {created.id} was created; this command adds only its run cap.",
+            )
             try:
                 request_rule_add(
                     client=client,
@@ -294,9 +300,9 @@ def _create_project(
     )
 
 
-def _resolve_jwt_project(
+def _resolve_login_project(
     context: typer.Context,
-    credential: JwtCredential,
+    credential: LoginCredential,
     explicit_project: str | None,
     run_cap: float | None = None,
 ) -> tuple[str, ResolvedCredential]:
@@ -336,8 +342,9 @@ def _resolve_jwt_project(
                     semantic=ErrorSemantic.USAGE,
                 )
             if not projects:
-                project_id, stored = _create_project(context, client, run_cap)
-                return project_id, stored or client.current_credential
+                # The new key is stored for the SDK; init keeps using the login.
+                project_id, _ = _create_project(context, client, run_cap)
+                return project_id, client.current_credential
 
             project_ids = ", ".join(project.id for project in projects)
             selection = typer.prompt(
@@ -345,8 +352,9 @@ def _resolve_jwt_project(
                 err=True,
             ).strip()
             if selection == "create":
-                project_id, stored = _create_project(context, client, run_cap)
-                return project_id, stored or client.current_credential
+                # The new key is stored for the SDK; init keeps using the login.
+                project_id, _ = _create_project(context, client, run_cap)
+                return project_id, client.current_credential
             if selection not in by_id:
                 exit_with_error(
                     context,
@@ -427,7 +435,7 @@ def _resolve_project(
                 semantic=ErrorSemantic.USAGE,
             )
         return selected, credential
-    return _resolve_jwt_project(context, credential, selected, run_cap)
+    return _resolve_login_project(context, credential, selected, run_cap)
 
 
 def _write_config(api_url: str, project_id: str) -> Path:

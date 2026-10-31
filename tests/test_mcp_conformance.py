@@ -18,6 +18,7 @@ from solwyn_cli import auth, runtime
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.mcp import server as mcp_server
 from solwyn_cli.output import OutputFormat
+from login_fixtures import login_credential
 
 
 VALID_KEY = "sk_proj_" + "a1" * 32
@@ -442,7 +443,7 @@ def _install_http(
     monkeypatch.setattr(
         auth,
         "resolve_credential",
-        lambda: next(resolved_credentials),
+        lambda **_: next(resolved_credentials),
     )
 
     def client_factory(
@@ -466,7 +467,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
         return await session.call_tool(name, arguments)
 
 
-def test_get_overview_requires_jwt_before_http(
+def test_get_overview_requires_login_before_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
@@ -481,10 +482,7 @@ def test_get_overview_requires_jwt_before_http(
     assert result.structured_content["error"] == {
         "code": "authentication_required",
         "message": "User login is required to read the account overview.",
-        "hint": (
-            "This read requires JWT. Unset SOLWYN_API_KEY or remove the stored project key "
-            "with solwyn logout, then run solwyn login and retry."
-        ),
+        "hint": auth.LOGIN_REQUIRED_HINT,
         "status_code": None,
     }
     assert requests == []
@@ -495,7 +493,7 @@ def test_get_overview_requires_jwt_before_http(
 def test_get_overview_reads_typed_account_summary_with_jwt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    jwt = login_credential(JWT_ACCESS)
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json=OVERVIEW_RESPONSE)],
@@ -517,7 +515,7 @@ def test_get_overview_reads_typed_account_summary_with_jwt(
 def test_get_overview_invalid_response_is_fixed_and_secret_safe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    jwt = login_credential(JWT_ACCESS)
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json={"total_spend": JWT_ACCESS})],
@@ -569,7 +567,7 @@ def mcp_http(
         api_key=VALID_KEY,
         source="environment",
     )
-    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    jwt = login_credential(JWT_ACCESS)
     requests, clients, response_queue = _install_http(
         monkeypatch,
         responses=responses,
@@ -1004,7 +1002,7 @@ def test_budget_descriptions_are_live_views_of_canonical_guidance(
     polling = next(line for line in canonical_lines if "for polling" in line)
     assert descriptions["budget_status"] == (
         polling
-        + " Accepts a project API key or login/JWT with access to the selected project."
+        + " Accepts a Solwyn login or a project API key with access to the selected project."
     )
     assert descriptions["budget_check"].startswith("Reserve budget only immediately")
     assert descriptions["budget_confirm"].startswith("Settle a non-null reservation")
@@ -1134,7 +1132,7 @@ def test_key_only_tools_reject_jwt_without_http(
     arguments: dict[str, Any],
     expected_code: str,
 ) -> None:
-    jwt = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
+    jwt = login_credential(JWT_ACCESS)
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[],
@@ -1166,7 +1164,7 @@ def test_key_only_tools_reject_jwt_without_http(
     assert JWT_REFRESH not in str(result)
 
 
-def test_list_projects_returns_structured_jwt_remediation_under_project_key(
+def test_list_projects_returns_structured_login_remediation_under_project_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
@@ -1182,7 +1180,7 @@ def test_list_projects_returns_structured_jwt_remediation_under_project_key(
     assert result.structured_content["ok"] is False
     assert result.structured_content["error"]["code"] == "authentication_required"
     assert "solwyn login" in result.structured_content["error"]["hint"]
-    assert "JWT" in result.structured_content["error"]["hint"]
+    assert result.structured_content["error"]["hint"] == auth.LOGIN_REQUIRED_HINT
     assert requests == []
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
@@ -1655,7 +1653,7 @@ def test_agent_runs_rejects_non_rfc3339_custom_window_before_auth(
     monkeypatch.setattr(
         auth,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
     )
 
     result = anyio.run(
@@ -1921,57 +1919,25 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
     assert VALID_KEY not in str(result)
 
 
-def test_shared_client_honors_one_jwt_refresh_and_retry(
+def test_shared_client_never_replays_a_401_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    old = auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH)
-    new_access = "rotated-access-token"
-    new_refresh = "rotated-refresh-token"
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access_token, refresh_token: auth.JwtCredential(
-            access_token=access_token,
-            refresh_token=refresh_token,
-        ),
-    )
+    login = login_credential(JWT_ACCESS)
     requests, clients, responses = _install_http(
         monkeypatch,
-        responses=[
-            httpx.Response(401, json={"detail": "expired"}),
-            httpx.Response(
-                200,
-                json={
-                    "access_token": new_access,
-                    "refresh_token": new_refresh,
-                    "token_type": "bearer",
-                },
-            ),
-            httpx.Response(200, json=PROJECTS_RESPONSE),
-        ],
-        credentials=[old],
+        responses=[httpx.Response(401, json={"detail": "expired"})],
+        credentials=[login],
     )
 
     result = anyio.run(_call_tool, "list_projects", {})
 
-    assert result.structured_content["ok"] is True
-    assert _wire_requests(requests) == [
-        ("GET", "/api/v1/projects", {}, None),
-        (
-            "POST",
-            "/api/v1/auth/refresh",
-            {},
-            {"refresh_token": JWT_REFRESH},
-        ),
-        ("GET", "/api/v1/projects", {}, None),
-    ]
+    assert result.is_error is True
+    assert result.structured_content["error"]["code"] == "authentication_required"
+    assert _wire_requests(requests) == [("GET", "/api/v1/projects", {}, None)]
     assert requests[0][2]["authorization"] == f"Bearer {JWT_ACCESS}"
-    assert requests[2][2]["authorization"] == f"Bearer {new_access}"
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
-    rendered = str(result)
-    for secret in (JWT_ACCESS, JWT_REFRESH, new_access, new_refresh):
-        assert secret not in rendered
+    assert JWT_ACCESS not in str(result)
 
 
 @pytest.mark.parametrize("tool", ["get_costs", "get_cost_total"])

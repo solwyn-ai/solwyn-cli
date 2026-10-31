@@ -16,6 +16,7 @@ from solwyn_cli.commands import attest as attest_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -53,15 +54,12 @@ class FakeClient:
             result.close()
 
 
-def _key() -> auth.ProjectKeyCredential:
+def _key(**_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token="attestation-access-token",
-        refresh_token="attestation-refresh-token",
-    )
+def _jwt() -> auth.LoginCredential:
+    return login_credential("attestation-access-token")
 
 
 def _window_headers() -> dict[str, str]:
@@ -94,7 +92,7 @@ def test_project_attestation_streams_exact_json_and_reports_window_headers(
     monkeypatch: pytest.MonkeyPatch,
     credential: auth.ResolvedCredential,
 ) -> None:
-    monkeypatch.setattr(attest_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(attest_module, "resolve_credential", lambda **_: credential)
     expected = (GOLDEN_DIR / "attest-project-json.json").read_bytes()
     FakeClient.responses = [
         httpx.Response(200, content=expected, headers=_window_headers())
@@ -126,7 +124,7 @@ def test_account_attestation_requires_jwt_and_streams_csv_golden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(attest_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(attest_module, "resolve_credential", lambda **_: credential)
     expected = (GOLDEN_DIR / "attest-account-csv.txt").read_bytes()
     FakeClient.responses = [httpx.Response(200, content=expected)]
 
@@ -211,7 +209,9 @@ def test_project_attestation_requires_a_project_before_credentials(
 ) -> None:
     calls: list[None] = []
     monkeypatch.setattr(runtime, "load_config", lambda: Config(default_project=None))
-    monkeypatch.setattr(attest_module, "resolve_credential", lambda: calls.append(None))
+    monkeypatch.setattr(
+        attest_module, "resolve_credential", lambda **_: calls.append(None)
+    )
 
     result = runner.invoke(
         app,

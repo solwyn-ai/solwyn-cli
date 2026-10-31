@@ -1,13 +1,16 @@
-"""Credential resolution and bounded JWT refresh for authenticated requests."""
+"""Credential storage and class-based credential resolution."""
 
+import json
 import os
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import ClassVar, Literal, TypeAlias
 
-import httpx
 import keyring
 from keyring.errors import NoKeyringError, PasswordDeleteError
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -18,14 +21,22 @@ from pydantic import (
 )
 
 from solwyn_cli._vendor.validation import validate_project_key_format
-from solwyn_cli._vendor.wire import RefreshRequest
-from solwyn_cli.errors import error_from_response
 
 KEYRING_SERVICE = "solwyn-cli"
 API_KEY_ENTRY = "api_key"
-ACCESS_TOKEN_ENTRY = "access_token"
-REFRESH_TOKEN_ENTRY = "refresh_token"
+CLI_CREDENTIAL_ENTRY = "cli_credential"
+CLI_CREDENTIAL_META_ENTRY = "cli_credential_meta"
+PENDING_DEVICE_ENTRY = "pending_device"
+# Pre-device-flow session tokens. They are never read, only deleted.
+LEGACY_ENTRIES = ("access_token", "refresh_token")
 AUTH_EXIT_CODE = 3
+AUTH_SELECTION_ENV = "SOLWYN_AUTH"
+OAUTH_CLIENT_ID = "solwyn-cli"
+CLI_TOKEN_PATTERN = re.compile(r"solwyn_cli_[0-9a-f]{64}")
+DEVICE_CODE_PATTERN = re.compile(r"solwyn_dc_[0-9a-f]{64}")
+
+CredentialClass: TypeAlias = Literal["user", "metering"]
+AuthSelection: TypeAlias = Literal["login", "project_key"]
 
 
 class AuthError(RuntimeError):
@@ -40,13 +51,20 @@ class CredentialStorageError(AuthError):
     """The operating-system credential store could not be updated."""
 
 
-class JwtRequiredError(AuthError):
-    """A local JWT-only operation was masked by a project key."""
+class LoginRequiredError(AuthError):
+    """A user-plane operation resolved a project key instead of a Solwyn login."""
 
 
-JWT_REQUIRED_HINT = (
-    "This read requires JWT. Unset SOLWYN_API_KEY or remove the stored project key "
-    "with solwyn logout, then run solwyn login and retry."
+class MeteringKeyRequiredError(AuthError):
+    """A metering operation found no project key; the login is never used."""
+
+
+LOGIN_REQUIRED_HINT = (
+    "This needs a Solwyn login. Run solwyn login and retry. "
+    "If SOLWYN_AUTH=project_key is set, unset it."
+)
+METERING_KEY_HINT = (
+    "Metering needs a project key. Run solwyn login --with-key or set SOLWYN_API_KEY."
 )
 
 
@@ -70,47 +88,79 @@ class ProjectKeyCredential(BaseModel):
         return self.api_key.get_secret_value()
 
 
-class JwtCredential(BaseModel):
-    """A complete access/refresh pair whose repr remains redacted."""
+class LoginMetadata(BaseModel):
+    """Non-secret facts about the stored CLI login, kept beside the token."""
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
-    access_token: SecretStr = Field(min_length=1)
-    refresh_token: SecretStr = Field(min_length=1)
+    id: str = Field(min_length=1)
+    label: str
+    scope: str
+    expires_at: AwareDatetime
+    account_id: str
+    account_name: str
+    email: str
+    role: Literal["owner", "admin", "member"]
+
+    @property
+    def scopes(self) -> list[str]:
+        """Return the granted OAuth scopes in their stored order."""
+        return self.scope.split()
+
+
+class LoginCredential(BaseModel):
+    """A scoped, expiring CLI credential whose repr remains redacted."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    token: SecretStr
+    meta: LoginMetadata
+    source: Literal["keyring"] = "keyring"
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, value: SecretStr) -> SecretStr:
+        """Accept only the distinctive CLI credential format."""
+        if CLI_TOKEN_PATTERN.fullmatch(value.get_secret_value()) is None:
+            raise ValueError("invalid CLI credential")
+        return value
 
     def bearer_value(self) -> str:
-        """Return the access token at the request boundary."""
-        return self.access_token.get_secret_value()
-
-    def refresh_value(self) -> str:
-        """Return the refresh token only for the refresh request boundary."""
-        return self.refresh_token.get_secret_value()
+        """Return the token at the request boundary."""
+        return self.token.get_secret_value()
 
 
-class _TokenResponse(BaseModel):
-    """Validated token rotation response from the auth API."""
+class PendingDevice(BaseModel):
+    """A device authorization that is waiting for browser approval."""
 
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
-    access_token: SecretStr = Field(min_length=1)
-    refresh_token: SecretStr = Field(min_length=1)
-    token_type: Literal["bearer"] = "bearer"
+    device_code: SecretStr
+    user_code: str
+    verification_uri: str
+    verification_uri_complete: str
+    expires_at: AwareDatetime
+    interval: int = Field(ge=1)
 
+    @field_validator("device_code")
+    @classmethod
+    def validate_device_code(cls, value: SecretStr) -> SecretStr:
+        """Accept only the distinctive device code format."""
+        if DEVICE_CODE_PATTERN.fullmatch(value.get_secret_value()) is None:
+            raise ValueError("invalid device code")
+        return value
 
-class _RefreshRequest(RefreshRequest):
-    """Refresh request whose in-memory representation redacts its token."""
-
-    refresh_token: SecretStr
-
-    @field_serializer("refresh_token")
-    def serialize_refresh_token(self, value: SecretStr) -> str:
-        """Reveal the token only while constructing the authenticated POST body."""
+    @field_serializer("device_code")
+    def serialize_device_code(self, value: SecretStr) -> str:
+        """Reveal the device code only for keychain storage."""
         return value.get_secret_value()
 
 
-ResolvedCredential: TypeAlias = ProjectKeyCredential | JwtCredential
-AuthenticatedRequest: TypeAlias = Callable[[ResolvedCredential], httpx.Response]
-CredentialRotation: TypeAlias = Callable[[JwtCredential], None]
+ResolvedCredential: TypeAlias = ProjectKeyCredential | LoginCredential
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _project_key_credential(
@@ -133,32 +183,89 @@ def _get_password(entry: str) -> tuple[bool, str | None]:
         return False, None
 
 
-def resolve_credential(
-    environ: Mapping[str, str] | None = None,
-) -> ResolvedCredential | None:
-    """Resolve credentials in the frozen env, API-key, JWT precedence order."""
+def auth_selection(environ: Mapping[str, str] | None = None) -> AuthSelection | None:
+    """Return the SOLWYN_AUTH override, or raise ValueError for an unknown value."""
     environment = os.environ if environ is None else environ
+    value = environment.get(AUTH_SELECTION_ENV, "")
+    if value == "":
+        return None
+    if value not in ("login", "project_key"):
+        raise ValueError("SOLWYN_AUTH must be login or project_key.")
+    return value
+
+
+def _stored_login() -> LoginCredential | None:
+    """Read the stored login, or None when absent, unreadable or corrupt."""
+    available, token = _get_password(CLI_CREDENTIAL_ENTRY)
+    if not available or token is None:
+        return None
+    available, raw_meta = _get_password(CLI_CREDENTIAL_META_ENTRY)
+    if not available or raw_meta is None:
+        return None
+    try:
+        return LoginCredential(
+            token=token, meta=LoginMetadata.model_validate_json(raw_meta)
+        )
+    except ValidationError:
+        return None
+
+
+def stored_login(*, include_expired: bool = False) -> LoginCredential | None:
+    """Return the stored login while it is locally unexpired, unless asked."""
+    login = _stored_login()
+    if login is None or (not include_expired and login.meta.expires_at <= _now()):
+        return None
+    return login
+
+
+def expired_login_date() -> datetime | None:
+    """Return the expiry of a stored login that has already expired."""
+    login = _stored_login()
+    if login is None or login.meta.expires_at > _now():
+        return None
+    return login.meta.expires_at
+
+
+def _project_key(environment: Mapping[str, str]) -> ProjectKeyCredential | None:
     if "SOLWYN_API_KEY" in environment:
         return _project_key_credential(environment["SOLWYN_API_KEY"], "environment")
-
     available, stored_key = _get_password(API_KEY_ENTRY)
-    if not available:
+    if not available or stored_key is None:
         return None
-    if stored_key is not None:
-        return _project_key_credential(stored_key, "keyring")
+    return _project_key_credential(stored_key, "keyring")
 
-    available, access_token = _get_password(ACCESS_TOKEN_ENTRY)
-    if not available:
+
+def stored_project_key() -> ProjectKeyCredential | None:
+    """Return the keychain project key only, never the environment key."""
+    available, stored_key = _get_password(API_KEY_ENTRY)
+    if not available or stored_key is None:
         return None
-    available, refresh_token = _get_password(REFRESH_TOKEN_ENTRY)
-    if not available:
-        return None
-    if not access_token or not refresh_token:
-        return None
-    return JwtCredential(
-        access_token=access_token,
-        refresh_token=refresh_token,
-    )
+    return _project_key_credential(stored_key, "keyring")
+
+
+def resolve_credential(
+    environ: Mapping[str, str] | None = None,
+    *,
+    purpose: CredentialClass = "user",
+) -> ResolvedCredential | None:
+    """Resolve one credential for a command class.
+
+    Metering never uses the login: environment key, then keychain key. User
+    commands prefer the login, then the environment key, then the keychain key.
+    SOLWYN_AUTH=project_key skips the login; SOLWYN_AUTH=login requires it.
+    """
+    environment = os.environ if environ is None else environ
+    if purpose == "metering":
+        return _project_key(environment)
+    try:
+        selection = auth_selection(environment)
+    except ValueError as error:
+        raise AuthError(str(error)) from None
+    if selection != "project_key":
+        login = stored_login()
+        if login is not None or selection == "login":
+            return login
+    return _project_key(environment)
 
 
 def _set_password(entry: str, value: str) -> None:
@@ -191,6 +298,14 @@ def _delete_password(entry: str) -> bool:
     return True
 
 
+def _delete_entries(entries: tuple[str, ...]) -> None:
+    results = [_delete_password(entry) for entry in entries]
+    if not all(results):
+        raise CredentialStorageError(
+            "Could not clear credentials from the operating-system keychain."
+        )
+
+
 def store_project_key(project_key: str) -> ProjectKeyCredential:
     """Validate and store a project key only in the OS keychain."""
     credential = _project_key_credential(project_key, "keyring")
@@ -198,72 +313,69 @@ def store_project_key(project_key: str) -> ProjectKeyCredential:
     return credential
 
 
-def store_jwt_pair(access_token: str, refresh_token: str) -> JwtCredential:
-    """Store or rotate a complete JWT pair only in the OS keychain."""
+def store_login(token: str, meta: LoginMetadata) -> LoginCredential:
+    """Store a CLI login and drop the pending device and legacy session entries."""
     try:
-        credential = JwtCredential(
-            access_token=access_token,
-            refresh_token=refresh_token,
-        )
+        credential = LoginCredential(token=token, meta=meta)
     except ValidationError:
-        raise CredentialStorageError("Received an invalid token pair.") from None
-    _set_password(REFRESH_TOKEN_ENTRY, credential.refresh_value())
-    _set_password(ACCESS_TOKEN_ENTRY, credential.bearer_value())
+        raise CredentialStorageError("Received an invalid CLI credential.") from None
+    # Drop the old token first. Metadata without a token reads as no login, so a
+    # failed write can never pair the old token with the new metadata.
+    if not _delete_password(CLI_CREDENTIAL_ENTRY):
+        raise CredentialStorageError(
+            "Could not update credentials in the operating-system keychain."
+        )
+    try:
+        _set_password(CLI_CREDENTIAL_META_ENTRY, meta.model_dump_json())
+        _set_password(CLI_CREDENTIAL_ENTRY, credential.bearer_value())
+    except CredentialStorageError:
+        _delete_password(CLI_CREDENTIAL_META_ENTRY)
+        raise
+    for entry in (PENDING_DEVICE_ENTRY, *LEGACY_ENTRIES):
+        _delete_password(entry)
     return credential
 
 
-def clear_credentials() -> None:
-    """Remove every supported credential entry from the OS keychain."""
-    all_entries_cleared = True
-    for entry in (API_KEY_ENTRY, ACCESS_TOKEN_ENTRY, REFRESH_TOKEN_ENTRY):
-        if not _delete_password(entry):
-            all_entries_cleared = False
-    if not all_entries_cleared:
-        raise CredentialStorageError(
-            "Could not clear credentials from the operating-system keychain."
-        )
+def clear_login() -> None:
+    """Remove only the stored CLI login."""
+    _delete_entries((CLI_CREDENTIAL_ENTRY, CLI_CREDENTIAL_META_ENTRY))
 
 
-def request_with_refresh_retry(
-    *,
-    client: httpx.Client,
-    api_url: str,
-    credential: ResolvedCredential,
-    request: AuthenticatedRequest,
-    on_credential_rotated: CredentialRotation | None = None,
-) -> httpx.Response:
-    """Run a request and make at most one JWT refresh plus one retry on 401."""
-    response = request(credential)
-    if response.status_code != httpx.codes.UNAUTHORIZED:
-        return response
-    if error_from_response(response).code == "account_membership_revoked":
-        return response
-    if not isinstance(credential, JwtCredential):
-        raise AuthError("Authentication failed. Check your credentials.")
+def store_pending_device(pending: PendingDevice) -> None:
+    """Keep an in-progress device login so login --continue can resume it."""
+    _set_password(PENDING_DEVICE_ENTRY, json.dumps(pending.model_dump(mode="json")))
 
-    refresh_request = _RefreshRequest(refresh_token=credential.refresh_value())
+
+def load_pending_device() -> PendingDevice | None:
+    """Return the stored device login, or None when absent or corrupt."""
+    available, raw = _get_password(PENDING_DEVICE_ENTRY)
+    if not available or raw is None:
+        return None
     try:
-        refresh_response = client.post(
-            f"{api_url.rstrip('/')}/api/v1/auth/refresh",
-            json=refresh_request.model_dump(),
-        )
-        if not refresh_response.is_success:
-            raise AuthError("Authentication refresh failed. Log in again.")
-        token_response = _TokenResponse.model_validate(refresh_response.json())
-    except AuthError:
-        raise
-    except (httpx.HTTPError, ValueError, TypeError, ValidationError):
-        raise AuthError("Authentication refresh failed. Log in again.") from None
+        return PendingDevice.model_validate_json(raw)
+    except ValidationError:
+        return None
 
-    rotated = store_jwt_pair(
-        token_response.access_token.get_secret_value(),
-        token_response.refresh_token.get_secret_value(),
+
+def clear_pending_device() -> None:
+    """Forget an in-progress device login. Best effort."""
+    _delete_password(PENDING_DEVICE_ENTRY)
+
+
+def delete_legacy_entries() -> None:
+    """Remove pre-device-flow session tokens. Best effort."""
+    for entry in LEGACY_ENTRIES:
+        _delete_password(entry)
+
+
+def clear_credentials() -> None:
+    """Remove every supported and legacy credential entry from the OS keychain."""
+    _delete_entries(
+        (
+            API_KEY_ENTRY,
+            CLI_CREDENTIAL_ENTRY,
+            CLI_CREDENTIAL_META_ENTRY,
+            PENDING_DEVICE_ENTRY,
+            *LEGACY_ENTRIES,
+        )
     )
-    if on_credential_rotated is not None:
-        on_credential_rotated(rotated)
-    retry_response = request(rotated)
-    if retry_response.status_code == httpx.codes.UNAUTHORIZED:
-        if error_from_response(retry_response).code == "account_membership_revoked":
-            return retry_response
-        raise AuthError("Authentication failed after refresh. Log in again.")
-    return retry_response

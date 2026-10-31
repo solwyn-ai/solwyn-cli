@@ -1,2 +1,2 @@
-Authentication         Status
-project_key     authenticated
+Field                 Value
+Authentication  project_key

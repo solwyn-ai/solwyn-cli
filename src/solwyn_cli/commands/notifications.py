@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from solwyn_cli._vendor.notification_wire import (
+    NotificationEventType,
     NotificationConfigUpdate,
     PagerDutyTestRequest,
     Severity,
@@ -65,7 +66,7 @@ def config_table(data: NotificationConfigResponse) -> TableData:
 def show(context: typer.Context) -> None:
     """Show routing, delivery preferences and tier capabilities."""
     data = request(
-        context, "GET", project_path(context), NotificationConfigResponse, jwt=False
+        context, "GET", project_path(context), NotificationConfigResponse, login=False
     )
     emit(context, SCHEMA, data, table=config_table(data))
 
@@ -95,10 +96,8 @@ def set_config(
     ] = False,
     severity: Annotated[Severity | None, typer.Option("--severity")] = None,
     event: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--event", help="Event type; repeat. Core accepts future event names."
-        ),
+        list[NotificationEventType] | None,
+        typer.Option("--event", help="Event type; repeat."),
     ] = None,
     all_events: Annotated[
         bool, typer.Option("--all-events", help="Allow all event types.")
@@ -139,7 +138,7 @@ def set_config(
         project_path(context),
         NotificationConfigResponse,
         body=NotificationConfigUpdate.model_validate(body),
-        jwt=False,
+        login=False,
     )
     emit(context, SCHEMA, data, table=config_table(data))
 
@@ -149,7 +148,7 @@ def set_config(
     epilog=command_help(
         "POST /api/v1/projects/{project}/notifications/test-{channel}",
         TEST_SCHEMA,
-        auth="any; Slack/PagerDuty require JWT or full-scope key; email requires JWT",
+        auth="any; Slack/PagerDuty require a login or full-scope key; email requires a login",
         guidance=(
             "SMS checks eligibility only (no message sent). Slack, PagerDuty and email send a real test. Slack/PagerDuty require --secret-stdin or SOLWYN_CHANNEL_SECRET; use channels test ID for stored credentials.",
             "Core enforces per-channel capabilities; SMS is Production+ and requires phone verification and consent.",
@@ -188,7 +187,7 @@ def test_notification(
         project_path(context) + "/test-" + channel.value,
         EmailTestResponse if channel == TestChannel.EMAIL else DeliveryResponse,
         body=body,
-        jwt=channel == TestChannel.EMAIL,
+        login=channel == TestChannel.EMAIL,
         secrets=(secret,) if secret else (),
     )
     emit_delivery(context, TEST_SCHEMA, data)

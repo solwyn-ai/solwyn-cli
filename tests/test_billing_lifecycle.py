@@ -13,11 +13,14 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import plan
 from solwyn_cli.main import app
 from test_plan_command import BILLING_STATUS
+from login_fixtures import (
+    APPROVAL_ID,
+    fake_keychain,
+    login_credential,
+)
 
 runner = CliRunner()
-JWT = auth.JwtCredential(
-    access_token="synthetic-access", refresh_token="synthetic-refresh"
-)
+JWT = login_credential("synthetic-access")
 TARGET = {"target_tier": "scale", "target_billing_interval": "year"}
 PREVIEW = {
     **TARGET,
@@ -66,7 +69,7 @@ def billing(monkeypatch):
             raise response
         return response
 
-    monkeypatch.setattr(plan, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(plan, "resolve_credential", lambda **_: JWT)
     monkeypatch.setattr(plan, "_is_interactive", lambda: False, raising=False)
     monkeypatch.setattr(
         plan,
@@ -346,7 +349,7 @@ def test_selected_key_is_masked_and_never_falls_back_to_jwt(billing, monkeypatch
     monkeypatch.setattr(
         plan,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=key, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=key, source="environment"),
     )
     result = invoke(*args, "--yes")
     assert result.exit_code == 3
@@ -358,7 +361,7 @@ def test_selected_key_is_masked_and_never_falls_back_to_jwt(billing, monkeypatch
 def test_help_never_resolves_credentials_or_calls_api(billing, monkeypatch, args):
     _, calls = billing
     monkeypatch.setattr(
-        plan, "resolve_credential", lambda: pytest.fail("help resolved auth")
+        plan, "resolve_credential", lambda **_: pytest.fail("help resolved auth")
     )
     command = list(args[:2] if args[0] == "pending" else args[:1])
     assert invoke(*command, "--help").exit_code == 0
@@ -412,3 +415,58 @@ def test_new_billing_json_golden_contract(billing, args, payload, name, needs_st
     assert_matches_golden(
         result.stdout, Path(__file__).parent / "golden" / f"plan-{name}.json"
     )
+
+
+# Review items 4 and 5: approvals bind the real mutation and survive a retry.
+
+
+@pytest.fixture
+def recorded(monkeypatch):
+    queue: list[httpx.Response] = []
+    sent: list[httpx.Request] = []
+
+    def handler(request):
+        sent.append(request)
+        return queue.pop(0)
+
+    monkeypatch.setattr(plan, "resolve_credential", lambda **_: JWT)
+    monkeypatch.setattr(plan, "_is_interactive", lambda: False, raising=False)
+    monkeypatch.setattr(
+        plan,
+        "SolwynClient",
+        lambda **kwargs: SolwynClient(
+            **kwargs, transport=httpx.MockTransport(handler), sleeper=lambda _: None
+        ),
+    )
+    fake_keychain(monkeypatch)
+    return queue, sent
+
+
+def test_approval_option_attaches_to_the_plan_change_not_the_preview(recorded):
+    queue, sent = recorded
+    queue.extend(
+        [
+            httpx.Response(200, json=PREVIEW),
+            httpx.Response(
+                200,
+                json={
+                    "mode": "immediate",
+                    "status": "active",
+                    "proration_date": None,
+                    "effective_at": None,
+                },
+            ),
+        ]
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "--approval", APPROVAL_ID, "plan", "change"]
+        + ["--tier", "scale", "--interval", "year", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [(r.url.path, r.headers.get("Solwyn-Approval")) for r in sent] == [
+        ("/api/v1/billing/plan-preview", None),
+        ("/api/v1/billing/plan-change", APPROVAL_ID),
+    ]

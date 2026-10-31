@@ -9,12 +9,12 @@ import pytest
 from typer.testing import CliRunner
 
 from help_options import assert_public_bool_flag
-from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.main import app
 from test_keys_command import ROTATE_RESPONSE as KEY_ROTATION
 from test_runs_command import RUN, STORAGE_ID, _list_response
 from test_webhooks_command import ROTATE_RESPONSE as WEBHOOK_ROTATION
+from login_fixtures import login_credential
 
 runner = CliRunner()
 CASES = [
@@ -122,9 +122,7 @@ def transport(monkeypatch):
         monkeypatch.setattr(
             module,
             "resolve_credential",
-            lambda: auth.JwtCredential(
-                access_token="synthetic-access", refresh_token="synthetic-refresh"
-            ),
+            lambda **_: login_credential("synthetic-access"),
         )
     return calls, replies, sleeps, modules
 
@@ -136,7 +134,7 @@ def test_non_tty_refuses_before_credentials_or_http(transport, monkeypatch, case
         monkeypatch.setattr(
             module,
             "resolve_credential",
-            lambda: pytest.fail("credentials must not be resolved"),
+            lambda **_: pytest.fail("credentials must not be resolved"),
         )
     result = runner.invoke(app, argv(case))
     assert result.exit_code == 2
@@ -218,7 +216,7 @@ def test_help_is_auth_and_http_free(transport, monkeypatch, case, color):
         monkeypatch.setattr(
             module,
             "resolve_credential",
-            lambda: pytest.fail("help resolved credentials"),
+            lambda **_: pytest.fail("help resolved credentials"),
         )
     # Typer caches its force-terminal decision at import, before these cases.
     monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", color)
@@ -426,7 +424,7 @@ def test_key_rotation_grace_still_requires_confirmation_before_credentials(
     calls, _, _, modules = transport
     keys = next(module for module in modules if module.__name__.endswith(".keys"))
     monkeypatch.setattr(
-        keys, "resolve_credential", lambda: pytest.fail("credentials resolved")
+        keys, "resolve_credential", lambda **_: pytest.fail("credentials resolved")
     )
     args = ["rotate"] + (["--grace-seconds", grace] if grace else [])
     result = runner.invoke(app, argv(("keys", args)))

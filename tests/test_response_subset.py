@@ -102,7 +102,6 @@ RESPONSE_READS = {
         "published_rate",
         "unit_amount_decimal_cents",
     ),
-    "PersonalAccountResponse": ("account_id",),
     "AccountSelfResponse": (
         "id",
         "display_name",
@@ -330,7 +329,58 @@ RESPONSE_READS = {
     "IngestResponse": ("ingested", "rejected", "duplicates"),
     "IngestRejection": ("index", "code", "model", "message"),
     "IngestDuplicate": ("index", "reason", "call_id"),
-    "TokenResponse": ("access_token", "refresh_token", "token_type"),
+    # Scoped CLI login: device grant, token exchange and OAuth errors.
+    "DeviceAuthorizationResponse": (
+        "device_code",
+        "user_code",
+        "verification_uri",
+        "verification_uri_complete",
+        "expires_in",
+        "interval",
+    ),
+    "DeviceTokenResponse": (
+        "access_token",
+        "token_type",
+        "expires_in",
+        "scope",
+        "solwyn_credential",
+    ),
+    "SolwynCredentialInfo": (
+        "id",
+        "label",
+        "expires_at",
+        "account_id",
+        "account_name",
+        "email",
+        "role",
+    ),
+    "OAuthErrorResponse": ("error",),
+    "CliCredentialListResponse": ("credentials",),
+    "CliCredentialResponse": (
+        "id",
+        "label",
+        "client_id",
+        "client_name",
+        "client_version",
+        "scope",
+        "token_prefix",
+        "created_at",
+        "expires_at",
+        "last_used_at",
+        "created_ip",
+        "current",
+    ),
+    "CliApprovalResponse": (
+        "id",
+        "status",
+        "action",
+        "title",
+        "reasons",
+        "changes",
+        "created_at",
+        "expires_at",
+    ),
+    "CliApprovalChange": ("field", "label", "before", "after", "effect"),
     "Error402Response": (
         "detail.code",
         "detail.message",
@@ -916,11 +966,6 @@ OPERATION_RESPONSE_BINDINGS = {
     ("POST", "/api/v1/billing/cancel"): ("200", "object", "CancelResponse"),
     ("DELETE", "/api/v1/billing/cancel"): ("200", "object", "CancelResponse"),
     ("GET", "/api/v1/billing/catalog"): ("200", "object", "BillingCatalogResponse"),
-    ("POST", "/api/v1/accounts/me/personal"): (
-        "200",
-        "object",
-        "PersonalAccountResponse",
-    ),
     ("GET", "/api/v1/projects/{project_id}/spend-control-attestation"): (
         "200",
         "object",
@@ -1006,7 +1051,6 @@ OPERATION_RESPONSE_BINDINGS = {
         "object",
         "InvitationPreviewResponse",
     ),
-    ("POST", "/api/v1/invitations/{token}/accept"): ("200", "object", "TokenResponse"),
     ("PATCH", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/accounts/me"): ("200", "object", "AccountSelfResponse"),
     ("GET", "/api/v1/billing/status"): ("200", "object", "SubscriptionStatusResponse"),
@@ -1124,8 +1168,18 @@ OPERATION_RESPONSE_BINDINGS = {
         "TagValuesPage",
     ),
     ("POST", "/api/v1/metadata/ingest"): ("202", "object", "IngestResponse"),
-    ("POST", "/api/v1/auth/login"): ("200", "object", "TokenResponse"),
-    ("POST", "/api/v1/auth/refresh"): ("200", "object", "TokenResponse"),
+    ("POST", "/oauth/device_authorization"): (
+        "200",
+        "object",
+        "DeviceAuthorizationResponse",
+    ),
+    ("POST", "/oauth/token"): ("200", "object", "DeviceTokenResponse"),
+    ("GET", "/api/v1/cli/credentials"): ("200", "object", "CliCredentialListResponse"),
+    ("GET", "/api/v1/cli/approvals/{approval_id}"): (
+        "200",
+        "object",
+        "CliApprovalResponse",
+    ),
     ("GET", "/api/v1/account/me"): ("200", "object", "MeResponse"),
     ("GET", "/api/v1/projects"): ("200", "array", "ProjectResponse"),
     ("POST", "/api/v1/projects"): (
@@ -1249,6 +1303,7 @@ NO_CONTENT_OPERATION_BINDINGS = {
     ("DELETE", "/api/v1/projects/{project_id}"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/key/{key_id}"): "204",
     ("DELETE", "/api/v1/projects/{project_id}/webhooks/{webhook_id}"): "204",
+    ("DELETE", "/api/v1/cli/credentials/{credential_id}"): "204",
 }
 _BUDGET_THRESHOLD_COMPONENTS = {
     "budget_threshold": "ThresholdStateResponse",
@@ -1758,7 +1813,8 @@ def test_attestation_response_tree_and_both_routes_are_registered() -> None:
 def test_init_reuses_guarded_project_login_and_budget_response_operations() -> None:
     """Init's composed reads remain covered by the shared response immune system."""
     expected = {
-        ("POST", "/api/v1/auth/login"),
+        ("POST", "/oauth/device_authorization"),
+        ("POST", "/oauth/token"),
         ("GET", "/api/v1/projects"),
         ("POST", "/api/v1/projects"),
         ("GET", "/api/v1/projects/{project_id}/budget"),
@@ -1853,12 +1909,12 @@ def test_operation_response_drift_trips_binding_guard(
 
 def test_missing_consumed_operation_path_trips_binding_guard() -> None:
     mutated = copy.deepcopy(_snapshot())
-    path = "/api/v1/auth/login"
+    path = "/oauth/token"
     mutated["paths"].pop(path)
 
     with pytest.raises(
         AssertionError,
-        match=rf"POST {re.escape(path)}.*path is missing.*TokenResponse",
+        match=rf"POST {re.escape(path)}.*path is missing.*DeviceTokenResponse",
     ):
         assert_operation_response_bindings(mutated)
 
@@ -2125,8 +2181,11 @@ def test_account_nested_component_ref_mutation_trips_guard(
 @pytest.mark.parametrize(
     ("component", "field"),
     [
-        ("TokenResponse", "access_token"),
-        ("TokenResponse", "token_type"),
+        ("DeviceTokenResponse", "access_token"),
+        ("SolwynCredentialInfo", "expires_at"),
+        ("CliCredentialResponse", "token_prefix"),
+        ("CliApprovalResponse", "status"),
+        ("CliApprovalChange", "before"),
         ("MeResponse", "display_name"),
         ("ProjectResponse", "name"),
         ("ProjectResponse", "budget_limit"),

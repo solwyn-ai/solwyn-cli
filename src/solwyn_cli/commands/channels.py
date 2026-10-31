@@ -14,6 +14,7 @@ from solwyn_cli._vendor.notification_wire import (
     NotificationChannelCreate,
     NotificationChannelUpdate,
 )
+from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.commands._notifications_common import (
     ChannelDeleted,
     ChannelList,
@@ -82,7 +83,7 @@ def channel_table(data: NotificationChannelResponse) -> TableData:
 
 
 @app.command(
-    "list", epilog=command_help("GET " + BASE, "solwyn.channels.list.v1", auth="JWT")
+    "list", epilog=command_help("GET " + BASE, "solwyn.channels.list.v1", auth="login")
 )
 def list_channels(context: typer.Context) -> None:
     """List account channels with masked credentials."""
@@ -97,7 +98,7 @@ def list_channels(context: typer.Context) -> None:
 @app.command(
     "show",
     epilog=command_help(
-        "GET " + BASE + "/{channel_id}", "solwyn.channels.v1", auth="JWT"
+        "GET " + BASE + "/{channel_id}", "solwyn.channels.v1", auth="login"
     ),
 )
 def show(context: typer.Context, channel_id: Annotated[str, typer.Argument()]) -> None:
@@ -127,6 +128,7 @@ def config_input(
             "--config-stdin cannot be combined with other configuration options.",
         )
     if config_stdin:
+        add_retry_note("Pipe the same --config-stdin JSON again.")
         try:
             config = json.loads(sys.stdin.read())
         except (ValueError, TypeError):
@@ -328,7 +330,7 @@ def test_channel(
     epilog=help_contract(
         endpoint="DELETE " + BASE + "/{channel_id}",
         schema="solwyn.channels.delete.v1",
-        auth="JWT; owner for mutations",
+        auth="login; owner for mutations",
         exits=EXITS.replace("2 usage;", "2 usage or confirmation;"),
         guidance=(
             "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",

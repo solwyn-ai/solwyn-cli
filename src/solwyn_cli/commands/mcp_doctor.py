@@ -15,7 +15,7 @@ from solwyn_cli._mcp_doctor_process import run_helper
 from solwyn_cli._mcp_launch import Profile, resolve_executable
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     ResolvedCredential,
 )
@@ -37,7 +37,7 @@ class CredentialCheck(BaseModel):
     status: Literal[
         "available", "missing", "unavailable", "incomplete", "invalid", "empty"
     ]
-    kind: Literal["project_key", "jwt"] | None = None
+    kind: Literal["project_key", "login"] | None = None
     source: Literal["environment", "keyring"] | None = None
 
 
@@ -50,7 +50,7 @@ class ToolConstraint(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str
     discovered: bool
-    credential_requirement: Literal["jwt", "project_key", "either"]
+    credential_requirement: Literal["login", "project_key", "either"]
     detail: str
 
 
@@ -106,16 +106,16 @@ def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
         return credential, CredentialCheck(
             status="available", kind="project_key", source=credential.source
         )
-    if isinstance(credential, JwtCredential):
+    if isinstance(credential, LoginCredential):
         return credential, CredentialCheck(
-            status="available", kind="jwt", source="keyring"
+            status="available", kind="login", source="keyring"
         )
     entries = [
         auth._get_password(entry)
         for entry in (
             auth.API_KEY_ENTRY,
-            auth.ACCESS_TOKEN_ENTRY,
-            auth.REFRESH_TOKEN_ENTRY,
+            auth.CLI_CREDENTIAL_ENTRY,
+            auth.CLI_CREDENTIAL_META_ENTRY,
         )
     ]
     if not all(available for available, _ in entries):
@@ -128,14 +128,13 @@ def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
 
 
 def key_context(client: SolwynClient, credential: ResolvedCredential) -> KeyContext:
-    if isinstance(credential, JwtCredential):
+    if isinstance(credential, LoginCredential):
         return KeyContext(
-            status="skipped", detail="JWT has no project-key identity or write scope."
+            status="skipped",
+            detail="A login has no project-key identity or write scope.",
         )
     try:
-        response = client.request(
-            "GET", "/api/v1/auth/key", retry_auth=False, retry_rate_limit=False
-        )
+        response = client.request("GET", "/api/v1/auth/key", retry_rate_limit=False)
         body = _KeyResponse.model_validate(response.json())
         return KeyContext(
             status="ok",
@@ -162,7 +161,7 @@ def key_context(client: SolwynClient, credential: ResolvedCredential) -> KeyCont
 def http_read(
     client: SolwynClient, credential: ResolvedCredential, project: str | None
 ) -> Check:
-    if project is None and not isinstance(credential, JwtCredential):
+    if project is None and not isinstance(credential, LoginCredential):
         return Check(
             status="skipped",
             detail="Select a project with --project, SOLWYN_PROJECT_ID or config to verify project reads.",
@@ -173,9 +172,7 @@ def http_read(
             if project
             else "/api/v1/account/me"
         )
-        response = client.request(
-            "GET", endpoint, retry_auth=False, retry_rate_limit=False
-        )
+        response = client.request("GET", endpoint, retry_rate_limit=False)
         if project:
             if _ReadResponse.model_validate(response.json()).project_id != project:
                 raise ValueError
@@ -185,7 +182,7 @@ def http_read(
             status="ok",
             detail="Selected project HTTP read verified."
             if project
-            else "Captured JWT account HTTP read verified; no project selected.",
+            else "Captured login account HTTP read verified; no project selected.",
         )
     except Exception:
         return Check(
@@ -206,9 +203,9 @@ def diagnose(
     )
     if credential is not None and runtime.api_url_source != "fallback":
         context = KeyContext(
-            status="skipped" if isinstance(credential, JwtCredential) else "failed",
-            detail="JWT has no project-key identity or write scope."
-            if isinstance(credential, JwtCredential)
+            status="skipped" if isinstance(credential, LoginCredential) else "failed",
+            detail="A login has no project-key identity or write scope."
+            if isinstance(credential, LoginCredential)
             else "Key identity could not be checked; HTTP client setup failed.",
         )
         try:
@@ -247,10 +244,10 @@ def diagnose(
             helper = anyio.run(run_helper, request)
         except Exception:
             helper = HelperResult(status="failed")
-    if isinstance(credential, JwtCredential):
+    if isinstance(credential, LoginCredential):
         mcp_read = Check(
             status="skipped",
-            detail="Captured JWT cannot be forwarded through the supported MCP child environment. Discovery only; HTTP read is reported separately.",
+            detail="A captured login cannot be forwarded through the supported MCP child environment. Discovery only; HTTP read is reported separately.",
         )
     elif helper.read == "ok":
         mcp_read = Check(

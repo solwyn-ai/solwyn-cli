@@ -1,0 +1,142 @@
+---
+title: Approvals
+---
+
+A Solwyn login can read, stop agent runs and lower the primary budget cap on
+its own. Every other change needs a one-time approval in the browser, bound to
+that exact request. An agent can ask for one; only you, signed in to the
+dashboard, can approve it.
+
+```console
+$ solwyn budget set --limit 1000000 --mode alert_only
+This change needs your approval in the browser:
+
+  https://app.solwyn.ai/approve/0b7d2c4e-...
+
+  Change the budget for project checkout
+  Budget limit: 1000.00 -> 1000000.00 (raises the cap)
+  Enforcement: hard_deny -> alert_only (weakens enforcement)
+
+Waiting for approval... (expires in 10 minutes, Ctrl-C to stop)
+Approved. Applying the change.
+```
+
+The command then prints its normal output. While it waits, the CLI checks the
+approval every 3 seconds. The global `--approval-wait SECONDS` option sets how
+long; the default is 600 seconds when stdin and stderr are terminals, else 90
+seconds. Once approved, the CLI re-sends the identical request once, the same
+method, URL bytes and body bytes, with the approval attached. It never re-sends
+without the approval and never retries a second time.
+
+Every outcome other than success exits 6, and nothing else is sent:
+
+| Error code | Meaning |
+| --- | --- |
+| `approval_pending` | The wait ended first. The error prints the exact command to run after approving (also in `detail.retry_command` and `detail.retry_argv`). |
+| `approval_denied` | You denied the change in the browser. |
+| `approval_expired` | The approval expired. Run the command again to request a new one. |
+| `approval_invalid` | The attached approval was not usable. `mismatch` means the request changed since it was approved, for example because the state a command reads changed. Run the command again. |
+| `approval_limit_reached` | Five approvals are already pending for this login. |
+
+A failure after the approved request was sent keeps its normal exit code, for
+example `rate_limited` exits 1. The CLI never re-sends a request that carries an
+approval, so you see the original error. The approval may have been used before
+that failure; if a retry reports it consumed, request a new one.
+
+The global `--approval ID` option attaches an approval to the first change
+request of that invocation. Read-only requests such as `plan change`'s estimate
+are skipped, so the approval reaches the change itself.
+
+When the wait ends first, the error names the exact command to re-run, for
+example:
+
+```console
+$ solwyn --approval-wait 0 plan upgrade --tier team --interval year --yes
+...
+Hint: After approving, run: solwyn --approval 0b7d2c4e-0000-4000-8000-000000000003 plan upgrade --tier team --interval year --yes --client-request-id 6f1c2a90-0000-4000-8000-000000000001
+```
+
+`detail.retry_command` is POSIX shell syntax (quoted with `shlex.join`) for bash,
+zsh and similar shells. On Windows, and from any automation, run
+`detail.retry_argv` directly: it is the same command as an argument list, with
+`solwyn` first, so nothing needs shell quoting.
+
+That command repeats only what you typed, plus every value the CLI generated
+for the request, pinned as an explicit flag: `plan upgrade`'s
+`--client-request-id`, and an absolute `--until` time for a relative snooze such
+as `--until +2h`. Re-running it rebuilds the same request bytes, so the approval
+matches. The CLI stores nothing: no request body, secret or prepared request is
+written to the keychain or to disk. If you change any argument, the request
+differs, the server answers `approval_invalid` with reason `mismatch`, and you
+run the command again to request a new approval. Secrets never appear in the
+command. When the original run read one (`--secret-stdin`, `--config-stdin` or
+`SOLWYN_CHANNEL_SECRET`), the hint says to supply it the same way again; `init`
+asks you to enter the same project name and budget again. Positional arguments
+follow `--`, so a value such as `--help` or `-x` stays a value.
+
+If `init --run-cap` creates the project and then waits on the approval for the
+run cap, re-running `init` cannot finish the job. The retry command is the
+remaining step instead, for the created project:
+
+```console
+solwyn --approval 0b7d2c4e-0000-4000-8000-000000000003 --project proj_0123456789abcdef01234567 budget rule add --type runaway_run --spend 5.0 --mode hard_deny
+```
+
+The CLI never re-sends a request that carries an approval. Core can consume an
+approval before a later rejection such as a rate limit, so a replay could hide
+the real error. The original error is shown with "This approval may have been
+used; if a retry reports it consumed, request a new one."
+
+Approvals are single use and expire 5 minutes after you approve them. If the change then fails on the server (a validation error,
+for example), the approval is spent; the error says so, and you run the command
+again for a new one. MCP tools never wait: a tool that needs an approval returns
+an error with the approval URL for a human to open.
+
+```sh
+solwyn --approval 0b7d2c4e-0000-4000-8000-000000000003 budget set --limit 2000
+solwyn approvals status 0b7d2c4e-0000-4000-8000-000000000003 --wait 120
+```
+
+`approvals status` shows one of your approvals (`solwyn.approval.v1`) and, with
+`--wait`, polls until a decision. Denied and expired approvals exit 6 with
+`approval_denied` or `approval_expired`; still pending after `--wait` exits 6
+with `approval_pending`.
+
+Global `--project`, `--api-url` and output flags precede the command.
+Use `--json` for the schema named below unless the command emits plain text.
+
+## `solwyn approvals`
+
+Inspect browser approvals requested by this CLI login.
+
+```console
+Usage: solwyn approvals [OPTIONS] COMMAND [ARGS]...
+```
+
+```text
+Endpoint: composite router for approval subcommands
+Auth: login
+Exit codes: 0 success; 2 usage
+JSON schema: varies by subcommand
+```
+
+## `solwyn approvals status`
+
+Show an approval and optionally wait for its decision.
+
+```console
+Usage: solwyn approvals status [OPTIONS] APPROVAL_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `approval_id` | `Approval ID. (STRING; required)` | `None` |
+| `--wait` | `Seconds to wait for a decision. 0 shows it now. (<IntRange x>=0>)` | `0` |
+
+```text
+Endpoint: GET /api/v1/cli/approvals/{approval_id}
+Auth: login (only your own approvals)
+Exit codes: 0 shown; 1 generic/API; 2 usage; 3 auth; 5 not found; 6 denied, expired, or still pending after --wait
+JSON schema: solwyn.approval.v1
+--wait polls every 3 s until a decision or the wait ends.
+```

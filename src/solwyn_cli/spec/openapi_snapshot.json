@@ -143,7 +143,7 @@
           "providers"
         ],
         "summary": "List Untracked Surfaces",
-        "description": "List recent, approximate observations for provider surfaces Solwyn does not meter.",
+        "description": "List recent, approximate observations for provider surfaces Solwyn does not meter.\n\nThe window is clamped to the tier's data-retention horizon; the\n`X-Solwyn-*` window headers report the requested and effective bounds so a\nclamped read is never presented as full-window coverage. Only the lower bound\nfilters rows: `X-Solwyn-Effective-To` is the read instant, and a row reported\nwithin a small clock-skew allowance ahead of it is still returned.",
         "operationId": "list_untracked_surfaces_api_v1_projects__project_id__untracked_surfaces_get",
         "security": [
           {
@@ -181,7 +181,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Most-observed surfaces last seen at or after `X-Solwyn-Effective-From`. A row's `last_seen_at` can be slightly later than `X-Solwyn-Effective-To` (the read instant) by up to a small clock-skew allowance.",
             "content": {
               "application/json": {
                 "schema": {
@@ -190,6 +190,47 @@
                     "$ref": "#/components/schemas/UntrackedSurfaceResponse"
                   },
                   "title": "Response List Untracked Surfaces Api V1 Projects  Project Id  Untracked Surfaces Get"
+                }
+              }
+            },
+            "headers": {
+              "X-Solwyn-Requested-From": {
+                "description": "Lower bound the caller asked for (ISO 8601, UTC).",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "X-Solwyn-Requested-To": {
+                "description": "Upper bound the caller asked for (ISO 8601, UTC).",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "X-Solwyn-Effective-From": {
+                "description": "Lower bound actually served after clamping to the tier's data-retention window (ISO 8601, UTC).",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "X-Solwyn-Effective-To": {
+                "description": "The read instant (ISO 8601, UTC). Only the lower bound is enforced: ingest accepts observations stamped up to a small clock-skew allowance ahead of the server clock, so a returned row's `last_seen_at` can be slightly later than this value.",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "X-Solwyn-Retention-Clamped": {
+                "description": "`true` when data retention moved the effective lower bound later than the requested one, so the response covers less than the requested window.",
+                "required": true,
+                "schema": {
+                  "type": "boolean"
                 }
               }
             }
@@ -467,7 +508,10 @@
         "operationId": "provider_health_api_v1_projects__project_id__providers_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -520,7 +564,10 @@
         "operationId": "provider_failovers_api_v1_projects__project_id__providers_failovers_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -678,6 +725,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EmailNotVerifiedResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliPasswordLoginRetiredResponse"
                 }
               }
             }
@@ -1002,6 +1059,245 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-authorization-server": {
+      "get": {
+        "tags": [
+          "oauth"
+        ],
+        "summary": "Authorization Server Metadata",
+        "description": "RFC 8414 metadata. A hosted MCP later adds the authorization endpoint.",
+        "operationId": "authorization_server_metadata__well_known_oauth_authorization_server_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationServerMetadata"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/device_authorization": {
+      "post": {
+        "tags": [
+          "oauth"
+        ],
+        "summary": "Device Authorization",
+        "description": "RFC 8628 §3.1: start a device login.",
+        "operationId": "device_authorization_oauth_device_authorization_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "client_id": {
+                    "type": "string",
+                    "description": "Must be solwyn-cli."
+                  },
+                  "scope": {
+                    "type": "string",
+                    "description": "Space-separated subset of `read contain`."
+                  },
+                  "device_label": {
+                    "type": "string",
+                    "description": "Printable ASCII, at most 64 characters."
+                  }
+                },
+                "type": "object",
+                "required": [
+                  "client_id"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceAuthorizationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/oauth/token": {
+      "post": {
+        "tags": [
+          "oauth"
+        ],
+        "summary": "Token",
+        "description": "RFC 8628 §3.4: exchange an approved device code for a CLI credential.",
+        "operationId": "token_oauth_token_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "grant_type": {
+                    "type": "string",
+                    "description": "urn:ietf:params:oauth:grant-type:device_code"
+                  },
+                  "device_code": {
+                    "type": "string",
+                    "description": "The device_code from the device authorization."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "description": "Must be solwyn-cli."
+                  }
+                },
+                "type": "object",
+                "required": [
+                  "grant_type",
+                  "device_code",
+                  "client_id"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/oauth/revoke": {
+      "post": {
+        "tags": [
+          "oauth"
+        ],
+        "summary": "Revoke",
+        "description": "RFC 7009. Possession of the token plus a matching client_id is the proof.",
+        "operationId": "revoke_oauth_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "The CLI credential to revoke."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "description": "The public client identifying itself."
+                  },
+                  "token_type_hint": {
+                    "type": "string",
+                    "description": "access_token or refresh_token; other values ignored."
+                  }
+                },
+                "type": "object",
+                "required": [
+                  "token",
+                  "client_id"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Revoked, or nothing to revoke",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
           }
         }
       }
@@ -1921,7 +2217,10 @@
         "operationId": "budget_status_api_v1_projects__project_id__budget_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -2073,7 +2372,10 @@
         "operationId": "budget_uncounted_tally_api_v1_projects__project_id__budget_uncounted_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -2236,7 +2538,7 @@
         "operationId": "get_batch_api_v1_budgets_check_batches__operation_id__get",
         "security": [
           {
-            "HTTPBearer": []
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -2905,7 +3207,10 @@
         "operationId": "get_project_api_v1_projects__project_id__get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -3267,6 +3572,124 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/metrics": {
+      "get": {
+        "tags": [
+          "project-metrics"
+        ],
+        "summary": "Project Metrics",
+        "description": "Export settled USD spend, limits and signed headroom for project periods.\n\nA full or read-only project Bearer key can read its own project; dashboard\nJWTs use the existing account read policy. Gauges reset at UTC period\nboundaries. Headroom excludes in-flight reservations and lease float and\ncan be negative. Only project_id and period are labels; at most six samples\nare emitted. No customer series enter the internal /metrics registry.",
+        "operationId": "project_metrics_api_v1_projects__project_id__metrics_get",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the next request is allowed.",
+                "required": true,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RateLimitErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 429 Project Metrics Api V1 Projects  Project Id  Metrics Get"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/costs/priced-models": {
       "get": {
         "tags": [
@@ -3277,7 +3700,10 @@
         "operationId": "list_priced_models_api_v1_projects__project_id__costs_priced_models_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -3465,7 +3891,10 @@
         "operationId": "cost_estimate_drift_api_v1_projects__project_id__costs_drift_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -3567,7 +3996,10 @@
         "operationId": "list_cost_events_api_v1_projects__project_id__costs_events_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -3848,6 +4280,25 @@
             }
           },
           {
+            "name": "trace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project.",
+              "title": "Trace Id"
+            },
+            "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project."
+          },
+          {
             "name": "tag.<key>",
             "in": "query",
             "required": false,
@@ -3904,7 +4355,10 @@
         "operationId": "query_costs_api_v1_projects__project_id__costs_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -4155,6 +4609,25 @@
               ],
               "title": "To"
             }
+          },
+          {
+            "name": "trace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project.",
+              "title": "Trace Id"
+            },
+            "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project."
           },
           {
             "name": "group_by",
@@ -4225,7 +4698,10 @@
         "operationId": "total_costs_api_v1_projects__project_id__costs_total_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -4476,6 +4952,25 @@
               ],
               "title": "To"
             }
+          },
+          {
+            "name": "trace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project.",
+              "title": "Trace Id"
+            },
+            "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project."
           },
           {
             "name": "tag.<key>",
@@ -4689,7 +5184,10 @@
         "operationId": "export_costs_csv_api_v1_projects__project_id__costs_export_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -4940,6 +5438,25 @@
               ],
               "title": "To"
             }
+          },
+          {
+            "name": "trace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project.",
+              "title": "Trace Id"
+            },
+            "description": "Exact OTel trace id (32 lowercase hex characters), scoped to this project."
           },
           {
             "name": "format",
@@ -5194,7 +5711,10 @@
         "operationId": "list_project_tags_api_v1_projects__project_id__tags_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -5255,7 +5775,10 @@
         "operationId": "list_project_tag_values_api_v1_projects__project_id__tags_values_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -5440,7 +5963,10 @@
         "operationId": "get_notification_config_api_v1_projects__project_id__notifications_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -7084,7 +7610,10 @@
         "operationId": "list_project_alert_events_api_v1_projects__project_id__alert_events_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -7388,7 +7917,10 @@
         "operationId": "export_project_alert_events_api_v1_projects__project_id__alert_events_export_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -7965,7 +8497,10 @@
         "operationId": "list_project_agent_runs_api_v1_projects__project_id__agent_runs_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -8155,63 +8690,6 @@
         }
       }
     },
-    "/api/v1/projects/{project_id}/agent-runs/{run_id}": {
-      "get": {
-        "tags": [
-          "agent-runs"
-        ],
-        "summary": "Get Project Agent Run",
-        "description": "Return one storage-id-addressed run aggregate for an authorized project.",
-        "operationId": "get_project_agent_run_api_v1_projects__project_id__agent_runs__run_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Project Id"
-            }
-          },
-          {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Run Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRunEntry"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/projects/{project_id}/agent-runs/{run_id}/stop": {
       "post": {
         "tags": [
@@ -8299,6 +8777,84 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/agent-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "agent-runs"
+        ],
+        "summary": "Get Project Agent Run",
+        "description": "Return one run aggregate for an authorized project, by stored or raw run id.",
+        "operationId": "get_project_agent_run_api_v1_projects__project_id__agent_runs__run_id__get",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The run to return: the stored tenant-namespaced run_ hash by default, or the caller-visible raw `agent_run_id` from metadata events when `id_kind=raw`. A raw id may contain `/`, sent literally or as `%2F`. Send a `/` that ends the id as `%2F`: a literal trailing `/` is a trailing slash and redirects to the path without it.",
+              "title": "Run Id"
+            },
+            "description": "The run to return: the stored tenant-namespaced run_ hash by default, or the caller-visible raw `agent_run_id` from metadata events when `id_kind=raw`. A raw id may contain `/`, sent literally or as `%2F`. Send a `/` that ends the id as `%2F`: a literal trailing `/` is a trailing slash and redirects to the path without it."
+          },
+          {
+            "name": "id_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "storage",
+                "raw"
+              ],
+              "type": "string",
+              "description": "How to read `run_id`. `storage` (default) matches the stored tenant-namespaced run_ hash exactly. `raw` treats it as the caller-visible `agent_run_id` sent on metadata events (with the Python SDK, the id yielded by a `solwyn.run(name)` scope, not the run name) and namespaces it with the project owner's identity first. A raw id can itself look like a run_ hash, so the server never guesses between the two.",
+              "default": "storage",
+              "title": "Id Kind"
+            },
+            "description": "How to read `run_id`. `storage` (default) matches the stored tenant-namespaced run_ hash exactly. `raw` treats it as the caller-visible `agent_run_id` sent on metadata events (with the Python SDK, the id yielded by a `solwyn.run(name)` scope, not the run name) and namespaces it with the project owner's identity first. A raw id can itself look like a run_ hash, so the server never guesses between the two."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/forecast": {
       "get": {
         "tags": [
@@ -8309,7 +8865,10 @@
         "operationId": "get_project_forecast_api_v1_projects__project_id__forecast_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -8368,7 +8927,10 @@
         "operationId": "get_project_spend_baseline_api_v1_projects__project_id__spend_baseline_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -8428,7 +8990,10 @@
         "operationId": "get_project_unit_economics_api_v1_projects__project_id__unit_economics_get",
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ],
         "parameters": [
@@ -9309,7 +9874,10 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ]
       }
@@ -9356,7 +9924,10 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
           }
         ]
       }
@@ -9845,6 +10416,521 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cli/device/lookup": {
+      "post": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Lookup Device",
+        "description": "What the device approval card shows. The code is in the body, not the path.",
+        "operationId": "lookup_device_api_v1_cli_device_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliDeviceLookupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "session_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "device_code_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed user code"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cli/device/approve": {
+      "post": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Approve Device",
+        "operationId": "approve_device_api_v1_cli_device_approve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliDeviceApproveResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "session_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "device_code_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed user code"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cli/device/deny": {
+      "post": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Deny Device",
+        "operationId": "deny_device_api_v1_cli_device_deny_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliDeviceDenyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "session_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "device_code_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed user code"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cli/approvals/{approval_id}": {
+      "get": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Get Approval",
+        "operationId": "get_approval_api_v1_cli_approvals__approval_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliApprovalResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "approval_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cli/approvals/{approval_id}/approve": {
+      "post": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Approve Change",
+        "operationId": "approve_change_api_v1_cli_approvals__approval_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliApprovalResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "session_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "approval_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "approval_not_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalNotPendingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cli/approvals/{approval_id}/deny": {
+      "post": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Deny Change",
+        "operationId": "deny_change_api_v1_cli_approvals__approval_id__deny_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliApprovalResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "session_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "approval_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "approval_not_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalNotPendingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cli/credentials": {
+      "get": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "List Credentials",
+        "description": "The caller's active CLI logins (not revoked, not expired), newest first.",
+        "operationId": "list_credentials_api_v1_cli_credentials_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliCredentialListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cli/credentials/current": {
+      "get": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Current Credential",
+        "operationId": "current_credential_api_v1_cli_credentials_current_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliCurrentCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "cli_credential_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cli/credentials/{credential_id}": {
+      "delete": {
+        "tags": [
+          "cli-login"
+        ],
+        "summary": "Revoke Credential",
+        "description": "Revoking is safety-increasing, so a CLI login may revoke any of its user's\nlogins, itself included.",
+        "operationId": "revoke_credential_api_v1_cli_credentials__credential_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "cli_credential_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -10556,7 +11642,12 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "enum": [
+                    "repeat_size",
+                    "monotonic_growth",
+                    "rate_acceleration"
+                  ]
                 },
                 "type": "array"
               },
@@ -10588,6 +11679,28 @@
               }
             ],
             "title": "Stopped By User Id"
+          },
+          "first_trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Trace Id"
+          },
+          "trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url"
           },
           "stoppable": {
             "type": "boolean",
@@ -11435,6 +12548,48 @@
         ],
         "title": "ApiKeyCapabilities"
       },
+      "ApprovalNotPendingDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "approval_not_pending",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "denied",
+              "consumed",
+              "expired"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "status"
+        ],
+        "title": "ApprovalNotPendingDetail"
+      },
+      "ApprovalNotPendingResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ApprovalNotPendingDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ApprovalNotPendingResponse"
+      },
       "AttestationAccountSpendAlert": {
         "properties": {
           "evidence_available": {
@@ -12207,6 +13362,79 @@
         ],
         "title": "AuthenticatedKeyResponse",
         "description": "Minimal identity of the supplied key, including an accepted grace key."
+      },
+      "AuthorizationServerMetadata": {
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "title": "Issuer"
+          },
+          "device_authorization_endpoint": {
+            "type": "string",
+            "title": "Device Authorization Endpoint"
+          },
+          "token_endpoint": {
+            "type": "string",
+            "title": "Token Endpoint"
+          },
+          "revocation_endpoint": {
+            "type": "string",
+            "title": "Revocation Endpoint"
+          },
+          "grant_types_supported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Grant Types Supported"
+          },
+          "response_types_supported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Types Supported"
+          },
+          "token_endpoint_auth_methods_supported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Token Endpoint Auth Methods Supported"
+          },
+          "revocation_endpoint_auth_methods_supported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revocation Endpoint Auth Methods Supported"
+          },
+          "scopes_supported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes Supported"
+          },
+          "service_documentation": {
+            "type": "string",
+            "title": "Service Documentation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "issuer",
+          "device_authorization_endpoint",
+          "token_endpoint",
+          "revocation_endpoint",
+          "grant_types_supported",
+          "response_types_supported",
+          "token_endpoint_auth_methods_supported",
+          "revocation_endpoint_auth_methods_supported",
+          "scopes_supported",
+          "service_documentation"
+        ],
+        "title": "AuthorizationServerMetadata"
       },
       "BaselineResult": {
         "properties": {
@@ -13648,7 +14876,8 @@
           "sub_limit_usd": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -13908,6 +15137,674 @@
         ],
         "title": "CircuitState",
         "description": "Circuit breaker states for provider health tracking."
+      },
+      "CliAccountInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CliAccountInfo"
+      },
+      "CliApprovalChange": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "effect": {
+            "type": "string",
+            "title": "Effect"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "label",
+          "before",
+          "after",
+          "effect"
+        ],
+        "title": "CliApprovalChange"
+      },
+      "CliApprovalCredential": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "client": {
+            "type": "string",
+            "title": "Client"
+          },
+          "client_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "client",
+          "client_version"
+        ],
+        "title": "CliApprovalCredential"
+      },
+      "CliApprovalProject": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CliApprovalProject"
+      },
+      "CliApprovalRequest": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "query_params": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Query Params"
+          },
+          "duplicate_query_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Duplicate Query Keys"
+          },
+          "body_sha256": {
+            "type": "string",
+            "title": "Body Sha256"
+          },
+          "body_preview": {
+            "title": "Body Preview"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "path",
+          "query",
+          "query_params",
+          "duplicate_query_keys",
+          "body_sha256",
+          "body_preview"
+        ],
+        "title": "CliApprovalRequest"
+      },
+      "CliApprovalResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "consumed",
+              "expired"
+            ],
+            "title": "Status"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CliApprovalChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "request": {
+            "$ref": "#/components/schemas/CliApprovalRequest"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/CliApprovalCredential"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CliApprovalProject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_ip": {
+            "type": "string",
+            "title": "Request Ip"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "action",
+          "title",
+          "reasons",
+          "changes",
+          "request",
+          "credential",
+          "project",
+          "request_ip",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "CliApprovalResponse"
+      },
+      "CliClientInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CliClientInfo"
+      },
+      "CliCredentialListResponse": {
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CliCredentialResponse"
+            },
+            "type": "array",
+            "title": "Credentials"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credentials"
+        ],
+        "title": "CliCredentialListResponse"
+      },
+      "CliCredentialResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "Client Id"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "client_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "token_prefix": {
+            "type": "string",
+            "title": "Token Prefix"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "created_ip": {
+            "type": "string",
+            "title": "Created Ip"
+          },
+          "current": {
+            "type": "boolean",
+            "title": "Current"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "client_id",
+          "client_name",
+          "client_version",
+          "scope",
+          "token_prefix",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "created_ip",
+          "current"
+        ],
+        "title": "CliCredentialResponse"
+      },
+      "CliCurrentCredentialResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "Client Id"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "client_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "token_prefix": {
+            "type": "string",
+            "title": "Token Prefix"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "created_ip": {
+            "type": "string",
+            "title": "Created Ip"
+          },
+          "current": {
+            "type": "boolean",
+            "title": "Current"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "client_id",
+          "client_name",
+          "client_version",
+          "scope",
+          "token_prefix",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "created_ip",
+          "current",
+          "account_name",
+          "email",
+          "role"
+        ],
+        "title": "CliCurrentCredentialResponse"
+      },
+      "CliDeviceApproveResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "approved",
+            "title": "Status"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "label"
+        ],
+        "title": "CliDeviceApproveResponse"
+      },
+      "CliDeviceDenyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "denied",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "CliDeviceDenyResponse"
+      },
+      "CliDeviceLookupResponse": {
+        "properties": {
+          "user_code": {
+            "type": "string",
+            "title": "User Code"
+          },
+          "client": {
+            "$ref": "#/components/schemas/CliClientInfo"
+          },
+          "client_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          },
+          "device_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Label"
+          },
+          "request_ip": {
+            "type": "string",
+            "title": "Request Ip"
+          },
+          "request_ip_matches_yours": {
+            "type": "boolean",
+            "title": "Request Ip Matches Yours"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/CliScopeInfo"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "account": {
+            "$ref": "#/components/schemas/CliAccountInfo"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "credential_lifetime_days": {
+            "type": "integer",
+            "title": "Credential Lifetime Days"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_code",
+          "client",
+          "client_version",
+          "device_label",
+          "request_ip",
+          "request_ip_matches_yours",
+          "scopes",
+          "account",
+          "role",
+          "credential_lifetime_days",
+          "requested_at",
+          "expires_at"
+        ],
+        "title": "CliDeviceLookupResponse"
+      },
+      "CliPasswordLoginRetiredDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "cli_password_login_retired",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "hint"
+        ],
+        "title": "CliPasswordLoginRetiredDetail"
+      },
+      "CliPasswordLoginRetiredResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/CliPasswordLoginRetiredDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "CliPasswordLoginRetiredResponse"
+      },
+      "CliScopeInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "CliScopeInfo"
       },
       "CostDriftResponse": {
         "properties": {
@@ -14197,6 +16094,20 @@
             "type": "boolean",
             "title": "Is Model Fallback"
           },
+          "is_provider_fallback": {
+            "type": "boolean",
+            "title": "Is Provider Fallback"
+          },
+          "failover_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailoverReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "latency_ms": {
             "type": "number",
             "title": "Latency Ms"
@@ -14209,6 +16120,50 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          },
+          "span_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Id"
+          },
+          "trace_sampled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Sampled"
+          },
+          "trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url"
           }
         },
         "type": "object",
@@ -14227,6 +16182,8 @@
           "estimated_cost",
           "status",
           "is_model_fallback",
+          "is_provider_fallback",
+          "failover_reason",
           "latency_ms",
           "sdk_instance_id",
           "created_at"
@@ -14928,6 +16885,76 @@
         "title": "DeltaCell",
         "description": "A single unit-economics cell with current/previous/delta + context.\n\n``delta_pct`` is ``None`` when ``prev_value`` is ``None`` or ``<= 0``\n(the latter would divide by zero or invert the sign). The dashboard\nrenders a neutral \"no comparison\" state in that case."
       },
+      "DeviceAuthorizationResponse": {
+        "properties": {
+          "device_code": {
+            "type": "string",
+            "title": "Device Code"
+          },
+          "user_code": {
+            "type": "string",
+            "title": "User Code"
+          },
+          "verification_uri": {
+            "type": "string",
+            "title": "Verification Uri"
+          },
+          "verification_uri_complete": {
+            "type": "string",
+            "title": "Verification Uri Complete"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "interval": {
+            "type": "integer",
+            "title": "Interval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_code",
+          "user_code",
+          "verification_uri",
+          "verification_uri_complete",
+          "expires_in",
+          "interval"
+        ],
+        "title": "DeviceAuthorizationResponse"
+      },
+      "DeviceTokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "solwyn_credential": {
+            "$ref": "#/components/schemas/SolwynCredentialInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in",
+          "scope",
+          "solwyn_credential"
+        ],
+        "title": "DeviceTokenResponse"
+      },
       "DisclosureVersionRequiredDetail": {
         "properties": {
           "code": {
@@ -15182,6 +17209,36 @@
         "title": "Error402Response",
         "description": "Union 402 response for endpoints that can return any 402 family.\n\nUse as ``responses={402: {\"model\": Error402Response, ...}}`` on gated\nendpoints that may raise more than one 402 family."
       },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse"
+      },
       "FailoverDirective": {
         "properties": {
           "version": {
@@ -15435,12 +17492,25 @@
           "service": {
             "type": "string",
             "title": "Service"
+          },
+          "build_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Ref",
+            "description": "Identifier of the deployed build (the git commit the image was built from). Null when the process was built without one, e.g. local dev."
           }
         },
         "type": "object",
         "required": [
           "status",
-          "service"
+          "service",
+          "build_ref"
         ],
         "title": "HealthResponse"
       },
@@ -15723,6 +17793,53 @@
             "title": "Lease Id",
             "description": "Budget lease whose claim funded this call's admission, from LeaseGrantResponse; the same id the call's confirm carries. None when the call was funded by a per-call reservation, admitted from the allow cache, admitted fail-open or uncounted, or denied. Server-minted opaque id (lse_...), never content; bounded by LEASE_ID_MAX_LENGTH exactly as BudgetConfirmRequest.lease_id (D7)."
           },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id",
+            "description": "Optional W3C trace identifier; malformed values are dropped at ingest."
+          },
+          "span_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Id",
+            "description": "Optional OTel span identifier; malformed or orphaned values are dropped."
+          },
+          "trace_sampled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Sampled",
+            "description": "Optional W3C sampled flag; only JSON booleans survive. Other scalars and flags without a valid trace_id are dropped at ingest."
+          },
           "provider_region": {
             "anyOf": [
               {
@@ -15877,7 +17994,7 @@
           "timestamp"
         ],
         "title": "IngestMetadataEvent",
-        "description": "Ingest request item whose tag bounds produce per-event dispositions.\n\nEvery non-tag field inherits the strict shared/SDK contract. Tags retain a\nstrict plaintext mapping at the envelope while their 10/64/256 policy is\napplied by the ingest service, allowing one bad tag event to reject without\nfailing well-formed siblings."
+        "description": "Ingest request item whose tag bounds produce per-event dispositions.\n\nOTel identifiers accept bounded plain strings; malformed or orphaned trace\ncontext is dropped by the service, never at the expense of a spend event.\nThe sampled flag accepts JSON scalars; only booleans survive sanitization.\nOther non-tag fields inherit the strict shared/SDK contract. Tags retain a\nstrict plaintext mapping at the envelope while their 10/64/256 policy is\napplied by the ingest service, allowing one bad tag event to reject without\nfailing well-formed siblings."
       },
       "IngestRejection": {
         "properties": {
@@ -17578,7 +19695,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/NotificationEventType"
                 },
                 "type": "array",
                 "uniqueItems": true
@@ -17587,12 +19704,44 @@
                 "type": "null"
               }
             ],
-            "title": "Enabled Event Types"
+            "title": "Enabled Event Types",
+            "description": "Event types delivered to this project's destinations. An empty set delivers every event type; omit to leave the stored set unchanged."
           }
         },
         "type": "object",
         "title": "NotificationConfigUpdate",
-        "description": "Partial notification config update for PUT endpoint.\n\nSlack / PagerDuty destinations are no longer carried inline — they live as\nreusable account-level channels referenced by id via ``channel_ids``.\n``channel_ids=None`` means \"leave channel references untouched\"; an explicit\n(possibly empty) list replaces the stored set."
+        "description": "Partial notification config update for PUT endpoint.\n\nSlack / PagerDuty destinations are no longer carried inline — they live as\nreusable account-level channels referenced by id via ``channel_ids``.\n``channel_ids=None`` means \"leave channel references untouched\"; an explicit\n(possibly empty) list replaces the stored set.\n\n``enabled_event_types`` accepts only ``NotificationEventType`` names, so a\nmisspelled name is a 422 rather than a filter that silently never matches."
+      },
+      "NotificationEventType": {
+        "type": "string",
+        "enum": [
+          "budget_threshold",
+          "budget_exceeded",
+          "circuit_breaker_opened",
+          "circuit_breaker_closed",
+          "provider_outage",
+          "provider_recovered"
+        ],
+        "title": "NotificationEventType",
+        "description": "Events that trigger notifications to project owners.\n\nThe single registry of customer-subscribable project events: the project\nnotification config's ``enabled_event_types`` and webhook targets' ``events``\nfilters are validated against it, and it is their OpenAPI enum."
+      },
+      "OAuthErrorResponse": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "title": "Error"
+          },
+          "error_description": {
+            "type": "string",
+            "title": "Error Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error",
+          "error_description"
+        ],
+        "title": "OAuthErrorResponse"
       },
       "OverviewResponse": {
         "properties": {
@@ -18280,6 +20429,17 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "trace_url_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url Template"
+          },
           "key": {
             "type": "string",
             "title": "Key"
@@ -18556,6 +20716,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "trace_url_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url Template"
           }
         },
         "type": "object",
@@ -18583,6 +20754,19 @@
               }
             ],
             "title": "Name"
+          },
+          "trace_url_template": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url Template",
+            "description": "Project HTTPS trace link template; requires {trace_id}, optionally {span_id}, {start_ms}, {end_ms}, {start_s}, {end_s}. Time bounds are the event timestamp +/- one hour in Unix milliseconds or integer seconds. Empty string or null clears it."
           }
         },
         "additionalProperties": false,
@@ -19709,7 +21893,7 @@
           "pricing_version": {
             "type": "string",
             "title": "Pricing Version",
-            "default": "2026-09-23"
+            "default": "2026-10-17"
           },
           "current_rates_snapshot": {
             "type": "boolean",
@@ -20031,6 +22215,50 @@
         ],
         "title": "SnoozeResponse"
       },
+      "SolwynCredentialInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "expires_at",
+          "account_id",
+          "account_name",
+          "email",
+          "role"
+        ],
+        "title": "SolwynCredentialInfo"
+      },
       "SpendControlAttestation": {
         "properties": {
           "schema_version": {
@@ -20225,14 +22453,16 @@
                 "type": "null"
               }
             ],
-            "title": "Stripe Customer Id"
+            "title": "Stripe Customer Id",
+            "description": "The account's Stripe customer. Always null for a project API key."
           },
           "recent_invoices": {
             "items": {
               "$ref": "#/components/schemas/InvoiceSummary"
             },
             "type": "array",
-            "title": "Recent Invoices"
+            "title": "Recent Invoices",
+            "description": "Recent Stripe invoices. Always empty for a project API key."
           },
           "pending_plan": {
             "anyOf": [
@@ -20766,6 +22996,46 @@
             "description": "Tokens used for tool/function definitions (Google)",
             "default": 0
           },
+          "compaction_input_tokens": {
+            "type": "integer",
+            "maximum": 100000000,
+            "minimum": 0.0,
+            "title": "Compaction Input Tokens",
+            "description": "Anthropic compaction iteration input — a SUBSET of input_tokens, normalized like it (uncached input + cache reads + cache writes of every compaction iteration). The provider bills compaction but excludes it from top-level usage; the SDK folds it into input_tokens (which prices it) and reports the share here for attribution.",
+            "default": 0
+          },
+          "compaction_cached_input_tokens": {
+            "type": "integer",
+            "maximum": 100000000,
+            "minimum": 0.0,
+            "title": "Compaction Cached Input Tokens",
+            "description": "Compaction cache reads — a SUBSET of cached_input_tokens and of compaction_input_tokens.",
+            "default": 0
+          },
+          "compaction_cache_creation_5m_tokens": {
+            "type": "integer",
+            "maximum": 100000000,
+            "minimum": 0.0,
+            "title": "Compaction Cache Creation 5M Tokens",
+            "description": "Compaction 5-minute cache writes — a SUBSET of cache_creation_5m_tokens and of compaction_input_tokens.",
+            "default": 0
+          },
+          "compaction_cache_creation_1h_tokens": {
+            "type": "integer",
+            "maximum": 100000000,
+            "minimum": 0.0,
+            "title": "Compaction Cache Creation 1H Tokens",
+            "description": "Compaction 1-hour cache writes — a SUBSET of cache_creation_1h_tokens and of compaction_input_tokens.",
+            "default": 0
+          },
+          "compaction_output_tokens": {
+            "type": "integer",
+            "maximum": 100000000,
+            "minimum": 0.0,
+            "title": "Compaction Output Tokens",
+            "description": "Compaction iteration output — a SUBSET of output_tokens.",
+            "default": 0
+          },
           "is_estimated": {
             "type": "boolean",
             "title": "Is Estimated",
@@ -20776,7 +23046,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TokenDetails",
-        "description": "Normalized token usage breakdown for one LLM call.\n\nProvider adapters populate whichever fields their API exposes; the rest\nstay at 0.  The API uses this struct to compute exact costs rather than\ntrusting SDK-side estimates.\n\nNormalization contract: ``input_tokens`` includes uncached input, cached\ninput reads, and cache-creation writes.  PricingService subtracts cached\nbuckets from ``input_tokens`` to derive uncached input, so provider adapters\nmust not send \"uncached only\" input totals.\n\nNesting contract: ``image_input_tokens`` and ``audio_input_tokens`` are\nSUBSETS of ``input_tokens``; ``image_output_tokens`` and\n``audio_output_tokens`` are SUBSETS of ``output_tokens`` (probed live\n2026-07-10: an images.edit response reported input_tokens=222 with\nimage_tokens=194 in ``input_tokens_details``; the audio buckets come from\nthe same per-modality sub-objects — OpenAI's\n``prompt_tokens_details.audio_tokens`` / ``completion_tokens_details.audio_tokens``\nand Google's AUDIO ``ModalityTokenCount`` entries). These mirror the existing\n``reasoning_tokens`` ⊂ ``output_tokens`` relationship — DOCUMENTED semantics,\nNOT validator-enforced (reasoning is likewise unenforced). The only enforced\nsubset invariant is the cache-bucket one below; image and audio tokens\ndeliberately do not participate in it.\n\nPricingService derives every text remainder from these subsets\n(``input_tokens − image_input_tokens − audio_input_tokens`` on the uncached\nslice, and the output mirror), so an adapter MUST report the inclusive\nchannel total. Sending an audio count beside a zeroed ``input_tokens`` /\n``output_tokens`` under-bills the call; sending it on top of a text-only\ntotal double-bills it."
+        "description": "Normalized token usage breakdown for one LLM call.\n\nProvider adapters populate whichever fields their API exposes; the rest\nstay at 0.  The API uses this struct to compute exact costs rather than\ntrusting SDK-side estimates.\n\nNormalization contract: ``input_tokens`` includes uncached input, cached\ninput reads, and cache-creation writes.  PricingService subtracts cached\nbuckets from ``input_tokens`` to derive uncached input, so provider adapters\nmust not send \"uncached only\" input totals.\n\nNesting contract: ``image_input_tokens`` and ``audio_input_tokens`` are\nSUBSETS of ``input_tokens``; ``image_output_tokens`` and\n``audio_output_tokens`` are SUBSETS of ``output_tokens`` (probed live\n2026-07-10: an images.edit response reported input_tokens=222 with\nimage_tokens=194 in ``input_tokens_details``; the audio buckets come from\nthe same per-modality sub-objects — OpenAI's\n``prompt_tokens_details.audio_tokens`` / ``completion_tokens_details.audio_tokens``\nand Google's AUDIO ``ModalityTokenCount`` entries). These mirror the existing\n``reasoning_tokens`` ⊂ ``output_tokens`` relationship — DOCUMENTED semantics,\nNOT validator-enforced (reasoning is likewise unenforced). The only enforced\nsubset invariant is the cache-bucket one below; image and audio tokens\ndeliberately do not participate in it.\n\nPricingService derives every text remainder from these subsets\n(``input_tokens − image_input_tokens − audio_input_tokens`` on the uncached\nslice, and the output mirror), so an adapter MUST report the inclusive\nchannel total. Sending an audio count beside a zeroed ``input_tokens`` /\n``output_tokens`` under-bills the call; sending it on top of a text-only\ntotal double-bills it.\n\nCompaction contract: the five ``compaction_*`` buckets are SUBSETS of\ntheir parent buckets (``compaction_input_tokens`` ⊂ ``input_tokens``,\neach compaction cache bucket ⊂ both its parent cache bucket and\n``compaction_input_tokens``, ``compaction_output_tokens`` ⊂\n``output_tokens``). They carry Anthropic's server-side compaction\niterations (beta ``usage.iterations`` entries of type ``compaction``),\nwhich the provider bills but leaves OUT of its top-level usage, so the\nadapter adds them into the parent buckets and reports the share here.\nPricingService prices the INCLUSIVE parents: the compaction share bills at\nthe request model's rates and the context card is selected on the whole\nrequest's input (Anthropic: \"A request's prompt length counts all of its\ninput tokens\"). Whole-request tiering is Core's CONSERVATIVE policy, not a\nverified Anthropic rule: per-iteration tiering is unspecified, and on a\nprompt-length-tiered card (Haiku 5.5) whole-request tiering can overstate a\nrequest whose iterations each sit below the bound — it never understates.\nThe subsets are attribution; because several compactions in one request\ncollapse into one share, they allow re-pricing the compaction/remainder\nsplit but cannot reconstruct each iteration for exact historical re-tiering.\nThey are validator-enforced so stored rows always partition cleanly."
       },
       "TokenResponse": {
         "properties": {
@@ -20793,12 +23063,18 @@
             "const": "bearer",
             "title": "Token Type",
             "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Lifetime of access_token in seconds, counted from issuance. Clients may refresh ahead of expiry; a 401 remains authoritative."
           }
         },
         "type": "object",
         "required": [
           "access_token",
-          "refresh_token"
+          "refresh_token",
+          "expires_in"
         ],
         "title": "TokenResponse"
       },
@@ -21411,13 +23687,15 @@
                 "items": {
                   "type": "string"
                 },
-                "type": "array"
+                "type": "array",
+                "minItems": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Allowed Values"
+            "title": "Allowed Values",
+            "description": "Current-tier alternatives for the gated value. null: a feature gate; the feature is unavailable on the caller's current tier and there is no current-tier alternative. Non-empty list: a value gate; the values of the gated parameter (e.g. a range, group_by, budget period or mode) usable on the caller's current tier, in tier-policy order. An empty list is never sent."
           },
           "cta_path": {
             "type": "string",
@@ -21433,6 +23711,21 @@
           "message"
         ],
         "title": "UpgradeRequiredDetail"
+      },
+      "UserCodeRequest": {
+        "properties": {
+          "user_code": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "User Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_code"
+        ],
+        "title": "UserCodeRequest"
       },
       "ValidationError": {
         "properties": {
@@ -21519,6 +23812,11 @@
             "title": "Token Type",
             "default": "bearer"
           },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Lifetime of access_token in seconds, counted from issuance. Clients may refresh ahead of expiry; a 401 remains authoritative."
+          },
           "user_id": {
             "type": "string",
             "title": "User Id"
@@ -21542,6 +23840,7 @@
         "required": [
           "access_token",
           "refresh_token",
+          "expires_in",
           "user_id",
           "email"
         ],
@@ -21634,8 +23933,9 @@
           },
           "events": {
             "type": "string",
+            "maxLength": 500,
             "title": "Events",
-            "description": "Comma-separated event types or '*' for all",
+            "description": "'*' for every event, or a comma-separated list of event types from: budget_threshold, budget_exceeded, circuit_breaker_opened, circuit_breaker_closed, provider_outage, provider_recovered. Unknown names, empty members, and '*' combined with other names are rejected with 422.",
             "default": "*"
           }
         },
@@ -21874,6 +24174,6 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-10-14",
-  "x-solwyn-core-ref": "4925784d42e18bb6b680e5a87609d1829f1f64a9"
+  "x-solwyn-snapshot-date": "2026-10-31",
+  "x-solwyn-core-ref": "f8f993aaf9a4e43c6d1970d3d19932c61d08d844"
 }

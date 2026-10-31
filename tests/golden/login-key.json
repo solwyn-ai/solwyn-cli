@@ -1,1 +1,1 @@
-{"schema":"solwyn.login.v1","auth_type":"project_key"}
+{"schema":"solwyn.login.v2","auth_type":"project_key","credential_id":null,"label":null,"scope":null,"expires_at":null,"account_id":null,"account_name":null,"email":null,"role":null}

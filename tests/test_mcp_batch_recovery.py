@@ -58,7 +58,7 @@ def test_post_is_one_identity_bound_attempt_and_recovery_is_get_only(monkeypatch
     ],
 )
 def test_invalid_batch_modes_fail_before_auth(monkeypatch, args):
-    def fail():
+    def fail(**_: object):
         pytest.fail("auth must not run")
 
     monkeypatch.setattr(auth, "resolve_credential", fail)
@@ -192,7 +192,7 @@ def test_unknown_failed_unattempted_lanes_remain_honest(monkeypatch):
 
 def test_generated_uuid7_identity_exists_even_when_auth_is_missing(monkeypatch):
     install(monkeypatch, [])
-    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: None)
     result = anyio.run(_call_tool, "budget_check_batch", {"checks": [CHECK]})
     identity = UUID(result.structured_content["recovery"]["operation_id"])
     assert identity.version == 7

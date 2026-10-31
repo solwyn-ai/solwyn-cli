@@ -18,8 +18,8 @@ from solwyn_cli._vendor.wire import (
 )
 from solwyn_cli.auth import (
     AuthError,
-    JwtRequiredError,
-    JwtCredential,
+    LoginRequiredError,
+    LoginCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -67,7 +67,7 @@ class AccountAlertSnoozeResponse(BaseModel):
 
 def _help(
     endpoint: str,
-    auth: str = "key or JWT; account requires JWT",
+    auth: str = "key or login; account requires login",
     schema: str = "solwyn.alerts.v1",
     *,
     not_found: bool = True,
@@ -92,7 +92,7 @@ app = typer.Typer(
 account_app = typer.Typer(
     help="Manage account spend alerts.",
     epilog=_help(
-        _ACCOUNT_PATH, "JWT; mutations require owner", "solwyn.alerts.account.v1"
+        _ACCOUNT_PATH, "login; mutations require owner", "solwyn.alerts.account.v1"
     ),
 )
 app.add_typer(account_app, name="account")
@@ -144,9 +144,9 @@ def request_alert_events(
     """Walk real list pages; failure and event-ID matching are local filters."""
     params = alert_params(**filters)
     path = history_path(project_id, account)
-    if account and not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError(
-            "Account alert history requires JWT authentication. Run solwyn login."
+    if account and not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError(
+            "Account alert history requires a Solwyn login. Run solwyn login."
         )
     seen: set[str] = set()
     events: list[AlertEventEntry] = []
@@ -201,13 +201,13 @@ def request_alert_events(
 @contextmanager
 def _client(context: typer.Context, *, account: bool = False) -> Iterator[SolwynClient]:
     credential = required_credential(context, resolve=resolve_credential)
-    if account and not isinstance(credential, JwtCredential):
+    if account and not isinstance(credential, LoginCredential):
         exit_with_error(
             context,
             OutputError(
-                code="jwt_required",
+                code="login_required",
                 message="Account alerts require user login.",
-                hint="Unset SOLWYN_API_KEY and run solwyn login. Mutations require the account owner.",
+                hint="Run solwyn login. Mutations require the account owner.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -451,7 +451,7 @@ def export_events(
 def _account_help(method: str, suffix: str = "", *, owner: bool = False) -> str:
     return _help(
         method + " " + _ACCOUNT_PATH + suffix,
-        "JWT owner" if owner else "JWT; any account member",
+        "login owner" if owner else "login; any account member",
         "solwyn.alerts.account.v1",
     )
 
@@ -588,7 +588,7 @@ def account_preview(
     "activity",
     epilog=_help(
         "GET /api/v1/account/alerts/activity",
-        "JWT; any account member",
+        "login; any account member",
         "solwyn.alerts.activity.v1",
         not_found=False,
     ),
@@ -645,7 +645,7 @@ def _write_account_events(context: typer.Context, data: BaseModel, schema: str) 
     "pending",
     epilog=_help(
         "GET /api/v1/account/alerts/open-deliveries",
-        "JWT; any account member",
+        "login; any account member",
         "solwyn.alerts.pending.v1",
         not_found=False,
     ),

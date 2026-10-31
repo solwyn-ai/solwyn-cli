@@ -14,6 +14,7 @@ from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import overview as overview_module
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -95,12 +96,9 @@ def test_overview_free_quota_and_nullable_savings_match_goldens(
     monkeypatch: pytest.MonkeyPatch,
     output_format: str,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        overview_module, "resolve_credential", lambda: credential, raising=False
+        overview_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [httpx.Response(200, json=OVERVIEW_RESPONSE)]
 
@@ -128,7 +126,7 @@ def test_overview_project_key_stops_before_http_with_login_hint(
     monkeypatch.setattr(
         overview_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
         raising=False,
     )
 
@@ -149,10 +147,7 @@ def test_overview_paid_response_omits_inapplicable_nullable_fields(
     monkeypatch.setattr(
         overview_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     paid = {
@@ -184,10 +179,7 @@ def test_overview_invalid_response_is_fixed_and_secret_safe(
     monkeypatch.setattr(
         overview_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     FakeClient.responses = [httpx.Response(200, json={"total_spend": ACCESS_TOKEN})]

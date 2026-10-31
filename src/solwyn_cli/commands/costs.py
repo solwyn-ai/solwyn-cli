@@ -12,8 +12,8 @@ from pydantic import ValidationError
 
 from solwyn_cli.auth import (
     AuthError,
-    JwtRequiredError,
-    JwtCredential,
+    LoginRequiredError,
+    LoginCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -54,7 +54,7 @@ COSTS_HELP = help_contract(
         "GET /api/v1/projects/{project}/costs or, with --account, "
         "GET /api/v1/account/costs"
     ),
-    auth="project key or JWT; --account requires JWT",
+    auth="project key or login; --account requires login",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
     schema="solwyn.costs.v1 or solwyn.account_costs.v1",
 )
@@ -122,8 +122,8 @@ def _request_account_costs(
     **filters: Any,
 ) -> tuple[AccountCostsData, httpx.Headers]:
     """Read account costs and retain Core's effective-window headers."""
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError("Account costs require JWT.")
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError("Account costs require a Solwyn login.")
     if any(
         filters.get(name) is not None
         for name in (
@@ -398,13 +398,13 @@ def _run(
             semantic=ErrorSemantic.USAGE,
         )
     credential = required_credential(context, resolve=resolve_credential)
-    if account and not isinstance(credential, JwtCredential):
+    if account and not isinstance(credential, LoginCredential):
         exit_with_error(
             context,
             OutputError(
                 code="authentication_required",
                 message="Account costs require user login.",
-                hint="Unset SOLWYN_API_KEY and run solwyn login, then retry.",
+                hint="Run solwyn login, then retry.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -567,7 +567,7 @@ def costs(
         bool,
         typer.Option(
             "--account",
-            help="Show the JWT-authenticated account rollup across projects.",
+            help="Show the account rollup across projects (requires a Solwyn login).",
         ),
     ] = False,
     time_range: Annotated[

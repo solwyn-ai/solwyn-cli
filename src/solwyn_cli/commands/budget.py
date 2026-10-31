@@ -43,7 +43,7 @@ from solwyn_cli._vendor.wire import (
 )
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
 )
@@ -224,7 +224,7 @@ BudgetStatusData = _BudgetStatusData
 
 
 def fetch_budget_status(
-    *, api_url: str, credential: JwtCredential | ProjectKeyCredential, project_id: str
+    *, api_url: str, credential: LoginCredential | ProjectKeyCredential, project_id: str
 ) -> BudgetStatusData:
     """Fetch and validate one project's pure-read budget status."""
     with SolwynClient(api_url=api_url, credential=credential) as client:
@@ -674,7 +674,6 @@ def request_recoverable_budget_batch(
                 "/api/v1/budgets/check/batches",
                 json=body.model_dump(mode="json", exclude_none=True),
                 retry_rate_limit=False,
-                retry_auth=False,
             )
         except ApiError as error:
             if is_budget_admission_busy(error, path="/api/v1/budgets/check/batches"):
@@ -804,17 +803,11 @@ def _check_batch_command(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, JwtCredential):
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_key_required",
-                message="Budget checks require a project API key.",
-                hint="Set SOLWYN_API_KEY or store a project key with solwyn login --with-key.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    credential = required_credential(
+        context,
+        resolve=lambda: resolve_credential(purpose="metering"),
+        purpose="metering",
+    )
     try:
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential
@@ -1535,20 +1528,11 @@ def check(
             semantic=ErrorSemantic.USAGE,
         )
 
-    credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, JwtCredential):
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_key_required",
-                message="Budget checks require a project API key.",
-                hint=(
-                    "Set SOLWYN_API_KEY or store a project key with "
-                    "solwyn login --with-key."
-                ),
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    credential = required_credential(
+        context,
+        resolve=lambda: resolve_credential(purpose="metering"),
+        purpose="metering",
+    )
 
     runtime = command_context(context)
     try:
@@ -1932,34 +1916,11 @@ def confirm(
             semantic=ErrorSemantic.USAGE,
         )
 
-    try:
-        credential = resolve_credential()
-    except AuthError as error:
-        exit_with_error(
-            context,
-            OutputError(
-                code="authentication_failed",
-                message=str(error),
-                hint=(
-                    "Set SOLWYN_API_KEY or store a project key with "
-                    "solwyn login --with-key."
-                ),
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
-    if credential is None or isinstance(credential, JwtCredential):
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_key_required",
-                message="Budget confirmation requires a project API key.",
-                hint=(
-                    "Set SOLWYN_API_KEY or store a project key with "
-                    "solwyn login --with-key."
-                ),
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    credential = required_credential(
+        context,
+        resolve=lambda: resolve_credential(purpose="metering"),
+        purpose="metering",
+    )
 
     runtime = command_context(context)
     try:
@@ -2010,7 +1971,7 @@ def confirm(
     "set",
     epilog=help_contract(
         endpoint="GET then PUT /api/v1/projects/{project}/budget",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.budget-set.v1",
     ),
@@ -2069,11 +2030,7 @@ def set_budget(
 
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry budget set."
-            if credential.source == "environment"
-            else "Run solwyn logout, then solwyn login, and retry budget set."
-        )
+        hint = "Run solwyn login, then retry budget set."
         exit_with_error(
             context,
             OutputError(
@@ -2234,7 +2191,7 @@ def status(
     "uncounted",
     epilog=help_contract(
         endpoint="GET /api/v1/projects/{project_id}/budget/uncounted",
-        auth="key or JWT",
+        auth="key or login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.budget.uncounted.v1",
     ),

@@ -13,11 +13,10 @@ from solwyn_cli.main import app
 from test_alerts_command import EVENT, WINDOW
 from test_budget_set_command import FakeClient
 from test_plan_command import BILLING_STATUS
+from login_fixtures import login_credential
 
 runner = CliRunner()
-JWT = auth.JwtCredential(
-    access_token="synthetic-access", refresh_token="synthetic-refresh"
-)
+JWT = login_credential("synthetic-access")
 KEY = auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment")
 
 
@@ -33,7 +32,7 @@ def reads(monkeypatch):
     )
     for module in (alerts, budget, plan, account):
         monkeypatch.setattr(module, "SolwynClient", FakeClient)
-        monkeypatch.setattr(module, "resolve_credential", lambda: JWT)
+        monkeypatch.setattr(module, "resolve_credential", lambda **_: JWT)
 
 
 def invoke(*args):
@@ -127,7 +126,7 @@ def catalog():
 
 @pytest.mark.parametrize("credential", [JWT, KEY])
 def test_plan_list_accepts_both_auths_preserves_units(monkeypatch, credential):
-    monkeypatch.setattr(plan, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(plan, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [httpx.Response(200, json=catalog())]
     result = invoke("plan", "list")
     assert result.exit_code == 0, result.output
@@ -176,7 +175,7 @@ def test_budget_rules_last_fired_percent_mapping_and_null(monkeypatch):
     from test_budget_set_command import _response
 
     monkeypatch.setattr(budget_rules, "SolwynClient", FakeClient)
-    monkeypatch.setattr(budget_rules, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: JWT)
     fired = copy.deepcopy(EVENT)
     fired.update(
         event_type="fired",
@@ -312,7 +311,7 @@ def test_identity_requires_full_me_and_shows_verified(monkeypatch):
     from solwyn_cli.commands import whoami
 
     monkeypatch.setattr(whoami, "SolwynClient", FakeClient)
-    monkeypatch.setattr(whoami, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(whoami, "resolve_credential", lambda **_: JWT)
     me = dict(
         user_id="user-synthetic",
         email="user@example.invalid",
@@ -382,7 +381,7 @@ def test_invalid_activity_query_is_local(route, flags):
 )
 def test_new_account_reads_reject_project_key_before_http(monkeypatch, args):
     for module in (alerts, account):
-        monkeypatch.setattr(module, "resolve_credential", lambda: KEY)
+        monkeypatch.setattr(module, "resolve_credential", lambda **_: KEY)
     result = invoke(*args)
     assert result.exit_code == 3
     assert not any(client.requests for client in FakeClient.instances)
@@ -481,7 +480,7 @@ def test_last_fired_opt_out_no_extra_requests(monkeypatch):
     from test_budget_set_command import _response
 
     monkeypatch.setattr(budget_rules, "SolwynClient", FakeClient)
-    monkeypatch.setattr(budget_rules, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: JWT)
     FakeClient.responses = [httpx.Response(200, json=_response())]
     result = invoke("budget", "rules", "list")
     assert result.exit_code == 0
@@ -493,7 +492,7 @@ def test_last_fired_key_gate_precedes_budget_request(monkeypatch):
     from solwyn_cli.commands import budget_rules
 
     monkeypatch.setattr(budget_rules, "SolwynClient", FakeClient)
-    monkeypatch.setattr(budget_rules, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: KEY)
     result = invoke("budget", "rules", "list", "--with-last-fired")
     assert result.exit_code == 3
     assert not any(client.requests for client in FakeClient.instances)
@@ -510,7 +509,7 @@ def test_identity_missing_and_unexpected_fields_fail_closed(monkeypatch, mutate)
     from solwyn_cli.commands import whoami
 
     monkeypatch.setattr(whoami, "SolwynClient", FakeClient)
-    monkeypatch.setattr(whoami, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(whoami, "resolve_credential", lambda **_: JWT)
     me = dict(
         user_id="user-synthetic",
         email="user@example.invalid",

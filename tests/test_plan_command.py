@@ -14,6 +14,7 @@ from solwyn_cli import auth
 from solwyn_cli.commands import plan as plan_module
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -112,16 +113,14 @@ def reset_fake_client() -> Iterator[None]:
     "credential",
     [
         auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(
-            access_token="access-secret", refresh_token="refresh-secret"
-        ),
+        login_credential("access-secret"),
     ],
 )
 def test_plan_accepts_project_key_or_jwt_and_matches_json_golden(
     credential: auth.ResolvedCredential,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(plan_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(plan_module, "resolve_credential", lambda **_: credential)
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     FakeClient.responses = [httpx.Response(200, json=BILLING_STATUS)]
 
@@ -141,7 +140,7 @@ def test_plan_table_renders_entitlements_limits_and_dashboard_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
-    monkeypatch.setattr(plan_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(plan_module, "resolve_credential", lambda **_: credential)
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     FakeClient.responses = [httpx.Response(200, json=BILLING_STATUS)]
 
@@ -156,7 +155,7 @@ def test_plan_project_key_without_account_context_preserves_403(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-    monkeypatch.setattr(plan_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(plan_module, "resolve_credential", lambda **_: credential)
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     FakeClient.responses = [
         ApiError(
@@ -181,7 +180,7 @@ def test_plan_invalid_billing_response_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-    monkeypatch.setattr(plan_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(plan_module, "resolve_credential", lambda **_: credential)
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     FakeClient.responses = [httpx.Response(200, json={"tier": "team"})]
 
@@ -201,9 +200,7 @@ def test_plan_exposes_subscription_lifecycle(
     monkeypatch.setattr(
         plan_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token="test-access", refresh_token="test-refresh"
-        ),
+        lambda **_: login_credential("test-access"),
     )
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     lifecycle = {
@@ -254,7 +251,7 @@ def test_plan_accepts_required_nullable_scheduled_targets(
     monkeypatch.setattr(
         plan_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
     )
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     change = {**targets, "effective_at": "2027-10-01T00:00:00Z"}
@@ -275,7 +272,7 @@ def test_plan_rejects_incomplete_scheduled_change(
     monkeypatch.setattr(
         plan_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
     )
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     change = {
@@ -300,7 +297,7 @@ def test_plan_optional_lifecycle_can_be_omitted_for_free_accounts(
     monkeypatch.setattr(
         plan_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
     )
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     minimal = {field: BILLING_STATUS[field] for field in ("limits", "capabilities")}
@@ -372,7 +369,7 @@ def test_plan_period_end_label_preserves_exact_json(
     monkeypatch.setattr(
         plan_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
     )
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     response = {**BILLING_STATUS, **lifecycle}
@@ -399,7 +396,7 @@ def test_plan_rejects_invalid_lifecycle_timestamps(
     monkeypatch.setattr(
         plan_module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
     )
     monkeypatch.setattr(plan_module, "SolwynClient", FakeClient)
     FakeClient.responses = [

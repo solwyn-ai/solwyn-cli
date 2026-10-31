@@ -90,7 +90,7 @@ def test_export_command_preserves_bytes_and_reports_headers(monkeypatch):
     monkeypatch.setattr(
         costs,
         "resolve_credential",
-        lambda: ProjectKeyCredential(
+        lambda **_: ProjectKeyCredential(
             api_key="sk_proj_" + "a1" * 32, source="environment"
         ),
     )

@@ -38,7 +38,9 @@ class RoleChoice(StrEnum):
 @members_app.command(
     "list",
     epilog=command_help(
-        "GET " + BASE + "/members", "solwyn.team.members.v1", "JWT; any account member"
+        "GET " + BASE + "/members",
+        "solwyn.team.members.v1",
+        "login; any account member",
     ),
 )
 def list_members(context: typer.Context):
@@ -87,7 +89,7 @@ def _target_member(context, client, user_id):
 @members_app.command(
     "set-role",
     epilog=command_help(
-        "PATCH " + BASE + "/members/{user_id}", "solwyn.team.member.v1", "owner JWT"
+        "PATCH " + BASE + "/members/{user_id}", "solwyn.team.member.v1", "owner login"
     ),
 )
 def set_role(
@@ -158,7 +160,7 @@ def _remove(context, client, account, target, *, self_leave, yes):
     epilog=command_help(
         "DELETE " + BASE + "/members/{user_id}",
         "solwyn.team.remove.v1",
-        "JWT; owner/admin for allowed targets, or self",
+        "login; owner/admin for allowed targets, or self",
     ),
 )
 def remove(
@@ -190,7 +192,7 @@ def remove(
     epilog=command_help(
         "DELETE " + BASE + "/members/{user_id}",
         "solwyn.team.remove.v1",
-        "JWT; your own membership",
+        "login; your own membership",
     ),
 )
 def leave(context: typer.Context, yes: Yes = False):
@@ -207,7 +209,7 @@ def leave(context: typer.Context, yes: Yes = False):
 @invites_app.command(
     "list",
     epilog=command_help(
-        "GET " + BASE + "/invitations", "solwyn.team.invites.v1", "owner/admin JWT"
+        "GET " + BASE + "/invitations", "solwyn.team.invites.v1", "owner/admin login"
     ),
 )
 def list_invites(context: typer.Context):
@@ -237,7 +239,9 @@ def list_invites(context: typer.Context):
 @invites_app.command(
     "send",
     epilog=command_help(
-        "POST " + BASE + "/invitations", "solwyn.team.invitation.v1", "owner/admin JWT"
+        "POST " + BASE + "/invitations",
+        "solwyn.team.invitation.v1",
+        "owner/admin login",
     ),
 )
 def send(
@@ -336,7 +340,7 @@ def _invitation_action(context, invitation_id, yes, *, resend):
     epilog=command_help(
         "POST " + BASE + "/invitations/{invitation_id}/resend",
         "solwyn.team.invitation-action.v1",
-        "owner/admin JWT",
+        "owner/admin login",
     ),
 )
 def resend(
@@ -353,7 +357,7 @@ def resend(
     epilog=command_help(
         "DELETE " + BASE + "/invitations/{invitation_id}",
         "solwyn.team.invitation-action.v1",
-        "owner/admin JWT",
+        "owner/admin login",
     ),
 )
 def revoke(

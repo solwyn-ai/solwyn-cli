@@ -115,7 +115,7 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _credential(source: str = "environment") -> auth.ProjectKeyCredential:
+def _credential(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
 
 
@@ -147,7 +147,7 @@ def test_budget_confirm_posts_every_token_detail_with_project_key(
 ) -> None:
     credential = _credential(source)
     monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: credential, raising=False
+        budget_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue_success()
 
@@ -321,7 +321,7 @@ def test_budget_confirm_missing_reservation_explains_fail_open_and_skipping(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
         raising=False,
     )
     args = [
@@ -436,33 +436,27 @@ def test_budget_confirm_expired_or_consumed_404_is_actionable_and_not_retried(
         assert error["detail"]["reservation_state"] == "expired_or_consumed"
 
 
-@pytest.mark.parametrize(
-    "credential",
-    [
-        auth.JwtCredential(access_token=JWT_ACCESS, refresh_token=JWT_REFRESH),
-        None,
-    ],
-)
-def test_budget_confirm_refuses_jwt_or_missing_auth_without_request(
+def test_budget_confirm_resolves_only_a_metering_key_without_request(
     monkeypatch: pytest.MonkeyPatch,
-    credential: auth.JwtCredential | None,
 ) -> None:
-    monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: credential, raising=False
-    )
+    purposes: list[object] = []
+
+    def resolve(**kwargs: object) -> None:
+        purposes.append(kwargs.get("purpose"))
+        return None
+
+    monkeypatch.setattr(budget_module, "resolve_credential", resolve, raising=False)
 
     result = runner.invoke(app, ["--json", *BASE_ARGS])
 
+    assert purposes == ["metering"]
     assert result.exit_code == 3
     assert result.stdout == ""
     assert FakeClient.instances == []
     error = json.loads(result.stderr)
-    assert error["code"] == "project_key_required"
-    assert "SOLWYN_API_KEY" in error["hint"]
+    assert error["code"] == "authentication_required"
+    assert error["hint"] == auth.METERING_KEY_HINT
     assert "--with-key" in error["hint"]
-    rendered = result.stderr + repr(result.exception)
-    assert JWT_ACCESS not in rendered
-    assert JWT_REFRESH not in rendered
 
 
 @pytest.mark.parametrize(
@@ -486,7 +480,7 @@ def test_budget_confirm_rejects_invalid_input_before_auth_and_network(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
         raising=False,
     )
 
@@ -507,7 +501,7 @@ def test_budget_confirm_enforces_every_token_count_bound_before_auth(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
         raising=False,
     )
 
@@ -560,7 +554,7 @@ def test_budget_confirm_requires_call_model_and_provider_before_auth(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
         raising=False,
     )
 

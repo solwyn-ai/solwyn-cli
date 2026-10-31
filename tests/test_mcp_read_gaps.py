@@ -11,6 +11,7 @@ from test_mcp_conformance import _install_http
 from test_read_gaps import catalog
 from test_alerts_command import EVENT, WINDOW, ACCOUNT
 from test_plan_command import BILLING_STATUS
+from login_fixtures import login_credential
 
 NEW_READS = {
     "list_cost_events",
@@ -114,14 +115,12 @@ def test_new_reads_endpoint_and_strict_errors(monkeypatch, name, path, payload, 
     monkeypatch.setattr(
         auth,
         "resolve_credential",
-        lambda: auth.JwtCredential(access_token="synthetic", refresh_token="synthetic"),
+        lambda **_: login_credential("synthetic"),
     )
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json=payload)],
-        credentials=[
-            auth.JwtCredential(access_token="synthetic", refresh_token="synthetic")
-        ],
+        credentials=[login_credential("synthetic")],
     )
 
     async def exercise():
@@ -144,10 +143,7 @@ def call(monkeypatch, name, payloads, arguments=None, credential=None):
     requests, _, _ = _install_http(
         monkeypatch,
         responses=payloads,
-        credentials=[
-            credential
-            or auth.JwtCredential(access_token="synthetic", refresh_token="synthetic")
-        ],
+        credentials=[credential or login_credential("synthetic")],
     )
 
     async def exercise():
@@ -266,7 +262,7 @@ def test_uncounted_503_stays_unknown_service_busy(monkeypatch):
 
 @pytest.mark.parametrize("name", sorted(NEW_READS))
 def test_unknown_input_is_rejected_before_auth(monkeypatch, name):
-    def forbidden():
+    def forbidden(**_: object):
         raise AssertionError("Invalid arguments reached auth")
 
     monkeypatch.setattr(auth, "resolve_credential", forbidden)
@@ -575,7 +571,7 @@ def test_native_stream_size_cap_preserves_first_unread_page(monkeypatch, name):
     monkeypatch.setattr(
         auth,
         "resolve_credential",
-        lambda: auth.JwtCredential(access_token="synthetic", refresh_token="synthetic"),
+        lambda **_: login_credential("synthetic"),
     )
 
     async def exercise():
@@ -621,7 +617,7 @@ def test_native_deadline_applies_to_new_read(monkeypatch):
     monkeypatch.setattr(
         auth,
         "resolve_credential",
-        lambda: auth.JwtCredential(access_token="synthetic", refresh_token="synthetic"),
+        lambda **_: login_credential("synthetic"),
     )
 
     async def exercise():

@@ -10,3 +10,4 @@ Scope                              full
 ╭────────────────────────── One-time project key ──────────────────────────╮
 │ sk_proj_abababababababababababababababababababababababababababababababab │
 ╰──────────────────────────────────────────────────────────────────────────╯
+export SOLWYN_API_KEY=sk_proj_abababababababababababababababababababababababababababababababab

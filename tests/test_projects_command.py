@@ -18,6 +18,7 @@ from solwyn_cli.config import Config, ConfigLoadError, ConfigWriteError
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -95,14 +96,11 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+def _jwt(**_: object) -> auth.LoginCredential:
+    return login_credential(ACCESS_TOKEN)
 
 
-def _key(source: str = "environment") -> auth.ProjectKeyCredential:
+def _key(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
 
 
@@ -133,7 +131,7 @@ def test_projects_rename_puts_once_and_matches_golden(
     output_format: str,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json={**PROJECTS_RESPONSE[0], "name": "Renamed project"}),
         RuntimeError("must not retry"),
@@ -177,7 +175,7 @@ def test_projects_rename_rejects_invalid_names_before_auth(
     monkeypatch.setattr(
         projects_module,
         "resolve_credential",
-        lambda: pytest.fail("must validate before auth"),
+        lambda **_: pytest.fail("must validate before auth"),
     )
 
     result = runner.invoke(
@@ -223,7 +221,7 @@ def test_project_mutations_reject_project_keys_before_network(
     command: list[str],
     source: str,
 ) -> None:
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: _key(source))
     monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False, raising=False)
 
     result = runner.invoke(app, ["--json", "projects", *command])
@@ -263,7 +261,7 @@ def test_projects_delete_requires_yes_before_auth_or_network(
     monkeypatch.setattr(
         projects_module,
         "resolve_credential",
-        lambda: pytest.fail("must require --yes before auth"),
+        lambda **_: pytest.fail("must require --yes before auth"),
     )
 
     result = runner.invoke(app, ["--json", "projects", "delete", "proj"])
@@ -281,7 +279,7 @@ def test_projects_delete_non_tty_deletes_once_clears_matching_default_and_matche
 ) -> None:
     credential = _jwt()
     cleared: list[str] = []
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: credential)
     monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False, raising=False)
     monkeypatch.setattr(
         projects_module,
@@ -423,81 +421,6 @@ def test_project_lifecycle_retries_safe_429_rejection_then_succeeds(
         f"Bearer {ACCESS_TOKEN}",
     ]
     assert waits == [0.0]
-    assert cleared == (["proj_retry"] if operation == "delete" else [])
-
-
-@pytest.mark.parametrize(
-    ("operation", "method"),
-    [("rename", "PUT"), ("delete", "DELETE")],
-)
-def test_project_lifecycle_refreshes_expired_jwt_then_succeeds(
-    monkeypatch: pytest.MonkeyPatch,
-    operation: str,
-    method: str,
-) -> None:
-    requests: list[httpx.Request] = []
-    cleared: list[str] = []
-    stored: list[tuple[str, str]] = []
-
-    def store(access_token: str, refresh_token: str) -> auth.JwtCredential:
-        stored.append((access_token, refresh_token))
-        return auth.JwtCredential(
-            access_token=access_token,
-            refresh_token=refresh_token,
-        )
-
-    monkeypatch.setattr(auth, "store_jwt_pair", store)
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path == "/api/v1/auth/refresh":
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "rotated-projects-access",
-                    "refresh_token": "rotated-projects-refresh",
-                },
-                request=request,
-            )
-        if request.headers["Authorization"] == f"Bearer {ACCESS_TOKEN}":
-            return httpx.Response(
-                401,
-                json={"detail": "Expired access token."},
-                request=request,
-            )
-        return _successful_lifecycle_response(operation, request)
-
-    transport = httpx.MockTransport(handle)
-
-    def client_factory(*, api_url: str, credential: object) -> RealSolwynClient:
-        return RealSolwynClient(
-            api_url=api_url,
-            credential=credential,
-            transport=transport,
-        )
-
-    monkeypatch.setattr(projects_module, "SolwynClient", client_factory)
-    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
-    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: False)
-    monkeypatch.setattr(
-        projects_module,
-        "clear_default_project",
-        lambda project_id: cleared.append(project_id) or True,
-    )
-
-    result = runner.invoke(
-        app,
-        ["--json", "projects", *_lifecycle_arguments(operation)],
-    )
-
-    assert result.exit_code == 0, result.stderr
-    assert [(request.method, request.url.path) for request in requests] == [
-        (method, "/api/v1/projects/proj_retry"),
-        ("POST", "/api/v1/auth/refresh"),
-        (method, "/api/v1/projects/proj_retry"),
-    ]
-    assert requests[2].headers["Authorization"] == "Bearer rotated-projects-access"
-    assert stored == [("rotated-projects-access", "rotated-projects-refresh")]
     assert cleared == (["proj_retry"] if operation == "delete" else [])
 
 
@@ -692,7 +615,7 @@ def test_projects_create_posts_once_as_jwt_and_displays_key_exactly_once(
     output_format: str,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
     options = ["--json"] if output_format == "json" else ["--no-color"]
 
@@ -727,12 +650,14 @@ def test_projects_create_posts_once_as_jwt_and_displays_key_exactly_once(
                     "budget_mode": "hard_deny",
                 },
                 "retry_rate_limit": False,
-                "retry_auth": False,
             },
         )
     ]
     rendered = result.stdout + result.stderr + repr(result.exception)
-    assert rendered.count(CREATED_KEY) == 1
+    # Table mode adds the SDK hand-off line under the one-time panel.
+    assert rendered.count(CREATED_KEY) == (1 if output_format == "json" else 2)
+    if output_format != "json":
+        assert f"\nexport SOLWYN_API_KEY={CREATED_KEY}\n" in result.stdout
     assert result.stderr == ""
     if output_format == "json":
         payload = json.loads(result.stdout)
@@ -818,11 +743,11 @@ def test_projects_create_matches_goldens(
     [
         (
             "environment",
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects create.",
+            "Run solwyn login, then retry projects create.",
         ),
         (
             "keyring",
-            "Run solwyn logout, then solwyn login, and retry projects create.",
+            "Run solwyn login, then retry projects create.",
         ),
     ],
 )
@@ -833,7 +758,7 @@ def test_projects_create_is_jwt_only_with_source_aware_refusal(
     expected_hint: str,
     output_format: str,
 ) -> None:
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: _key(source))
     options = ["--json"] if output_format == "json" else ["--no-color"]
 
     result = runner.invoke(
@@ -850,7 +775,7 @@ def test_projects_create_is_jwt_only_with_source_aware_refusal(
 def test_projects_create_requires_auth_without_a_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: None)
 
     result = runner.invoke(
         app,
@@ -882,7 +807,7 @@ def test_projects_create_validates_request_before_auth_or_network(
     monkeypatch.setattr(
         projects_module,
         "resolve_credential",
-        lambda: pytest.fail("must validate before auth"),
+        lambda **_: pytest.fail("must validate before auth"),
     )
 
     result = runner.invoke(app, ["--json", "projects", "create", *args])
@@ -907,7 +832,7 @@ def test_projects_create_rejects_unknown_enum_options_before_auth(
     monkeypatch.setattr(
         projects_module,
         "resolve_credential",
-        lambda: pytest.fail("must parse before auth"),
+        lambda **_: pytest.fail("must parse before auth"),
     )
 
     result = runner.invoke(app, ["projects", "create", *args])
@@ -995,7 +920,7 @@ def test_projects_create_rejects_an_unknown_scope_before_auth(
     monkeypatch.setattr(
         projects_module,
         "resolve_credential",
-        lambda: pytest.fail("must parse before auth"),
+        lambda **_: pytest.fail("must parse before auth"),
     )
 
     result = runner.invoke(
@@ -1186,7 +1111,7 @@ def test_projects_list_is_jwt_only_and_matches_goldens(
     output_format: str,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: credential)
     _queue_projects()
     options = ["--json"] if output_format == "json" else ["--no-color"]
 
@@ -1210,11 +1135,11 @@ def test_projects_list_is_jwt_only_and_matches_goldens(
     [
         (
             "environment",
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry projects list.",
+            "Run solwyn login, then retry projects list.",
         ),
         (
             "keyring",
-            "Run solwyn logout, then solwyn login, and retry projects list.",
+            "Run solwyn login, then retry projects list.",
         ),
     ],
 )
@@ -1225,7 +1150,7 @@ def test_projects_list_rejects_both_key_sources_without_a_request(
     expected_hint: str,
     output_format: str,
 ) -> None:
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: _key(source))
     options = ["--json"] if output_format == "json" else ["--no-color"]
 
     result = runner.invoke(app, [*options, "projects", "list"])
@@ -1244,7 +1169,7 @@ def test_projects_list_rejects_both_key_sources_without_a_request(
 def test_projects_list_requires_auth_without_a_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: None)
 
     result = runner.invoke(app, ["--json", "projects", "list"])
 
@@ -1269,7 +1194,7 @@ def test_projects_show_supports_jwt_and_both_key_sources_with_goldens(
     auth_name: str,
     output_format: str,
 ) -> None:
-    monkeypatch.setattr(projects_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(projects_module, "resolve_credential", lambda **_: credential)
     _queue_projects(PROJECTS_RESPONSE[0])
     options = ["--json"] if output_format == "json" else ["--no-color"]
 
@@ -1334,7 +1259,7 @@ def test_projects_show_requires_a_resolved_project_before_auth_or_request(
     monkeypatch.setattr(
         projects_module,
         "resolve_credential",
-        lambda: credential_calls.append(None),
+        lambda **_: credential_calls.append(None),
     )
 
     result = runner.invoke(
@@ -1452,7 +1377,12 @@ def test_goldens_limit_created_key_to_authorized_one_time_outputs() -> None:
         if not golden.is_file():
             continue
         rendered = golden.read_text(encoding="utf-8")
-        expected_occurrences = 1 if golden.name in authorized else 0
+        # The display table shows the key in its panel and in the export line.
+        expected_occurrences = (
+            {"projects-create-display-table.txt": 2}.get(golden.name, 1)
+            if golden.name in authorized
+            else 0
+        )
         assert rendered.count(CREATED_KEY) == expected_occurrences, golden.name
         assert VALID_KEY not in rendered
         assert ACCESS_TOKEN not in rendered

@@ -81,7 +81,7 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _credential(source: str = "environment") -> auth.ProjectKeyCredential:
+def _credential(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
 
 
@@ -108,7 +108,7 @@ def test_budget_check_posts_exact_call_shaped_request_with_project_key(
 ) -> None:
     credential = _credential(source)
     monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: credential, raising=False
+        budget_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue()
 
@@ -429,7 +429,7 @@ def test_budget_check_rejects_invalid_media_values_before_auth_and_network(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -447,7 +447,7 @@ def test_budget_check_rejects_an_over_long_agent_run_id_before_auth_and_network(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -471,34 +471,33 @@ def test_budget_check_accepts_an_agent_run_id_at_the_exact_bound(
     assert FakeClient.instances[0].requests[0][2]["json"]["agent_run_id"] == "r" * 256
 
 
-def test_budget_check_rejects_jwt_locally_with_project_key_guidance(
+def test_budget_check_resolves_only_a_metering_key_and_never_the_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=JWT_ACCESS,
-        refresh_token=JWT_REFRESH,
-    )
-    monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: credential, raising=False
-    )
+    purposes: list[object] = []
+
+    def resolve(**kwargs: object) -> None:
+        purposes.append(kwargs.get("purpose"))
+        return None
+
+    monkeypatch.setattr(budget_module, "resolve_credential", resolve, raising=False)
 
     result = runner.invoke(app, ["--json", *BASE_ARGS])
 
+    assert purposes == ["metering"]
     assert result.exit_code == 3
     assert result.stdout == ""
     assert FakeClient.instances == []
     error = json.loads(result.stderr)
-    assert error["code"] == "project_key_required"
-    assert "SOLWYN_API_KEY" in error["hint"]
-    assert JWT_ACCESS not in result.stderr
-    assert JWT_REFRESH not in result.stderr
+    assert error["code"] == "authentication_required"
+    assert error["hint"] == auth.METERING_KEY_HINT
 
 
 def test_budget_check_rejects_missing_auth_without_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        budget_module, "resolve_credential", lambda: None, raising=False
+        budget_module, "resolve_credential", lambda **_: None, raising=False
     )
 
     result = runner.invoke(app, ["--json", *BASE_ARGS])
@@ -534,7 +533,7 @@ def test_budget_check_rejects_invalid_fallback_or_model_before_auth_and_network(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -578,7 +577,7 @@ def test_budget_check_required_and_enum_options_fail_before_auth(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
         raising=False,
     )
 

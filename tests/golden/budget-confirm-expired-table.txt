@@ -1,4 +1,2 @@
 Error [reservation_not_found]: Budget reservation was not found.
-Hint: Reservation and settlement receipt are unavailable. Preserve the completed
-call's identity and usage; inspect settlement and attribution separately. Do not
-reserve again for a completed provider call.
+Hint: Reservation and settlement receipt are unavailable. Preserve the completed call's identity and usage; inspect settlement and attribution separately. Do not reserve again for a completed provider call.

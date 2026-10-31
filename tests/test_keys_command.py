@@ -15,6 +15,7 @@ from solwyn_cli import auth
 from solwyn_cli.commands import keys as keys_module
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -77,11 +78,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+def _jwt(**_: object) -> auth.LoginCredential:
+    return login_credential(ACCESS_TOKEN)
 
 
 def _key(source: str) -> auth.ProjectKeyCredential:
@@ -111,7 +109,7 @@ def test_keys_show_uses_quoted_project_and_matches_golden(
     output_format: str,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(keys_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(keys_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [httpx.Response(200, json=KEY_METADATA)]
 
     result = runner.invoke(
@@ -183,7 +181,7 @@ def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(keys_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(keys_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json=ROTATE_RESPONSE),
         RuntimeError("must not retry"),
@@ -212,7 +210,6 @@ def test_keys_rotate_posts_once_and_outputs_secret_exactly_once(
             {
                 "json": {"grace_seconds": 3600, "scope": None},
                 "retry_rate_limit": False,
-                "retry_auth": False,
             },
         )
     ]
@@ -276,7 +273,7 @@ def test_keys_rotate_rejects_an_unknown_scope_before_auth(
     monkeypatch.setattr(
         keys_module,
         "resolve_credential",
-        lambda: pytest.fail("must validate before auth"),
+        lambda **_: pytest.fail("must validate before auth"),
     )
 
     result = runner.invoke(
@@ -315,7 +312,7 @@ def test_keys_revoke_deletes_once_requires_204_and_matches_golden(
         (
             "DELETE",
             "/api/v1/projects/proj%2Frecovery/key/key%2Fold",
-            {"retry_rate_limit": False, "retry_auth": False},
+            {"retry_rate_limit": False},
         )
     ]
     assert ROTATED_KEY not in result.stdout + result.stderr
@@ -340,7 +337,7 @@ def test_keys_commands_reject_both_key_sources_without_request(
     source: str,
     output_format: str,
 ) -> None:
-    monkeypatch.setattr(keys_module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(keys_module, "resolve_credential", lambda **_: _key(source))
 
     result = runner.invoke(
         app,
@@ -349,12 +346,7 @@ def test_keys_commands_reject_both_key_sources_without_request(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    hint = (
-        "Unset SOLWYN_API_KEY, run solwyn login"
-        if source == "environment"
-        else "Run solwyn logout, then solwyn login"
-    )
-    assert hint in result.stderr
+    assert f"Run solwyn login, then retry keys {command[0]}." in result.stderr
     assert FakeClient.instances == []
 
     if command == ["show"]:
@@ -368,7 +360,7 @@ def test_keys_commands_reject_both_key_sources_without_request(
 def test_keys_commands_require_auth_without_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(keys_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(keys_module, "resolve_credential", lambda **_: None)
 
     result = runner.invoke(app, ["--json", "--project", "proj", "keys", "show"])
 
@@ -398,7 +390,7 @@ def test_keys_commands_validate_identifiers_and_grace_before_auth(
     monkeypatch.setattr(
         keys_module,
         "resolve_credential",
-        lambda: pytest.fail("must validate before auth"),
+        lambda **_: pytest.fail("must validate before auth"),
     )
 
     result = runner.invoke(app, ["--json", *args])

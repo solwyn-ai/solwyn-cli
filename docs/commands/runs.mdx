@@ -2,8 +2,10 @@
 title: Agent runs
 ---
 
-List and inspect project agent runs with a project key or JWT. Stop requires
-JWT with `budget.write`; it is CLI-only. Select a project with global `--project`.
+List and inspect project agent runs with a project key or a Solwyn login. Stop
+requires a login with `budget.write`; it is CLI-only. A login with the `contain`
+scope stops runs without approval; a `read`-only login needs a one-time browser
+approval (see [approvals](approvals.mdx)). Select a project with global `--project`.
 
 ```sh
 solwyn --project proj_example runs list --all --limit 100 --sort total_cost
@@ -123,8 +125,8 @@ Usage: solwyn runs stop [OPTIONS] RUN
 
 ```text
 Endpoint: optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop
-Auth: JWT + budget.write
-Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
+Auth: login + budget.write
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.runs.stop.v1
 Stops future checks and lease renewals; in-flight requests finish.
 Auto-grouped explorer runs are not stoppable.

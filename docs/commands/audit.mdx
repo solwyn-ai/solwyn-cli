@@ -2,7 +2,7 @@
 title: Account audit trail
 ---
 
-Read account-wide audit events with JWT; no selected project is required.
+Read account-wide audit events with a Solwyn login; no selected project is required.
 `--range` accepts 7d, 30d (default), 90d or 365d. `--action` matches an exact
 string, not a prefix or wildcard. `--all` follows remaining cursor pages and can
 start from `--cursor`; without it the command returns a single page.
@@ -36,7 +36,7 @@ Usage: solwyn audit [OPTIONS]
 
 ```text
 Endpoint: GET /api/v1/account/audit-events
-Auth: JWT
+Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth
 JSON schema: solwyn.audit.v1
 Actions are exact-match strings; use --all to follow every returned cursor.

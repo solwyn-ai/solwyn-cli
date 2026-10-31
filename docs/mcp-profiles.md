@@ -20,17 +20,17 @@ resolution or HTTP. A tool argument cannot switch profiles.
 
 | Tools | Profile | Credential requirement |
 | --- | --- | --- |
-| `budget_status`, `budget_uncounted`, `get_project_status`, `get_forecast`, `get_cost_total`, `list_tags`, `list_tag_values`, `list_agent_runs`, `get_agent_run`, `list_cost_events`, `get_cost_baseline`, `get_unit_economics`, `get_cost_drift`, `list_priced_models`, `simulate_costs`, `list_provider_failovers`, `list_untracked_surfaces` | Both | Project API key or JWT with access to the selected project |
-| `get_costs` | Both | Project key or JWT; `account=true` requires JWT and excludes explicit `project_id` |
-| `list_budget_rules` | Both | Project key or JWT; `with_last_fired=true` requires JWT |
-| `plan_status`, `plan_catalog` | Both | JWT or project key with account/user context; no selected project required |
-| `plan_preview` | Both | JWT at any account role; no selected project required |
-| `list_team_members` | Both | JWT; any account member; no selected project required |
-| `list_team_invites` | Both | JWT; owner/admin; no selected project required |
-| `get_whoami` | Both | JWT reads identity including email verification; project keys return local context with no invented user or raw key |
-| `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert`, `get_account_phone`, `list_audit_events` | Both | JWT; reads do not impose owner-only write gates |
-| `list_alert_events` | Both | Project key or JWT for project history; `account=true` reads account-scope events, requires JWT and ignores `project_id` |
-| `list_projects`, `get_overview` | Both | JWT login |
+| `budget_status`, `budget_uncounted`, `get_project_status`, `get_forecast`, `get_cost_total`, `list_tags`, `list_tag_values`, `list_agent_runs`, `get_agent_run`, `list_cost_events`, `get_cost_baseline`, `get_unit_economics`, `get_cost_drift`, `list_priced_models`, `simulate_costs`, `list_provider_failovers`, `list_untracked_surfaces` | Both | Project API key or Solwyn login with access to the selected project |
+| `get_costs` | Both | Project key or Solwyn login; `account=true` requires a Solwyn login and excludes explicit `project_id` |
+| `list_budget_rules` | Both | Project key or Solwyn login; `with_last_fired=true` requires a Solwyn login |
+| `plan_status`, `plan_catalog` | Both | Solwyn login or project key with account/user context; no selected project required |
+| `plan_preview` | Both | Solwyn login at any account role; no selected project required |
+| `list_team_members` | Both | Solwyn login; any account member; no selected project required |
+| `list_team_invites` | Both | Solwyn login; owner/admin; no selected project required |
+| `get_whoami` | Both | A Solwyn login reads identity including email verification; project keys return local context with no invented user or raw key |
+| `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert`, `get_account_phone`, `list_audit_events` | Both | Solwyn login; reads do not impose owner-only write gates |
+| `list_alert_events` | Both | Project key or Solwyn login for project history; `account=true` reads account-scope events, requires a Solwyn login and ignores `project_id` |
+| `list_projects`, `get_overview` | Both | Solwyn login |
 | `budget_check`, `budget_confirm`, `record_call` | `guardrails` | Write-scoped project API key |
 | `budget_check_batch` | `guardrails` | Project key; write scope for submit/record-only, read scope accepted for recovery-only |
 
@@ -39,9 +39,15 @@ entitlements and key scope. A profile only reduces the exposed tool surface; it
 never grants permission to spend. Writes use the project authenticated by the
 key. `project_id` on read tools overrides launch `--project`, then
 `SOLWYN_PROJECT_ID` and `default_project`; it cannot redirect writes to another
-project. Credential resolution remains environment project key, keychain project
-key, then keychain JWT, freshly evaluated for every operation. A stored key can
-therefore mask a JWT needed for account tools.
+project. Credentials are resolved fresh for every operation, by tool class.
+Metering tools (`budget_check`, `budget_check_batch`, `budget_confirm`,
+`record_call`) use only a project key: `SOLWYN_API_KEY`, then the keychain
+project key, never the login. Every other tool uses the keychain Solwyn login,
+then `SOLWYN_API_KEY`, then the keychain project key. `SOLWYN_AUTH=project_key`
+skips the login for those tools and `SOLWYN_AUTH=login` requires it. A stored
+key therefore never hides the login from account tools. MCP tools never wait for
+a browser approval: a tool that gets `approval_required` returns `isError=true`
+with that code and the approval URL in its hint.
 
 Discovery includes human titles, behavioral annotations, described input fields
 and typed output schemas. All 33 reads have `readOnlyHint=true`; the four writes
@@ -55,7 +61,7 @@ behavior and do not enforce authorization.
 Local diagnostics can import `get_tool_catalog(profile="read")` from
 `solwyn_cli.mcp.server`. It returns an ordered tuple of fresh `ToolDeclaration`
 objects with the actual published definition, runtime models,
-`credential_requirement` (`jwt`, `project_key` or `either`) and `credential_note`.
+`credential_requirement` (`login`, `project_key` or `either`) and `credential_note`.
 It performs no auth or HTTP. Use the note for conditional account-alert access;
 the metadata is not an authorization check or proof that credentials work.
 
@@ -173,9 +179,9 @@ provider, modality and paired custom-window/preset filters. Explicit `project_id
 is mutually exclusive; configured default projects are irrelevant to the account
 query. Core still enforces plan entitlements, account access and role permissions.
 Project mode defaults to model grouping. Pricing simulation is a read-only POST;
-it makes no admission or billing change. A definite 401 rejection may refresh
-JWT once and replay once; a definite 429 uses the client's single bounded
-rate-limit retry, shared across JWT refresh. A 503 or transport failure never
+it makes no admission or billing change. A definite 401 is an authentication
+failure and is never replayed; a definite 429 uses the client's single bounded
+rate-limit retry. A 503 or transport failure never
 replays simulation. All attempts remain within the existing MCP deadline.
 
 `budget_uncounted` returns cumulative advisory calls/tokens and nullable
@@ -191,14 +197,14 @@ price/currency units (integer cents and string decimal cents) and nullable
 prices/overage. `plan_status` includes subscription lifecycle and capabilities.
 All 17 new tools are read-only, non-destructive and idempotent in both profiles;
 the four existing guardrails mutations are unchanged. Billing, team and member
-writes and account recovery remain CLI-only.
+writes remain CLI-only; personal-account recovery is in the dashboard.
 
 ## Subscription preview
 
 `plan_preview(tier, interval)` is the only billing capability added beyond status
 and catalog. It appears in both profiles and reads Core's plan-change estimate
-with JWT at any account role, including member. No project selection is required;
-a selected project key masks stored JWT and is refused. The preview POST does
+with a Solwyn login at any account role, including member. No project selection
+is required; a project key is refused. The preview POST does
 not change the subscription, create an invoice, or charge the customer. It has
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, and
 `openWorldHint=true`.
@@ -209,7 +215,7 @@ mode, nullable effective date, proration date, signed integer cent amounts,
 currency, and line periods/proration flags. It is an estimate, not a price lock.
 To act on it, deliberately run the CLI `plan change` flow, which obtains a fresh
 preview and requires confirmation or `--yes`. Cancel/resume, discard, checkout,
-portal creation and pending-intent dismissal are CLI-only and require owner JWT.
+portal creation and pending-intent dismissal are CLI-only and require an owner login.
 
 The common 30-second useful-work deadline, 1 MiB HTTP and 2 MiB result fences apply.
 503/transport failures never replay the preview POST automatically; it receives
@@ -222,19 +228,19 @@ catalog (38 entries are rejected).
 ## Account team reads
 
 `list_team_members` and `list_team_invites` appear in both profiles without project
-parameters. The first permits any account member's JWT and returns the full active
-roster in join order (`solwyn.team.members.v1`). The second requires owner/admin
-JWT and returns all open invitations, including expired rows, in Core's newest-first
+parameters. The first permits any account member's login and returns the full active
+roster in join order (`solwyn.team.members.v1`). The second requires an owner/admin
+login and returns all open invitations, including expired rows, in Core's newest-first
 order (`solwyn.team.invites.v1`). Required nullable fields remain nullable; unknown
 fields fail closed and `delivery_status` is preserved verbatim.
 
 Both reads have `readOnlyHint=true`, `destructiveHint=false`,
-`idempotentHint=true`, and `openWorldHint=true`. They use the existing JWT selection,
-refresh/429 policy, operation deadline, HTTP/result fences and fixed safe errors.
-A selected project key fails with JWT guidance, without falling back to a different
-identity. Team writes and account rename are CLI-only. Invitation preview/accept
-use the CLI's private token/password workflow, analogous to login; neither is an
-MCP tool. See [team](commands/team.mdx) and [invite](commands/invite.mdx).
+`idempotentHint=true`, and `openWorldHint=true`. They use the login selection,
+429 policy, operation deadline, HTTP/result fences and fixed safe errors. A
+project key fails with login guidance, without falling back to a different
+identity. Team writes and account rename are CLI-only. Invitation preview uses the
+CLI's private token workflow and is not an MCP tool; acceptance happens from the
+emailed link. See [team](commands/team.mdx) and [invite](commands/invite.mdx).
 
 The two new declarations share a separate 8 KiB compact UTF-8 allocation. The
 original 72/168 KiB budgets, adopted-read 112 KiB and billing-preview 4 KiB

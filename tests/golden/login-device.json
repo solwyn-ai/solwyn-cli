@@ -1,0 +1,1 @@
+{"schema":"solwyn.login.v2","auth_type":"login","credential_id":"6c1f2a90-0000-4000-8000-000000000001","label":"dev-laptop","scope":["read","contain"],"expires_at":"2026-11-29T14:03:11Z","account_id":"a1","account_name":"Acme","email":"ada@example.com","role":"owner"}

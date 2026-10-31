@@ -1,1 +1,1 @@
-{"schema":"solwyn.error.v1","code":"authentication_required","message":"Stopping a run requires login with budget.write permission.","hint":"Unset SOLWYN_API_KEY, run solwyn login, then retry runs stop.","detail":null}
+{"schema":"solwyn.error.v1","code":"authentication_required","message":"Stopping a run requires login with budget.write permission.","hint":"Run solwyn login, then retry runs stop.","detail":null}

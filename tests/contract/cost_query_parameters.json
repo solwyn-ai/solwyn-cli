@@ -232,6 +232,22 @@
         ]
       }
     },
+    "trace_id": {
+      "name": "trace_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
     "group_by": {
       "name": "group_by",
       "in": "query",
@@ -512,6 +528,22 @@
         ]
       }
     },
+    "trace_id": {
+      "name": "trace_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
     "tag.<key>": {
       "name": "tag.<key>",
       "in": "query",
@@ -757,6 +789,22 @@
         ]
       }
     },
+    "trace_id": {
+      "name": "trace_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
     "tag.<key>": {
       "name": "tag.<key>",
       "in": "query",
@@ -995,6 +1043,22 @@
           {
             "type": "string",
             "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "trace_id": {
+      "name": "trace_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
           },
           {
             "type": "null"

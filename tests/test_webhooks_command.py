@@ -18,6 +18,7 @@ from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -85,11 +86,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+def _jwt(**_: object) -> auth.LoginCredential:
+    return login_credential(ACCESS_TOKEN)
 
 
 def _key(source: str) -> auth.ProjectKeyCredential:
@@ -127,7 +125,7 @@ def test_webhooks_list_is_jwt_only_quotes_project_and_matches_golden(
 ) -> None:
     credential = _jwt()
     module = _module()
-    monkeypatch.setattr(module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [httpx.Response(200, json=[WEBHOOK_RESPONSE])]
 
     result = runner.invoke(
@@ -158,7 +156,7 @@ def test_webhooks_create_posts_open_event_string_and_reveals_secret_once(
 ) -> None:
     credential = _jwt()
     module = _module()
-    monkeypatch.setattr(module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(201, json=CREATE_RESPONSE),
         RuntimeError("must not retry"),
@@ -326,7 +324,7 @@ def test_webhooks_rotate_quotes_ids_posts_no_body_and_reveals_secret_once(
 ) -> None:
     credential = _jwt()
     module = _module()
-    monkeypatch.setattr(module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json=ROTATE_RESPONSE),
         RuntimeError("must not retry"),
@@ -423,11 +421,11 @@ def test_webhooks_delete_requires_bodyless_204_and_matches_golden(
     [
         (
             "environment",
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry webhooks",
+            "Run solwyn login, then retry webhooks",
         ),
         (
             "keyring",
-            "Run solwyn logout, then solwyn login, and retry webhooks",
+            "Run solwyn login, then retry webhooks",
         ),
     ],
 )
@@ -438,7 +436,7 @@ def test_webhooks_commands_are_jwt_only_without_network(
     expected_hint: str,
 ) -> None:
     module = _module()
-    monkeypatch.setattr(module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(module, "resolve_credential", lambda **_: _key(source))
 
     result = runner.invoke(
         app,
@@ -465,7 +463,7 @@ def test_webhooks_commands_require_login_without_network(
     command: list[str],
 ) -> None:
     module = _module()
-    monkeypatch.setattr(module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(module, "resolve_credential", lambda **_: None)
 
     result = runner.invoke(
         app,
@@ -497,7 +495,7 @@ def test_webhooks_validate_local_identifiers_and_uri_before_auth(
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda: pytest.fail("must validate before auth"),
+        lambda **_: pytest.fail("must validate before auth"),
     )
 
     result = runner.invoke(app, ["--json", *args])
@@ -817,7 +815,7 @@ def test_webhook_mutations_use_real_client_bounded_429_retry(
     ("command", "status", "response_payload", "one_time_secret"),
     _MUTATION_CASES,
 )
-def test_webhook_mutations_use_real_client_reactive_jwt_refresh(
+def test_webhook_mutations_never_replay_after_401(
     monkeypatch: pytest.MonkeyPatch,
     command: list[str],
     status: int,
@@ -826,28 +824,16 @@ def test_webhook_mutations_use_real_client_reactive_jwt_refresh(
 ) -> None:
     module = _module()
     original = _jwt()
-    rotated = auth.JwtCredential(
-        access_token="rotated-webhook-access-token",
-        refresh_token="rotated-webhook-refresh-token",
-    )
     events: list[tuple[str, str | None]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        authorization = request.headers.get("Authorization")
-        events.append((f"{request.method} {request.url.path}", authorization))
-        if request.url.path == "/api/v1/auth/refresh":
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": rotated.bearer_value(),
-                    "refresh_token": rotated.refresh_value(),
-                    "token_type": "bearer",
-                },
+        events.append(
+            (
+                f"{request.method} {request.url.path}",
+                request.headers.get("Authorization"),
             )
-        if authorization == f"Bearer {ACCESS_TOKEN}":
-            return httpx.Response(401, json={"detail": "Expired access token."})
-        assert authorization == f"Bearer {rotated.bearer_value()}"
-        return _success_response(status, response_payload)
+        )
+        return httpx.Response(401, json={"detail": "Expired access token."})
 
     transport = httpx.MockTransport(handler)
 
@@ -858,26 +844,21 @@ def test_webhook_mutations_use_real_client_reactive_jwt_refresh(
             transport=transport,
         )
 
-    monkeypatch.setattr(module, "resolve_credential", lambda: original)
+    monkeypatch.setattr(module, "resolve_credential", lambda **_: original)
     monkeypatch.setattr(module, "SolwynClient", client_factory)
-    monkeypatch.setattr(auth, "store_jwt_pair", lambda *_args: rotated)
 
     result = runner.invoke(
         app,
         ["--json", "--project", PROJECT_ID, "webhooks", *command],
     )
 
-    assert result.exit_code == 0, result.stderr
+    assert result.exit_code == 3, result.stderr
+    assert len(events) == 1
     assert events[0][1] == f"Bearer {ACCESS_TOKEN}"
-    assert events[1] == ("POST /api/v1/auth/refresh", None)
-    assert events[2][1] == f"Bearer {rotated.bearer_value()}"
-    assert len(events) == 3
     rendered = result.stdout + result.stderr + repr(result.exception)
-    if one_time_secret is None:
-        assert SIGNING_SECRET not in rendered
-        assert ROTATED_SECRET not in rendered
-    else:
-        assert rendered.count(one_time_secret) == 1
+    assert SIGNING_SECRET not in rendered
+    assert ROTATED_SECRET not in rendered
+    assert ACCESS_TOKEN not in rendered
 
 
 @pytest.mark.parametrize(

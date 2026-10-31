@@ -14,6 +14,7 @@ from solwyn_cli.commands import budget_rules
 from solwyn_cli.main import app
 from solwyn_cli.errors import error_from_response
 from test_budget_set_command import BUDGET_RESPONSE, ROUTING, FakeClient
+from login_fixtures import login_credential
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -74,7 +75,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(
         budget_rules,
         "resolve_credential",
-        lambda: auth.JwtCredential(access_token="access", refresh_token="refresh"),
+        lambda **_: login_credential("access"),
     )
 
 
@@ -228,7 +229,7 @@ def test_preview_key_auth_and_draft_channels(monkeypatch, fmt):
     monkeypatch.setattr(
         budget_rules,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(
+        lambda **_: auth.ProjectKeyCredential(
             api_key="sk_proj_" + "a7" * 32, source="environment"
         ),
     )
@@ -447,7 +448,7 @@ def test_rule_mutations_reject_project_key_without_http(monkeypatch, action):
     monkeypatch.setattr(
         budget_rules,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(
+        lambda **_: auth.ProjectKeyCredential(
             api_key="sk_proj_" + "a7" * 32, source="environment"
         ),
     )

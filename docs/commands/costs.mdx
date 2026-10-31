@@ -6,8 +6,8 @@ title: Costs
 `--project` (or `SOLWYN_PROJECT_ID`) before `costs`. Project keys and user login
 both work. Use `--json` before `costs` for the `solwyn.costs.v1` envelope.
 
-Add `--account` to read one JWT-authenticated rollup across every active
-project. No project selection is required. Account output uses the
+Add `--account` to read one rollup across every active
+project with a Solwyn login. No project selection is required. Account output uses the
 `solwyn.account_costs.v1` envelope and defaults to `--group-by project`.
 
 ```sh
@@ -149,10 +149,10 @@ rewrite historical spend.
 MCP counterparts in both profiles are `list_cost_events`, `get_cost_baseline`,
 `get_unit_economics`, `get_cost_drift`, `list_priced_models` and `simulate_costs`.
 They share strict response/query models with the CLI. Simulation is a read-only
-POST. Both CLI and MCP may refresh JWT once and replay once after a definite
-401 rejection, and use one bounded rate-limit retry after a definite 429.
+POST. Both CLI and MCP treat a 401 as an authentication failure without replay,
+and use one bounded rate-limit retry after a definite 429.
 They never replay simulation after a 503 or transport failure. Retries share
-the existing client budget and MCP deadline. `get_costs` supports JWT account mode,
+the existing client budget and MCP deadline. `get_costs` supports login account mode,
 default project grouping, and only the account endpoint's supported filters;
 explicit project selectors are mutually exclusive with account mode. Paginated
 MCP events have bounded `all_pages` and preserve the first unread cursor on error.

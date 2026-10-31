@@ -12,6 +12,7 @@ from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 runner = CliRunner()
 BASE = "/api/v1/projects/proj%2Fone/notifications"
@@ -62,9 +63,7 @@ def api(monkeypatch):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token="synthetic-jwt", refresh_token="synthetic-refresh"
-        ),
+        lambda **_: login_credential("synthetic-jwt"),
     )
 
     def request(self, method, path, **kwargs):
@@ -165,7 +164,10 @@ def test_command_goldens(api, format, args, body, golden):
         (["--channel", "one", "--channel", "two"], {"channel_ids": ["one", "two"]}),
         (["--clear-channels"], {"channel_ids": []}),
         (["--all-events"], {"enabled_event_types": []}),
-        (["--event", "future_event"], {"enabled_event_types": ["future_event"]}),
+        (
+            ["--event", "provider_outage", "--event", "budget_exceeded"],
+            {"enabled_event_types": ["budget_exceeded", "provider_outage"]},
+        ),
         (["--severity", "critical"], {"severity_threshold": "critical"}),
         (
             ["--no-email", "--sms"],
@@ -188,7 +190,9 @@ def test_config_partial_update(api, flags, expected):
     [
         [],
         ["--channel", "one", "--clear-channels"],
-        ["--event", "x", "--all-events"],
+        ["--event", "budget_exceeded", "--all-events"],
+        # Core's NotificationEventType enum rejects unknown names; so does the CLI.
+        ["--event", "future_event"],
         ["--email", "--reset-email"],
         ["--sms", "--reset-sms"],
         ["--severity", "invalid"],
@@ -319,7 +323,7 @@ def test_jwt_only_routes_reject_project_keys(api, monkeypatch, args):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(
+        lambda **_: auth.ProjectKeyCredential(
             api_key="sk_proj_" + "ab" * 32, source="environment"
         ),
     )
@@ -342,7 +346,7 @@ def test_project_routes_allow_keys(api, monkeypatch, args):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(
+        lambda **_: auth.ProjectKeyCredential(
             api_key="sk_proj_" + "ab" * 32, source="environment"
         ),
     )
