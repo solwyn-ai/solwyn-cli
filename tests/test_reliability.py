@@ -3,14 +3,12 @@
 import json
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
-from pathlib import Path
 
 import anyio
 import httpx
 import pytest
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import account
@@ -176,55 +174,33 @@ def test_membership_revoked_does_not_refresh_or_suggest_relogin():
             client.request("GET", "/api/v1/account/me")
     assert len(requests) == 1
     assert failure.value.code == "account_membership_revoked"
-    assert "solwyn account recover" in failure.value.hint
+    assert failure.value.hint == (
+        "Create a personal account at https://app.solwyn.ai/no-account, "
+        "then run solwyn login."
+    )
 
 
-@pytest.mark.parametrize(
-    "payload,exit_code",
-    [
-        ({"account_id": "account_recovered"}, 0),
-        ({"account_id": "account_recovered", "unexpected": True}, 1),
-        ({}, 1),
-    ],
-)
-def test_account_recover_posts_jwt_and_parses_fail_closed(
-    monkeypatch, payload, exit_code
+@pytest.mark.parametrize("credential", ["login", "key", "none"])
+def test_account_recover_points_to_the_dashboard_without_a_request(
+    monkeypatch, credential
 ):
-    requests = []
-
-    def handler(request):
-        requests.append(request)
-        return httpx.Response(200, json=payload)
-
-    monkeypatch.setattr(account, "resolve_credential", lambda **_: JWT)
     monkeypatch.setattr(
         account,
-        "SolwynClient",
-        lambda **kwargs: SolwynClient(**kwargs, transport=httpx.MockTransport(handler)),
+        "resolve_credential",
+        lambda **_: {"login": JWT, "key": KEY, "none": None}[credential],
     )
-    result = CliRunner().invoke(app, ["--json", "account", "recover"])
-    assert result.exit_code == exit_code, result.exception
-    assert len(requests) == 1
-    assert requests[0].method == "POST"
-    assert requests[0].url.path == "/api/v1/accounts/me/personal"
-    assert requests[0].content == b""
-    assert requests[0].headers["authorization"] == "Bearer synthetic-access"
-    if exit_code == 0:
-        assert json.loads(result.stdout) == {
-            "schema": "solwyn.account.recover.v1",
-            **payload,
-        }
-        assert_matches_golden(result.stdout, Path("tests/golden/account-recover.json"))
-
-
-def test_account_recover_rejects_project_key_before_request(monkeypatch):
-    monkeypatch.setattr(account, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(
         account, "SolwynClient", lambda **kwargs: pytest.fail("no request")
     )
     result = CliRunner().invoke(app, ["--json", "account", "recover"])
-    assert result.exit_code == 3
-    assert "Run solwyn login" in json.loads(result.stderr)["hint"]
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "account_recover_moved"
+    assert error["message"] == (
+        "Create a personal account in the dashboard at "
+        "https://app.solwyn.ai/no-account, then run solwyn login."
+    )
 
 
 def test_simulation_fallback_matches_core_pricing():

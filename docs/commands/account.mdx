@@ -18,8 +18,8 @@ user's state: none, pending, verified or verified_with_pending_change; verified
 and pending numbers, verification/resend timestamps, and SMS consent/disclosure
 state. Verified phone and SMS consent are prerequisites for SMS notifications.
 Absent timestamps remain null. Verification and consent changes stay in the
-dashboard. MCP provides `get_account_phone` in both profiles. Account recovery
-remains CLI-only.
+dashboard. MCP provides `get_account_phone` in both profiles. Personal-account
+recovery happens in the dashboard.
 
 ## Rename the current account
 
@@ -50,10 +50,9 @@ solwyn account recover
 solwyn --json account recover
 ```
 
-`account recover` requires a Solwyn login but does not require an active
-membership. It idempotently creates a personal account after membership removal, or returns
-the existing account when one is active. The POST goes to
-`/api/v1/accounts/me/personal`; `solwyn.account.recover.v1` returns `account_id`.
-The command stays CLI-only. There is no project-key fallback. Exit codes are 0
-success, 1 API/invalid response, 2 usage and 3 auth. Core maps a missing user to 401, so there is no not-found
-exit for this route.
+After you are removed from every account, create a personal account in the
+dashboard at https://app.solwyn.ai/no-account, then run `solwyn login`. A login
+belongs to one account, so the old login stops working once the membership is
+gone. `account recover` stays as a pointer: it makes no request and exits 2 with
+`account_recover_moved` and that next step. Requests that fail with
+`account_membership_revoked` carry the same hint.

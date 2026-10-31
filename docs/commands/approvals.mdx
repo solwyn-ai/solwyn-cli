@@ -39,8 +39,13 @@ Every outcome other than success exits 6, and nothing else is sent:
 | `approval_limit_reached` | Five approvals are already pending for this login. |
 
 The global `--approval ID` option attaches an approval to the first change
-request of that invocation. Approvals are single use and expire 5 minutes after
-you approve them. If the change then fails on the server (a validation error,
+request of that invocation. Read-only requests such as `plan change`'s estimate
+are skipped, so the approval reaches the change itself. When a wait ends first,
+the CLI keeps that exact request (method, URL and body, including generated
+values such as checkout request IDs and relative snooze times) in the OS
+keychain. Running the same command with `--approval ID` re-sends those bytes, so
+the approval still matches; a different command builds its own request.
+Approvals are single use and expire 5 minutes after you approve them. If the change then fails on the server (a validation error,
 for example), the approval is spent; the error says so, and you run the command
 again for a new one. MCP tools never wait: a tool that needs an approval returns
 an error with the approval URL for a human to open.

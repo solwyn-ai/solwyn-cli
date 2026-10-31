@@ -1148,3 +1148,128 @@ def test_init_run_cap_auth_failure_reports_created_project(
     assert not config_module.get_config_path().exists()
     for secret in (CREATED_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
         assert secret not in result.stdout + result.stderr + repr(result.exception)
+
+
+# Review item 3: onboarding honors SOLWYN_AUTH and the login-first class.
+
+
+def test_solwyn_auth_project_key_never_starts_a_browser_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(
+        init_module,
+        "device_login",
+        lambda context, **kwargs: pytest.fail(
+            "SOLWYN_AUTH=project_key must not log in"
+        ),
+    )
+
+    result = runner.invoke(app, ["--json", "init"], env={"SOLWYN_AUTH": "project_key"})
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["code"] == "authentication_required"
+    assert "SOLWYN_API_KEY" in error["hint"]
+    assert FakeClient.instances == []
+
+
+def test_solwyn_auth_project_key_in_a_terminal_only_asks_for_a_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    labels: list[str] = []
+
+    def prompt(label: str, **kwargs: object) -> str:
+        labels.append(label)
+        return VALID_KEY
+
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(init_module.typer, "prompt", prompt)
+    monkeypatch.setattr(
+        init_module, "authenticate_with_project_key", lambda value: _key()
+    )
+    monkeypatch.setattr(
+        init_module,
+        "device_login",
+        lambda context, **kwargs: pytest.fail(
+            "SOLWYN_AUTH=project_key must not log in"
+        ),
+    )
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "proj_alpha", "init"],
+        env={"SOLWYN_AUTH": "project_key"},
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert labels == ["Project key"]
+
+
+def test_solwyn_auth_login_in_a_terminal_never_offers_a_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logins: list[dict[str, object]] = []
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(
+        init_module.typer,
+        "prompt",
+        lambda label, **kwargs: "key" if "method" in label else VALID_KEY,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "authenticate_with_project_key",
+        lambda value: pytest.fail("SOLWYN_AUTH=login must not store a key"),
+    )
+    monkeypatch.setattr(
+        init_module,
+        "device_login",
+        lambda context, **kwargs: logins.append(kwargs) or _jwt(),
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=[PROJECT]),
+        httpx.Response(200, json=BUDGET),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"], env={"SOLWYN_AUTH": "login"})
+
+    assert result.exit_code == 0, result.stderr
+    assert logins == [{"continue_command": INIT_CONTINUE}]
+
+
+def test_project_created_with_a_login_keeps_using_the_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    prompt_values = iter(["Created project", 100.0])
+    monkeypatch.setattr(
+        init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
+    )
+    monkeypatch.setattr(
+        init_module,
+        "store_project_key",
+        lambda value: auth.ProjectKeyCredential(api_key=value, source="keyring"),
+    )
+    created = {
+        **PROJECT,
+        "name": "Created project",
+        "key": CREATED_KEY,
+        "key_prefix": CREATED_KEY[:24],
+        "scope": "full",
+    }
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=created),
+        httpx.Response(200, json=BUDGET),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"], env={"SOLWYN_AUTH": "login"})
+
+    assert result.exit_code == 0, result.stderr
+    verification = FakeClient.instances[-1]
+    assert isinstance(verification.credential, auth.LoginCredential)

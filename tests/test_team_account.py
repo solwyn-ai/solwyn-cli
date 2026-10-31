@@ -11,7 +11,15 @@ from solwyn_cli.commands import _team, invite
 import pytest
 from typer.testing import CliRunner
 from solwyn_cli.main import app
-from login_fixtures import login_credential
+from login_fixtures import (
+    APPROVAL_ID,
+    APPROVAL_URL,
+    approval_body,
+    approval_invalid,
+    approval_required,
+    fake_keychain,
+    login_credential,
+)
 
 runner = CliRunner()
 
@@ -872,3 +880,63 @@ def test_invite_accept_is_retired_without_reading_token_or_credentials(
     )
     assert not mock_team[1]
     assert_private(result)
+
+
+# Review item 6: approval outcomes pass through the team/account adapter.
+
+
+def _rename(*options):
+    return runner.invoke(
+        app, ["--json", *options, "account", "rename", "New Team", "--yes"]
+    )
+
+
+def test_rename_mismatched_approval_keeps_its_code_and_exits_six(
+    mock_team, monkeypatch
+):
+    fake_keychain(monkeypatch)
+    mock_team[0].extend([ok(ACCOUNT), approval_invalid("mismatch")])
+    result = _rename("--approval", APPROVAL_ID)
+    assert result.exit_code == 6, result.output
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "approval_invalid"
+    assert error["message"] == "The request changed since it was approved."
+
+
+def test_rename_approval_limit_keeps_its_code_and_exits_six(mock_team, monkeypatch):
+    fake_keychain(monkeypatch)
+    mock_team[0].extend(
+        [
+            ok(ACCOUNT),
+            httpx.Response(
+                429,
+                json={
+                    "detail": {
+                        "code": "approval_limit_reached",
+                        "message": "Too many pending approvals.",
+                    }
+                },
+            ),
+        ]
+    )
+    result = _rename()
+    assert result.exit_code == 6, result.output
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["code"] == "approval_limit_reached"
+    )
+
+
+def test_rename_pending_approval_keeps_the_continuation_and_exits_six(
+    mock_team, monkeypatch
+):
+    fake_keychain(monkeypatch)
+    mock_team[0].extend(
+        [ok(ACCOUNT), approval_required(), ok(approval_body("pending"))]
+    )
+    result = _rename("--approval-wait", "0")
+    assert result.exit_code == 6, result.output
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "approval_pending"
+    assert f"--approval {APPROVAL_ID}" in error["message"]
+    assert error["detail"]["approval_id"] == APPROVAL_ID
+    assert error["detail"]["approval_url"] == APPROVAL_URL

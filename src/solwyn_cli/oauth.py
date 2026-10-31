@@ -58,7 +58,7 @@ class DeviceAuthorization(_SafeUrlModel):
     verification_uri: str
     verification_uri_complete: str
     expires_in: int = Field(gt=0, le=3600)
-    interval: int = Field(default=5, ge=1, le=60)
+    interval: int = Field(default=5, ge=1)
 
     @field_validator("device_code")
     @classmethod

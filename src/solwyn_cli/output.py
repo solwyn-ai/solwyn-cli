@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import ApiError, redact_secrets
 
 
 _COMMAND_SCHEMA = re.compile(
@@ -133,12 +133,12 @@ def _json_value(value: object) -> Any:
 
 
 def _terminal_safe(value: object) -> str:
-    """Neutralize terminal control characters in caller-provided human text."""
+    """Neutralize control characters and redact CLI tokens in human text."""
     return "".join(
         "\N{REPLACEMENT CHARACTER}"
         if ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
         else character
-        for character in str(value)
+        for character in redact_secrets(str(value))
     )
 
 
@@ -213,7 +213,7 @@ class OutputEngine:
         """Write one schema-bearing JSON object or its explicit human table."""
         if _COMMAND_SCHEMA.fullmatch(schema) is None:
             raise OutputUsageError("Invalid command schema.")
-        payload = _success_data(data)
+        payload = redact_secrets(_success_data(data))
         if self.output_format is OutputFormat.JSON:
             self._write_json({"schema": schema, **payload}, error=False)
             return
@@ -252,13 +252,15 @@ class OutputEngine:
 
     def write_error(self, error: ApiError | OutputError) -> None:
         """Write a stable machine envelope or a detail-free human error."""
-        payload = {
-            "schema": "solwyn.error.v1",
-            "code": error.code,
-            "message": error.message,
-            "hint": error.hint,
-            "detail": error.detail,
-        }
+        payload = redact_secrets(
+            {
+                "schema": "solwyn.error.v1",
+                "code": error.code,
+                "message": error.message,
+                "hint": error.hint,
+                "detail": error.detail,
+            }
+        )
         if self.output_format is OutputFormat.JSON:
             self._write_json(payload, error=True)
             return

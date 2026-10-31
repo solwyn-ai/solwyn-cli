@@ -238,7 +238,7 @@
     {
       "hidden": false,
       "is_group": false,
-      "json_schema": "solwyn.account.recover.v1",
+      "json_schema": "solwyn.error.v1",
       "name": "recover",
       "output_kind": "json-envelope",
       "params": [],
@@ -246,7 +246,7 @@
         "account",
         "recover"
       ],
-      "summary": "Recover a personal account after membership removal."
+      "summary": "Moved: create a personal account in the dashboard after removal."
     },
     {
       "hidden": false,
@@ -7707,15 +7707,6 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.account.phone.v1",
-      "universal_error_envelope": false
-    },
-    {
-      "keys": [
-        "account_id",
-        "schema"
-      ],
-      "optional_keys": [],
-      "schema": "solwyn.account.recover.v1",
       "universal_error_envelope": false
     },
     {

@@ -82,7 +82,7 @@ Usage: solwyn tags retire [OPTIONS] KEY
 ```text
 Endpoint: DELETE /api/v1/account/tags
 Auth: login admin/owner
-Exit codes: 0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered
+Exit codes: 0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.tags.v1
 Retirement frees an active key slot; later ingest may reactivate the key. Available on every tier.
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.

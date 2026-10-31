@@ -24,7 +24,7 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import ApiError, redact_secrets
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.oauth import (
@@ -76,9 +76,14 @@ APPROVAL_NOTE = (
     "Raising a cap, changing enforcement mode, pausing rules, keys, billing and team "
     "changes need your approval in the browser each time."
 )
+CLI_LOGINS_URL = "https://app.solwyn.ai/settings/cli"
+UNSTORED_LOGIN_HINT = (
+    "The new login could not be revoked and is still active. "
+    f"Revoke it at {CLI_LOGINS_URL}."
+)
 REVOKE_FAILED_NOTE = (
     "The login could not be revoked on the server. Revoke it in the dashboard under "
-    "Settings, CLI logins."
+    f"Settings, CLI logins ({CLI_LOGINS_URL})."
 )
 
 # Injectable for tests; production waits on the wall clock.
@@ -104,7 +109,7 @@ class _LoginData(BaseModel):
 
 
 def _note(text: str) -> None:
-    typer.echo(text, err=True)
+    typer.echo(redact_secrets(text), err=True)
 
 
 def default_label() -> str:
@@ -268,7 +273,8 @@ def _poll(
             if error.error == "authorization_pending":
                 continue
             if error.error == "slow_down":
-                interval = min(interval + 5, 60)
+                # RFC 8628 section 3.5: every slow_down adds 5 seconds.
+                interval += 5
                 pending = pending.model_copy(update={"interval": interval})
                 try:
                     auth.store_pending_device(pending)
@@ -359,8 +365,13 @@ def device_login(
         return auth.store_login(token.access_token.get_secret_value(), meta)
     except CredentialStorageError as error:
         # The server issued a credential we cannot keep; do not leave it live.
-        revoke_token(api_url, token.access_token.get_secret_value())
-        _fail(context, "credential_storage_failed", str(error))
+        revoked = revoke_token(api_url, token.access_token.get_secret_value())
+        _fail(
+            context,
+            "credential_storage_failed",
+            str(error),
+            None if revoked else UNSTORED_LOGIN_HINT,
+        )
 
 
 def _login_data(credential: LoginCredential | None) -> _LoginData:

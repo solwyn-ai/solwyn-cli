@@ -380,3 +380,47 @@ def test_unsafe_approval_urls_are_never_printed(url: str) -> None:
 
     assert url not in json.dumps(exc_info.value.detail)
     assert exc_info.value.hint is None
+
+
+def test_explicit_approval_retry_that_fails_in_the_handler_says_it_was_spent() -> None:
+    # Review item 9: the --approval path gets the same hint as the hand-off.
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Solwyn-Approval"] == APPROVAL_ID
+        return httpx.Response(
+            422, json={"detail": {"code": "validation_error", "message": "Bad."}}
+        )
+
+    with pytest.raises(ApiError) as exc_info:
+        _run(handle, approval_id=APPROVAL_ID)  # type: ignore[arg-type]
+
+    assert exc_info.value.status_code == 422
+    assert (exc_info.value.hint or "").endswith(APPROVAL_USED_HINT)
+
+
+def test_handoff_prompt_redacts_tokens_in_server_text() -> None:
+    leaked = "solwyn_cli_" + "9a" * 32
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if "/cli/approvals/" in request.url.path:
+            return httpx.Response(
+                200, json=_approval("pending", title=f"Change {leaked}")
+            )
+        return _approval_required()
+
+    written: list[str] = []
+    clock = FakeClock()
+    with (
+        approval_settings(ApprovalSettings(wait_seconds=0, write=written.append)),
+        SolwynClient(
+            api_url=API_URL,
+            credential=login_credential(),
+            transport=httpx.MockTransport(handle),
+            sleeper=clock.sleep,
+            clock=clock.now,
+        ) as client,
+    ):
+        with pytest.raises(ApiError):
+            client.request("PUT", BUDGET_PATH, json={})
+
+    assert "Change [REDACTED]" in "".join(written)
+    assert leaked not in "".join(written)

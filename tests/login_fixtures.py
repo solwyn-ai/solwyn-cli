@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 from pydantic import SecretStr
 
 from solwyn_cli import auth
@@ -53,3 +54,70 @@ def login_entries(token: str = LOGIN_TOKEN, **meta: Any) -> dict[str, str]:
 def expired_login_entries(token: str = LOGIN_TOKEN) -> dict[str, str]:
     """Return keychain entries for a login that expired a day ago."""
     return login_entries(token, expires_at=datetime.now(UTC) - timedelta(days=1))
+
+
+APPROVAL_ID = "0b7d2c4e-0000-4000-8000-0000000000aa"
+APPROVAL_URL = f"https://app.solwyn.ai/approve/{APPROVAL_ID}"
+
+
+def approval_body(status: str, approval_id: str = APPROVAL_ID) -> dict[str, Any]:
+    """Return a GET /cli/approvals/{id} body far from expiry."""
+    return {
+        "id": approval_id,
+        "status": status,
+        "action": "test.change",
+        "title": "Synthetic change",
+        "reasons": ["step_up_required"],
+        "changes": [],
+        "created_at": "2099-01-01T00:00:00Z",
+        "expires_at": "2099-01-01T00:10:00Z",
+    }
+
+
+def approval_required(approval_id: str = APPROVAL_ID) -> httpx.Response:
+    """Return the gate's 403 approval_required answer."""
+    return httpx.Response(
+        403,
+        json={
+            "detail": {
+                "code": "approval_required",
+                "message": "This change needs your approval in the browser.",
+                "approval_id": approval_id,
+                "approval_url": APPROVAL_URL,
+                "expires_at": "2099-01-01T00:10:00Z",
+                "action": "test.change",
+                "reasons": ["step_up_required"],
+            }
+        },
+    )
+
+
+def approval_invalid(reason: str) -> httpx.Response:
+    """Return the gate's 403 approval_invalid answer."""
+    return httpx.Response(
+        403,
+        json={
+            "detail": {
+                "code": "approval_invalid",
+                "message": "Approval rejected.",
+                "reason": reason,
+            }
+        },
+    )
+
+
+def fake_keychain(monkeypatch: Any) -> dict[str, str]:
+    """Replace the OS keychain with a dict for one test."""
+    values: dict[str, str] = {}
+    monkeypatch.setattr(
+        auth.keyring, "get_password", lambda service, name: values.get(name)
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "set_password",
+        lambda service, name, value: values.__setitem__(name, value),
+    )
+    monkeypatch.setattr(
+        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
+    )
+    return values

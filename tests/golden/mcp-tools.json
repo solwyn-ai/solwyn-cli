@@ -2992,7 +2992,7 @@
         },
         "MediaUsage": {
           "additionalProperties": false,
-          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call — never zero, which\nwould claim the call billed none of it.",
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
           "properties": {
             "image_count": {
               "anyOf": [
@@ -10721,7 +10721,7 @@
         },
         "MediaUsage": {
           "additionalProperties": false,
-          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call — never zero, which\nwould claim the call billed none of it.",
+          "description": "Non-text billing quantities the API prices a media call from.\n\nA quantity is null when it is unobservable for the call \u2014 never zero, which\nwould claim the call billed none of it.",
           "properties": {
             "image_count": {
               "anyOf": [

@@ -60,7 +60,7 @@ Usage: solwyn notifications set [OPTIONS]
 ```text
 Endpoint: PUT /api/v1/projects/{project}/notifications
 Auth: any; full-scope key for writes
-Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.notifications.v1
 Omitted options leave settings unchanged. Clear channel/event lists with []; reset email/SMS configs with null.
 Channel enablement follows Core capabilities; SMS requires Production, verified phone and consent.
@@ -97,7 +97,7 @@ Usage: solwyn notifications test [OPTIONS] CHANNEL:{slack|pagerduty|sms|email}
 ```text
 Endpoint: POST /api/v1/projects/{project}/notifications/test-{channel}
 Auth: any; Slack/PagerDuty require a login or full-scope key; email requires a login
-Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.notifications.test.v1
 SMS checks eligibility only (no message sent). Slack, PagerDuty and email send a real test. Slack/PagerDuty require --secret-stdin or SOLWYN_CHANNEL_SECRET; use channels test ID for stored credentials.
 Core enforces per-channel capabilities; SMS is Production+ and requires phone verification and consent.

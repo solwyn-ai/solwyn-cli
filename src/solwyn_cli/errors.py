@@ -1,5 +1,6 @@
 """Safe typed errors for HTTP and API failures."""
 
+import re
 import unicodedata
 from typing import Any, Literal, TypeAlias
 from urllib.parse import urlsplit
@@ -9,6 +10,24 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 RawDetail: TypeAlias = str | dict[str, Any]
+
+# Spec section 4: CLI credentials and device codes never reach any output.
+_SECRET_TOKEN = re.compile(r"\bsolwyn_(?:cli|dc)_[0-9a-f]{64}\b")
+REDACTED = "[REDACTED]"
+
+
+def redact_secrets(value: Any) -> Any:
+    """Replace CLI tokens and device codes anywhere inside a JSON-like value."""
+    if isinstance(value, str):
+        return _SECRET_TOKEN.sub(REDACTED, value)
+    if isinstance(value, dict):
+        return {
+            redact_secrets(key): redact_secrets(item) for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_secrets(item) for item in value]
+    return value
+
 
 SERVICE_BUSY_HINT = "Service is busy; retry in a moment."
 WRITE_BUSY_HINT = (
@@ -35,7 +54,10 @@ _INGEST_UNACCEPTED_DETAILS = frozenset(
         "Accounting maintenance is in progress; retry the batch.",
     }
 )
-MEMBERSHIP_RECOVERY_HINT = "Run solwyn account recover to recover a personal account."
+NO_ACCOUNT_URL = "https://app.solwyn.ai/no-account"
+MEMBERSHIP_RECOVERY_HINT = (
+    f"Create a personal account at {NO_ACCOUNT_URL}, then run solwyn login."
+)
 CLI_CREDENTIAL_HINTS = {
     "cli_credential_invalid": "Your Solwyn login is not valid. Run solwyn login.",
     "cli_credential_expired": "Your Solwyn login expired. Run solwyn login.",

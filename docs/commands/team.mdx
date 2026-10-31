@@ -38,9 +38,9 @@ revokes project keys they created in this account. `team leave` resolves the act
 logged-in user's identity, never a supplied user ID. The last owner cannot leave (409).
 Keep the membership and contact support about ownership; role changes cannot
 create another owner. `solwyn.team.remove.v1` acknowledges the confirmed removal and marks
-`self_leave`. After leaving, log in again; deliberately use `account recover` if
-you need a personal account. The CLI does not clear unrelated credentials or
-recover automatically.
+`self_leave`. After leaving, create a personal account in the dashboard at
+https://app.solwyn.ai/no-account if you need one, then run `solwyn login`. The
+CLI does not clear unrelated credentials or recover automatically.
 
 Owners/admins can list, send, resend and revoke invitations. Lists
 (`solwyn.team.invites.v1`, `invitations`) preserve Core's newest-first order, include

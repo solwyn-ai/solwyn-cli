@@ -197,7 +197,7 @@ price/currency units (integer cents and string decimal cents) and nullable
 prices/overage. `plan_status` includes subscription lifecycle and capabilities.
 All 17 new tools are read-only, non-destructive and idempotent in both profiles;
 the four existing guardrails mutations are unchanged. Billing, team and member
-writes and account recovery remain CLI-only.
+writes remain CLI-only; personal-account recovery is in the dashboard.
 
 ## Subscription preview
 

@@ -34,7 +34,7 @@ for a browser [approval](approvals.mdx) and exit 6 when it is not given.
 - [Identity](whoami.mdx)
 
 For account settings, see [account rename](account.mdx#rename-the-current-account).
-After membership removal, see [personal-account recovery](account.mdx#recover-a-personal-account).
+After membership removal, see [personal-account recovery](account.mdx#recover-a-personal-account) (in the dashboard).
 
 For caller-owned spend, see [the metering reference](../caller-owned-spend.md).
 For MCP, see [the quickstart](../mcp-quickstart.md).

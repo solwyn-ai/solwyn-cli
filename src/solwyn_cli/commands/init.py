@@ -14,6 +14,7 @@ from solwyn_cli._vendor.wire import ProjectCreateRequest
 from solwyn_cli.artifacts import ArtifactRecoveryError, write_agent_artifacts
 from solwyn_cli.auth import (
     AuthError,
+    auth_selection,
     CredentialStorageError,
     LoginCredential,
     ProjectKeyCredential,
@@ -132,7 +133,23 @@ _INIT_CONTINUE = "solwyn login --continue, then run solwyn init again"
 
 
 def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
-    if not _stdin_is_tty():
+    try:
+        selection = auth_selection()
+    except ValueError:
+        selection = None
+    if selection == "project_key":
+        if not _stdin_is_tty():
+            exit_with_error(
+                context,
+                OutputError(
+                    code="authentication_required",
+                    message="SOLWYN_AUTH=project_key needs a project key.",
+                    hint="Set SOLWYN_API_KEY, or pipe a key to solwyn login --with-key.",
+                ),
+                semantic=ErrorSemantic.AUTH,
+            )
+        return _prompt_for_key(context)
+    if selection == "login" or not _stdin_is_tty():
         return device_login(context, continue_command=_INIT_CONTINUE)
 
     method = (
@@ -155,26 +172,29 @@ def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
         )
 
     if method == "key":
-        project_key = typer.prompt("Project key", hide_input=True, err=True)
-        try:
-            return authenticate_with_project_key(project_key)
-        except CredentialStorageError as error:
-            exit_with_error(
-                context,
-                OutputError(code="credential_storage_failed", message=str(error)),
-                semantic=ErrorSemantic.AUTH,
-            )
-        except AuthError:
-            exit_with_error(
-                context,
-                OutputError(
-                    code="invalid_project_key",
-                    message="The project key is empty or malformed.",
-                ),
-                semantic=ErrorSemantic.AUTH,
-            )
-
+        return _prompt_for_key(context)
     return device_login(context, continue_command=_INIT_CONTINUE)
+
+
+def _prompt_for_key(context: typer.Context) -> ResolvedCredential:
+    project_key = typer.prompt("Project key", hide_input=True, err=True)
+    try:
+        return authenticate_with_project_key(project_key)
+    except CredentialStorageError as error:
+        exit_with_error(
+            context,
+            OutputError(code="credential_storage_failed", message=str(error)),
+            semantic=ErrorSemantic.AUTH,
+        )
+    except AuthError:
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_project_key",
+                message="The project key is empty or malformed.",
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
 
 
 def _resolve_auth(context: typer.Context) -> ResolvedCredential:
@@ -303,8 +323,9 @@ def _resolve_login_project(
                     semantic=ErrorSemantic.USAGE,
                 )
             if not projects:
-                project_id, stored = _create_project(context, client, run_cap)
-                return project_id, stored or client.current_credential
+                # The new key is stored for the SDK; init keeps using the login.
+                project_id, _ = _create_project(context, client, run_cap)
+                return project_id, client.current_credential
 
             project_ids = ", ".join(project.id for project in projects)
             selection = typer.prompt(
@@ -312,8 +333,9 @@ def _resolve_login_project(
                 err=True,
             ).strip()
             if selection == "create":
-                project_id, stored = _create_project(context, client, run_cap)
-                return project_id, stored or client.current_credential
+                # The new key is stored for the SDK; init keeps using the login.
+                project_id, _ = _create_project(context, client, run_cap)
+                return project_id, client.current_credential
             if selection not in by_id:
                 exit_with_error(
                     context,

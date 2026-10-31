@@ -20,8 +20,13 @@ from solwyn_cli.auth import (
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.whoami import _AccountSelf, _Identity
-from solwyn_cli.errors import ApiError
-from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.errors import (
+    APPROVAL_INVALID_MESSAGES,
+    MEMBERSHIP_RECOVERY_HINT,
+    ApiError,
+    approval_url_from,
+)
+from solwyn_cli.exit_codes import APPROVAL_ERROR_CODES, ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
@@ -193,8 +198,37 @@ _TEAM_HINTS = {
     "invitation_resend_unavailable": "This invitation cannot be resent. Inspect the dashboard before creating a replacement.",
     "cannot_invite_self": "Choose another recipient; inspect solwyn whoami for your identity.",
     "auth_capacity_exceeded": "Authentication is busy; retry in a moment. No invitation acceptance occurred for this capacity rejection.",
-    "account_membership_revoked": "Run solwyn login, then solwyn account recover if you need a personal account.",
+    "account_membership_revoked": MEMBERSHIP_RECOVERY_HINT,
 }
+
+
+_APPROVAL_MESSAGES = {
+    "approval_required": "This change needs your approval in the browser.",
+    "approval_limit_reached": "Too many approvals are pending for this login.",
+    "approval_invalid": "The approval could not be used.",
+}
+_APPROVAL_DETAIL_KEYS = ("approval_id", "approval_url", "expires_at", "reason")
+
+
+def safe_approval_error(error: ApiError) -> OutputError:
+    """Keep an approval outcome's code, continuation and exit 6, nothing else."""
+    detail = error.detail if isinstance(error.detail, dict) else {}
+    kept = {
+        key: detail[key]
+        for key in _APPROVAL_DETAIL_KEYS
+        if isinstance(detail.get(key), str) and len(detail[key]) <= 2048
+    }
+    if "approval_url" in kept and approval_url_from(kept) is None:
+        del kept["approval_url"]
+    reason = kept.get("reason")
+    message = (
+        APPROVAL_INVALID_MESSAGES.get(reason or "", _APPROVAL_MESSAGES[error.code])
+        if error.code == "approval_invalid"
+        else _APPROVAL_MESSAGES.get(error.code, error.message)
+    )
+    return OutputError(
+        code=error.code, message=message, hint=error.hint, detail=kept or None
+    )
 
 
 def safe_api_error(
@@ -208,6 +242,8 @@ def safe_api_error(
 ):
     # Team/invitation endpoints can reflect validation inputs or arbitrary error
     # bodies. Expose only fixed codes, status, and local guidance.
+    if error.code in APPROVAL_ERROR_CODES:
+        exit_with_error(context, safe_approval_error(error))
     code = (
         error.code
         if error.code in _TEAM_HINTS

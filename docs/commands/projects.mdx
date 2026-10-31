@@ -57,7 +57,7 @@ Usage: solwyn projects create [OPTIONS]
 ```text
 Endpoint: POST /api/v1/projects
 Auth: login
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-create.v1
 The new project key is shown exactly once or stored directly in the OS keychain.
 ```
@@ -78,7 +78,7 @@ Usage: solwyn projects delete [OPTIONS] PROJECT_ID
 ```text
 Endpoint: DELETE /api/v1/projects/{id}
 Auth: login (owner or admin)
-Exit codes: 0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-delete.v1 (CLI output after bodyless 204)
 Irreversible: archives the project, revokes every project key in the same transaction, and the project immediately becomes unavailable.
 Pass --yes; an interactive terminal must also type the exact project name.
@@ -115,7 +115,7 @@ Usage: solwyn projects rename [OPTIONS] PROJECT_ID
 ```text
 Endpoint: PUT /api/v1/projects/{id}
 Auth: login (owner or admin)
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-rename.v1
 ```
 

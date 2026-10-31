@@ -126,7 +126,7 @@ Usage: solwyn runs stop [OPTIONS] RUN
 ```text
 Endpoint: optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop
 Auth: login + budget.write
-Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.runs.stop.v1
 Stops future checks and lease renewals; in-flight requests finish.
 Auto-grouped explorer runs are not stoppable.

@@ -732,3 +732,55 @@ def test_invite_accept_is_retired(keychain: dict[str, str]) -> None:
     assert error["message"] == (
         "Accept the invitation from the link in your email, then run solwyn login."
     )
+
+
+def test_failed_cleanup_revoke_tells_the_user_to_revoke_in_the_dashboard(
+    keychain: dict[str, str],
+    clock: FakeClock,
+    server: Callable[..., OAuthServer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review item 7: a live, unstored credential must not be silent.
+    server(httpx.Response(200, json=TOKEN))
+    requests = _revocation(monkeypatch, lambda request: httpx.Response(503))
+
+    def store_login(token: str, meta: auth.LoginMetadata) -> auth.LoginCredential:
+        raise auth.CredentialStorageError(
+            "Could not update credentials in the operating-system keychain."
+        )
+
+    monkeypatch.setattr(auth, "store_login", store_login)
+
+    result = runner.invoke(app, ["--json", "login"])
+
+    assert result.exit_code == 3
+    assert len(requests) == 1
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "credential_storage_failed"
+    assert "https://app.solwyn.ai/settings/cli" in (error["hint"] or "")
+    assert ISSUED_TOKEN not in result.stdout + result.stderr
+
+
+def test_slow_down_keeps_adding_five_seconds_past_sixty(
+    keychain: dict[str, str],
+    clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review item 8: RFC 8628 section 3.5 has no ceiling.
+    answers = [_oauth_error("slow_down"), httpx.Response(200, json=TOKEN)]
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/device_authorization":
+            return httpx.Response(200, json={**DEVICE_AUTHORIZATION, "interval": 60})
+        return answers.pop(0)
+
+    monkeypatch.setattr(
+        login_module,
+        "SolwynClient",
+        functools.partial(SolwynClient, transport=httpx.MockTransport(handle)),
+    )
+
+    result = runner.invoke(app, ["--json", "login", "--wait", "600"])
+
+    assert result.exit_code == 0, result.stderr
+    assert clock.sleeps == [60, 65]

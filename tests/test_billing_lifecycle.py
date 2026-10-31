@@ -13,7 +13,13 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import plan
 from solwyn_cli.main import app
 from test_plan_command import BILLING_STATUS
-from login_fixtures import login_credential
+from login_fixtures import (
+    APPROVAL_ID,
+    approval_body,
+    approval_required,
+    fake_keychain,
+    login_credential,
+)
 
 runner = CliRunner()
 JWT = login_credential("synthetic-access")
@@ -410,4 +416,92 @@ def test_new_billing_json_golden_contract(billing, args, payload, name, needs_st
     assert result.exit_code == 0, result.output
     assert_matches_golden(
         result.stdout, Path(__file__).parent / "golden" / f"plan-{name}.json"
+    )
+
+
+# Review items 4 and 5: approvals bind the real mutation and survive a retry.
+
+
+@pytest.fixture
+def recorded(monkeypatch):
+    queue: list[httpx.Response] = []
+    sent: list[httpx.Request] = []
+
+    def handler(request):
+        sent.append(request)
+        return queue.pop(0)
+
+    monkeypatch.setattr(plan, "resolve_credential", lambda **_: JWT)
+    monkeypatch.setattr(plan, "_is_interactive", lambda: False, raising=False)
+    monkeypatch.setattr(
+        plan,
+        "SolwynClient",
+        lambda **kwargs: SolwynClient(
+            **kwargs, transport=httpx.MockTransport(handler), sleeper=lambda _: None
+        ),
+    )
+    fake_keychain(monkeypatch)
+    return queue, sent
+
+
+def test_approval_option_attaches_to_the_plan_change_not_the_preview(recorded):
+    queue, sent = recorded
+    queue.extend(
+        [
+            httpx.Response(200, json=PREVIEW),
+            httpx.Response(
+                200,
+                json={
+                    "mode": "immediate",
+                    "status": "active",
+                    "proration_date": None,
+                    "effective_at": None,
+                },
+            ),
+        ]
+    )
+
+    result = runner.invoke(
+        app,
+        ["--json", "--approval", APPROVAL_ID, "plan", "change"]
+        + ["--tier", "scale", "--interval", "year", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [(r.url.path, r.headers.get("Solwyn-Approval")) for r in sent] == [
+        ("/api/v1/billing/plan-preview", None),
+        ("/api/v1/billing/plan-change", APPROVAL_ID),
+    ]
+
+
+def test_upgrade_retry_with_approval_resends_the_same_generated_body(recorded):
+    queue, sent = recorded
+    arguments = ["plan", "upgrade", "--tier", "team", "--interval", "year"]
+    arguments += ["--yes", "--no-browser"]
+    queue.extend(
+        [approval_required(), httpx.Response(200, json=approval_body("pending"))]
+    )
+
+    waited = runner.invoke(app, ["--json", "--approval-wait", "0", *arguments])
+
+    assert waited.exit_code == 6, waited.output
+    assert json.loads(waited.stderr.splitlines()[-1])["code"] == "approval_pending"
+    first = sent[0]
+    queue.append(
+        httpx.Response(
+            200, json={"checkout_url": "https://checkout.stripe.com/c/pay/synthetic"}
+        )
+    )
+
+    retried = runner.invoke(app, ["--json", "--approval", APPROVAL_ID, *arguments])
+
+    assert retried.exit_code == 0, retried.output
+    retry = sent[-1]
+    assert retry.headers["Solwyn-Approval"] == APPROVAL_ID
+    assert retry.method == first.method
+    assert retry.url.raw_path == first.url.raw_path
+    assert retry.content == first.content
+    assert (
+        json.loads(retry.content)["client_request_id"]
+        == json.loads(first.content)["client_request_id"]
     )

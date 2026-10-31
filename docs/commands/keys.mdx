@@ -88,7 +88,7 @@ Usage: solwyn keys revoke [OPTIONS]
 ```text
 Endpoint: DELETE /api/v1/projects/{project}/key/{key_id}
 Auth: login
-Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.keys-revoke.v1 (CLI output after bodyless 204)
 Accepts only a key identifier; never pass key material.
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
@@ -111,7 +111,7 @@ Usage: solwyn keys rotate [OPTIONS]
 ```text
 Endpoint: POST /api/v1/projects/{project}/key/rotate
 Auth: login
-Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.keys-rotate.v1
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
 The replacement key is shown exactly once; store it in the OS keychain.

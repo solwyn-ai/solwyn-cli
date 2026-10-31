@@ -20,6 +20,10 @@ from solwyn_cli.approvals import (
     APPROVAL_POLL_SECONDS,
     ApprovalSettings,
     current_settings,
+    forget_change,
+    may_need_approval,
+    recall_change,
+    remember_change,
 )
 from solwyn_cli.auth import (
     AuthError,
@@ -39,6 +43,7 @@ from solwyn_cli.errors import (
     WRITE_BUSY_HINT,
     approval_url_from,
     error_from_response,
+    redact_secrets,
     is_budget_admission_busy,
     is_ingest_unaccepted,
 )
@@ -103,7 +108,24 @@ def _terminal_safe(value: object) -> str:
         "\N{REPLACEMENT CHARACTER}"
         if ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
         else character
-        for character in str(value)
+        for character in redact_secrets(str(value))
+    )
+
+
+def _approval_reason(response: httpx.Response) -> str | None:
+    error = error_from_response(response)
+    if error.code != "approval_invalid" or not isinstance(error.detail, dict):
+        return None
+    reason = error.detail.get("reason")
+    return reason if isinstance(reason, str) else None
+
+
+def _mark_approval_spent(error: ApiError) -> None:
+    """Say the approval was used when the change failed after the gate."""
+    if error.code.startswith("approval_") or error.status_code in (None, 401, 429):
+        return
+    error.hint = (
+        f"{error.hint} {APPROVAL_USED_HINT}" if error.hint else APPROVAL_USED_HINT
     )
 
 
@@ -446,15 +468,20 @@ class SolwynClient:
         credential = self._resolve_credential()
         evidence = _RequestEvidence()
         settings = current_settings()
-        is_write = method.upper() != "GET"
+        is_change = may_need_approval(method, relative_path)
         request_headers["Authorization"] = f"Bearer {credential.bearer_value()}"
-        if is_write and settings is not None:
-            attached = settings.take_approval_id()
-            if attached is not None:
-                request_headers[APPROVAL_HEADER] = attached
+        attached = (
+            settings.take_approval_id() if is_change and settings is not None else None
+        )
+        if attached is not None:
+            request_headers[APPROVAL_HEADER] = attached
         prepared = self._client.build_request(
             method, relative_path, headers=request_headers, **kwargs
         )
+        if attached is not None and settings is not None and settings.remember:
+            # Re-send the exact change this approval was bound to, if kept.
+            prepared = recall_change(attached, prepared) or prepared
+        approval_spent = attached is not None
 
         try:
             response = self._send_with_capacity_retry(
@@ -465,13 +492,17 @@ class SolwynClient:
                 stream=_stream,
             )
             self._check_authentication(response, evidence)
+            if attached is not None and settings is not None and settings.remember:
+                if _approval_reason(response) != "pending":
+                    forget_change(attached)
             if (
-                is_write
+                is_change
                 and settings is not None
-                and APPROVAL_HEADER not in prepared.headers
+                and attached is None
                 and response.status_code == httpx.codes.FORBIDDEN
                 and error_from_response(response).code == "approval_required"
             ):
+                approval_spent = True
                 response = self._approval_handoff(
                     prepared,
                     response,
@@ -500,9 +531,14 @@ class SolwynClient:
                 ingest_outcome_uncertain=evidence.ingest_outcome_uncertain,
             ) from None
 
-        self._raise_for_unsuccessful_response(
-            response, method=method, path=relative_path, evidence=evidence
-        )
+        try:
+            self._raise_for_unsuccessful_response(
+                response, method=method, path=relative_path, evidence=evidence
+            )
+        except ApiError as error:
+            if approval_spent:
+                _mark_approval_spent(error)
+            raise
         return response
 
     @staticmethod
@@ -555,6 +591,8 @@ class SolwynClient:
         status = self._wait_for_decision(view, settings.wait_seconds)
         expires_at = view.expires_at.isoformat().replace("+00:00", "Z")
         if status == "pending":
+            if settings.remember:
+                remember_change(approval_id, prepared)
             raise approval_error(
                 "approval_pending",
                 f"Still waiting for approval {approval_id}. After approving, run "
@@ -602,23 +640,6 @@ class SolwynClient:
             stream=stream,
         )
         self._check_authentication(retried, evidence)
-        if not retried.is_success:
-            error = error_from_response(retried)
-            if error.code != "approval_invalid":
-                try:
-                    self._raise_for_unsuccessful_response(
-                        retried,
-                        method=prepared.method,
-                        path=path,
-                        evidence=evidence,
-                    )
-                except ApiError as handler_error:
-                    handler_error.hint = (
-                        f"{handler_error.hint} {APPROVAL_USED_HINT}"
-                        if handler_error.hint
-                        else APPROVAL_USED_HINT
-                    )
-                    raise
         return retried
 
     def _print_approval_request(

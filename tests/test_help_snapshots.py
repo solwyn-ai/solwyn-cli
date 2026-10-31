@@ -1,5 +1,6 @@
 """Semantic snapshots for every registered CLI help surface."""
 
+import re
 from collections.abc import Iterator
 
 import click
@@ -51,10 +52,10 @@ HELP_CONTRACTS = {
         "schema": "solwyn.alerts.pending.v1",
     },
     ("account", "recover"): {
-        "endpoint": "POST /api/v1/accounts/me/personal",
-        "auth": "login; active membership not required",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
-        "schema": "solwyn.account.recover.v1",
+        "endpoint": "none (moved to the dashboard)",
+        "auth": "none",
+        "exits": "2 recovery happens in the dashboard",
+        "schema": "solwyn.error.v1",
     },
     ("attest",): {
         "endpoint": "GET /api/v1/projects/{project}/spend-control-attestation or GET /api/v1/account/spend-control-attestation",
@@ -1080,3 +1081,37 @@ def test_init_help_contract_rejects_a_missing_or_changed_stage(stage: str) -> No
     assert mutated_help != init_help
     with pytest.raises(AssertionError):
         _assert_init_help_contract(mutated_help)
+
+
+# Writes a Solwyn login can make without a browser approval, or that never take
+# a login (spec section 8: metering, read-only POSTs, OAuth and SELF routes).
+_NO_APPROVAL_WRITES = re.compile(
+    r"^/(oauth/"
+    r"|api/v1/(budgets/|metadata/ingest|untracked-surfaces|cli/credentials"
+    r"|invitations/|billing/plan-preview$|account/alerts/(latest-events|preview)$"
+    r"|projects/\{[^}]+\}/(alerts/preview|costs/simulate"
+    r"|providers/breaker-reports|untracked-surfaces)$))"
+)
+_WRITE = re.compile(r"\b(POST|PUT|PATCH|DELETE) (/[^\s;,)]+)")
+
+
+def test_every_approval_capable_command_lists_exit_six() -> None:
+    # Review item 10: a write that can need a browser approval can exit 6.
+    missing = []
+    for path, command in _commands(get_command(app)):
+        epilog = command.epilog or ""
+        endpoint = next(
+            (line for line in epilog.splitlines() if line.startswith("Endpoint:")), ""
+        )
+        exits = next(
+            (line for line in epilog.splitlines() if line.startswith("Exit codes:")),
+            "",
+        )
+        writes = [
+            route
+            for _method, route in _WRITE.findall(endpoint)
+            if not _NO_APPROVAL_WRITES.match(route)
+        ]
+        if writes and not re.search(r"\b6 ", exits):
+            missing.append(" ".join(path))
+    assert missing == []

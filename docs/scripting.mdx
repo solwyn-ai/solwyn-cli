@@ -68,11 +68,8 @@ CLI service-busy failures use existing exit 1, not an auth or budget-denied exit
 Credentials and tokens are never emitted. A 401 with `cli_credential_invalid`,
 `cli_credential_expired` or `cli_credential_revoked` exits 3 with a
 `Run solwyn login` hint. If a login request returns `account_membership_revoked`,
-run `solwyn account recover` instead of repeatedly logging in. Recovery requires a
-Solwyn login and idempotently creates a personal account when no active
-membership exists (or returns the existing account); it emits
-`solwyn.account.recover.v1` with `account_id`. Project keys cannot recover
-accounts. Recovery is CLI-only.
+do not log in again in a loop: create a personal account in the dashboard at
+https://app.solwyn.ai/no-account, then run `solwyn login`.
 
 User commands prefer the stored Solwyn login, then `SOLWYN_API_KEY`, then the
 keychain project key. Set `SOLWYN_AUTH=project_key` to skip the login, or

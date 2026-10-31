@@ -463,3 +463,38 @@ def test_project_key_model_enforces_format_without_echoing_secret() -> None:
         auth.ProjectKeyCredential(api_key="sk_proj_short", source="keyring")
 
     assert "sk_proj_short" not in str(exc_info.value)
+
+
+NEW_TOKEN = "solwyn_cli_" + "f7" * 32
+
+
+@pytest.mark.parametrize(
+    "failing_entry", [auth.CLI_CREDENTIAL_ENTRY, auth.CLI_CREDENTIAL_META_ENTRY]
+)
+def test_failed_replacement_never_pairs_the_old_token_with_new_metadata(
+    keychain: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    failing_entry: str,
+) -> None:
+    # Review item 1: an expired login must not turn "unexpired" by borrowing
+    # the replacement's metadata when the second keychain write fails.
+    keychain.update(expired_login_entries())
+    original = auth.keyring.set_password
+
+    def set_password(service: str, name: str, value: str) -> None:
+        if name == failing_entry:
+            raise RuntimeError("keychain write failed")
+        original(service, name, value)
+
+    monkeypatch.setattr(auth.keyring, "set_password", set_password)
+
+    with pytest.raises(auth.CredentialStorageError):
+        auth.store_login(NEW_TOKEN, login_meta(id="new-login"))
+
+    stored = auth.stored_login(include_expired=True)
+    assert stored is None or (
+        stored.bearer_value() == NEW_TOKEN and stored.meta.id == "new-login"
+    )
+    assert _kind(auth.resolve_credential({"SOLWYN_API_KEY": ENV_KEY})) == (
+        "key:environment"
+    )

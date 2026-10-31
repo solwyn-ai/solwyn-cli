@@ -140,7 +140,7 @@ class PendingDevice(BaseModel):
     verification_uri: str
     verification_uri_complete: str
     expires_at: AwareDatetime
-    interval: int = Field(ge=1, le=60)
+    interval: int = Field(ge=1)
 
     @field_validator("device_code")
     @classmethod
@@ -319,9 +319,18 @@ def store_login(token: str, meta: LoginMetadata) -> LoginCredential:
         credential = LoginCredential(token=token, meta=meta)
     except ValidationError:
         raise CredentialStorageError("Received an invalid CLI credential.") from None
-    # Metadata first: a token without metadata is treated as absent.
-    _set_password(CLI_CREDENTIAL_META_ENTRY, meta.model_dump_json())
-    _set_password(CLI_CREDENTIAL_ENTRY, credential.bearer_value())
+    # Drop the old token first. Metadata without a token reads as no login, so a
+    # failed write can never pair the old token with the new metadata.
+    if not _delete_password(CLI_CREDENTIAL_ENTRY):
+        raise CredentialStorageError(
+            "Could not update credentials in the operating-system keychain."
+        )
+    try:
+        _set_password(CLI_CREDENTIAL_META_ENTRY, meta.model_dump_json())
+        _set_password(CLI_CREDENTIAL_ENTRY, credential.bearer_value())
+    except CredentialStorageError:
+        _delete_password(CLI_CREDENTIAL_META_ENTRY)
+        raise
     for entry in (PENDING_DEVICE_ENTRY, *LEGACY_ENTRIES):
         _delete_password(entry)
     return credential
