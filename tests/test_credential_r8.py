@@ -172,7 +172,7 @@ def _split_reader(entries: Any, ready: Any, release: Any, queue: Any) -> None:
 
 def _switch_and_login(entries: Any) -> None:
     _shared_backend(entries)
-    auth.switch_store("file", api_url=PROD)
+    auth.save_store_mode("file")
     auth.store_login(NEW, login_meta(label="new"), api_url=PROD)
     os._exit(0)
 

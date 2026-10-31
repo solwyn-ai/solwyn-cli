@@ -174,14 +174,18 @@ def _credential_store_diagnostic() -> _Diagnostic:
             )
     except auth_module.AuthError as error:
         return _Diagnostic(status="error", detail=str(error))
-    return _Diagnostic(
-        status="ok",
-        detail=(
-            f"Stored credential found in {place}."
-            if status == "found"
-            else f"No stored credential in {place}."
-        ),
+    detail = (
+        f"Stored credential found in {place}."
+        if status == "found"
+        else f"No stored credential in {place}."
     )
+    leftover = auth_module.unused_store_holdings()
+    if leftover is not None:
+        detail += (
+            f" {leftover.location} also holds credentials for this API but is not "
+            "in use; run solwyn logout to clear both stores."
+        )
+    return _Diagnostic(status="ok", detail=detail)
 
 
 def _readiness_diagnostic(client: SolwynClient) -> _ReadinessDiagnostic:

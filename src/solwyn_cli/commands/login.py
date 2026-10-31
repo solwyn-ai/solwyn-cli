@@ -28,7 +28,6 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
     credential_saved_note,
     exit_with_error,
-    fallback_warning,
 )
 from solwyn_cli.credential_store import STORE_ENV, STORE_MODES, StoreMode
 from solwyn_cli.errors import ApiError, redact_secrets
@@ -66,6 +65,8 @@ LOGIN_HELP = help_contract(
         "Stores in the OS keychain on macOS and Windows and in a private 0600 "
         "credentials file on Linux; --store auto|keyring|file chooses and is saved "
         "to config. SOLWYN_CREDENTIAL_STORE overrides config.",
+        "A failed keychain write stores nothing and exits 3; there is no fallback "
+        "to the file, and nothing is copied between stores.",
         "--no-store finishes the login and prints the token once on stdout for "
         "SOLWYN_TOKEN (CI, cloud agents); nothing is stored.",
     ),
@@ -148,11 +149,7 @@ def authenticate_with_project_key(project_key: str) -> ProjectKeyCredential:
 
 
 def _selected_store(context: typer.Context, requested: str | None) -> StoreMode | None:
-    """Validate --store, save it to config, and copy this API's credentials.
-
-    Switching stores copies this API's whole credentials from the store in
-    use into the new one, best effort; nothing is deleted from either.
-    """
+    """Validate --store and save it to config; nothing moves between stores."""
     if requested is None:
         return None
     if requested not in STORE_MODES:
@@ -171,21 +168,12 @@ def _selected_store(context: typer.Context, requested: str | None) -> StoreMode 
             f"Unset {STORE_ENV}, or pass the same mode.",
             semantic=ErrorSemantic.USAGE,
         )
-    # Saved first, so later reads look in the store this login writes.
+    # Only the mode is saved (auto removes it); nothing is copied between
+    # stores. Saved first, so later reads look in the store this login writes.
     try:
-        copied = auth.switch_store(requested)  # type: ignore[arg-type]
+        auth.save_store_mode(requested)  # type: ignore[arg-type]
     except CredentialStorageError as error:
         _fail(context, "credential_storage_failed", str(error), error.hint)
-    if copied:
-        names = ", ".join(
-            {
-                "login": "login",
-                "api_key": "project key",
-                "pending_device": "pending login",
-            }[entry]
-            for entry in copied
-        )
-        _note(f"Copied this API's {names} into the new credential store.")
     return requested  # type: ignore[return-value]
 
 
@@ -307,15 +295,7 @@ def _start(
             auth.store_pending_device(pending)
         except CredentialStorageError as error:
             _fail(context, "credential_storage_failed", str(error), error.hint)
-        _warn_about_pending_write()
     return pending
-
-
-def _warn_about_pending_write() -> None:
-    """Say so when the pending device secret did not land in the keychain."""
-    written = auth.last_write()
-    if written is not None and written.fell_back:
-        _note(fallback_warning(written, "the pending login"))
 
 
 def _pending_exit(
@@ -665,7 +645,10 @@ def login(
         str | None,
         typer.Option(
             "--store",
-            help="Where to store credentials: auto, keyring or file. Saved to config.",
+            help=(
+                "Where to store credentials: auto, keyring or file. Saved to config; "
+                "nothing is copied between stores."
+            ),
         ),
     ] = None,
     no_store: Annotated[
@@ -722,9 +705,6 @@ def login(
         store=_selected_store(context, store),
     )
     _login_success(context, credential)
-
-
-_STATUS_TEXT = {"cleared": "cleared", "absent": "not present", "unreachable": "kept"}
 
 
 _STATUS_TEXT = {

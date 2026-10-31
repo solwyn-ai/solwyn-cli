@@ -1,5 +1,5 @@
-"""Review r7: one effective store, sticky file fallback, copies never deleted,
-the credential lock, absent vs unreachable keyrings, logout read failures,
+"""Review r7 and r9: one effective store, no fallback (a failed keychain write
+fails and stores nothing), nothing copied between stores, the credential lock, absent vs unreachable keyrings, logout read failures,
 and whole-document validation.
 
 The OS is simulated by pinning the platform family; the keyring is an
@@ -110,14 +110,37 @@ def _keyring_login(backend: Backend, token: str, label: str = "dev-laptop") -> N
     backend.entries[(SERVICE, f"{PROD}/login")] = _login_document(token, label)
 
 
-# --- A. Sticky fallback -----------------------------------------------------
+AUTHORIZATION = {
+    "device_code": "solwyn_dc_" + "4d" * 32,
+    "user_code": "BCDF-GHJK",
+    "verification_uri": "https://app.solwyn.ai/device",
+    "verification_uri_complete": "https://app.solwyn.ai/device?user_code=BCDF-GHJK",
+    "expires_in": 600,
+    "interval": 5,
+}
+
+
+def _authorization(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the server: device authorization returns a fixed pending login."""
+    from solwyn_cli import oauth
+
+    monkeypatch.setattr(
+        login_module,
+        "start_device_authorization",
+        lambda client, **kw: oauth.DeviceAuthorization.model_validate(AUTHORIZATION),
+    )
+
+
+# --- A. No fallback: a failed keychain write fails and stores nothing -------
+
+HINT = "Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file."
 
 
 @pytest.mark.parametrize(
     ("family", "name"),
     [("macos", "the macOS Keychain"), ("windows", "Windows Credential Manager")],
 )
-def test_a_failed_keychain_write_switches_to_the_file_for_good(
+def test_a_failed_keychain_write_fails_and_stores_nothing(
     monkeypatch: pytest.MonkeyPatch,
     backend: Backend,
     config_path: Path,
@@ -130,46 +153,66 @@ def test_a_failed_keychain_write_switches_to_the_file_for_good(
 
     result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
 
-    assert result.exit_code == 0, result.stderr
-    assert json.loads(result.stdout)["store"] == "file"
-    assert 'credential_store = "file"' in config_path.read_text()
-    assert (
-        f"Could not use {name} (it may be locked, or unavailable over SSH). Saved the "
-        f"project key to {credentials_file}. From now on the CLI uses this file "
-        f"(credential_store = file in {config_path}); run solwyn login --store auto "
-        "to switch back."
-    ) in result.stderr
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["code"] == "credential_storage_failed"
+    assert error["message"].startswith(f"Could not write to {name}: ")
+    assert error["message"].endswith("Nothing was stored.")
+    assert error["hint"] == HINT
+    assert not credentials_file.exists()
+    assert not config_path.exists()  # No mode switch either.
+    assert not backend.entries
     assert KEY not in result.stdout + result.stderr
-    # Sticky: with the keychain healthy again, the next login also uses the file.
+    # Nothing sticks: with the keychain healthy again, logins use it.
     backend.locked = False
     _device(monkeypatch)
     login = runner.invoke(app, ["--json", "login"])
     assert login.exit_code == 0, login.stderr
-    assert json.loads(login.stdout)["store"] == "file"
-    assert not any(user.startswith(PROD) for _, user in backend.entries)
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert isinstance(found, auth.LoginCredential) and found.bearer_value() == NEW
+    assert json.loads(login.stdout)["store"] == "keyring"
+    assert not credentials_file.exists()
 
 
-def test_a_config_write_failure_during_fallback_fails_and_stores_nothing(
-    monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
+def test_a_browser_login_that_cannot_reach_the_keychain_is_revoked(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: Backend,
+    config_path: Path,
+    credentials_file: Path,
 ) -> None:
+    revoked = _device(monkeypatch)
     backend.locked = True
 
-    def refuse(*args: Any, **kwargs: Any) -> None:
-        raise config.ConfigWriteError("read-only config")
-
-    monkeypatch.setattr(config, "update_config_values", refuse)
-
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(app, ["--json", "login"])
 
     assert result.exit_code == 3
     error = json.loads(result.stderr)
     assert error["code"] == "credential_storage_failed"
-    assert "Could not save credential_store = file" in error["message"]
-    assert "Nothing was stored." in error["message"]
+    assert error["message"].startswith("Could not write to the macOS Keychain: ")
+    assert error["hint"] == HINT
+    assert revoked == [NEW]  # Issued server-side, kept nowhere: revoked.
     assert not credentials_file.exists()
-    assert KEY not in result.stdout + result.stderr
+    assert not config_path.exists()
+    assert NEW not in result.stdout + result.stderr
+
+
+def test_a_pending_login_that_cannot_reach_the_keychain_stores_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: Backend,
+    config_path: Path,
+    credentials_file: Path,
+) -> None:
+    _authorization(monkeypatch)
+    backend.locked = True
+
+    result = runner.invoke(app, ["--json", "login", "--wait", "0"])
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["code"] == "credential_storage_failed"
+    assert error["message"].startswith("Could not write to the macOS Keychain: ")
+    assert error["hint"] == HINT
+    assert "BCDF-GHJK" not in result.stdout + result.stderr  # No instructions.
+    assert not credentials_file.exists()
+    assert not config_path.exists()
 
 
 @pytest.mark.parametrize("forced", ["keyring", "auto"])
@@ -180,7 +223,6 @@ def test_an_environment_store_never_falls_back(
     credentials_file: Path,
     forced: str,
 ) -> None:
-    # Config cannot override the variable, so a switch would split reads.
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", forced)
     backend.locked = True
 
@@ -192,36 +234,66 @@ def test_an_environment_store_never_falls_back(
     assert not config_path.exists()
 
 
-def test_store_auto_switches_back_and_copies_without_deleting(
+def test_store_only_saves_the_mode_and_copies_nothing(
     monkeypatch: pytest.MonkeyPatch,
     backend: Backend,
     config_path: Path,
     credentials_file: Path,
 ) -> None:
-    backend.locked = True
-    runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
-    backend.locked = False
-    _device(monkeypatch)
+    _keyring_login(backend, LOGIN_TOKEN)
 
-    result = runner.invoke(app, ["--json", "login", "--store", "auto"])
-
-    assert result.exit_code == 0, result.stderr
-    assert json.loads(result.stdout)["store"] == "keyring"
-    assert "credential_store" not in config_path.read_text()  # auto is the default.
-    assert "Copied this API's project key into the new credential store." in (
-        result.stderr
+    to_file = runner.invoke(
+        app, ["--json", "login", "--with-key", "--store", "file"], input=KEY
     )
-    assert backend.entries[(SERVICE, f"{PROD}/api_key")] == KEY
-    # The file copy stays, unread: copies are never deleted by a write.
-    assert FileStore().section(credential_origin(PROD))[auth.API_KEY_ENTRY] == KEY
+
+    assert to_file.exit_code == 0, to_file.stderr
+    assert json.loads(to_file.stdout)["store"] == "file"
+    assert 'credential_store = "file"' in config_path.read_text()
+    section = FileStore().section(credential_origin(PROD))
+    assert set(section) == {auth.API_KEY_ENTRY}  # The keychain login stayed put.
+    assert json.loads(backend.entries[(SERVICE, f"{PROD}/login")])["token"] == (
+        LOGIN_TOKEN
+    )
+    assert "Copied" not in to_file.stderr
+
+    _device(monkeypatch)
+    back = runner.invoke(app, ["--json", "login", "--store", "auto"])
+
+    assert back.exit_code == 0, back.stderr
+    assert json.loads(back.stdout)["store"] == "keyring"
+    assert "credential_store" not in config_path.read_text()  # auto is the default.
+    assert (SERVICE, f"{PROD}/api_key") not in backend.entries  # Not copied back.
+    assert FileStore().section(credential_origin(PROD)) == section  # Untouched.
+    assert "Copied" not in back.stderr
     found = auth.resolve_credential({}, api_url=PROD)
-    assert isinstance(found, auth.LoginCredential) and found.source == "keyring"
+    assert isinstance(found, auth.LoginCredential) and found.bearer_value() == NEW
 
 
-# --- B. Copies, never deletes -----------------------------------------------
+def test_a_mode_that_cannot_be_saved_fails_before_any_login(
+    monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
+) -> None:
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        raise config.ConfigWriteError("read-only config")
+
+    monkeypatch.setattr(config, "update_config_values", refuse)
+
+    result = runner.invoke(
+        app, ["--json", "login", "--with-key", "--store", "file"], input=KEY
+    )
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["code"] == "credential_storage_failed"
+    assert "Could not save credential_store = file" in error["message"]
+    assert not credentials_file.exists()
+    assert not backend.entries
+    assert KEY not in result.stdout + result.stderr
 
 
-def test_fallback_copies_complete_credentials_and_keeps_the_keychain_copies(
+# --- B. Stores are isolated -------------------------------------------------
+
+
+def test_a_failed_keychain_write_keeps_the_existing_keychain_login(
     backend: Backend, credentials_file: Path
 ) -> None:
     # r7 repro: a failed key write with an unreadable pending entry must not
@@ -232,26 +304,13 @@ def test_fallback_copies_complete_credentials_and_keeps_the_keychain_copies(
 
     result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
 
-    assert result.exit_code == 0, result.stderr
-    section = FileStore().section(credential_origin(PROD))
-    assert json.loads(section[auth.LOGIN_ENTRY])["token"] == LOGIN_TOKEN
-    assert section[auth.API_KEY_ENTRY] == KEY
-    assert auth.PENDING_DEVICE_ENTRY not in section  # Unreadable: not copied.
+    assert result.exit_code == 3
+    assert json.loads(result.stderr)["code"] == "credential_storage_failed"
+    assert not credentials_file.exists()
     assert (SERVICE, f"{PROD}/login") in backend.entries  # Never deleted.
-    assert "Copied this API's login from the keychain into the file." in result.stderr
     found = auth.resolve_credential({}, api_url=PROD)
     assert isinstance(found, auth.LoginCredential)
-
-
-def test_an_incomplete_keychain_login_is_not_copied(
-    backend: Backend, credentials_file: Path
-) -> None:
-    backend.entries[(SERVICE, f"{PROD}/login")] = json.dumps({"token": LOGIN_TOKEN})
-    backend.fail_set.add(f"{PROD}/api_key")
-
-    auth.store_project_key(KEY, api_url=PROD)
-
-    assert auth.LOGIN_ENTRY not in FileStore().section(credential_origin(PROD))
+    assert found.bearer_value() == LOGIN_TOKEN
 
 
 def test_a_copy_in_the_store_not_in_use_is_never_read(
@@ -287,24 +346,72 @@ def test_a_read_only_credentials_directory_cannot_promote_a_key(
 def test_pending_logins_live_in_the_effective_store(
     monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
 ) -> None:
-    backend.locked = True
-    start = runner.invoke(app, ["--json", "login", "--wait", "0"])
+    _authorization(monkeypatch)
+    start = runner.invoke(app, ["--json", "login", "--store", "file", "--wait", "0"])
 
     assert start.exit_code == 6
-    assert "Saved the pending login to" in start.stderr
-    assert "From now on the CLI uses this file" in start.stderr
     section = FileStore().section(credential_origin(PROD))
     assert auth.PENDING_DEVICE_ENTRY in section
+    assert not backend.entries
 
-    backend.locked = False
     _device(monkeypatch)
-    monkeypatch.setattr(
-        login_module, "_device_token", lambda *a, **kw: (NEW, login_meta(label="new"))
-    )
     resume = runner.invoke(app, ["--json", "login", "--continue"])
     assert resume.exit_code == 0, resume.stderr
     assert json.loads(resume.stdout)["store"] == "file"
     assert auth.load_pending_device(api_url=PROD) is None
+    assert not backend.entries
+
+
+def test_whoami_and_doctor_point_at_credentials_in_the_store_not_in_use(
+    backend: Backend, credentials_file: Path
+) -> None:
+    from solwyn_cli.commands import doctor as doctor_module
+
+    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
+    backend.entries[(SERVICE, f"{PROD}/api_key")] = NEW_KEY
+
+    result = runner.invoke(app, ["--json", "whoami"])
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["auth_source"] == "keyring"
+    assert (
+        f"This API also has stored credentials in {credentials_file}, which is not "
+        "the credential store in use. Run solwyn logout to clear both stores."
+    ) in result.stderr
+    diagnostic = doctor_module._credential_store_diagnostic()
+    assert diagnostic.status == "ok"
+    assert f"{credentials_file} also holds credentials for this API" in (
+        diagnostic.detail
+    )
+    assert "solwyn logout" in diagnostic.detail
+    assert KEY not in result.stdout + result.stderr + diagnostic.detail
+
+
+def test_the_unused_store_check_never_probes_the_keyring_when_the_file_is_in_use(
+    monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
+) -> None:
+    monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
+    _keyring_login(backend, LOGIN_TOKEN)
+    calls: list[str] = []
+    real_get = backend.get_password
+
+    def counted(service: str, username: str) -> str | None:
+        calls.append(username)
+        return real_get(service, username)
+
+    backend.get_password = counted  # type: ignore[method-assign]
+
+    assert auth.unused_store_holdings(api_url=PROD) is None
+    assert calls == []
+
+
+def test_a_clean_store_not_in_use_adds_no_note(
+    backend: Backend, credentials_file: Path
+) -> None:
+    _keyring_login(backend, LOGIN_TOKEN)
+    assert auth.unused_store_holdings(api_url=PROD) is None
+    FileStore().set_many(credential_origin("https://other.example"), {"api_key": KEY})
+    assert auth.unused_store_holdings(api_url=PROD) is None  # Another API's entry.
 
 
 # --- C. One transaction at a time -------------------------------------------
@@ -402,68 +509,20 @@ def test_concurrent_logins_in_two_processes_keep_token_and_metadata_together(
         assert document["token"] == NEW  # The second login, written after.
 
 
-def _fallback_then_pause(entries: Any, ready: Any, release: Any) -> None:
-    shared = _worker_setup(entries)
-    shared.locked = True
-    real_switch = auth._switch_config
-
-    def paused(mode: str) -> str:
-        path = real_switch(mode)
-        ready.set()
-        release.wait(10)
-        return path
-
-    auth._switch_config = paused  # type: ignore[assignment]
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
-    os._exit(result.exit_code)
-
-
-def _file_login(entries: Any, token: str) -> None:
+def _mode_switch_then_pause(entries: Any, ready: Any, release: Any) -> None:
     _worker_setup(entries)
-    os.environ["SOLWYN_CREDENTIAL_STORE"] = "file"
-    login_module._device_token = lambda *a, **kw: (token, login_meta(label="peer"))
-    result = runner.invoke(app, ["--json", "login"])
-    os._exit(result.exit_code)
+    real_update = config.update_config_values
 
-
-@forking
-def test_a_peer_write_during_a_fallback_waits_and_is_not_lost(
-    config_path: Path, credentials_file: Path
-) -> None:
-    context = mp.get_context("fork")
-    with context.Manager() as manager:
-        entries = manager.dict()
-        ready, release = context.Event(), context.Event()
-        mover = context.Process(
-            target=_fallback_then_pause, args=(entries, ready, release)
-        )
-        mover.start()
-        assert ready.wait(10)
-        peer = context.Process(target=_file_login, args=(entries, NEW))
-        peer.start()
-        peer.join(1)
-        assert peer.is_alive()
-        release.set()
-        mover.join(10)
-        peer.join(10)
-        assert mover.exitcode == peer.exitcode == 0
-        section = FileStore().section(credential_origin(PROD))
-        assert json.loads(section[auth.LOGIN_ENTRY])["token"] == NEW
-        assert section[auth.API_KEY_ENTRY] == KEY
-
-
-def _fallback_paused_before_switch(entries: Any, ready: Any, release: Any) -> None:
-    shared = _worker_setup(entries)
-
-    def failing_then_pause(service: str, username: str, value: str) -> None:
-        # Inside the lock, before the switch: a peer resolving its store now
-        # still sees auto.
-        ready.set()
+    def paused(*args: Any, **kwargs: Any) -> Any:
+        result = real_update(*args, **kwargs)
+        ready.set()  # Config says file; this process still holds the lock.
         release.wait(10)
-        raise RuntimeError("keychain locked")
+        return result
 
-    shared.set_password = failing_then_pause  # type: ignore[method-assign]
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    config.update_config_values = paused  # type: ignore[assignment]
+    result = runner.invoke(
+        app, ["--json", "login", "--with-key", "--store", "file"], input=KEY
+    )
     os._exit(result.exit_code)
 
 
@@ -474,32 +533,18 @@ def _pending_login_process(entries: Any) -> None:
 
 
 @forking
-def test_a_pending_login_written_during_a_peer_fallback_lands_where_reads_look(
+def test_a_pending_login_written_during_a_peer_mode_switch_lands_where_reads_look(
     monkeypatch: pytest.MonkeyPatch, config_path: Path, credentials_file: Path
 ) -> None:
     # The mode is resolved inside the lock: the peer's switch to the file
     # happened while this write waited, so it must go to the file too.
-    from solwyn_cli import oauth
-
-    authorization = {
-        "device_code": "solwyn_dc_" + "4d" * 32,
-        "user_code": "BCDF-GHJK",
-        "verification_uri": "https://app.solwyn.ai/device",
-        "verification_uri_complete": "https://app.solwyn.ai/device?user_code=BCDF-GHJK",
-        "expires_in": 600,
-        "interval": 5,
-    }
-    monkeypatch.setattr(
-        login_module,
-        "start_device_authorization",
-        lambda client, **kw: oauth.DeviceAuthorization.model_validate(authorization),
-    )
+    _authorization(monkeypatch)
     context = mp.get_context("fork")
     with context.Manager() as manager:
         entries = manager.dict()
         ready, release = context.Event(), context.Event()
         mover = context.Process(
-            target=_fallback_paused_before_switch, args=(entries, ready, release)
+            target=_mode_switch_then_pause, args=(entries, ready, release)
         )
         mover.start()
         assert ready.wait(10)
@@ -512,10 +557,14 @@ def test_a_pending_login_written_during_a_peer_fallback_lands_where_reads_look(
         peer.join(10)
         assert mover.exitcode == 0
         assert peer.exitcode == 6
+        assert not entries  # Nothing went to the keychain.
         shared = Backend(entries)
         monkeypatch.setattr(credential_store, "backend_factory", lambda: shared)
         _platform(monkeypatch, "macos")
         assert auth.load_pending_device(api_url=PROD) is not None
+        section = FileStore().section(credential_origin(PROD))
+        assert section[auth.API_KEY_ENTRY] == KEY
+        assert auth.PENDING_DEVICE_ENTRY in section
 
 
 def _logout_paused_in_revoke(entries: Any, ready: Any, release: Any) -> None:
@@ -565,25 +614,26 @@ def test_a_login_during_logout_waits_and_the_revoked_login_never_returns(
         assert LOGIN_TOKEN not in str(dict(entries))
 
 
-def _killed_after_config_switch(entries: Any, ready: Any) -> None:
-    shared = _worker_setup(entries)
-    shared.locked = True
-    real_switch = auth._switch_config
+def _killed_after_mode_switch(entries: Any, ready: Any) -> None:
+    _worker_setup(entries)
+    real_update = config.update_config_values
 
-    def then_hang(mode: str) -> str:
-        path = real_switch(mode)
+    def then_hang(*args: Any, **kwargs: Any) -> Any:
+        result = real_update(*args, **kwargs)
         ready.set()
         import time
 
         time.sleep(30)
-        return path
+        return result
 
-    auth._switch_config = then_hang  # type: ignore[assignment]
-    runner.invoke(app, ["--json", "login", "--with-key"], input=NEW_KEY)
+    config.update_config_values = then_hang  # type: ignore[assignment]
+    runner.invoke(
+        app, ["--json", "login", "--with-key", "--store", "file"], input=NEW_KEY
+    )
 
 
 @forking
-def test_a_kill_after_the_config_switch_leaves_one_consistent_store(
+def test_a_kill_after_the_mode_switch_leaves_one_consistent_store(
     monkeypatch: pytest.MonkeyPatch, config_path: Path, credentials_file: Path
 ) -> None:
     context = mp.get_context("fork")
@@ -592,7 +642,7 @@ def test_a_kill_after_the_config_switch_leaves_one_consistent_store(
         entries[(SERVICE, f"{PROD}/login")] = _login_document(LOGIN_TOKEN)
         ready = context.Event()
         worker = context.Process(
-            target=_killed_after_config_switch, args=(entries, ready)
+            target=_killed_after_mode_switch, args=(entries, ready)
         )
         worker.start()
         assert ready.wait(10)
@@ -609,6 +659,10 @@ def test_a_kill_after_the_config_switch_leaves_one_consistent_store(
         assert auth.where_stored().kind == "file"
         auth.store_project_key(KEY, api_url=PROD)
         assert (SERVICE, f"{PROD}/login") in entries  # Never deleted.
+        assert NEW_KEY not in str(dict(entries))  # Nothing half-written anywhere.
+        assert (
+            not credentials_file.exists() or NEW_KEY not in credentials_file.read_text()
+        )
 
 
 # --- D. absent vs unreachable -----------------------------------------------

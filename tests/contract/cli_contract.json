@@ -5169,7 +5169,7 @@
             "--store"
           ],
           "default": null,
-          "help": "Where to store credentials: auto, keyring or file. Saved to config.",
+          "help": "Where to store credentials: auto, keyring or file. Saved to config; nothing is copied between stores.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",

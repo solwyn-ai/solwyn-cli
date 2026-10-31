@@ -13,11 +13,15 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    unused_store_note,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -270,3 +274,5 @@ def whoami(context: typer.Context) -> None:
         data=data,
         table=_table(data),
     )
+    if note := unused_store_note():
+        typer.echo(_terminal_safe(note), err=True)

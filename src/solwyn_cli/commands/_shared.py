@@ -105,13 +105,6 @@ def exit_with_error(
     raise typer.Exit(code=int(exit_code_for_error(error, semantic=semantic)))
 
 
-_ENTRY_NAMES = {
-    "login": "login",
-    "api_key": "project key",
-    "pending_device": "pending login",
-}
-
-
 def credential_saved_note(credential: ResolvedCredential) -> str:
     """Return the line saying where a credential was just stored."""
     written = auth.last_write()
@@ -119,37 +112,25 @@ def credential_saved_note(credential: ResolvedCredential) -> str:
     location = credential.location if written is None else written.location
     if location is None:
         return ""
-    is_key = isinstance(credential, ProjectKeyCredential)
-    parts: list[str] = []
-    if written is not None and written.fell_back:
-        parts.append(fallback_warning(written, "the project key" if is_key else "it"))
-    if is_key and kind == "file":
-        parts.append(
+    if isinstance(credential, ProjectKeyCredential) and kind == "file":
+        return (
             f"Stored the project key in {location}. It has full project access and "
             "does not expire. For CI and agents, prefer SOLWYN_API_KEY from a secret "
             "manager."
         )
-    elif written is not None and written.fell_back:
-        pass  # The fallback warning already says where it went.
-    elif kind == "keyring":
-        parts.append(f"Saved to {location}.")
-    else:
-        parts.append(
-            f"Saved to {location} (readable only by your user, and by any program "
-            "you run)."
-        )
-    return " ".join(parts)
-
-
-def fallback_warning(written: auth.Written, what: str) -> str:
-    """The one warning for a failed keychain write that switched to the file."""
-    text = (
-        f"Could not use {auth.credential_store.keyring_name()} (it may be locked, "
-        f"or unavailable over SSH). Saved {what} to {written.location}. From now on "
-        f"the CLI uses this file (credential_store = file in {written.config_path}); "
-        "run solwyn login --store auto to switch back."
+    if kind == "keyring":
+        return f"Saved to {location}."
+    return (
+        f"Saved to {location} (readable only by your user, and by any program you run)."
     )
-    if written.copied:
-        names = ", ".join(_ENTRY_NAMES[entry] for entry in written.copied)
-        text += f" Copied this API's {names} from the keychain into the file."
-    return text
+
+
+def unused_store_note() -> str | None:
+    """Point at credentials for this API left in the store not in use."""
+    found = auth.unused_store_holdings()
+    if found is None:
+        return None
+    return (
+        f"This API also has stored credentials in {found.location}, which is not "
+        "the credential store in use. Run solwyn logout to clear both stores."
+    )

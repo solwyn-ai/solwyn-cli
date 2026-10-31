@@ -59,8 +59,8 @@ each API keeps its own login and key.
 
 | Platform | Default (`auto`) |
 | --- | --- |
-| macOS | The macOS Keychain. If a Keychain write fails (for example, a locked Keychain over SSH), the CLI switches to the file for good (see below). |
-| Windows | Windows Credential Manager, with local persistence so it does not roam with a domain profile. Over SSH, where Credential Manager cannot persist, the CLI switches to the file for good. |
+| macOS | The macOS Keychain. If a Keychain write fails (for example, a locked Keychain over SSH), the command fails and stores nothing (see below). |
+| Windows | Windows Credential Manager, with local persistence so it does not roam with a domain profile. Over SSH, where Credential Manager cannot persist, the command fails and stores nothing. |
 | Linux (desktop, headless, WSL, containers, CI) | The credentials file. |
 
 The credentials file is `credentials.json` in the user data directory:
@@ -95,10 +95,11 @@ expire, so storing one in the file prints a warning steering you to
 `SOLWYN_API_KEY` from a secret manager instead. Keep the credentials directory
 out of dotfile sync and unencrypted backups.
 
-Choose a store with `solwyn login --store auto|keyring|file`, which is saved to
-config as `credential_store` so later commands read the same store, or set
-`SOLWYN_CREDENTIAL_STORE`, which overrides config. A `--store` that conflicts
-with `SOLWYN_CREDENTIAL_STORE` is a usage error.
+Choose a store with `solwyn login --store auto|keyring|file`, or set
+`SOLWYN_CREDENTIAL_STORE`, which overrides config. `--store` only saves the mode
+to config as `credential_store` (`auto` removes the setting) and then logs in to
+that store; nothing is copied between stores. A `--store` that conflicts with
+`SOLWYN_CREDENTIAL_STORE` is a usage error.
 
 - `auto`: the platform default above.
 - `keyring`: the OS keychain (macOS Keychain, Windows Credential Manager, or the
@@ -113,24 +114,23 @@ Every command reads and writes exactly one store: `SOLWYN_CREDENTIAL_STORE`,
 else `credential_store` in config, else `auto`. Pending logins (`--wait 0`) live
 there too, so `solwyn login --continue` always finds them.
 
-When a keychain write fails in `auto` mode on macOS or Windows, the CLI switches
-to the file for good: it saves `credential_store = file` to config, copies this
-API's complete credentials that the keychain still answers into the file, writes
-the new credential there, and says so:
+A failed keychain write never falls back to the file, in any mode. The command
+exits 3 with `credential_storage_failed`, names the keychain and why, and
+stores nothing:
 
 ```text
-Could not use the macOS Keychain (it may be locked, or unavailable over SSH).
-Saved it to <path>. From now on the CLI uses this file (credential_store = file
-in <config path>); run solwyn login --store auto to switch back.
+Could not write to the macOS Keychain: <reason> Nothing was stored.
+Hint: Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file.
 ```
 
-If config cannot be written, the command fails with a storage error and stores
-nothing. With `SOLWYN_CREDENTIAL_STORE` set there is no fallback: the variable
-would override the saved switch. Switching stores with `--store` copies this
-API's complete credentials from the old store into the new one, best effort.
-Nothing is ever deleted by a write; copies left in the store not in use are
-never read. Only logout deletes. On Linux in `auto` mode, writes never touch the
-keyring: no D-Bus probe, no delay.
+This covers a browser login (the new login is revoked on the server, since
+nothing kept it), a pending login (`--wait 0`, no code is shown) and
+`--with-key`. Stores are never copied or merged: credentials in the store not in
+use are never read, and only logout deletes. `whoami` and `doctor` say when the
+credentials file still holds credentials for this API while the keychain is in
+use, and suggest `solwyn logout`, which clears both stores. When the file is in
+use they never probe the keychain. On Linux in `auto` mode, writes never touch
+the keyring: no D-Bus probe, no delay.
 
 CLI 0.3.0 stored a session login (`access_token` and `refresh_token`) and a
 project key (`api_key`) in the system keyring under the service `solwyn-cli`.
@@ -222,7 +222,7 @@ Usage: solwyn login [OPTIONS]
 | `--label` | `Name for this login in the dashboard. Defaults to the short hostname. (STRING)` | `None` |
 | `--wait` | `Seconds to wait for browser approval. 0 starts and returns. (<IntRange x>=0>)` | `None` |
 | `--continue` | `Resume waiting for the login started earlier. (BOOL)` | `False` |
-| `--store` | `Where to store credentials: auto, keyring or file. Saved to config. (STRING)` | `None` |
+| `--store` | `Where to store credentials: auto, keyring or file. Saved to config; nothing is copied between stores. (STRING)` | `None` |
 | `--no-store` | `Print the new login token once for SOLWYN_TOKEN; store nothing. (BOOL)` | `False` |
 
 ```text
@@ -236,6 +236,7 @@ Default --wait is 600 s with a terminal, else 90 s; --wait 0 starts and returns.
 Exit 6 is error code login_pending; its detail (solwyn.login.pending.v1) has user_code, verification_uri, verification_uri_complete and expires_at.
 Keys are never accepted as command-line arguments or echoed.
 Stores in the OS keychain on macOS and Windows and in a private 0600 credentials file on Linux; --store auto|keyring|file chooses and is saved to config. SOLWYN_CREDENTIAL_STORE overrides config.
+A failed keychain write stores nothing and exits 3; there is no fallback to the file, and nothing is copied between stores.
 --no-store finishes the login and prints the token once on stdout for SOLWYN_TOKEN (CI, cloud agents); nothing is stored.
 ```
 

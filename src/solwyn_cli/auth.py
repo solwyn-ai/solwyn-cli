@@ -4,19 +4,15 @@ Reads and writes use exactly one store, the effective mode:
 ``SOLWYN_CREDENTIAL_STORE``, else ``credential_store`` in config, else
 ``auto`` (the OS keychain on macOS and Windows, the credentials file on Linux).
 
-- ``auto`` on macOS or Windows: when a keychain write fails, the CLI switches
-  to the file for good. It saves ``credential_store = file`` to config (as
-  ``solwyn login --store file`` does), copies this API's complete credentials
-  that the keychain still answers into the file, writes the new credential
-  there, and the command warns. Nothing is deleted from the keychain.
-- ``keyring``: the OS keychain or a loud failure, never a fallback; the same
-  when ``SOLWYN_CREDENTIAL_STORE`` is set, since config cannot override it.
-- ``file``: the file only; the keyring is never touched.
+The store is resolved under the credential lock. A keychain write that fails
+never falls back: the command fails, naming the keychain and why, and nothing
+is stored. ``solwyn login --store`` only saves the mode; nothing is ever copied
+between stores. ``file`` mode never touches the keyring. Only logout looks in
+both stores, whatever the mode, because a user who switched modes can have
+entries in the store not in use.
 
-Writes never delete from the store not in use; copies left there are never
-read. Only logout deletes across stores: it looks in both, whatever the mode.
 Every transaction (a file read-modify-write, a multi-entry keyring update, a
-store switch, the logout scan, revoke and delete) runs under the credential
+mode change, the logout scan, revoke and delete) runs under the credential
 lock, so concurrent processes never interleave.
 
 Everything stored is keyed by API origin (see ``credential_store``), so a login
@@ -57,7 +53,6 @@ from solwyn_cli.credential_store import (
     InsecureFileError,
     KeyringAbsentError,
     KeyringStore,
-    KeyringTimeoutError,
     MalformedFileError,
     StoreKind,
     StoreMode,
@@ -137,10 +132,7 @@ LOGIN_REQUIRED_HINT = (
 METERING_KEY_HINT = (
     "Metering needs a project key. Run solwyn login --with-key or set SOLWYN_API_KEY."
 )
-FILE_STORE_HINT = (
-    "Set SOLWYN_CREDENTIAL_STORE=file or run solwyn login --store file to use "
-    "the credentials file instead."
-)
+FILE_STORE_HINT = "Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file."
 
 
 class ProjectKeyCredential(BaseModel):
@@ -324,14 +316,18 @@ def _keyring_store() -> KeyringStore:
     return KeyringStore()
 
 
-def _keyring_error(error: StoreUnavailableError) -> KeyringUnavailableError:
+def _keyring_hint() -> str:
     hint = FILE_STORE_HINT
     if credential_store.platform_name() == "linux":
         hint += (
             " To keep the keyring, an MCP host must pass DBUS_SESSION_BUS_ADDRESS "
             "and XDG_RUNTIME_DIR to the server."
         )
-    return KeyringUnavailableError(str(error), hint)
+    return hint
+
+
+def _keyring_error(error: StoreUnavailableError) -> KeyringUnavailableError:
+    return KeyringUnavailableError(str(error), _keyring_hint())
 
 
 def _file_error(error: Exception) -> CredentialStorageError:
@@ -417,14 +413,10 @@ def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
 
 @dataclass(frozen=True)
 class Written:
-    """Where a write landed, and whether the keychain failed and the CLI
-    switched to the file for good (``copied`` names what came along)."""
+    """Where a write landed."""
 
     kind: StoreKind
     location: str
-    fell_back: bool = False
-    copied: tuple[str, ...] = ()
-    config_path: str | None = None
 
 
 _LAST_WRITE: ContextVar[Written | None] = ContextVar("solwyn_last_write", default=None)
@@ -436,7 +428,7 @@ def last_write() -> Written | None:
 
 
 def _complete(entry: str, value: str) -> bool:
-    """Whether a stored entry is a whole, valid credential worth copying."""
+    """Whether a stored entry is a whole, valid credential."""
     try:
         if entry == LOGIN_ENTRY:
             _parse_login(value, "file", "")
@@ -449,82 +441,25 @@ def _complete(entry: str, value: str) -> bool:
     return True
 
 
-def _copy_complete(
-    read: Callable[[str], str | None],
-    write: Callable[[str, str], None],
-    skip: tuple[str, ...] = (),
-) -> tuple[str, ...]:
-    """Copy each whole entry ``read`` answers; skip what fails. Never deletes."""
-    copied: list[str] = []
-    for entry in ENTRIES:
-        if entry in skip:
-            continue
-        try:
-            value = read(entry)
-        except (*_FILE_ERRORS, StoreUnavailableError):
-            continue
-        if value is None or not _complete(entry, value):
-            continue
-        try:
-            write(entry, value)
-        except (*_FILE_ERRORS, StoreUnavailableError):
-            continue
-        copied.append(entry)
-    return tuple(copied)
-
-
-def _switch_config(mode: StoreMode) -> str:
-    """Save credential_store to config; a failure fails the command."""
-    from solwyn_cli.config import (
-        ConfigLoadError,
-        ConfigWriteError,
-        get_config_path,
-        update_config_values,
+def _keyring_write_error(error: StoreUnavailableError) -> KeyringUnavailableError:
+    """A keychain write failed: name the keychain and why; nothing was stored."""
+    hint = _keyring_hint()
+    if credential_store.stranded():
+        hint = f"{credential_store.STRANDED_MESSAGE} {hint}"
+    return KeyringUnavailableError(
+        f"Could not write to {credential_store.keyring_name()}: {error} Nothing "
+        "was stored.",
+        hint,
     )
-
-    path = get_config_path()
-    try:
-        update_config_values({"credential_store": mode}, omit_default_api_url=True)
-    except (ConfigLoadError, ConfigWriteError, ValueError, OSError):
-        raise CredentialStorageError(
-            f"Could not save credential_store = {mode} to {path}. Nothing was stored.",
-            f"Fix {path}, or set {STORE_ENV}={mode}.",
-        ) from None
-    return str(path)
-
-
-def _fall_back_to_file(
-    values: Mapping[str, str], *, origin: str, keyring_store: KeyringStore
-) -> Written:
-    """Switch to the file for good after a failed keychain write.
-
-    Config first, so a failure there stops the command before anything lands
-    in a store the next command would not read.
-    """
-    config_path = _switch_config("file")
-    file = _file_store()
-    copied: dict[str, str] = {}
-    _copy_complete(
-        lambda entry: keyring_store.get(origin, entry),
-        copied.__setitem__,
-        skip=tuple(values),
-    )
-    try:
-        file.set_many(origin, {**copied, **values})
-    except _FILE_ERRORS as error:
-        raise _file_error(error) from None
-    written = Written("file", file.describe(), True, tuple(copied), config_path)
-    _LAST_WRITE.set(written)
-    return written
 
 
 def _store(
     values: Mapping[str, str], *, origin: str, mode: StoreMode | None
 ) -> Written:
-    """Write entries to the one store in use. Never deletes anywhere.
+    """Write entries to the one store in use. Never deletes, never falls back.
 
-    The effective mode is resolved inside the lock: a peer's fallback may have
-    switched config to the file while this write waited.
+    The effective mode is resolved inside the lock, so a concurrent mode change
+    cannot split this write from the reads that follow it.
     """
     with _locked():
         if mode is None:
@@ -542,21 +477,10 @@ def _store(
         try:
             for entry, value in values.items():
                 keyring_store.set(origin, entry, value)
-        except KeyringTimeoutError as error:
-            # The write may still land: never continue, never fall back. The
-            # process is stranded and keeps the lock until it exits.
-            raise CredentialStorageError(
-                str(error), credential_store.STRANDED_MESSAGE
-            ) from None
         except StoreUnavailableError as error:
-            # Only auto on macOS or Windows falls back, and only when config
-            # decides the store: an environment variable would override the
-            # saved switch and split reads from writes.
-            if mode != "auto" or os.environ.get(STORE_ENV):
-                raise _keyring_error(error) from None
-            return _fall_back_to_file(
-                values, origin=origin, keyring_store=keyring_store
-            )
+            # No fallback, ever: the credential goes to the store in use or
+            # nowhere. A timed-out write has also stranded the process.
+            raise _keyring_write_error(error) from None
         written = Written("keyring", keyring_store.describe())
         _LAST_WRITE.set(written)
         return written
@@ -584,36 +508,46 @@ class _LockGuard:
         self._context.__exit__(*exc)
 
 
-def switch_store(mode: StoreMode, *, api_url: str | None = None) -> tuple[str, ...]:
-    """Save ``mode`` to config; when the store changes, copy this API's whole
-    credentials from the old store into the new one, best effort. Never deletes.
+def save_store_mode(mode: StoreMode) -> None:
+    """Save credential_store to config (auto removes it). Copies nothing."""
+    from solwyn_cli.config import (
+        ConfigLoadError,
+        ConfigWriteError,
+        get_config_path,
+        update_config_values,
+    )
+
+    with _locked():
+        path = get_config_path()
+        try:
+            update_config_values({"credential_store": mode}, omit_default_api_url=True)
+        except (ConfigLoadError, ConfigWriteError, ValueError, OSError):
+            raise CredentialStorageError(
+                f"Could not save credential_store = {mode} to {path}.",
+                f"Fix {path}, or set {STORE_ENV}={mode}.",
+            ) from None
+
+
+def unused_store_holdings(api_url: str | None = None) -> Lookup | None:
+    """Say whether the store not in use still holds this API's credentials.
+
+    Read only, under the shared lock. Only the file is ever checked: when the
+    file is in use the keyring is not probed (file mode never touches it, and
+    on Linux it would add D-Bus probing to every whoami).
     """
     origin = current_origin(api_url)
-    with _locked():
-        try:
-            before = primary_kind(store_mode())
-        except AuthError:
-            before = None
-        _switch_config(mode)
-        after = primary_kind(mode)
-        if before is None or before == after:
-            return ()
-        file, keyring_store = _file_store(), _keyring_store()
-        if after == "keyring":
-            return _copy_complete(
-                lambda entry: file.get(origin, entry),
-                lambda entry, value: keyring_store.set(origin, entry, value),
-            )
-        copied: dict[str, str] = {}
-        names = _copy_complete(
-            lambda entry: keyring_store.get(origin, entry), copied.__setitem__
-        )
-        if copied:
-            try:
-                file.set_many(origin, copied)
-            except _FILE_ERRORS:
-                return ()
-        return names
+    try:
+        with _locked(shared=True):
+            mode = store_mode()
+            if primary_kind(mode) != "keyring":
+                return None
+            file = _file_store()
+            section = file.section(origin)
+    except (AuthError, *_FILE_ERRORS):
+        return None
+    if LOGIN_ENTRY in section or API_KEY_ENTRY in section:
+        return Lookup(mode, "file", file.describe())
+    return None
 
 
 @dataclass(frozen=True)
