@@ -168,7 +168,7 @@ def test_revoke_by_prefix_deletes_that_login_and_keeps_the_local_one(
         ("GET", "/api/v1/cli/credentials"),
         ("DELETE", f"/api/v1/cli/credentials/{OTHER_ID}"),
     ]
-    assert auth.CLI_CREDENTIAL_ENTRY in keychain
+    assert auth.LOGIN_ENTRY in keychain
 
 
 def test_revoke_current_clears_the_keychain_login(

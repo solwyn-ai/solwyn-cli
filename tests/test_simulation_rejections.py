@@ -110,7 +110,7 @@ def test_simulation_401_is_never_replayed_with_the_stored_login(simulation):
         "/api/v1/projects/proj_alpha/costs/simulate",
     ]
     assert calls[0].headers["Authorization"] == f"Bearer {LOGIN_TOKEN}"
-    assert stored[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN
+    assert json.loads(stored[auth.LOGIN_ENTRY])["token"] == LOGIN_TOKEN
     assert delays == []
 
 
@@ -154,4 +154,4 @@ def test_simulation_503_and_transport_never_replay(simulation, failure):
     assert payload["code"] == expected_code
     assert len(calls) == 1
     assert delays == []
-    assert stored[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN
+    assert json.loads(stored[auth.LOGIN_ENTRY])["token"] == LOGIN_TOKEN

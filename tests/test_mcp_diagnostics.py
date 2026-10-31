@@ -308,14 +308,10 @@ def test_invalid_environment_presence_never_falls_back(
 def test_credential_store_availability_is_safe(
     monkeypatch, probes, available, token, meta, want
 ):
-    values = {
-        entry: value
-        for entry, value in (
-            (auth.CLI_CREDENTIAL_ENTRY, token),
-            (auth.CLI_CREDENTIAL_META_ENTRY, meta),
-        )
-        if value is not None
-    }
+    # A login is one document; these are its broken forms.
+    values = {}
+    if token is not None:
+        values[auth.LOGIN_ENTRY] = json.dumps({"token": token}) if token else meta
     install_store(monkeypatch, DictStore(values, unavailable=not available))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
@@ -344,10 +340,7 @@ def test_login_is_captured_once_and_mcp_read_is_skipped(
     )
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
-    assert entries == [
-        auth.CLI_CREDENTIAL_ENTRY,
-        auth.CLI_CREDENTIAL_META_ENTRY,
-    ]
+    assert entries == [auth.LOGIN_ENTRY]
     assert data["credential"] == {
         "status": "available",
         "kind": "login",

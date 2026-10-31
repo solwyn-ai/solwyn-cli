@@ -1,19 +1,29 @@
 """Credential storage and class-based credential resolution.
 
-Stored credentials live in one store chosen by ``SOLWYN_CREDENTIAL_STORE``,
-then ``credential_store`` in config, then ``auto``:
+Reads and writes use exactly one store, the effective mode:
+``SOLWYN_CREDENTIAL_STORE``, else ``credential_store`` in config, else
+``auto`` (the OS keychain on macOS and Windows, the credentials file on Linux).
 
-- ``auto``: the OS keychain on macOS and Windows, falling back to the file when
-  a keychain write fails; the file on every Linux. An existing file entry wins
-  on read, and every write deletes the stale copy in the other store.
-- ``keyring``: the OS keychain or a loud failure, never a fallback.
-- ``file``: the file only; the keyring is never touched, except by logout,
-  which always looks in and clears both stores.
+- ``auto`` on macOS or Windows: when a keychain write fails, the CLI switches
+  to the file for good. It saves ``credential_store = file`` to config (as
+  ``solwyn login --store file`` does), copies this API's complete credentials
+  that the keychain still answers into the file, writes the new credential
+  there, and the command warns. Nothing is deleted from the keychain.
+- ``keyring``: the OS keychain or a loud failure, never a fallback; the same
+  when ``SOLWYN_CREDENTIAL_STORE`` is set, since config cannot override it.
+- ``file``: the file only; the keyring is never touched.
+
+Writes never delete from the store not in use; copies left there are never
+read. Only logout deletes across stores: it looks in both, whatever the mode.
+Every transaction (a file read-modify-write, a multi-entry keyring update, a
+store switch, the logout scan, revoke and delete) runs under the credential
+lock, so concurrent processes never interleave.
 
 Everything stored is keyed by API origin (see ``credential_store``), so a login
 made against one API is never sent to another.
 """
 
+import json
 import os
 import re
 import sys
@@ -21,7 +31,7 @@ from collections.abc import Callable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import ClassVar, Literal, TypeAlias
+from typing import Any, ClassVar, Literal, TypeAlias
 
 from pydantic import (
     AwareDatetime,
@@ -37,24 +47,25 @@ from pydantic import (
 from solwyn_cli import credential_store
 from solwyn_cli._vendor.validation import validate_project_key_format
 from solwyn_cli.credential_store import (
+    API_KEY_ENTRY,
+    ENTRIES,
+    LOGIN_ENTRY,
+    PENDING_DEVICE_ENTRY,
     STORE_ENV,
-    KeyringAbsentError,
     STORE_MODES,
     FileStore,
     InsecureFileError,
+    KeyringAbsentError,
     KeyringStore,
+    MalformedFileError,
     StoreKind,
     StoreMode,
     StoreUnavailableError,
+    credential_lock,
     credential_origin,
 )
 
-API_KEY_ENTRY = "api_key"
-CLI_CREDENTIAL_ENTRY = "cli_credential"
-CLI_CREDENTIAL_META_ENTRY = "cli_credential_meta"
-PENDING_DEVICE_ENTRY = "pending_device"
-LOGIN_ENTRIES = (CLI_CREDENTIAL_ENTRY, CLI_CREDENTIAL_META_ENTRY)
-ALL_ENTRIES = (API_KEY_ENTRY, *LOGIN_ENTRIES, PENDING_DEVICE_ENTRY)
+ALL_ENTRIES = ENTRIES
 # CLI 0.3.0 wrote these keyring entries (service "solwyn-cli", no origin): a
 # session pair and a project key. They are never used to authenticate; a
 # terminal user is told about them once, and login and logout delete them.
@@ -64,8 +75,8 @@ LEGACY_KEY_ENTRY = "api_key"
 LEGACY_ENTRIES = (
     *LEGACY_LOGIN_ENTRIES,
     LEGACY_KEY_ENTRY,
-    CLI_CREDENTIAL_ENTRY,
-    CLI_CREDENTIAL_META_ENTRY,
+    "cli_credential",
+    "cli_credential_meta",
     PENDING_DEVICE_ENTRY,
 )
 AUTH_EXIT_CODE = 3
@@ -104,6 +115,10 @@ class KeyringUnavailableError(CredentialStorageError):
 
 class InsecureCredentialFileError(CredentialStorageError):
     """The credentials file is readable by, or owned by, another user."""
+
+
+class MalformedCredentialFileError(CredentialStorageError):
+    """The credentials file is not a valid Solwyn credentials document."""
 
 
 class LoginRequiredError(AuthError):
@@ -283,7 +298,7 @@ def store_mode(environ: Mapping[str, str] | None = None) -> StoreMode:
 
 
 def primary_kind(mode: StoreMode, platform: str | None = None) -> StoreKind:
-    """Return the store a write tries first in this mode on this platform."""
+    """Return the one store this mode reads and writes on this platform."""
     if mode != "auto":
         return mode
     family = credential_store.platform_name(platform)
@@ -321,7 +336,12 @@ def _keyring_error(error: StoreUnavailableError) -> KeyringUnavailableError:
 def _file_error(error: Exception) -> CredentialStorageError:
     if isinstance(error, InsecureFileError):
         return InsecureCredentialFileError(str(error))
+    if isinstance(error, MalformedFileError):
+        return MalformedCredentialFileError(str(error))
     return CredentialStorageError(str(error))
+
+
+_FILE_ERRORS = (InsecureFileError, MalformedFileError, StoreUnavailableError)
 
 
 @dataclass(frozen=True)
@@ -349,14 +369,9 @@ def last_lookup() -> Lookup | None:
 def where_stored(environ: Mapping[str, str] | None = None) -> Lookup:
     """Describe the store this context reads and writes, without touching it."""
     mode = store_mode(environ)
-    kind = primary_kind(mode)
-    if kind == "file":
+    if primary_kind(mode) == "file":
         return Lookup(mode=mode, kind="file", location=_file_store().describe())
     return Lookup(mode=mode, kind="keyring", location=credential_store.keyring_name())
-
-
-def _record(lookup: Lookup) -> None:
-    _LAST_LOOKUP.set(lookup)
 
 
 # --- Reading ----------------------------------------------------------------
@@ -364,7 +379,7 @@ def _record(lookup: Lookup) -> None:
 
 @dataclass(frozen=True)
 class Found:
-    """Entries read from one store."""
+    """Entries read from the store in use."""
 
     values: dict[str, str | None]
     kind: StoreKind | None
@@ -372,20 +387,17 @@ class Found:
 
 
 def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
-    """Read entries from one store: the file if it holds this API, else keyring."""
-    if mode in ("file", "auto"):
+    """Read entries from the one store the mode selects."""
+    if primary_kind(mode) == "file":
         file = _file_store()
         try:
-            if (
-                mode == "file"
-                or primary_kind(mode) == "file"
-                or file.has_origin(origin)
-            ):
-                values = {entry: file.get(origin, entry) for entry in entries}
-                _record(Lookup(mode, "file", file.describe()))
-                return Found(values, "file", file.describe())
-        except (InsecureFileError, StoreUnavailableError) as error:
+            section = file.section(origin)
+        except _FILE_ERRORS as error:
             raise _file_error(error) from None
+        _LAST_LOOKUP.set(Lookup(mode, "file", file.describe()))
+        return Found(
+            {entry: section.get(entry) for entry in entries}, "file", file.describe()
+        )
     keyring_store = _keyring_store()
     try:
         values = {entry: keyring_store.get(origin, entry) for entry in entries}
@@ -393,9 +405,9 @@ def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
         if mode == "keyring":
             raise _keyring_error(error) from None
         # auto on macOS or Windows: an unusable keychain reads as empty.
-        _record(Lookup(mode, "keyring", keyring_store.describe(), True))
+        _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe(), True))
         return Found(dict.fromkeys(entries), None, None)
-    _record(Lookup(mode, "keyring", keyring_store.describe()))
+    _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe()))
     return Found(values, "keyring", keyring_store.describe())
 
 
@@ -404,13 +416,14 @@ def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
 
 @dataclass(frozen=True)
 class Written:
-    """Where a write landed, whether it fell back from the keychain, and
-    which other store still holds an earlier copy (cleanup is best effort)."""
+    """Where a write landed, and whether the keychain failed and the CLI
+    switched to the file for good (``copied`` names what came along)."""
 
     kind: StoreKind
     location: str
     fell_back: bool = False
-    stale: str | None = None
+    copied: tuple[str, ...] = ()
+    config_path: str | None = None
 
 
 _LAST_WRITE: ContextVar[Written | None] = ContextVar("solwyn_last_write", default=None)
@@ -421,151 +434,200 @@ def last_write() -> Written | None:
     return _LAST_WRITE.get()
 
 
-def _keyring_section(keyring_store: KeyringStore, origin: str) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for entry in ALL_ENTRIES:
-        value = keyring_store.get(origin, entry)
-        if value is not None:
-            values[entry] = value
-    return values
+def _complete(entry: str, value: str) -> bool:
+    """Whether a stored entry is a whole, valid credential worth copying."""
+    try:
+        if entry == LOGIN_ENTRY:
+            _parse_login(value, "file", "")
+        elif entry == PENDING_DEVICE_ENTRY:
+            PendingDevice.model_validate_json(value)
+        else:
+            validate_project_key_format(value)
+    except (ValidationError, ValueError, TypeError):
+        return False
+    return True
 
 
-def _write(
-    values: Mapping[str, str],
-    *,
-    origin: str,
-    mode: StoreMode,
-    clear_first: tuple[str, ...] = (),
+def _copy_complete(
+    read: Callable[[str], str | None],
+    write: Callable[[str, str], None],
+    skip: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    """Copy each whole entry ``read`` answers; skip what fails. Never deletes."""
+    copied: list[str] = []
+    for entry in ENTRIES:
+        if entry in skip:
+            continue
+        try:
+            value = read(entry)
+        except (*_FILE_ERRORS, StoreUnavailableError):
+            continue
+        if value is None or not _complete(entry, value):
+            continue
+        try:
+            write(entry, value)
+        except (*_FILE_ERRORS, StoreUnavailableError):
+            continue
+        copied.append(entry)
+    return tuple(copied)
+
+
+def _switch_config(mode: StoreMode) -> str:
+    """Save credential_store to config; a failure fails the command."""
+    from solwyn_cli.config import (
+        ConfigLoadError,
+        ConfigWriteError,
+        get_config_path,
+        update_config_values,
+    )
+
+    path = get_config_path()
+    try:
+        update_config_values({"credential_store": mode}, omit_default_api_url=True)
+    except (ConfigLoadError, ConfigWriteError, ValueError, OSError):
+        raise CredentialStorageError(
+            f"Could not save credential_store = {mode} to {path}. Nothing was stored.",
+            f"Fix {path}, or set {STORE_ENV}={mode}.",
+        ) from None
+    return str(path)
+
+
+def _fall_back_to_file(
+    values: Mapping[str, str], *, origin: str, keyring_store: KeyringStore
 ) -> Written:
-    """Write entries for one origin, keeping the whole origin in one store.
+    """Switch to the file for good after a failed keychain write.
 
-    An origin lives in exactly one store. A keychain write carries the
-    origin's other file entries into the keychain and then removes the origin
-    from the file; a fallback write to the file carries what it can read from
-    the keychain and then deletes the origin's keychain entries. Nothing is
-    dropped, and a stale key in one store can never shadow a login in the other.
-
-    Scope of the other-store cleanup:
-    - macOS and Windows auto: best effort. A cleanup failure never fails the
-      write; ``Written.stale`` names the store still holding the old copy so
-      the command can warn.
-    - Linux auto and file mode: writes go to the file only and never touch
-      the keyring (no D-Bus probing, no timeout delay).
-    - keyring mode: the file copy is removed best effort as well.
-    Only logout looks in both stores on every platform (clear_credentials).
+    Config first, so a failure there stops the command before anything lands
+    in a store the next command would not read.
     """
-    names = (*clear_first, *values)
-    if primary_kind(mode) != "keyring":
-        # file mode never touches the keyring, and Linux auto never writes it.
-        return _write_file(values, origin=origin, names=names, fell_back=False)
-    keyring_store = _keyring_store()
+    config_path = _switch_config("file")
     file = _file_store()
+    copied: dict[str, str] = {}
+    _copy_complete(
+        lambda entry: keyring_store.get(origin, entry),
+        copied.__setitem__,
+        skip=tuple(values),
+    )
     try:
-        carried = {
-            entry: value
-            for entry, value in file.section(origin).items()
-            if entry not in names
-        }
-    except (InsecureFileError, StoreUnavailableError) as error:
+        file.set_many(origin, {**copied, **values})
+    except _FILE_ERRORS as error:
         raise _file_error(error) from None
-    try:
-        # Drop the old token first: metadata without a token reads as no
-        # login, so a failed write never pairs old and new halves.
-        keyring_store.delete(origin, clear_first)
-        keyring_store.set_many(origin, {**carried, **values})
-    except StoreUnavailableError as error:
-        if mode == "keyring":
-            raise _keyring_error(error) from None
-        # auto: fall back to the file, carrying what the keychain still answers.
-        try:
-            from_keyring = {
-                entry: value
-                for entry, value in _keyring_section(keyring_store, origin).items()
-                if entry not in names and entry not in carried
-            }
-        except StoreUnavailableError:
-            from_keyring = {}
-        written = _write_file(
-            {**from_keyring, **values}, origin=origin, names=names, fell_back=True
-        )
-        try:
-            keyring_store.delete(origin, ALL_ENTRIES)
-        except StoreUnavailableError:
-            # The file holds the origin now and is read first. Warn only when
-            # the keychain answered reads, so it may really hold a copy.
-            if from_keyring:
-                written = Written(
-                    written.kind, written.location, True, keyring_store.describe()
-                )
-                _LAST_WRITE.set(written)
-        return written
-    stale = None
-    try:
-        file.delete(origin, ALL_ENTRIES)
-    except (InsecureFileError, StoreUnavailableError):
-        stale = file.describe()  # Best effort: warn, never fail the write.
-    written = Written("keyring", keyring_store.describe(), stale=stale)
+    written = Written("file", file.describe(), True, tuple(copied), config_path)
     _LAST_WRITE.set(written)
     return written
 
 
-def _write_file(
-    values: Mapping[str, str], *, origin: str, names: tuple[str, ...], fell_back: bool
+def _store(
+    values: Mapping[str, str], *, origin: str, mode: StoreMode | None
 ) -> Written:
-    file = _file_store()
-    try:
-        file.delete(origin, [name for name in names if name not in values])
-        file.set_many(origin, values)
-    except (InsecureFileError, StoreUnavailableError) as error:
-        raise _file_error(error) from None
-    written = Written("file", file.describe(), fell_back)
-    _LAST_WRITE.set(written)
-    return written
+    """Write entries to the one store in use. Never deletes anywhere.
+
+    The effective mode is resolved inside the lock: a peer's fallback may have
+    switched config to the file while this write waited.
+    """
+    with _locked():
+        if mode is None:
+            mode = store_mode()
+        if primary_kind(mode) == "file":
+            file = _file_store()
+            try:
+                file.set_many(origin, values)
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+            written = Written("file", file.describe())
+            _LAST_WRITE.set(written)
+            return written
+        keyring_store = _keyring_store()
+        try:
+            for entry, value in values.items():
+                keyring_store.set(origin, entry, value)
+        except StoreUnavailableError as error:
+            # Only auto on macOS or Windows falls back, and only when config
+            # decides the store: an environment variable would override the
+            # saved switch and split reads from writes.
+            if mode != "auto" or os.environ.get(STORE_ENV):
+                raise _keyring_error(error) from None
+            return _fall_back_to_file(
+                values, origin=origin, keyring_store=keyring_store
+            )
+        written = Written("keyring", keyring_store.describe())
+        _LAST_WRITE.set(written)
+        return written
 
 
-ClearStatus: TypeAlias = Literal["cleared", "absent", "unreachable"]
+def _locked() -> Any:
+    """The credential lock, with its failures as storage errors."""
+    return _LockGuard()
+
+
+class _LockGuard:
+    def __enter__(self) -> None:
+        self._context = credential_lock()
+        try:
+            self._context.__enter__()
+        except InsecureFileError as error:
+            raise _file_error(error) from None
+        except StoreUnavailableError as error:
+            raise CredentialStorageError(str(error)) from None
+
+    def __exit__(self, *exc: object) -> None:
+        self._context.__exit__(*exc)
+
+
+def switch_store(mode: StoreMode, *, api_url: str | None = None) -> tuple[str, ...]:
+    """Save ``mode`` to config; when the store changes, copy this API's whole
+    credentials from the old store into the new one, best effort. Never deletes.
+    """
+    origin = current_origin(api_url)
+    with _locked():
+        try:
+            before = primary_kind(store_mode())
+        except AuthError:
+            before = None
+        _switch_config(mode)
+        after = primary_kind(mode)
+        if before is None or before == after:
+            return ()
+        file, keyring_store = _file_store(), _keyring_store()
+        if after == "keyring":
+            return _copy_complete(
+                lambda entry: file.get(origin, entry),
+                lambda entry, value: keyring_store.set(origin, entry, value),
+            )
+        copied: dict[str, str] = {}
+        names = _copy_complete(
+            lambda entry: keyring_store.get(origin, entry), copied.__setitem__
+        )
+        if copied:
+            try:
+                file.set_many(origin, copied)
+            except _FILE_ERRORS:
+                return ()
+        return names
 
 
 @dataclass(frozen=True)
 class Cleared:
-    """What one store reported when entries were deleted.
+    """What one store reported at logout.
 
-    ``absent``: no keyring exists here, so nothing can be stored in it.
-    ``unreachable``: the keyring exists but did not answer; entries were kept.
+    ``cleared``: nothing of this API is left. ``absent``: no keyring exists
+    here, so nothing can be stored in it. ``unreachable``: the store did not
+    answer; its entries were kept. ``unread``: an entry exists but could not be
+    read (so not revoked); it was kept, and ``kept`` names it.
     """
 
     kind: StoreKind
     location: str
-    status: ClearStatus = "cleared"
+    status: Literal["cleared", "absent", "unreachable", "unread"] = "cleared"
+    kept: tuple[str, ...] = ()
 
     @property
     def cleared(self) -> bool:
-        return self.status != "unreachable"
+        return self.status in ("cleared", "absent")
 
 
 def _keyring_in_use(mode: StoreMode) -> bool:
-    return mode == "keyring" or (mode == "auto" and primary_kind(mode) == "keyring")
-
-
-def _delete(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> list[Cleared]:
-    """Delete entries from the file and, where it is in use, the keychain."""
-    results: list[Cleared] = []
-    file = _file_store()
-    try:
-        file.delete(origin, entries)
-        results.append(Cleared("file", file.describe()))
-    except (InsecureFileError, StoreUnavailableError) as error:
-        raise _file_error(error) from None
-    if _keyring_in_use(mode):
-        keyring_store = _keyring_store()
-        try:
-            keyring_store.delete(origin, entries)
-            results.append(Cleared("keyring", keyring_store.describe()))
-        except StoreUnavailableError as error:
-            if mode == "keyring":
-                raise _keyring_error(error) from None
-            results.append(Cleared("keyring", keyring_store.describe(), "unreachable"))
-    return results
+    return primary_kind(mode) == "keyring"
 
 
 # --- Resolution -------------------------------------------------------------
@@ -608,20 +670,13 @@ def _environment_login(environment: Mapping[str, str]) -> LoginCredential | None
 
 def _stored_login(api_url: str | None = None) -> LoginCredential | None:
     """Read the stored login, or None when absent or corrupt."""
-    mode = store_mode()
-    found = _read(LOGIN_ENTRIES, origin=current_origin(api_url), mode=mode)
-    token = found.values[CLI_CREDENTIAL_ENTRY]
-    raw_meta = found.values[CLI_CREDENTIAL_META_ENTRY]
-    if token is None or raw_meta is None or found.kind is None:
+    found = _read((LOGIN_ENTRY,), origin=current_origin(api_url), mode=store_mode())
+    raw = found.values[LOGIN_ENTRY]
+    if raw is None or found.kind is None or found.location is None:
         return None
     try:
-        return LoginCredential(
-            token=token,
-            meta=LoginMetadata.model_validate_json(raw_meta),
-            source=found.kind,
-            location=found.location,
-        )
-    except ValidationError:
+        return _parse_login(raw, found.kind, found.location)
+    except (ValidationError, ValueError, TypeError):
         return None
 
 
@@ -717,15 +772,32 @@ def missing_credential_hint(purpose: CredentialClass = "user") -> str:
 # --- Storing and clearing ---------------------------------------------------
 
 
+def _login_document(token: str, meta: LoginMetadata) -> str:
+    """The one entry a login occupies: token and metadata together."""
+    return json.dumps({"token": token, "meta": meta.model_dump(mode="json")})
+
+
+def _parse_login(raw: str, kind: StoreKind, location: str) -> LoginCredential:
+    document = json.loads(raw)
+    if not isinstance(document, dict) or set(document) != {"token", "meta"}:
+        raise ValueError("not a login document")
+    return LoginCredential(
+        token=document["token"],
+        meta=LoginMetadata.model_validate(document["meta"]),
+        source=kind,
+        location=location,
+    )
+
+
 def store_project_key(
     project_key: str, *, mode: StoreMode | None = None, api_url: str | None = None
 ) -> ProjectKeyCredential:
     """Validate and store a project key; ``last_write()`` says where."""
     credential = _project_key_credential(project_key, "keyring")
-    written = _write(
+    written = _store(
         {API_KEY_ENTRY: credential.bearer_value()},
         origin=current_origin(api_url),
-        mode=store_mode() if mode is None else mode,
+        mode=mode,
     )
     return credential.model_copy(
         update={"source": written.kind, "location": written.location}
@@ -739,56 +811,65 @@ def store_login(
     mode: StoreMode | None = None,
     api_url: str | None = None,
 ) -> LoginCredential:
-    """Store a CLI login and drop the pending device; ``last_write()`` says where."""
+    """Store a CLI login as one entry, then forget the pending device login."""
     try:
         credential = LoginCredential(token=token, meta=meta)
     except ValidationError:
         raise CredentialStorageError("Received an invalid CLI credential.") from None
     origin = current_origin(api_url)
-    selected = store_mode() if mode is None else mode
-    written = _write(
-        {
-            CLI_CREDENTIAL_META_ENTRY: meta.model_dump_json(),
-            CLI_CREDENTIAL_ENTRY: credential.bearer_value(),
-        },
-        origin=origin,
-        mode=selected,
-        clear_first=(CLI_CREDENTIAL_ENTRY,),
-    )
-    try:
-        _delete((PENDING_DEVICE_ENTRY,), origin=origin, mode=selected)
-    except CredentialStorageError:
-        pass
+    with _locked():
+        written = _store(
+            {LOGIN_ENTRY: _login_document(credential.bearer_value(), meta)},
+            origin=origin,
+            mode=mode,
+        )
+        _forget(PENDING_DEVICE_ENTRY, origin=origin, kind=written.kind)
+    _LAST_WRITE.set(written)
     return credential.model_copy(
         update={"source": written.kind, "location": written.location}
     )
 
 
+def _forget(entry: str, *, origin: str, kind: StoreKind) -> None:
+    """Delete one entry from the store in use (not a cross-store cleanup)."""
+    try:
+        if kind == "file":
+            _file_store().delete(origin, (entry,))
+        else:
+            _keyring_store().delete(origin, entry)
+    except (*_FILE_ERRORS, StoreUnavailableError, CredentialStorageError):
+        pass
+
+
 def clear_login(api_url: str | None = None) -> list[Cleared]:
-    """Remove only the stored CLI login for this API."""
-    return _delete(LOGIN_ENTRIES, origin=current_origin(api_url), mode=store_mode())
+    """Remove the stored CLI login for this API from the store in use."""
+    origin = current_origin(api_url)
+    with _locked():
+        mode = store_mode()
+        if primary_kind(mode) == "file":
+            file = _file_store()
+            try:
+                file.delete(origin, (LOGIN_ENTRY,))
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+            return [Cleared("file", file.describe())]
+        keyring_store = _keyring_store()
+        try:
+            keyring_store.delete(origin, LOGIN_ENTRY)
+        except StoreUnavailableError as error:
+            if mode == "keyring":
+                raise _keyring_error(error) from None
+            return [Cleared("keyring", keyring_store.describe(), "unreachable")]
+        return [Cleared("keyring", keyring_store.describe())]
 
 
 def store_pending_device(pending: PendingDevice, *, api_url: str | None = None) -> None:
-    """Keep an in-progress device login so login --continue can resume it.
-
-    The pending entry follows the origin: when the credentials file already
-    holds this API (auto on macOS or Windows, after a fallback), it is written
-    there, the store reads use, so --wait 0 then --continue always meets it.
-    Otherwise it is written like any other entry (with the same fallback).
-    """
-    origin = current_origin(api_url)
-    mode = store_mode()
-    value = {PENDING_DEVICE_ENTRY: pending.model_dump_json()}
-    if mode == "auto" and primary_kind(mode) == "keyring":
-        try:
-            held_by_file = _file_store().has_origin(origin)
-        except (InsecureFileError, StoreUnavailableError) as error:
-            raise _file_error(error) from None
-        if held_by_file:
-            _write_file(value, origin=origin, names=tuple(value), fell_back=False)
-            return
-    _write(value, origin=origin, mode=mode)
+    """Keep an in-progress device login in the store in use, for --continue."""
+    _store(
+        {PENDING_DEVICE_ENTRY: pending.model_dump_json()},
+        origin=current_origin(api_url),
+        mode=None,
+    )
 
 
 def load_pending_device(api_url: str | None = None) -> PendingDevice | None:
@@ -807,87 +888,108 @@ def load_pending_device(api_url: str | None = None) -> PendingDevice | None:
 
 def clear_pending_device(api_url: str | None = None) -> None:
     """Forget an in-progress device login. Best effort."""
+    with _locked():
+        try:
+            kind = primary_kind(store_mode())
+        except AuthError:
+            return
+        _forget(PENDING_DEVICE_ENTRY, origin=current_origin(api_url), kind=kind)
+
+
+@dataclass(frozen=True)
+class LogoutReport:
+    """What logout found, revoked and kept, store by store."""
+
+    logins_found: int
+    revoked: bool | None
+    stores: list[Cleared]
+
+
+def _scan_file(origin: str) -> tuple[Cleared, list[LoginCredential]]:
+    file = _file_store()
     try:
-        _delete(
-            (PENDING_DEVICE_ENTRY,), origin=current_origin(api_url), mode=store_mode()
-        )
-    except CredentialStorageError:
-        pass
-
-
-def _login_from(
-    values: Mapping[str, str | None], kind: StoreKind, location: str
-) -> LoginCredential | None:
-    token = values.get(CLI_CREDENTIAL_ENTRY)
-    raw_meta = values.get(CLI_CREDENTIAL_META_ENTRY)
-    if token is None or raw_meta is None:
-        return None
-    try:
-        return LoginCredential(
-            token=token,
-            meta=LoginMetadata.model_validate_json(raw_meta),
-            source=kind,
-            location=location,
-        )
-    except ValidationError:
-        return None
-
-
-def logins_in_every_store(api_url: str | None = None) -> list[LoginCredential]:
-    """Return the logins stored for this API in the file and in the keychain.
-
-    The one exception to store isolation: logout looks in both stores whatever
-    SOLWYN_CREDENTIAL_STORE or --store says, so no login is left behind live.
-    """
-    origin = current_origin(api_url)
+        section = file.section(origin)
+    except _FILE_ERRORS:
+        # Unreadable as a whole (malformed, insecure, I/O): keep it all.
+        return Cleared("file", file.describe(), "unread", ("credentials file",)), []
     logins: list[LoginCredential] = []
-    file = _file_store()
+    kept: tuple[str, ...] = ()
+    raw = section.get(LOGIN_ENTRY)
+    if raw is not None:
+        try:
+            logins.append(_parse_login(raw, "file", file.describe()))
+        except (ValidationError, ValueError, TypeError):
+            kept = (LOGIN_ENTRY,)
     try:
-        login = _login_from(file.section(origin), "file", file.describe())
-    except (InsecureFileError, StoreUnavailableError) as error:
-        raise _file_error(error) from None
-    if login is not None:
-        logins.append(login)
+        file.delete(origin, tuple(entry for entry in ENTRIES if entry not in kept))
+    except _FILE_ERRORS:
+        return Cleared("file", file.describe(), "unreachable", ENTRIES), logins
+    return (
+        Cleared("file", file.describe(), "unread" if kept else "cleared", kept),
+        logins,
+    )
+
+
+def _scan_keyring(origin: str) -> tuple[Cleared, list[LoginCredential]]:
     keyring_store = _keyring_store()
+    where = keyring_store.describe()
+    logins: list[LoginCredential] = []
+    kept: list[str] = []
     try:
-        login = _login_from(
-            _keyring_section(keyring_store, origin), "keyring", keyring_store.describe()
-        )
+        raw = keyring_store.get(origin, LOGIN_ENTRY)
+    except KeyringAbsentError:
+        return Cleared("keyring", where, "absent"), []
     except StoreUnavailableError:
-        login = None  # Reported by clear_credentials.
-    if login is not None and all(
-        login.bearer_value() != found.bearer_value() for found in logins
-    ):
-        logins.append(login)
-    return logins
+        raw, kept = None, [LOGIN_ENTRY]  # Could not read: never delete it.
+    if raw is not None:
+        try:
+            logins.append(_parse_login(raw, "keyring", where))
+        except (ValidationError, ValueError, TypeError):
+            kept.append(LOGIN_ENTRY)
+    failed = False
+    for username in [f"{origin}/{entry}" for entry in ENTRIES if entry not in kept]:
+        try:
+            keyring_store.delete_raw(username)
+        except StoreUnavailableError:
+            failed = True
+            kept.append(username.rsplit("/", 1)[1])
+    for entry in LEGACY_ENTRIES:
+        try:
+            keyring_store.delete_raw(entry)
+        except StoreUnavailableError:
+            failed = True
+    if failed:
+        return Cleared("keyring", where, "unreachable", tuple(kept)), logins
+    return Cleared(
+        "keyring", where, "unread" if kept else "cleared", tuple(kept)
+    ), logins
 
 
-def clear_credentials(api_url: str | None = None) -> list[Cleared]:
-    """Remove this API's credentials from both stores, and 0.3 keyring entries.
+def logout_everywhere(
+    revoke: Callable[[str], bool], api_url: str | None = None
+) -> LogoutReport:
+    """Revoke and clear this API's logins in both stores, whatever the mode.
 
-    Like logins_in_every_store, this ignores the selected store: logout clears
-    the file and the keychain. A keychain that does not exist here is
-    ``absent``; one that exists but does not answer is ``unreachable``, and its
-    entries are retained.
+    The one exception to store isolation. Runs as one transaction under the
+    credential lock: scan, revoke every login read, then delete. An entry that
+    exists but could not be read is never deleted and is reported; a login
+    that was read is cleared even if its revoke fails.
     """
     origin = current_origin(api_url)
-    file = _file_store()
-    try:
-        file.delete(origin, ALL_ENTRIES)
-    except (InsecureFileError, StoreUnavailableError) as error:
-        raise _file_error(error) from None
-    results = [Cleared("file", file.describe())]
-    keyring_store = _keyring_store()
-    try:
-        keyring_store.delete(origin, ALL_ENTRIES)
-        for entry in LEGACY_ENTRIES:
-            keyring_store.delete_raw(entry)
-        results.append(Cleared("keyring", keyring_store.describe()))
-    except KeyringAbsentError:
-        results.append(Cleared("keyring", keyring_store.describe(), "absent"))
-    except StoreUnavailableError:
-        results.append(Cleared("keyring", keyring_store.describe(), "unreachable"))
-    return results
+    with _locked():
+        file_report, file_logins = _scan_file(origin)
+        keyring_report, keyring_logins = _scan_keyring(origin)
+        logins = file_logins + [
+            login
+            for login in keyring_logins
+            if all(login.bearer_value() != seen.bearer_value() for seen in file_logins)
+        ]
+        results = [revoke(login.bearer_value()) for login in logins]
+    return LogoutReport(
+        logins_found=len(logins),
+        revoked=all(results) if results else None,
+        stores=[file_report, keyring_report],
+    )
 
 
 def stored_entry_status(
@@ -896,7 +998,7 @@ def stored_entry_status(
     """Classify what is stored for this API, for diagnostics."""
     try:
         found = _read(
-            (API_KEY_ENTRY, *LOGIN_ENTRIES),
+            (API_KEY_ENTRY, LOGIN_ENTRY),
             origin=current_origin(api_url),
             mode=store_mode(),
         )
@@ -905,12 +1007,10 @@ def stored_entry_status(
     lookup = last_lookup()
     if lookup is not None and lookup.keyring_unavailable:
         return "unavailable"
-    key = found.values[API_KEY_ENTRY]
-    token = found.values[CLI_CREDENTIAL_ENTRY]
-    meta = found.values[CLI_CREDENTIAL_META_ENTRY]
-    if (token is None) != (meta is None):
+    raw = found.values[LOGIN_ENTRY]
+    if raw is not None and not _complete(LOGIN_ENTRY, raw):
         return "incomplete"
-    return "found" if key is not None or token is not None else "missing"
+    return "found" if found.values[API_KEY_ENTRY] or raw else "missing"
 
 
 # --- Entries from 0.3 and earlier -------------------------------------------

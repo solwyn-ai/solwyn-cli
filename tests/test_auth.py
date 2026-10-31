@@ -1,5 +1,7 @@
 """Credential resolution by command class; store behaviour is in test_credential_store."""
 
+import json
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -19,14 +21,6 @@ from solwyn_cli import auth
 VALID_KEY = "sk_proj_" + "a1" * 32
 ENV_KEY = "sk_proj_" + "e1" * 32
 DEVICE_CODE = "solwyn_dc_" + "0f" * 32
-ALL_ENTRIES = [
-    auth.API_KEY_ENTRY,
-    auth.CLI_CREDENTIAL_ENTRY,
-    auth.CLI_CREDENTIAL_META_ENTRY,
-    auth.PENDING_DEVICE_ENTRY,
-    "access_token",
-    "refresh_token",
-]
 
 
 @pytest.fixture
@@ -161,13 +155,17 @@ def test_unexpired_login_reports_no_expiry(keychain: dict[str, str]) -> None:
 @pytest.mark.parametrize(
     "entries",
     [
-        {auth.CLI_CREDENTIAL_ENTRY: LOGIN_TOKEN},
-        {auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json()},
+        {auth.LOGIN_ENTRY: json.dumps({"token": LOGIN_TOKEN})},
+        {auth.LOGIN_ENTRY: json.dumps({"meta": login_meta().model_dump(mode="json")})},
         {
-            auth.CLI_CREDENTIAL_ENTRY: "solwyn_cli_short",
-            auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json(),
+            auth.LOGIN_ENTRY: json.dumps(
+                {
+                    "token": "solwyn_cli_short",
+                    "meta": login_meta().model_dump(mode="json"),
+                }
+            )
         },
-        {auth.CLI_CREDENTIAL_ENTRY: LOGIN_TOKEN, auth.CLI_CREDENTIAL_META_ENTRY: "{"},
+        {auth.LOGIN_ENTRY: "{"},
     ],
 )
 def test_incomplete_or_corrupt_login_is_not_a_credential(
@@ -281,16 +279,13 @@ def test_project_key_model_enforces_format_without_echoing_secret() -> None:
 NEW_TOKEN = "solwyn_cli_" + "f7" * 32
 
 
-def test_metering_never_reads_the_login_entries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    reads: list[str] = []
-    store = install_store(
-        monkeypatch,
-        DictStore({**login_entries(), auth.API_KEY_ENTRY: VALID_KEY}, read_log=reads),
+def test_metering_never_uses_a_stored_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The file is read whole; metering still selects only the project key.
+    install_store(
+        monkeypatch, DictStore({**login_entries(), auth.API_KEY_ENTRY: VALID_KEY})
     )
 
-    auth.resolve_credential({}, purpose="metering")
+    found = auth.resolve_credential({}, purpose="metering")
 
-    assert reads == [auth.API_KEY_ENTRY]
-    assert store.values[auth.API_KEY_ENTRY] == VALID_KEY
+    assert isinstance(found, auth.ProjectKeyCredential)
+    assert found.bearer_value() == VALID_KEY

@@ -59,8 +59,8 @@ each API keeps its own login and key.
 
 | Platform | Default (`auto`) |
 | --- | --- |
-| macOS | The macOS Keychain. If a Keychain write fails (for example, a locked Keychain over SSH), the CLI writes the file instead and warns once. |
-| Windows | Windows Credential Manager, with local persistence so it does not roam with a domain profile. Over SSH, where Credential Manager cannot persist, it falls back to the file and warns once. |
+| macOS | The macOS Keychain. If a Keychain write fails (for example, a locked Keychain over SSH), the CLI switches to the file for good (see below). |
+| Windows | Windows Credential Manager, with local persistence so it does not roam with a domain profile. Over SSH, where Credential Manager cannot persist, the CLI switches to the file for good. |
 | Linux (desktop, headless, WSL, containers, CI) | The credentials file. |
 
 The credentials file is `credentials.json` in the user data directory:
@@ -69,7 +69,11 @@ The credentials file is `credentials.json` in the user data directory:
 Windows. `SOLWYN_CREDENTIALS_FILE` (an absolute path) overrides it. On Linux and
 macOS the directory is `0700` and the file `0600`, written atomically. The CLI
 refuses to read a file that other users can read, or that another user owns, and
-says how to fix it (`chmod 600 <path>`).
+says how to fix it (`chmod 600 <path>`). It also refuses a file that is not a
+valid Solwyn credentials document, naming the file. Every change to stored
+credentials holds a lock (a file in the credentials directory) so two `solwyn`
+processes never interleave; a command that waits more than 10 seconds for it
+fails with a storage error.
 
 The file is plaintext protected only by those permissions. Anything running as
 your user can read it, including backup tools and an AI agent's file-reading
@@ -86,8 +90,7 @@ config as `credential_store` so later commands read the same store, or set
 `SOLWYN_CREDENTIAL_STORE`, which overrides config. A `--store` that conflicts
 with `SOLWYN_CREDENTIAL_STORE` is a usage error.
 
-- `auto`: the platform default above. An existing file entry for an API is read
-  before the keychain, and every write deletes the stale copy in the other store.
+- `auto`: the platform default above.
 - `keyring`: the OS keychain (macOS Keychain, Windows Credential Manager, or the
   Linux Secret Service or KWallet), or a loud failure with no fallback. It uses
   the platform keyring directly: plaintext `keyrings.alt` backends are refused,
@@ -96,18 +99,28 @@ with `SOLWYN_CREDENTIAL_STORE` is a usage error.
 - `file`: the credentials file only. The keyring is never touched, except by
   `solwyn logout` (below).
 
-Each API URL lives in exactly one store. When a write lands in the keychain, any
-of that API's entries in the file (a login or a project key) move into the
-keychain with it and leave the file; a write that falls back to the file
-carries what the keychain still answers and deletes that API's keychain
-entries. A stale key in one store can therefore never shadow a login in the
-other. On macOS and Windows that cleanup of the other store is best effort: if
-it fails, the write still succeeds and the CLI warns, naming the store that
-still holds the earlier copy (`solwyn logout` clears both). A pending login
-(`--wait 0`) is written to whichever store already holds the API, so
-`solwyn login --continue` always finds it; if it falls back to the file, the CLI
-warns with the file path, as for a login or key. On Linux in `auto` mode,
-writes never touch the keyring at all: no D-Bus probe, no delay.
+Every command reads and writes exactly one store: `SOLWYN_CREDENTIAL_STORE`,
+else `credential_store` in config, else `auto`. Pending logins (`--wait 0`) live
+there too, so `solwyn login --continue` always finds them.
+
+When a keychain write fails in `auto` mode on macOS or Windows, the CLI switches
+to the file for good: it saves `credential_store = file` to config, copies this
+API's complete credentials that the keychain still answers into the file, writes
+the new credential there, and says so:
+
+```text
+Could not use the macOS Keychain (it may be locked, or unavailable over SSH).
+Saved it to <path>. From now on the CLI uses this file (credential_store = file
+in <config path>); run solwyn login --store auto to switch back.
+```
+
+If config cannot be written, the command fails with a storage error and stores
+nothing. With `SOLWYN_CREDENTIAL_STORE` set there is no fallback: the variable
+would override the saved switch. Switching stores with `--store` copies this
+API's complete credentials from the old store into the new one, best effort.
+Nothing is ever deleted by a write; copies left in the store not in use are
+never read. Only logout deletes. On Linux in `auto` mode, writes never touch the
+keyring: no D-Bus probe, no delay.
 
 CLI 0.3.0 stored a session login (`access_token` and `refresh_token`) and a
 project key (`api_key`) in the system keyring under the service `solwyn-cli`.
@@ -154,18 +167,27 @@ next in line. `whoami` shows where its credential came from (`Stored in`).
 
 `solwyn logout` is the one exception to store isolation. Whatever
 `SOLWYN_CREDENTIAL_STORE` or `--store` says, it looks for this API's login in
-both the credentials file and the keychain, revokes every login it finds on the
-server (one attempt each, 5 seconds), then deletes this API's entries and the
-0.3.0 entries from both stores. It reports each store as `cleared`,
-`absent` (no keyring exists on this machine, for example headless Linux) or
-`unreachable` (the keyring exists but is locked or did not answer). `cleared`
-is true only when nothing remains. If a store was unreachable, logout exits 3
-with `logout_incomplete`, names the store whose entries were kept, and carries
-the same report in `detail`; unlock it and run `solwyn logout` again. If a
-revoke fails, logout says so, still clears, and exits 0; revoke the login in the
-dashboard under Settings, CLI logins. Logout does not revoke project keys or a
-`SOLWYN_TOKEN` login. See [CLI logins](credentials.mdx) to list and revoke
-logins from the CLI.
+both the credentials file and the keychain, revokes every login it can read on
+the server (one attempt each, 5 seconds), then deletes this API's entries and
+the 0.3.0 entries from both stores, all while holding the credential lock. It
+reports each store with a `status`:
+
+- `cleared`: nothing of this API is left there.
+- `absent`: no keyring exists on this machine (keyring has no usable backend,
+  the Secret Service or KWallet is not installed, or there is no D-Bus session).
+- `unreachable`: the keyring exists but is locked, refused the connection or did
+  not answer within 5 seconds; its entries were kept.
+- `unread`: an entry exists but could not be read (for example a login entry
+  the keychain will not return, or a malformed credentials file). It is never
+  deleted or revoked; `kept` names it.
+
+`cleared` is true only when every store is `cleared` or `absent`. Otherwise
+logout exits 3 with `logout_incomplete`, names each store that kept entries and
+why, and carries the same report in `detail`; fix that store and run
+`solwyn logout` again. If a login was read but its revoke fails, logout says so,
+still clears it, and exits 0; revoke the login in the dashboard under Settings,
+CLI logins. Logout does not revoke project keys or a `SOLWYN_TOKEN` login. See
+[CLI logins](credentials.mdx) to list and revoke logins from the CLI.
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.

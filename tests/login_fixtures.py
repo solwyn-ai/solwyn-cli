@@ -45,12 +45,11 @@ def login_credential(token: str = LOGIN_TOKEN, **meta: Any) -> auth.LoginCredent
 
 
 def login_entries(token: str = LOGIN_TOKEN, **meta: Any) -> dict[str, str]:
-    """Return the keychain entries a stored login occupies."""
+    """Return the store entries a stored login occupies: one login document."""
     return {
-        auth.CLI_CREDENTIAL_ENTRY: token,
-        auth.CLI_CREDENTIAL_META_ENTRY: json.dumps(
-            login_meta(**meta).model_dump(mode="json")
-        ),
+        auth.LOGIN_ENTRY: json.dumps(
+            {"token": token, "meta": login_meta(**meta).model_dump(mode="json")}
+        )
     }
 
 
@@ -146,7 +145,7 @@ class DictStore:
             pytest.fail(f"credential store read of {entry}")
         if self.unavailable:
             raise StoreUnavailableError("The test store is unavailable.")
-        if self.read_log is not None:
+        if self.read_log is not None and entry != "*section*":
             self.read_log.append(entry)
 
     def _check_write(self) -> None:
@@ -159,6 +158,8 @@ class DictStore:
         return bool(self.values)
 
     def section(self, origin: str) -> dict[str, str]:
+        # The whole origin is read at once, as the real file is.
+        self._check_read("*section*")
         for entry in self.values:
             self._check_read(entry)
         return dict(self.values)

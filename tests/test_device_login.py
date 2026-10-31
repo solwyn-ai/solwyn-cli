@@ -168,11 +168,10 @@ def test_login_polls_with_interval_and_slow_down_then_stores_the_credential(
         "email": "ada@example.com",
         "role": "owner",
     }
-    assert keychain[auth.CLI_CREDENTIAL_ENTRY] == ISSUED_TOKEN
-    assert (
-        json.loads(keychain[auth.CLI_CREDENTIAL_META_ENTRY])["account_name"] == "Acme"
-    )
-    assert set(keychain) == {auth.CLI_CREDENTIAL_ENTRY, auth.CLI_CREDENTIAL_META_ENTRY}
+    login = json.loads(keychain[auth.LOGIN_ENTRY])
+    assert login["token"] == ISSUED_TOKEN
+    assert login["meta"]["account_name"] == "Acme"
+    assert set(keychain) == {auth.LOGIN_ENTRY}
     assert "https://app.solwyn.ai/device" in result.stderr
     assert USER_CODE in result.stderr
     assert "Waiting for approval... (Ctrl-C to stop)" in result.stderr
@@ -322,7 +321,7 @@ def test_continue_polls_the_stored_code_at_once_and_finishes(
     assert fake.forms("/oauth/token")[0]["device_code"] == [DEVICE_CODE]
     assert clock.sleeps == []
     assert auth.PENDING_DEVICE_ENTRY not in keychain
-    assert keychain[auth.CLI_CREDENTIAL_ENTRY] == ISSUED_TOKEN
+    assert json.loads(keychain[auth.LOGIN_ENTRY])["token"] == ISSUED_TOKEN
 
 
 def test_continue_without_a_pending_login_exits_three(
@@ -441,7 +440,7 @@ def test_invalid_token_answers_are_not_stored(
 
     assert result.exit_code == 3
     assert json.loads(result.stderr.splitlines()[-1])["code"] == "invalid_auth_response"
-    assert auth.CLI_CREDENTIAL_ENTRY not in keychain
+    assert auth.LOGIN_ENTRY not in keychain
 
 
 @pytest.mark.parametrize(
@@ -537,12 +536,14 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
                 "location": "/test/credentials.json",
                 "status": "cleared",
                 "cleared": True,
+                "kept": [],
             },
             {
                 "store": "keyring",
                 "location": auth.credential_store.keyring_name(),
                 "status": "cleared",
                 "cleared": True,
+                "kept": [],
             },
         ],
     }

@@ -18,7 +18,7 @@ import httpx
 import pytest
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, OTHER_LOGIN_TOKEN, login_meta
+from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
@@ -132,93 +132,6 @@ def _revoked_tokens(requests: list[httpx.Request]) -> list[str]:
 
 
 # --- Finding 1: one origin lives in exactly one store -----------------------
-
-
-@pytest.mark.parametrize("family", ["macos", "windows"])
-def test_a_login_after_keychain_recovery_is_not_shadowed_by_a_fallback_key(
-    monkeypatch: pytest.MonkeyPatch,
-    memory_keyring: Any,
-    credentials_file: Path,
-    family: str,
-) -> None:
-    _platform(monkeypatch, family)
-    keychain = _Lockable(monkeypatch, memory_keyring)
-    requests = _oauth_server(monkeypatch)
-
-    # The keychain is locked: the project key falls back to the file.
-    keychain.locked = True
-    with_key = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
-    assert with_key.exit_code == 0, with_key.stderr
-    assert json.loads(with_key.stdout)["store"] == "file"
-
-    # The keychain recovers: a browser login goes to the keychain.
-    keychain.locked = False
-    login = runner.invoke(app, ["--json", "login", "--label", "dev-laptop"])
-    assert login.exit_code == 0, login.stderr
-    assert json.loads(login.stdout)["store"] == "keyring"
-
-    # The whole origin moved: nothing left in the file, the key kept.
-    assert not credentials_file.exists()
-    users = {user for _, user in memory_keyring.values}
-    assert f"{PROD}/api_key" in users and f"{PROD}/cli_credential" in users
-
-    # User commands use the login, not the full-scope key.
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert isinstance(found, auth.LoginCredential)
-    assert found.bearer_value() == ISSUED_TOKEN
-    assert auth.stored_project_key(api_url=PROD) is not None
-
-    # Logout finds and revokes the login.
-    logout = runner.invoke(app, ["--json", "logout"])
-    assert logout.exit_code == 0, logout.stderr
-    assert _revoked_tokens(requests) == [ISSUED_TOKEN]
-
-
-def test_a_successful_keychain_write_moves_the_origin_out_of_the_file(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    origin = credential_origin(PROD)
-    FileStore().set_many(
-        origin,
-        {
-            auth.API_KEY_ENTRY: VALID_KEY,
-            auth.CLI_CREDENTIAL_ENTRY: OTHER_LOGIN_TOKEN,
-            auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json(),
-        },
-    )
-
-    auth.store_login(LOGIN_TOKEN, login_meta(label="new"), api_url=PROD)
-
-    assert not credentials_file.exists()
-    stored = {user: value for (_, user), value in memory_keyring.values.items()}
-    assert stored[f"{origin}/api_key"] == VALID_KEY
-    assert stored[f"{origin}/cli_credential"] == LOGIN_TOKEN
-    assert json.loads(stored[f"{origin}/cli_credential_meta"])["label"] == "new"
-
-
-def test_a_fallback_write_carries_what_the_keychain_still_answers(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
-    real_set = memory_keyring.set_password
-
-    def failing_set(service: str, username: str, password: str) -> None:
-        if username.endswith("/api_key"):
-            raise RuntimeError("write denied")
-        real_set(service, username, password)
-
-    monkeypatch.setattr(memory_keyring, "set_password", failing_set)
-
-    auth.store_project_key(VALID_KEY, api_url=PROD)
-
-    section = FileStore().section(credential_origin(PROD))
-    assert section[auth.API_KEY_ENTRY] == VALID_KEY
-    assert section[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN
-    assert not any(user.startswith(PROD) for _, user in memory_keyring.values)
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert isinstance(found, auth.LoginCredential)
 
 
 # --- Finding 2: the file is read through one checked descriptor -------------
@@ -345,26 +258,6 @@ def test_reads_and_writes_never_follow_symlinks(
     assert all(flags & os.O_NOFOLLOW and flags & os.O_CLOEXEC for flags in flags_seen)
 
 
-def test_undecodable_file_content_is_no_credential_and_never_a_traceback(
-    credentials_file: Path,
-) -> None:
-    credentials_file.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(credentials_file, os.O_CREAT | os.O_WRONLY, 0o600)
-    os.write(descriptor, b"\xff\xfe\x00 not utf-8 " + VALID_KEY.encode())
-    os.close(descriptor)
-
-    result = runner.invoke(
-        app,
-        ["--json", "login", "--with-key"],
-        input=VALID_KEY,
-        env={"SOLWYN_CREDENTIAL_STORE": "file"},
-    )
-
-    assert result.exit_code == 0, result.stderr
-    assert VALID_KEY not in result.stdout + result.stderr
-    assert json.loads(credentials_file.read_text())["version"] == 1
-
-
 # --- Finding 4: logout looks in both stores ---------------------------------
 
 
@@ -388,28 +281,6 @@ def test_logout_in_file_mode_revokes_and_clears_a_keychain_login(
     # Restoring auto afterwards never resurrects the login.
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "auto")
     assert auth.resolve_credential({}, api_url=PROD) is None
-
-
-def test_logout_revokes_a_login_in_each_store(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    requests = _oauth_server(monkeypatch)
-    auth.store_login(LOGIN_TOKEN, login_meta(), mode="keyring", api_url=PROD)
-    FileStore().set_many(
-        credential_origin(PROD),
-        {
-            auth.CLI_CREDENTIAL_ENTRY: OTHER_LOGIN_TOKEN,
-            auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json(),
-        },
-    )
-
-    result = runner.invoke(app, ["--json", "logout"])
-
-    assert result.exit_code == 0, result.stderr
-    assert sorted(_revoked_tokens(requests)) == sorted([LOGIN_TOKEN, OTHER_LOGIN_TOKEN])
-    assert json.loads(result.stdout)["logins_found"] == 2
-    assert not credentials_file.exists()
 
 
 def test_logout_with_an_unreachable_keychain_reports_what_it_kept_and_fails(
@@ -526,118 +397,6 @@ def test_logout_deletes_0_3_keyring_entries_in_every_mode(
 
 
 # --- Items 7 to 9: pending logins and other-store cleanup scope --------------
-
-
-@pytest.mark.parametrize("family", ["macos", "windows"])
-def test_wait_0_then_continue_works_when_the_file_holds_the_origin(
-    monkeypatch: pytest.MonkeyPatch,
-    memory_keyring: Any,
-    credentials_file: Path,
-    family: str,
-) -> None:
-    _platform(monkeypatch, family)
-    keychain = _Lockable(monkeypatch, memory_keyring)
-    _oauth_server(monkeypatch)
-    # An earlier locked-keychain fallback left this API in the file.
-    keychain.locked = True
-    with_key = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
-    assert json.loads(with_key.stdout)["store"] == "file"
-    keychain.locked = False  # The keychain has recovered.
-
-    start = runner.invoke(app, ["--json", "login", "--wait", "0"])
-
-    assert start.exit_code == 6, start.stderr
-    # The pending login follows the origin into the file reads use.
-    section = FileStore().section(credential_origin(PROD))
-    assert auth.PENDING_DEVICE_ENTRY in section
-    assert not any(
-        user.endswith("/pending_device") for _, user in memory_keyring.values
-    )
-    assert "Could not use" not in start.stderr  # Routing, not a fallback.
-
-    resume = runner.invoke(app, ["--json", "login", "--continue"])
-
-    assert resume.exit_code == 0, resume.stderr
-    assert json.loads(resume.stdout)["store"] == "keyring"
-    assert not credentials_file.exists()
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert isinstance(found, auth.LoginCredential)
-    assert auth.stored_project_key(api_url=PROD) is not None
-
-
-@pytest.mark.parametrize(
-    ("family", "name"),
-    [("macos", "the macOS Keychain"), ("windows", "Windows Credential Manager")],
-)
-def test_a_pending_login_that_falls_back_to_the_file_warns(
-    monkeypatch: pytest.MonkeyPatch,
-    memory_keyring: Any,
-    credentials_file: Path,
-    family: str,
-    name: str,
-) -> None:
-    _platform(monkeypatch, family)
-    keychain = _Lockable(monkeypatch, memory_keyring)
-    _oauth_server(monkeypatch)
-    keychain.locked = True
-
-    start = runner.invoke(app, ["--json", "login", "--wait", "0"])
-
-    assert start.exit_code == 6
-    assert json.loads(start.stderr.splitlines()[-1])["code"] == "login_pending"
-    assert (
-        f"Could not use {name} (it may be locked, or unavailable over SSH). "
-        f"Saved the pending login to {credentials_file} instead."
-    ) in start.stderr
-    assert "solwyn_dc_" not in start.stderr
-    assert auth.PENDING_DEVICE_ENTRY in FileStore().section(credential_origin(PROD))
-
-    keychain.locked = False
-    resume = runner.invoke(app, ["--json", "login", "--continue"])
-    assert resume.exit_code == 0, resume.stderr
-
-
-def test_a_failed_file_cleanup_after_a_keychain_write_warns_and_succeeds(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: VALID_KEY})
-
-    def failing_delete(self: FileStore, origin: str, entries: Any) -> None:
-        raise credential_store.StoreUnavailableError("disk full")
-
-    monkeypatch.setattr(FileStore, "delete", failing_delete)
-
-    result = runner.invoke(
-        app, ["--json", "login", "--with-key"], input="sk_proj_" + "b2" * 32
-    )
-
-    assert result.exit_code == 0, result.stderr
-    assert json.loads(result.stdout)["store"] == "keyring"
-    assert (
-        f"Could not remove the earlier copy in {credentials_file}, which is read "
-        "before the keychain. Delete it, or run solwyn logout to clear both stores."
-    ) in result.stderr
-
-
-def test_a_failed_keychain_cleanup_after_a_fallback_warns(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
-
-    def refuse(*args: Any) -> None:
-        raise RuntimeError("write denied")
-
-    monkeypatch.setattr(memory_keyring, "set_password", refuse)
-    monkeypatch.setattr(memory_keyring, "delete_password", refuse)
-
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
-
-    assert result.exit_code == 0, result.stderr
-    assert "Could not remove the earlier copy in the macOS Keychain." in result.stderr
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert isinstance(found, auth.LoginCredential)  # Carried into the file.
 
 
 @pytest.mark.parametrize("interactive", [True, False])

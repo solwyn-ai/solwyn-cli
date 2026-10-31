@@ -238,11 +238,15 @@ def test_logout_clears_all_credentials_and_matches_both_format_goldens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[None] = []
-    monkeypatch.setattr(auth, "logins_in_every_store", lambda: [])
     monkeypatch.setattr(
-        login_module,
-        "clear_credentials",
-        lambda: calls.append(None) or [auth.Cleared("file", "/test/credentials.json")],
+        auth,
+        "logout_everywhere",
+        lambda revoke: (
+            calls.append(None)
+            or auth.LogoutReport(
+                0, None, [auth.Cleared("file", "/test/credentials.json")]
+            )
+        ),
     )
 
     json_result = runner.invoke(app, ["--json", "logout"])
@@ -264,13 +268,12 @@ def test_logout_clear_failure_is_structured_exit_three_without_secrets(
         ACCESS_TOKEN,
     )
 
-    def fail_clear() -> None:
+    def fail_clear(revoke: object) -> None:
         raise auth.CredentialStorageError(
             "Could not clear credentials from the operating-system keychain."
         )
 
-    monkeypatch.setattr(auth, "logins_in_every_store", lambda: [])
-    monkeypatch.setattr(login_module, "clear_credentials", fail_clear)
+    monkeypatch.setattr(auth, "logout_everywhere", fail_clear)
 
     result = runner.invoke(app, ["--json", "logout"])
 

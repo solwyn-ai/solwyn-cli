@@ -56,6 +56,9 @@ _APPROVAL_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 app = typer.Typer(
     add_completion=False,
+    # A crash must never print local variables: they can hold a key read from
+    # a hidden prompt or a token. Errors are rendered as structured output.
+    pretty_exceptions_show_locals=False,
     invoke_without_command=True,
     no_args_is_help=True,
     epilog=help_contract(

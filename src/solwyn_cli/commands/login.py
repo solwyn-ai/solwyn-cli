@@ -22,7 +22,6 @@ from solwyn_cli.auth import (
     PendingDevice,
     ProjectKeyCredential,
     ResolvedCredential,
-    clear_credentials,
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
@@ -30,9 +29,7 @@ from solwyn_cli.commands._shared import (
     credential_saved_note,
     exit_with_error,
     fallback_warning,
-    stale_copy_warning,
 )
-from solwyn_cli.config import ConfigLoadError, ConfigWriteError, update_config_values
 from solwyn_cli.credential_store import STORE_ENV, STORE_MODES, StoreMode
 from solwyn_cli.errors import ApiError, redact_secrets
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -151,7 +148,11 @@ def authenticate_with_project_key(project_key: str) -> ProjectKeyCredential:
 
 
 def _selected_store(context: typer.Context, requested: str | None) -> StoreMode | None:
-    """Validate --store against SOLWYN_CREDENTIAL_STORE and save it to config."""
+    """Validate --store, save it to config, and copy this API's credentials.
+
+    Switching stores copies this API's whole credentials from the store in
+    use into the new one, best effort; nothing is deleted from either.
+    """
     if requested is None:
         return None
     if requested not in STORE_MODES:
@@ -172,14 +173,19 @@ def _selected_store(context: typer.Context, requested: str | None) -> StoreMode 
         )
     # Saved first, so later reads look in the store this login writes.
     try:
-        update_config_values({"credential_store": requested}, omit_default_api_url=True)
-    except (ConfigLoadError, ConfigWriteError, ValueError):
-        _fail(
-            context,
-            "config_write_failed",
-            "Could not save credential_store to the configuration.",
-            f"Set {STORE_ENV}={requested} instead.",
+        copied = auth.switch_store(requested)  # type: ignore[arg-type]
+    except CredentialStorageError as error:
+        _fail(context, "credential_storage_failed", str(error), error.hint)
+    if copied:
+        names = ", ".join(
+            {
+                "login": "login",
+                "api_key": "project key",
+                "pending_device": "pending login",
+            }[entry]
+            for entry in copied
         )
+        _note(f"Copied this API's {names} into the new credential store.")
     return requested  # type: ignore[return-value]
 
 
@@ -308,12 +314,8 @@ def _start(
 def _warn_about_pending_write() -> None:
     """Say so when the pending device secret did not land in the keychain."""
     written = auth.last_write()
-    if written is None:
-        return
-    if written.fell_back:
-        _note(fallback_warning(written.location, "the pending login"))
-    if written.stale is not None:
-        _note(stale_copy_warning(written.stale))
+    if written is not None and written.fell_back:
+        _note(fallback_warning(written, "the pending login"))
 
 
 def _pending_exit(
@@ -499,14 +501,15 @@ def device_login(
     )
     try:
         credential = auth.store_login(token, meta, mode=store)
-    except CredentialStorageError as error:
+    except Exception as error:  # noqa: BLE001 - never leave an issued login live.
         # The server issued a credential we cannot keep; do not leave it live.
         revoked = revoke_token(command_context(context).api_url, token)
+        storage = isinstance(error, CredentialStorageError)
         _fail(
             context,
             "credential_storage_failed",
-            str(error),
-            error.hint if revoked else UNSTORED_LOGIN_HINT,
+            str(error) if storage else "The new login could not be stored.",
+            (error.hint if storage else None) if revoked else UNSTORED_LOGIN_HINT,
         )
     auth.delete_legacy_entries(store)
     if note := credential_saved_note(credential):
@@ -601,6 +604,10 @@ def _login_with_key(context: typer.Context, store: StoreMode | None) -> None:
             context,
             "invalid_project_key",
             "The project key is empty or malformed.",
+        )
+    except Exception:  # noqa: BLE001 - a structured error, never a traceback.
+        _fail(
+            context, "credential_storage_failed", "The project key could not be stored."
         )
     auth.delete_legacy_entries(store)
     if note := credential_saved_note(credential):
@@ -712,27 +719,26 @@ def login(
 _STATUS_TEXT = {"cleared": "cleared", "absent": "not present", "unreachable": "kept"}
 
 
+_STATUS_TEXT = {
+    "cleared": "cleared",
+    "absent": "not present",
+    "unreachable": "kept (not reachable)",
+    "unread": "kept (not readable)",
+}
+
+
 def logout(context: typer.Context) -> None:
     """Revoke every stored login and clear this API's stored Solwyn credentials.
 
     Logout is the one exception to store isolation: whatever store is
     selected, it looks in both the credentials file and the keychain.
     """
+    api_url = command_context(context).api_url
     try:
-        logins = auth.logins_in_every_store()
+        report = auth.logout_everywhere(lambda token: revoke_token(api_url, token))
     except CredentialStorageError as error:
         _fail(context, "credential_storage_failed", str(error), error.hint)
-    revoked: bool | None = None
-    if logins:
-        api_url = command_context(context).api_url
-        # Every login found is revoked, not just the first.
-        results = [revoke_token(api_url, login.bearer_value()) for login in logins]
-        revoked = all(results)
-    try:
-        cleared = clear_credentials()
-    except CredentialStorageError as error:
-        _fail(context, "credential_storage_failed", str(error), error.hint)
-    if revoked is False:
+    if report.revoked is False:
         _note(REVOKE_FAILED_NOTE)
     if auth.TOKEN_ENV in os.environ:
         _note(
@@ -740,27 +746,29 @@ def logout(context: typer.Context) -> None:
             "use solwyn credentials revoke."
         )
     data = {
-        "cleared": all(item.cleared for item in cleared),
-        "revoked": revoked,
-        "logins_found": len(logins),
+        "cleared": all(item.cleared for item in report.stores),
+        "revoked": report.revoked,
+        "logins_found": report.logins_found,
         "stores": [
             {
                 "store": item.kind,
                 "location": item.location,
                 "status": item.status,
                 "cleared": item.cleared,
+                "kept": list(item.kept),
             }
-            for item in cleared
+            for item in report.stores
         ],
     }
-    retained = [item for item in cleared if not item.cleared]
+    retained = [item for item in report.stores if not item.cleared]
     if retained:
-        places = ", ".join(item.location for item in retained)
+        places = ", ".join(f"{item.location} ({item.status})" for item in retained)
         _fail(
             context,
             "logout_incomplete",
-            f"Could not reach {places}; credentials stored there were kept.",
-            "Unlock it and run solwyn logout again.",
+            f"Logout kept credentials it could not reach or read: {places}.",
+            "Unlock or repair that store and run solwyn logout again. Nothing that "
+            "could not be read was deleted or revoked.",
             detail={"schema": "solwyn.logout.v1", **data},
             semantic=ErrorSemantic.AUTH,
         )
@@ -772,11 +780,11 @@ def logout(context: typer.Context) -> None:
             rows=(
                 *(
                     (f"{item.kind} ({item.location})", _STATUS_TEXT[item.status])
-                    for item in cleared
+                    for item in report.stores
                 ),
                 *(
-                    (("login", "revoked" if revoked else "not revoked"),)
-                    if revoked is not None
+                    (("login", "revoked" if report.revoked else "not revoked"),)
+                    if report.revoked is not None
                     else ()
                 ),
             ),

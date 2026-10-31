@@ -115,8 +115,9 @@ Solwyn CLI:
 - sends only your own spend events; `sdk_instance_id` is an invocation ID (the retained operation UUID for recoverable MCP batches); no telemetry;
 - never captures, logs, or transmits prompts or responses;
 - never collects, stores, or proxies provider API keys;
-- has no telemetry, update checks, or phone-home behavior; and
-- stores Solwyn credentials in the operating system keychain on macOS and Windows and in a private `0600` file (`~/.local/share/solwyn/credentials.json`) on Linux, keyed by API URL, never in configuration files or command-line arguments. Output never shows them, with two deliberate exceptions: `solwyn login --no-store` prints the new login token once for `SOLWYN_TOKEN`, and raw data commands (`costs export`, `alerts export`, `attest`) return the server's data byte-for-byte. See [login](docs/commands/login.mdx) for the stores, `SOLWYN_TOKEN` for CI, the tradeoffs, and how logout clears both stores.
+- has no telemetry, update checks, or phone-home behavior;
+- stores Solwyn credentials in the operating system keychain on macOS and Windows and in a private `0600` file (`~/.local/share/solwyn/credentials.json`) on Linux, keyed by API URL, never in configuration files or command-line arguments. If the keychain fails, the CLI switches to that file for good and says so (`solwyn login --store auto` switches back). See [login](docs/commands/login.mdx) for the stores, `SOLWYN_TOKEN` for CI, the tradeoffs, and how logout clears both stores; and
+- prints a secret only where that is the point of the command: `keys env` (the stored project key, as an export line), `keys rotate` and `projects create` without `--store-key` (a newly issued project key, once), `webhooks create` and `webhooks rotate` (a one-time signing secret), and `login --no-store` (a newly issued login token, once). Raw data commands (`costs export`, `alerts export`, `attest`) return the server's data byte-for-byte. Everything else redacts CLI tokens and device codes.
 
 ## Development
 

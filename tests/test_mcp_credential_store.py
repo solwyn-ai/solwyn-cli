@@ -232,8 +232,9 @@ def test_a_minimal_environment_server_reads_the_file_login(tmp_path: Path) -> No
     credential_store.FileStore(path).set_many(
         credential_store.credential_origin(api_url),
         {
-            auth.CLI_CREDENTIAL_ENTRY: LOGIN_TOKEN,
-            auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json(),
+            auth.LOGIN_ENTRY: json.dumps(
+                {"token": LOGIN_TOKEN, "meta": login_meta().model_dump(mode="json")}
+            ),
         },
     )
     try:

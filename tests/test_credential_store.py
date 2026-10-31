@@ -98,7 +98,7 @@ def test_each_api_keeps_its_own_login_and_key(credentials_file: Path) -> None:
     assert prod is not None and prod.bearer_value() == OTHER_LOGIN_TOKEN
     assert auth.resolve_credential({}, purpose="metering", api_url=LOCAL) is None
 
-    auth.clear_credentials(api_url=LOCAL)
+    auth.logout_everywhere(lambda token: True, api_url=LOCAL)
     assert set(_read_file(credentials_file)["origins"]) == {PROD}
 
 
@@ -173,9 +173,10 @@ def test_file_and_directory_are_private_and_versioned(
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     document = _read_file(path)
     assert document["version"] == 1
-    login = document["origins"][PROD]
-    assert login["cli_credential"] == LOGIN_TOKEN
-    assert login["cli_credential_meta"]["label"] == "dev-laptop"
+    # One login document: the token and its metadata together.
+    login = document["origins"][PROD]["login"]
+    assert login["token"] == LOGIN_TOKEN
+    assert login["meta"]["label"] == "dev-laptop"
 
 
 @posix_only
@@ -271,25 +272,9 @@ def test_clearing_the_last_entry_removes_the_file(
     auth.store_project_key(VALID_KEY, api_url=PROD)
     assert credentials_file.exists()
 
-    auth.clear_credentials(api_url=PROD)
+    FileStore().delete(credential_origin(PROD))
 
     assert not credentials_file.exists()
-
-
-@pytest.mark.parametrize("content", ["{", "[]", '{"version": 2, "origins": {}}'])
-def test_unreadable_content_is_no_credential_and_a_write_replaces_it(
-    credentials_file: Path, content: str
-) -> None:
-    credentials_file.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(credentials_file, os.O_CREAT | os.O_WRONLY, 0o600)
-    os.write(descriptor, content.encode())
-    os.close(descriptor)
-
-    store = FileStore(credentials_file)
-    assert store.get(credential_origin(PROD), auth.API_KEY_ENTRY) is None
-
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
-    assert _read_file(credentials_file)["version"] == 1
 
 
 # --- Modes ------------------------------------------------------------------
@@ -361,10 +346,8 @@ def test_keyring_mode_stores_one_entry_per_secret_named_by_origin(
 
     auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
 
-    assert set(memory_keyring.values) == {
-        ("solwyn-cli", f"{PROD}/cli_credential"),
-        ("solwyn-cli", f"{PROD}/cli_credential_meta"),
-    }
+    # One entry per login: the token can never pair with other metadata.
+    assert set(memory_keyring.values) == {("solwyn-cli", f"{PROD}/login")}
     assert not credentials_file.exists()
     found = auth.resolve_credential({}, api_url=PROD)
     assert found is not None and found.source == "keyring"
@@ -412,21 +395,21 @@ def test_platform_backend_ignores_global_keyring_configuration(
     import keyring
     from keyring.backends import SecretService, kwallet
 
-    class Unusable:
+    class NotInstalled:
         @property
         def priority(self) -> float:
-            raise RuntimeError("no D-Bus")
+            raise RuntimeError("SecretStorage required")
 
-    unusable = Unusable()
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1/bus")
     monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyrings.alt.file.PlaintextKeyring")
     monkeypatch.setattr(
         keyring, "get_keyring", lambda: pytest.fail("global keyring config consulted")
     )
-    monkeypatch.setattr(SecretService, "Keyring", unusable)
-    monkeypatch.setattr(kwallet, "DBusKeyring", unusable)
+    monkeypatch.setattr(SecretService, "Keyring", NotInstalled())
+    monkeypatch.setattr(kwallet, "DBusKeyring", NotInstalled())
     _platform(monkeypatch, "linux")
 
-    with pytest.raises(StoreUnavailableError, match="no D-Bus session"):
+    with pytest.raises(credential_store.KeyringAbsentError):
         credential_store._platform_backend()
 
 
@@ -463,109 +446,6 @@ def test_every_keyring_call_times_out_after_five_seconds(
 
 
 # --- auto on macOS and Windows ----------------------------------------------
-
-
-@pytest.mark.parametrize("family", ["macos", "windows"])
-def test_auto_writes_the_keychain_and_deletes_the_stale_file_copy(
-    monkeypatch: pytest.MonkeyPatch,
-    memory_keyring: Any,
-    credentials_file: Path,
-    family: str,
-) -> None:
-    _platform(monkeypatch, family)
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
-    assert credentials_file.exists()
-
-    stored = auth.store_project_key(OTHER_KEY, api_url=PROD)
-
-    assert stored.source == "keyring"
-    assert ("solwyn-cli", f"{PROD}/api_key") in memory_keyring.values
-    assert not credentials_file.exists()
-    found = auth.stored_project_key(api_url=PROD)
-    assert found is not None and found.bearer_value() == OTHER_KEY
-
-
-def test_auto_reads_an_existing_file_before_the_keychain(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any
-) -> None:
-    _platform(monkeypatch, "macos")
-    memory_keyring.values[("solwyn-cli", f"{PROD}/api_key")] = OTHER_KEY
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: VALID_KEY})
-
-    found = auth.stored_project_key(api_url=PROD)
-
-    assert found is not None
-    assert found.bearer_value() == VALID_KEY
-    assert found.source == "file"
-
-
-@pytest.mark.parametrize("family", ["macos", "windows"])
-def test_auto_falls_back_to_the_file_when_a_keychain_write_fails(
-    monkeypatch: pytest.MonkeyPatch,
-    credentials_file: Path,
-    keychain_unreachable: None,
-    family: str,
-) -> None:
-    _platform(monkeypatch, family)
-
-    stored = auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
-
-    assert stored.source == "file"
-    written = auth.last_write()
-    assert written is not None and written.fell_back
-    assert (
-        _read_file(credentials_file)["origins"][PROD]["cli_credential"] == LOGIN_TOKEN
-    )
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert found is not None and found.source == "file"
-    note = _shared.credential_saved_note(stored)
-    assert note.startswith("Could not use ")
-    assert f"Saved to {credentials_file}" in note
-    assert "Run solwyn login again from a desktop session" in note
-
-
-def test_fallback_after_a_keychain_write_fails_deletes_keychain_leftovers(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    memory_keyring.values[("solwyn-cli", f"{PROD}/cli_credential")] = OTHER_LOGIN_TOKEN
-    real_set = memory_keyring.set_password
-
-    def failing_set(service: str, username: str, password: str) -> None:
-        if username.endswith("/cli_credential"):
-            raise RuntimeError("locked over SSH")
-        real_set(service, username, password)
-
-    monkeypatch.setattr(memory_keyring, "set_password", failing_set)
-
-    auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
-
-    # The old keychain token can never shadow the new file login.
-    assert not any(user.startswith(PROD) for _, user in memory_keyring.values)
-    found = auth.resolve_credential({}, api_url=PROD)
-    assert found is not None and found.bearer_value() == LOGIN_TOKEN
-
-
-def test_a_failed_keychain_replacement_never_pairs_old_token_and_new_metadata(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any
-) -> None:
-    _platform(monkeypatch, "macos")
-    monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "keyring")
-    auth.store_login(OTHER_LOGIN_TOKEN, login_meta(label="old"), api_url=PROD)
-    real_set = memory_keyring.set_password
-
-    def failing_set(service: str, username: str, password: str) -> None:
-        if username.endswith("/cli_credential"):
-            raise RuntimeError("denied")
-        real_set(service, username, password)
-
-    monkeypatch.setattr(memory_keyring, "set_password", failing_set)
-
-    with pytest.raises(auth.KeyringUnavailableError):
-        auth.store_login(LOGIN_TOKEN, login_meta(label="new"), api_url=PROD)
-
-    # The old token was dropped first: no login, never old token + new meta.
-    assert auth.resolve_credential({}, api_url=PROD) is None
 
 
 def test_auto_reads_an_unusable_keychain_as_empty(
@@ -628,18 +508,6 @@ def test_saving_a_project_key_to_the_file_steers_to_env_vars(
     assert "full project access and does not expire" in result.stderr
     assert "prefer SOLWYN_API_KEY from a secret manager" in result.stderr
     assert VALID_KEY not in result.stdout + result.stderr
-
-
-def test_keychain_fallback_warns_once_on_login(
-    monkeypatch: pytest.MonkeyPatch, credentials_file: Path, keychain_unreachable: None
-) -> None:
-    _platform(monkeypatch, "macos")
-
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
-
-    assert result.exit_code == 0, result.stderr
-    assert result.stderr.count("Could not use the macOS Keychain") == 1
-    assert credentials_file.exists()
 
 
 def test_a_login_saved_to_the_file_says_who_can_read_it(

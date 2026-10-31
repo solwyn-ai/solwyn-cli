@@ -1,16 +1,29 @@
 """Where stored Solwyn credentials live: the OS keyring or one private file.
 
 Every entry is keyed by API origin, so a login made against a local API is
-never sent to production. Two stores share one entry vocabulary:
+never sent to production. Three entries exist per origin:
+
+- ``login``: one JSON document holding the CLI token and its metadata, so a
+  token can never be paired with metadata from another write;
+- ``pending_device``: one JSON document for an in-progress device login;
+- ``api_key``: a project key.
+
+Two stores hold them:
 
 - ``FileStore``: ``credentials.json`` in the user data directory, directory
-  0700, file 0600, replaced atomically. A file other users can read is refused,
-  the way ssh refuses a private key.
+  0700, file 0600, replaced atomically. The file is read through one
+  descriptor that is checked before it is read, and the whole document is
+  validated; anything else is refused with an error naming the file.
 - ``KeyringStore``: the platform keyring, instantiated directly (macOS
   Keychain, Windows Credential Manager, Secret Service or KWallet). Global
   keyring configuration (``PYTHON_KEYRING_BACKEND``, ``keyringrc.cfg``) is
   ignored, plaintext ``keyrings.alt`` backends are refused, and every call is
   bounded by a 5 second timeout.
+
+Every credential transaction runs under ``credential_lock``: an exclusive
+advisory lock on a file in the credentials directory, so concurrent CLI and MCP
+processes never interleave a read-modify-write, a multi-entry update or a
+logout.
 
 This module never prints. Callers turn its results into messages.
 """
@@ -22,14 +35,21 @@ import secrets
 import stat
 import sys
 import threading
-from collections.abc import Callable, Iterable, Mapping
+import time
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, TypeVar
 from urllib.parse import urlsplit
 
 from platformdirs import user_data_dir
 
-from solwyn_cli.config import _config_lock, _fsync_parent_directory
+from solwyn_cli.config import _fsync_parent_directory
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 StoreKind: TypeAlias = Literal["keyring", "file"]
 StoreMode: TypeAlias = Literal["auto", "keyring", "file"]
@@ -39,23 +59,40 @@ STORE_ENV = "SOLWYN_CREDENTIAL_STORE"
 FILE_ENV = "SOLWYN_CREDENTIALS_FILE"
 KEYRING_SERVICE = "solwyn-cli"
 KEYRING_TIMEOUT_SECONDS = 5.0
+LOCK_TIMEOUT_SECONDS = 10.0
+LOCK_NAME = ".credentials.lock"
 FILE_VERSION = 1
+
+LOGIN_ENTRY = "login"
+PENDING_DEVICE_ENTRY = "pending_device"
+API_KEY_ENTRY = "api_key"
+ENTRIES = (LOGIN_ENTRY, API_KEY_ENTRY, PENDING_DEVICE_ENTRY)
 # Entries whose values are JSON documents; the file keeps them as objects.
-JSON_ENTRIES = frozenset({"cli_credential_meta", "pending_device"})
+JSON_ENTRIES = frozenset({LOGIN_ENTRY, PENDING_DEVICE_ENTRY})
 
 T = TypeVar("T")
 
 
 class StoreUnavailableError(Exception):
-    """The store cannot be used here; the message is fixed and secret-free."""
+    """The store cannot be used here; the message is fixed and secret-free.
+
+    For the keyring this means it exists but did not answer: locked, denied,
+    a refused D-Bus connection, or a timeout ("unreachable").
+    """
 
 
 class KeyringAbsentError(StoreUnavailableError):
-    """No keyring backend exists here (no D-Bus session, or only a placeholder).
+    """No keyring backend exists here ("absent").
 
-    Nothing can have been stored in it from this session. A keyring that exists
-    but is locked, denies access or does not answer raises the base class.
+    keyring reported no usable backend (its fail or null backend, or a refused
+    plaintext one), the Secret Service or KWallet libraries are not installed,
+    or there is no D-Bus session at all. Nothing can be stored there from this
+    session.
     """
+
+
+class LockTimeoutError(StoreUnavailableError):
+    """Another process held the credential lock past the bounded wait."""
 
 
 InsecureReason: TypeAlias = Literal[
@@ -82,6 +119,17 @@ class InsecureFileError(Exception):
                 "another user. Set SOLWYN_CREDENTIALS_FILE to a path in a "
                 "directory you own.",
             }[reason]
+        )
+
+
+class MalformedFileError(Exception):
+    """The credentials file is not a valid Solwyn credentials document."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            f"{path} is not a valid Solwyn credentials file. Remove it, or move "
+            "it aside, then run solwyn login."
         )
 
 
@@ -122,6 +170,171 @@ def credentials_path() -> Path:
     )
 
 
+# POSIX only. On Windows the file lives in %LOCALAPPDATA%, protected by the
+# profile ACL; os.getuid, O_NOFOLLOW and POSIX modes do not apply there, so the
+# ownership and mode checks are skipped and the ACL is relied on.
+
+
+def private_directory(directory: Path, *, create: bool) -> bool:
+    """Require a private directory; return whether it exists.
+
+    A missing directory is created 0700 when ``create``. An existing one must
+    be owned by this user; group or world bits are removed.
+    """
+    if not directory.exists():
+        if not create:
+            return False
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name == "nt":
+        return True
+    status = os.stat(directory)
+    if status.st_uid != os.getuid():
+        raise InsecureFileError(directory, "directory_owner")
+    if stat.S_IMODE(status.st_mode) & 0o077:
+        os.chmod(directory, 0o700)
+    return True
+
+
+# --- The credential lock ----------------------------------------------------
+
+# One process-wide lock (threads: MCP tool calls run in worker threads) plus
+# the cross-process advisory lock. Re-entrant within a thread, so a transaction
+# may call helpers that take the lock again.
+_PROCESS_LOCK = threading.RLock()
+_HELD = threading.local()
+
+
+def lock_path() -> Path:
+    return credentials_path().parent / LOCK_NAME
+
+
+def _open_lock(path: Path) -> int:
+    flags = getattr(os, "O_BINARY", 0)
+    if os.name != "nt":
+        flags |= os.O_NOFOLLOW | os.O_CLOEXEC
+    try:
+        private_directory(path.parent, create=True)
+        try:
+            return os.open(path, os.O_RDWR | os.O_CREAT | flags, 0o600)
+        except PermissionError:
+            # A read-only directory may still hold an existing lock file;
+            # flock works on a read-only descriptor.
+            return os.open(path, os.O_RDONLY | flags)
+    except InsecureFileError:
+        raise
+    except OSError:
+        raise StoreUnavailableError(
+            f"Could not open the credential lock {path}. Check that the "
+            "credentials directory is writable."
+        ) from None
+
+
+def _try_lock(descriptor: int) -> bool:
+    try:
+        if os.name == "nt":
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        if error.errno in (
+            errno.EAGAIN,
+            errno.EACCES,
+            errno.EWOULDBLOCK,
+            errno.EDEADLK,
+        ):
+            return False
+        raise
+    return True
+
+
+def _unlock(descriptor: int) -> None:
+    if os.name == "nt":
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+
+@contextmanager
+def credential_lock() -> Iterator[None]:
+    """Hold the exclusive credential lock, waiting at most LOCK_TIMEOUT_SECONDS."""
+    if getattr(_HELD, "depth", 0):
+        _HELD.depth += 1
+        try:
+            yield
+        finally:
+            _HELD.depth -= 1
+        return
+    path = lock_path()
+    timeout_error = LockTimeoutError(
+        "Another Solwyn process is changing stored credentials; gave up after "
+        f"{LOCK_TIMEOUT_SECONDS:g} s waiting for {path}. Retry when it finishes."
+    )
+    deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+    if not _PROCESS_LOCK.acquire(timeout=LOCK_TIMEOUT_SECONDS):
+        raise timeout_error
+    try:
+        descriptor = _open_lock(path)
+        try:
+            while True:
+                try:
+                    if _try_lock(descriptor):
+                        break
+                except OSError:
+                    raise StoreUnavailableError(f"Could not lock {path}.") from None
+                if time.monotonic() >= deadline:
+                    raise timeout_error
+                time.sleep(0.02)
+            _HELD.depth = 1
+            try:
+                yield
+            finally:
+                _HELD.depth = 0
+                try:
+                    _unlock(descriptor)
+                except OSError:
+                    pass  # Closing the descriptor releases it as well.
+        finally:
+            os.close(descriptor)
+    finally:
+        _PROCESS_LOCK.release()
+
+
+# --- The file ---------------------------------------------------------------
+
+
+def _valid_section(section: Any) -> bool:
+    if not isinstance(section, dict) or not set(section) <= set(ENTRIES):
+        return False
+    login = section.get(LOGIN_ENTRY)
+    if login is not None and not (
+        isinstance(login, dict)
+        and set(login) == {"token", "meta"}
+        and isinstance(login["token"], str)
+        and isinstance(login["meta"], dict)
+    ):
+        return False
+    pending = section.get(PENDING_DEVICE_ENTRY)
+    if pending is not None and not isinstance(pending, dict):
+        return False
+    key = section.get(API_KEY_ENTRY)
+    return key is None or isinstance(key, str)
+
+
+def _valid_document(document: Any) -> bool:
+    return (
+        isinstance(document, dict)
+        and set(document) == {"version", "origins"}
+        and document["version"] == FILE_VERSION
+        and isinstance(document["origins"], dict)
+        and all(
+            isinstance(origin, str) and _valid_section(section)
+            for origin, section in document["origins"].items()
+        )
+    )
+
+
 class FileStore:
     """One versioned JSON document keyed by API origin."""
 
@@ -132,30 +345,6 @@ class FileStore:
 
     def describe(self) -> str:
         return str(self.path)
-
-    # POSIX only. On Windows the file lives in %LOCALAPPDATA%, protected by the
-    # profile ACL; os.getuid, O_NOFOLLOW and POSIX modes do not apply there, so
-    # these checks are skipped and the ACL is relied on, as other CLIs do.
-
-    def _check_directory(self, *, create: bool) -> bool:
-        """Require a private directory; return whether it exists.
-
-        A missing directory is created 0700 when ``create``. An existing one
-        must be owned by this user; group or world bits are removed.
-        """
-        directory = self.path.parent
-        if not directory.exists():
-            if not create:
-                return False
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if os.name == "nt":
-            return True
-        status = os.stat(directory)
-        if status.st_uid != os.getuid():
-            raise InsecureFileError(directory, "directory_owner")
-        if stat.S_IMODE(status.st_mode) & 0o077:
-            os.chmod(directory, 0o700)
-        return True
 
     def _read_bytes(self) -> bytes | None:
         """Read the file through one descriptor that is checked before reading."""
@@ -183,10 +372,11 @@ class FileStore:
                     raise InsecureFileError(self.path, "mode")
             return handle.read()
 
-    def _load(self, *, create_directory: bool = False) -> dict[str, Any]:
+    def load(self, *, create_directory: bool = False) -> dict[str, Any]:
+        """Return the validated document; a missing file is an empty one."""
         empty: dict[str, Any] = {"version": FILE_VERSION, "origins": {}}
         try:
-            if not self._check_directory(create=create_directory):
+            if not private_directory(self.path.parent, create=create_directory):
                 return empty
             raw = self._read_bytes()
         except InsecureFileError:
@@ -200,28 +390,24 @@ class FileStore:
         try:
             document = json.loads(raw.decode("utf-8"))
         except ValueError:  # Includes UnicodeDecodeError.
-            document = None
-        if (
-            not isinstance(document, dict)
-            or document.get("version") != FILE_VERSION
-            or not isinstance(document.get("origins"), dict)
-        ):
-            # Unreadable content never yields a credential; a write replaces it.
-            return empty
+            raise MalformedFileError(self.path) from None
+        if not _valid_document(document):
+            raise MalformedFileError(self.path)
         return document
 
-    def has_origin(self, origin: str) -> bool:
-        section = self._load()["origins"].get(origin)
-        return isinstance(section, dict) and bool(section)
+    def section(self, origin: str) -> dict[str, str]:
+        """Return every entry stored for one origin, as strings."""
+        section = self.load()["origins"].get(origin) or {}
+        return {
+            entry: json.dumps(value) if entry in JSON_ENTRIES else value
+            for entry, value in section.items()
+        }
 
     def get(self, origin: str, entry: str) -> str | None:
-        section = self._load()["origins"].get(origin)
-        if not isinstance(section, dict) or entry not in section:
-            return None
-        value = section[entry]
-        if entry in JSON_ENTRIES:
-            return json.dumps(value) if isinstance(value, dict) else None
-        return value if isinstance(value, str) else None
+        return self.section(origin).get(entry)
+
+    def has_origin(self, origin: str) -> bool:
+        return bool(self.section(origin))
 
     def set_many(self, origin: str, values: Mapping[str, str]) -> None:
         def change(origins: dict[str, Any]) -> None:
@@ -231,46 +417,37 @@ class FileStore:
 
         self._update(change)
 
-    def delete(self, origin: str, entries: Iterable[str]) -> None:
-        names = list(entries)
-
+    def delete(self, origin: str, entries: tuple[str, ...] = ENTRIES) -> None:
         def change(origins: dict[str, Any]) -> None:
             section = origins.get(origin)
-            if not isinstance(section, dict):
+            if section is None:
                 return
-            for entry in names:
+            for entry in entries:
                 section.pop(entry, None)
             if not section:
                 origins.pop(origin, None)
 
-        if self.path.exists():
+        if self.path.exists() or self.path.is_symlink():
             self._update(change)
 
-    def section(self, origin: str) -> dict[str, str]:
-        """Return every entry stored for one origin, as strings."""
-        values: dict[str, str] = {}
-        for entry in self._load()["origins"].get(origin, {}) or {}:
-            value = self.get(origin, entry)
-            if value is not None:
-                values[entry] = value
-        return values
-
     def _update(self, change: Callable[[dict[str, Any]], None]) -> None:
-        try:
-            self._check_directory(create=True)
-            with _config_lock(self.path):
-                document = self._load()
+        with credential_lock():
+            try:
+                private_directory(self.path.parent, create=True)
+                document = self.load()
                 change(document["origins"])
+                if not _valid_document(document):
+                    raise MalformedFileError(self.path)
                 if document["origins"]:
                     self._write(document)
                 else:
                     self.path.unlink(missing_ok=True)
-        except InsecureFileError:
-            raise
-        except (OSError, StoreUnavailableError):
-            raise StoreUnavailableError(
-                f"Could not write the credentials file at {self.path}."
-            ) from None
+            except (InsecureFileError, MalformedFileError):
+                raise
+            except (OSError, StoreUnavailableError):
+                raise StoreUnavailableError(
+                    f"Could not write the credentials file at {self.path}."
+                ) from None
 
     def _write(self, document: Mapping[str, Any]) -> None:
         content = json.dumps(document, indent=2, sort_keys=True).encode("utf-8")
@@ -290,6 +467,9 @@ class FileStore:
             _fsync_parent_directory(self.path)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+# --- The keyring ------------------------------------------------------------
 
 
 def _with_timeout(call: Callable[[], T]) -> T:
@@ -317,6 +497,42 @@ def _with_timeout(call: Callable[[], T]) -> T:
 _REFUSED_MODULES = ("keyrings.alt", "keyring.backends.fail", "keyring.backends.null")
 
 
+def _linux_backend() -> Any:
+    """Secret Service, then KWallet; classify why neither is usable.
+
+    No D-Bus session address, or the libraries or the service not installed,
+    means no keyring exists here: absent. A session bus that refuses the
+    connection or errors means a keyring may hold entries: unreachable.
+    """
+    from keyring.backends import SecretService, kwallet
+
+    if not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        raise KeyringAbsentError(
+            "The system keyring is not available (no D-Bus session)."
+        )
+    unreachable = False
+    for candidate in (SecretService.Keyring, kwallet.DBusKeyring):
+        try:
+            candidate.priority  # noqa: B018 - raises when unusable.
+        except Exception as error:  # noqa: BLE001 - classified below.
+            message = str(error)
+            missing = (
+                message.startswith("SecretStorage")  # Library not installed.
+                or "neither running nor activatable" in message  # No service.
+                or "dbus" in message.lower()
+                and "not installed" in message
+            )
+            unreachable = unreachable or not missing
+            continue
+        return candidate()
+    if unreachable:
+        raise StoreUnavailableError(
+            "The system keyring is not reachable (the D-Bus session refused the "
+            "connection)."
+        )
+    raise KeyringAbsentError("The system keyring is not available.")
+
+
 def _platform_backend() -> Any:
     """Instantiate this platform's keyring directly, ignoring global config."""
     family = platform_name()
@@ -331,15 +547,7 @@ def _platform_backend() -> Any:
         # The default (enterprise) persistence roams with domain profiles.
         backend.persist = "local machine"
         return backend
-    from keyring.backends import SecretService, kwallet
-
-    for candidate in (SecretService.Keyring, kwallet.DBusKeyring):
-        try:
-            candidate.priority  # noqa: B018 - raises when unusable (no D-Bus).
-        except Exception:  # noqa: BLE001 - any failure means "not here".
-            continue
-        return candidate()
-    raise KeyringAbsentError("The system keyring is not available (no D-Bus session).")
+    return _linux_backend()
 
 
 # Injectable for tests: a function returning a keyring backend.
@@ -369,19 +577,22 @@ class KeyringStore:
     def _get_backend(self) -> Any:
         if self._backend is None:
             backend = _with_timeout(backend_factory)
-            module = type(backend).__module__
-            if module.startswith(_REFUSED_MODULES):
+            if type(backend).__module__.startswith(_REFUSED_MODULES):
                 raise KeyringAbsentError("The system keyring is not available.")
             self._backend = backend
         return self._backend
 
     def _call(self, operation: Callable[[Any], T]) -> T:
+        from keyring.errors import NoKeyringError
+
         try:
             backend = self._get_backend()
             return _with_timeout(lambda: operation(backend))
         except StoreUnavailableError:
             raise
-        except Exception:  # noqa: BLE001 - locked, denied, missing daemon.
+        except NoKeyringError:
+            raise KeyringAbsentError("The system keyring is not available.") from None
+        except Exception:  # noqa: BLE001 - locked, denied, refused connection.
             raise StoreUnavailableError(
                 "The system keyring is not available."
             ) from None
@@ -410,13 +621,8 @@ class KeyringStore:
     def get(self, origin: str, entry: str) -> str | None:
         return self.get_raw(f"{origin}/{entry}")
 
-    def has_origin(self, origin: str) -> bool:
-        return False  # Never consulted: the file decides auto reads.
+    def set(self, origin: str, entry: str, value: str) -> None:
+        self.set_raw(f"{origin}/{entry}", value)
 
-    def set_many(self, origin: str, values: Mapping[str, str]) -> None:
-        for entry, value in values.items():
-            self.set_raw(f"{origin}/{entry}", value)
-
-    def delete(self, origin: str, entries: Iterable[str]) -> None:
-        for entry in entries:
-            self.delete_raw(f"{origin}/{entry}")
+    def delete(self, origin: str, entry: str) -> None:
+        self.delete_raw(f"{origin}/{entry}")

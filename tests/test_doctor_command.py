@@ -350,7 +350,7 @@ def test_snapshot_diagnostic_marks_old_or_unpinned_snapshot_degraded() -> None:
 def test_credential_store_diagnostic_rejects_an_incomplete_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    install_store(monkeypatch, DictStore({auth.CLI_CREDENTIAL_ENTRY: "stored"}))
+    install_store(monkeypatch, DictStore({auth.LOGIN_ENTRY: "stored"}))
 
     result = doctor_module._credential_store_diagnostic()
 
@@ -364,11 +364,8 @@ def test_credential_store_diagnostic_rejects_an_incomplete_login(
     "entries,detail",
     [
         (
-            {
-                auth.CLI_CREDENTIAL_ENTRY: "stored",
-                auth.CLI_CREDENTIAL_META_ENTRY: "{}",
-            },
-            "file (/test/credentials.json) contains an unreadable login.",
+            {auth.LOGIN_ENTRY: json.dumps({"token": "stored", "meta": {}})},
+            "file (/test/credentials.json) contains an incomplete login.",
         ),
         (expired_login_entries(), "The stored login expired on "),
     ],
