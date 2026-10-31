@@ -11,8 +11,12 @@ solwyn --json --project proj_0123456789abcdef01234567 doctor --mcp
 
 `mcp-config` is offline. It resolves this interpreter's installed `solwyn` console
 executable to an absolute path (`Scripts/solwyn.exe` on Windows), and prints the
-`solwyn.mcp-config.v1` envelope with `command` and `args`. Extract those fields
-for the configuration format your host supports. Arguments remain separate array
+`solwyn.mcp-config.v1` envelope with `command`, `args` and `env_vars`. Extract those
+fields for the configuration format your host supports. On Linux, `env_vars`
+lists `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR`, which the server needs to
+reach the keychain; hosts that start servers with a minimal environment, such
+as Codex, must forward them (see the [quickstart](mcp-quickstart.md)). It is
+empty on macOS and Windows. Arguments remain separate array
 entries, including paths with spaces. Global `--project` and `--api-url` precede
 `mcp`; `--profile` follows it. The default generated profile is `read`.
 

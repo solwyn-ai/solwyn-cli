@@ -20,6 +20,7 @@ MCP_CONFIG_HELP = help_contract(
         "Use --json for a portable command/args descriptor; adapt it to your host's configuration format.",
         "Defaults to this installation's absolute console executable and the read profile. No host files are written.",
         "Configure credentials separately in the host environment or OS keychain; generated output never includes a resolved key.",
+        "env_vars names parent environment variables the host must pass to the server. On Linux these are DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR, which keychain access needs; for Codex, copy them into env_vars in its mcp_servers table.",
     ),
 )
 
@@ -58,6 +59,7 @@ def mcp_config(
             rows=(
                 ("command", descriptor.command),
                 ("args (JSON)", descriptor.model_dump_json(include={"args"})),
+                ("env_vars (JSON)", descriptor.model_dump_json(include={"env_vars"})),
             ),
         ),
     )

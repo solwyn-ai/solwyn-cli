@@ -45,7 +45,9 @@ from solwyn_cli.auth import (
     LoginRequiredError,
     LOGIN_REQUIRED_HINT,
     METERING_KEY_HINT,
+    KeychainUnreachableError,
     MeteringKeyRequiredError,
+    keychain_unreachable_hint,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
@@ -925,6 +927,8 @@ def tool_call_client(
     credential = auth.resolve_credential(purpose=purpose)
     operation.checkpoint()
     if credential is None:
+        if auth.keychain_unreachable():
+            raise KeychainUnreachableError("No OS keychain backend is reachable.")
         if purpose == "metering":
             raise MeteringKeyRequiredError(METERING_KEY_HINT)
         raise AuthError("Authentication required. Configure credentials and retry.")
@@ -1156,6 +1160,15 @@ def _execution_outcome(result: ResultT) -> ResultT:
     return result
 
 
+def _login_required_hint() -> str:
+    # A project key resolved, but the login may sit in an unreachable keychain.
+    return (
+        keychain_unreachable_hint()
+        if auth.keychain_unreachable()
+        else LOGIN_REQUIRED_HINT
+    )
+
+
 def _protocol_result(result: _ToolResult) -> types.CallToolResult:
     # Every tool result passes here; both representations share one redaction.
     payload = redact_secrets(result.model_dump(mode="json", by_alias=True))
@@ -1288,6 +1301,8 @@ def _operation_error(
             hint=(
                 INGEST_UNKNOWN_HINT
                 if error.ingest_outcome_uncertain
+                else keychain_unreachable_hint()
+                if isinstance(error, KeychainUnreachableError)
                 else METERING_KEY_HINT
                 if isinstance(error, MeteringKeyRequiredError)
                 else LOGIN_REQUIRED_HINT
@@ -1932,7 +1947,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
                     _ProjectsResult,
                     code="authentication_required",
                     message="User login is required to list projects.",
-                    hint=LOGIN_REQUIRED_HINT,
+                    hint=_login_required_hint(),
                 )
             data = ProjectsListData(projects=fetch_projects(client=client))
         return _success(_ProjectsResult, data)
@@ -2168,7 +2183,7 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
                     _OverviewResult,
                     code="authentication_required",
                     message="User login is required to read the account overview.",
-                    hint=LOGIN_REQUIRED_HINT,
+                    hint=_login_required_hint(),
                 )
             data = fetch_overview(client=client)
         return _success(_OverviewResult, data)

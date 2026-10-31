@@ -3,7 +3,9 @@
 import json
 import os
 import re
+import sys
 from collections.abc import Mapping
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, TypeAlias
 
@@ -55,6 +57,10 @@ class LoginRequiredError(AuthError):
     """A user-plane operation resolved a project key instead of a Solwyn login."""
 
 
+class KeychainUnreachableError(AuthError):
+    """No keychain backend answered, so a stored credential could not be read."""
+
+
 class MeteringKeyRequiredError(AuthError):
     """A metering operation found no project key; the login is never used."""
 
@@ -66,6 +72,27 @@ LOGIN_REQUIRED_HINT = (
 METERING_KEY_HINT = (
     "Metering needs a project key. Run solwyn login --with-key or set SOLWYN_API_KEY."
 )
+_KEYCHAIN_UNREACHABLE_PREFIX = (
+    "No OS keychain is reachable from this process, so the stored Solwyn "
+    "credential cannot be read. "
+)
+KEYCHAIN_UNREACHABLE_HINTS = {
+    "linux": _KEYCHAIN_UNREACHABLE_PREFIX
+    + "The MCP host must pass DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR to "
+    "the server (Codex: env_vars in its mcp_servers table; solwyn mcp-config "
+    "lists them). Restart the host, then retry.",
+    "other": _KEYCHAIN_UNREACHABLE_PREFIX
+    + "Run the MCP host as the account that ran solwyn login, with its keychain "
+    "unlocked. Restart the host, then retry.",
+}
+
+
+def keychain_unreachable_hint(platform: str | None = None) -> str:
+    """Return the fixed recovery hint for an unreachable keychain."""
+    current = sys.platform if platform is None else platform
+    return KEYCHAIN_UNREACHABLE_HINTS[
+        "linux" if current.startswith("linux") else "other"
+    ]
 
 
 class ProjectKeyCredential(BaseModel):
@@ -173,11 +200,24 @@ def _project_key_credential(
     return ProjectKeyCredential(api_key=validated, source=source)
 
 
+# Set when a read in this context found no keychain backend at all (keyring fell
+# back to its fail backend), as when a host strips the desktop session bus.
+_KEYCHAIN_UNREACHABLE: ContextVar[bool] = ContextVar(
+    "solwyn_keychain_unreachable", default=False
+)
+
+
+def keychain_unreachable() -> bool:
+    """Return whether the last credential lookup here found no keychain backend."""
+    return _KEYCHAIN_UNREACHABLE.get()
+
+
 def _get_password(entry: str) -> tuple[bool, str | None]:
     """Read one entry, reporting an unavailable backend as a safe outcome."""
     try:
         return True, keyring.get_password(KEYRING_SERVICE, entry)
     except NoKeyringError:
+        _KEYCHAIN_UNREACHABLE.set(True)
         return False, None
     except Exception:
         return False, None
@@ -255,6 +295,7 @@ def resolve_credential(
     SOLWYN_AUTH=project_key skips the login; SOLWYN_AUTH=login requires it.
     """
     environment = os.environ if environ is None else environ
+    _KEYCHAIN_UNREACHABLE.set(False)
     if purpose == "metering":
         return _project_key(environment)
     try:

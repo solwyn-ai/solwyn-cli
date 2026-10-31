@@ -53,7 +53,37 @@ configuration container. For example, the descriptor portion on POSIX is:
 ```json
 {
   "command": "/absolute/path/to/solwyn",
-  "args": ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"]
+  "args": ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"],
+  "env_vars": ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"]
+}
+```
+
+`env_vars` names parent environment variables the host must pass to the server.
+It is empty on macOS and Windows. On Linux, Python keyring reaches the Secret
+Service, where `solwyn login` stores the credential, over the desktop session
+bus. A host that starts MCP servers with a minimal environment drops
+`DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR`, and every tool then returns
+`authentication_required` with a hint that no OS keychain is reachable.
+
+Codex is such a host. Copy the names into its `env_vars` key, which forwards
+them from Codex's own environment (parsed by Codex CLI 0.166.0):
+
+```toml
+[mcp_servers.solwyn]
+command = "/absolute/path/to/solwyn"
+args = ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"]
+env_vars = ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"]
+```
+
+Claude Code (checked with 2.1.314) starts stdio servers with its full
+environment, so it needs no change. Cursor's documentation does not say which
+environment a stdio server inherits. If a Cursor-launched server returns the
+keychain hint, pass the variables through its `env` field:
+
+```json
+"env": {
+  "DBUS_SESSION_BUS_ADDRESS": "${env:DBUS_SESSION_BUS_ADDRESS}",
+  "XDG_RUNTIME_DIR": "${env:XDG_RUNTIME_DIR}"
 }
 ```
 
@@ -101,6 +131,7 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 | Missing/non-executable launch target | Use the executable from the intended installed environment; an explicit bad target never falls back. |
 | Missing project | Select the project explicitly. Doctor can still show the supplied key's identity. |
 | Locked/unavailable keychain | Unlock the same OS account's keychain, or deliberately provide the intended key in the host environment. |
+| `authentication_required` hint says no OS keychain is reachable | The host stripped the session bus. On Linux, forward the `env_vars` names from `mcp-config` (Codex: `env_vars`; Cursor: `env`), then restart the host. `doctor --mcp` passes its key in the environment, so it cannot catch this. |
 | Read/key project mismatch | Correct the read selector or choose the intended key. Do not test identity by reserving budget. |
 | Identity endpoint unsupported/404 | Deploy the dependent Core release. Scope stays unknown on older Core. |
 | Read-only key or login cannot write | Use the appropriate authorized project key for the caller-owned workflow; changing profiles does not change scope. |

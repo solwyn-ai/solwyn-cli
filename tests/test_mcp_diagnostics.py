@@ -51,7 +51,16 @@ def isolated(monkeypatch, tmp_path):
     )
 
 
+KEYCHAIN_ENV_VARS = ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"]
+
+
+def _pin_platform(monkeypatch, platform):
+    real = _mcp_launch.keychain_env_vars
+    monkeypatch.setattr(_mcp_launch, "keychain_env_vars", lambda: real(platform))
+
+
 def test_config_is_offline_and_keeps_global_options_before_mcp(monkeypatch, tmp_path):
+    _pin_platform(monkeypatch, "linux")
     target = tmp_path / "path with spaces" / "solwyn"
     target.parent.mkdir()
     target.write_text("must never execute")
@@ -90,9 +99,47 @@ def test_config_is_offline_and_keeps_global_options_before_mcp(monkeypatch, tmp_
             "--profile",
             "read",
         ],
+        "env_vars": KEYCHAIN_ENV_VARS,
     }
     assert result.stderr == ""
     assert KEY not in result.output
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [
+        ("linux", KEYCHAIN_ENV_VARS),
+        ("darwin", []),
+        ("win32", []),
+        ("freebsd14", []),
+    ],
+)
+def test_config_lists_keychain_session_variables_only_on_linux(
+    monkeypatch, platform, expected
+):
+    _pin_platform(monkeypatch, platform)
+    monkeypatch.setattr(
+        mcp_config, "resolve_executable", lambda explicit: "/installed/solwyn"
+    )
+
+    result = runner.invoke(app, ["--json", "mcp-config", "--profile", "guardrails"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["env_vars"] == expected
+
+
+def test_config_table_shows_env_vars(monkeypatch):
+    _pin_platform(monkeypatch, "linux")
+    monkeypatch.setattr(
+        mcp_config, "resolve_executable", lambda explicit: "/installed/solwyn"
+    )
+
+    result = runner.invoke(app, ["--no-color", "mcp-config"])
+
+    assert result.exit_code == 0, result.output
+    assert '{"env_vars":["DBUS_SESSION_BUS_ADDRESS","XDG_RUNTIME_DIR"]}' in "".join(
+        result.stdout.split()
+    )
 
 
 def test_missing_explicit_executable_has_safe_error(tmp_path):
@@ -529,6 +576,7 @@ def test_successful_key_read_and_configured_project_source(
 
 
 def test_mcp_config_json_golden(monkeypatch):
+    _pin_platform(monkeypatch, "linux")
     monkeypatch.setattr(
         mcp_config, "resolve_executable", lambda explicit: "/installed/solwyn"
     )

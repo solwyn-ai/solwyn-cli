@@ -8398,6 +8398,7 @@
       "keys": [
         "args",
         "command",
+        "env_vars",
         "schema"
       ],
       "optional_keys": [],
