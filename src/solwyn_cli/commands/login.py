@@ -26,7 +26,12 @@ from solwyn_cli.auth import (
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import credential_saved_note, exit_with_error
+from solwyn_cli.commands._shared import (
+    credential_saved_note,
+    exit_with_error,
+    fallback_warning,
+    stale_copy_warning,
+)
 from solwyn_cli.config import ConfigLoadError, ConfigWriteError, update_config_values
 from solwyn_cli.credential_store import STORE_ENV, STORE_MODES, StoreMode
 from solwyn_cli.errors import ApiError, redact_secrets
@@ -296,7 +301,19 @@ def _start(
             auth.store_pending_device(pending)
         except CredentialStorageError as error:
             _fail(context, "credential_storage_failed", str(error), error.hint)
+        _warn_about_pending_write()
     return pending
+
+
+def _warn_about_pending_write() -> None:
+    """Say so when the pending device secret did not land in the keychain."""
+    written = auth.last_write()
+    if written is None:
+        return
+    if written.fell_back:
+        _note(fallback_warning(written.location, "the pending login"))
+    if written.stale is not None:
+        _note(stale_copy_warning(written.stale))
 
 
 def _pending_exit(

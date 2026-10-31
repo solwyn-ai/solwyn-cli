@@ -404,11 +404,13 @@ def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
 
 @dataclass(frozen=True)
 class Written:
-    """Where a write landed, and whether it fell back from the keychain."""
+    """Where a write landed, whether it fell back from the keychain, and
+    which other store still holds an earlier copy (cleanup is best effort)."""
 
     kind: StoreKind
     location: str
     fell_back: bool = False
+    stale: str | None = None
 
 
 _LAST_WRITE: ContextVar[Written | None] = ContextVar("solwyn_last_write", default=None)
@@ -442,6 +444,15 @@ def _write(
     from the file; a fallback write to the file carries what it can read from
     the keychain and then deletes the origin's keychain entries. Nothing is
     dropped, and a stale key in one store can never shadow a login in the other.
+
+    Scope of the other-store cleanup:
+    - macOS and Windows auto: best effort. A cleanup failure never fails the
+      write; ``Written.stale`` names the store still holding the old copy so
+      the command can warn.
+    - Linux auto and file mode: writes go to the file only and never touch
+      the keyring (no D-Bus probing, no timeout delay).
+    - keyring mode: the file copy is removed best effort as well.
+    Only logout looks in both stores on every platform (clear_credentials).
     """
     names = (*clear_first, *values)
     if primary_kind(mode) != "keyring":
@@ -480,14 +491,20 @@ def _write(
         try:
             keyring_store.delete(origin, ALL_ENTRIES)
         except StoreUnavailableError:
-            pass  # The file holds the origin now and is read first.
+            # The file holds the origin now and is read first. Warn only when
+            # the keychain answered reads, so it may really hold a copy.
+            if from_keyring:
+                written = Written(
+                    written.kind, written.location, True, keyring_store.describe()
+                )
+                _LAST_WRITE.set(written)
         return written
+    stale = None
     try:
         file.delete(origin, ALL_ENTRIES)
-    except (InsecureFileError, StoreUnavailableError) as error:
-        # The file would still be read first and hide this write: say so.
-        raise _file_error(error) from None
-    written = Written("keyring", keyring_store.describe())
+    except (InsecureFileError, StoreUnavailableError):
+        stale = file.describe()  # Best effort: warn, never fail the write.
+    written = Written("keyring", keyring_store.describe(), stale=stale)
     _LAST_WRITE.set(written)
     return written
 
@@ -753,12 +770,25 @@ def clear_login(api_url: str | None = None) -> list[Cleared]:
 
 
 def store_pending_device(pending: PendingDevice, *, api_url: str | None = None) -> None:
-    """Keep an in-progress device login so login --continue can resume it."""
-    _write(
-        {PENDING_DEVICE_ENTRY: pending.model_dump_json()},
-        origin=current_origin(api_url),
-        mode=store_mode(),
-    )
+    """Keep an in-progress device login so login --continue can resume it.
+
+    The pending entry follows the origin: when the credentials file already
+    holds this API (auto on macOS or Windows, after a fallback), it is written
+    there, the store reads use, so --wait 0 then --continue always meets it.
+    Otherwise it is written like any other entry (with the same fallback).
+    """
+    origin = current_origin(api_url)
+    mode = store_mode()
+    value = {PENDING_DEVICE_ENTRY: pending.model_dump_json()}
+    if mode == "auto" and primary_kind(mode) == "keyring":
+        try:
+            held_by_file = _file_store().has_origin(origin)
+        except (InsecureFileError, StoreUnavailableError) as error:
+            raise _file_error(error) from None
+        if held_by_file:
+            _write_file(value, origin=origin, names=tuple(value), fell_back=False)
+            return
+    _write(value, origin=origin, mode=mode)
 
 
 def load_pending_device(api_url: str | None = None) -> PendingDevice | None:
@@ -887,16 +917,12 @@ def stored_entry_status(
 
 
 def _legacy_keyring_allowed(mode: StoreMode) -> bool:
-    """Touch the keyring for old entries only where it is safe to.
+    """Delete old entries after a login only where the keyring is in use.
 
-    file mode never touches the keyring. On Linux in auto mode the keyring may
-    hang on D-Bus or prompt, so only an interactive terminal probes it.
+    Linux auto and file mode never touch the keyring on a write; logout
+    clears the 0.3 entries there instead.
     """
-    if mode == "file":
-        return False
-    if _keyring_in_use(mode):
-        return True
-    return _interactive()
+    return _keyring_in_use(mode)
 
 
 def delete_legacy_entries(mode: StoreMode | None = None) -> bool:

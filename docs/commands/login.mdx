@@ -101,7 +101,13 @@ of that API's entries in the file (a login or a project key) move into the
 keychain with it and leave the file; a write that falls back to the file
 carries what the keychain still answers and deletes that API's keychain
 entries. A stale key in one store can therefore never shadow a login in the
-other.
+other. On macOS and Windows that cleanup of the other store is best effort: if
+it fails, the write still succeeds and the CLI warns, naming the store that
+still holds the earlier copy (`solwyn logout` clears both). A pending login
+(`--wait 0`) is written to whichever store already holds the API, so
+`solwyn login --continue` always finds it; if it falls back to the file, the CLI
+warns with the file path, as for a login or key. On Linux in `auto` mode,
+writes never touch the keyring at all: no D-Bus probe, no delay.
 
 CLI 0.3.0 stored a session login (`access_token` and `refresh_token`) and a
 project key (`api_key`) in the system keyring under the service `solwyn-cli`.

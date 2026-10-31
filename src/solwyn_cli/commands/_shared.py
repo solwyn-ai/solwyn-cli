@@ -112,26 +112,52 @@ def credential_saved_note(credential: ResolvedCredential) -> str:
     location = credential.location if written is None else written.location
     if location is None:
         return ""
-    prefix = ""
-    if written is not None and written.fell_back:
-        prefix = (
-            f"Could not use {auth.credential_store.keyring_name()} (it may be locked, "
-            "or unavailable over SSH). "
+    fell_back = written is not None and written.fell_back
+    parts: list[str] = []
+    if fell_back:
+        parts.append(
+            f"Could not use {auth.credential_store.keyring_name()} (it may be "
+            "locked, or unavailable over SSH)."
         )
     if isinstance(credential, ProjectKeyCredential) and kind == "file":
-        return prefix + (
+        parts.append(
             f"Stored the project key in {location}. It has full project access and "
             "does not expire. For CI and agents, prefer SOLWYN_API_KEY from a secret "
             "manager."
         )
-    if kind == "keyring":
-        return f"Saved to {location}."
-    return prefix + (
-        f"Saved to {location} (readable only by your user, and by any program you "
-        "run)."
-        + (
-            " Run solwyn login again from a desktop session to move it to the keychain."
-            if prefix
-            else ""
+    elif kind == "keyring":
+        parts.append(f"Saved to {location}.")
+    else:
+        parts.append(
+            f"Saved to {location} (readable only by your user, and by any program "
+            "you run)."
         )
+        if fell_back:
+            parts.append(
+                "Run solwyn login again from a desktop session to move it to the "
+                "keychain."
+            )
+    if written is not None and written.stale is not None:
+        parts.append(stale_copy_warning(written.stale))
+    return " ".join(parts)
+
+
+def stale_copy_warning(location: str) -> str:
+    """Warn that best-effort cleanup left an earlier copy in the other store."""
+    if location.endswith(".json"):
+        return (
+            f"Could not remove the earlier copy in {location}, which is read before "
+            "the keychain. Delete it, or run solwyn logout to clear both stores."
+        )
+    return (
+        f"Could not remove the earlier copy in {location}. Run solwyn logout to "
+        "clear both stores."
+    )
+
+
+def fallback_warning(location: str, what: str) -> str:
+    """The one keychain-fallback warning, for any credential written."""
+    return (
+        f"Could not use {auth.credential_store.keyring_name()} (it may be locked, "
+        f"or unavailable over SSH). Saved {what} to {location} instead."
     )
