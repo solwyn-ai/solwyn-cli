@@ -45,9 +45,9 @@ from solwyn_cli.auth import (
     LoginRequiredError,
     LOGIN_REQUIRED_HINT,
     METERING_KEY_HINT,
-    KeychainUnreachableError,
+    CredentialStorageError,
     MeteringKeyRequiredError,
-    keychain_unreachable_hint,
+    missing_credential_hint,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
@@ -924,14 +924,24 @@ def tool_call_client(
         no_color=True,
     )
     operation.checkpoint()
-    credential = auth.resolve_credential(purpose=purpose)
+    reset_api_url = auth.use_api_url(command_runtime.api_url)
+    try:
+        credential = auth.resolve_credential(
+            purpose=purpose, api_url=command_runtime.api_url
+        )
+    finally:
+        reset_api_url()
     operation.checkpoint()
     if credential is None:
-        if auth.keychain_unreachable():
-            raise KeychainUnreachableError("No OS keychain backend is reachable.")
         if purpose == "metering":
-            raise MeteringKeyRequiredError(METERING_KEY_HINT)
-        raise AuthError("Authentication required. Configure credentials and retry.")
+            error: AuthError = MeteringKeyRequiredError(METERING_KEY_HINT)
+        else:
+            error = AuthError(
+                "Authentication required. Configure credentials and retry."
+            )
+        # Names where the lookup looked (store and path), never a secret.
+        error.hint = missing_credential_hint(purpose)
+        raise error
     with SolwynClient(
         api_url=command_runtime.api_url,
         credential=credential,
@@ -1161,12 +1171,11 @@ def _execution_outcome(result: ResultT) -> ResultT:
 
 
 def _login_required_hint() -> str:
-    # A project key resolved, but the login may sit in an unreachable keychain.
-    return (
-        keychain_unreachable_hint()
-        if auth.keychain_unreachable()
-        else LOGIN_REQUIRED_HINT
-    )
+    # A project key resolved; say where the login was looked for.
+    lookup = auth.last_lookup()
+    if lookup is None:
+        return LOGIN_REQUIRED_HINT
+    return f"{LOGIN_REQUIRED_HINT} Looked in: {lookup.describe()}."
 
 
 def _protocol_result(result: _ToolResult) -> types.CallToolResult:
@@ -1293,6 +1302,14 @@ def _operation_error(
             hint=_safe_remote_error_hint(error, code),
             status_code=error.status_code,
         )
+    if isinstance(error, CredentialStorageError):
+        # CLI-owned text naming the store and path; never server free text.
+        return _error(
+            result_type,
+            code="credential_storage_failed",
+            message=str(error),
+            hint=error.hint,
+        )
     if isinstance(error, AuthError):
         return _error(
             result_type,
@@ -1301,13 +1318,12 @@ def _operation_error(
             hint=(
                 INGEST_UNKNOWN_HINT
                 if error.ingest_outcome_uncertain
-                else keychain_unreachable_hint()
-                if isinstance(error, KeychainUnreachableError)
-                else METERING_KEY_HINT
+                else (error.hint or METERING_KEY_HINT)
                 if isinstance(error, MeteringKeyRequiredError)
-                else LOGIN_REQUIRED_HINT
+                else _login_required_hint()
                 if login_required or isinstance(error, LoginRequiredError)
-                else "Configure a project key or run solwyn login, then retry."
+                else error.hint
+                or "Configure a project key or run solwyn login, then retry."
             ),
         )
     if isinstance(error, ValueError) and str(error) == "project_required":

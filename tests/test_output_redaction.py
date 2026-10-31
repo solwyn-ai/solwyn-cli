@@ -272,6 +272,8 @@ _EXEMPT_WRITES = {
     ("init.py", "f'Project ({project_ids}, or create)'"),
     ("invite.py", "label"),
     ("keys.py", "line"),
+    # login --no-store: the token itself, printed once on purpose.
+    ("login.py", "line"),
     (
         "record.py",
         "f'Recorded batch progress: {min(offset + 1000, len(events))}/{len(events)} events processed.'",

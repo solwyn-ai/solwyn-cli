@@ -13,8 +13,8 @@ solwyn --project proj_example projects show
 solwyn projects create --name sandbox --budget 10 --store-key
 ```
 
-Creation returns the first project key once; `--store-key` writes it to the OS
-keychain. Existing key material cannot be retrieved. Delete displays effects
+Creation returns the first project key once; `--store-key` writes it to the
+credential store (see [login](login.mdx)). Existing key material cannot be retrieved. Delete displays effects
 and requires confirmation or `--yes`; it irreversibly archives the project,
 revokes every project key in the same transaction and clears matching local
 project selection. The archived project immediately becomes unavailable.
@@ -52,14 +52,14 @@ Usage: solwyn projects create [OPTIONS]
 | `--period` | `Initial budget period. (Choice(['daily', 'weekly', 'monthly']))` | `monthly` |
 | `--mode` | `Initial budget enforcement mode. (Choice(['alert_only', 'hard_deny']))` | `alert_only` |
 | `--scope` | `Scope for the project's first key; omit for the API default. (Choice(['full', 'read_only']))` | `None` |
-| `--store-key` | `Store the new key in the OS keychain. (BOOL)` | `False` |
+| `--store-key` | `Store the new key in the credential store. (BOOL)` | `False` |
 
 ```text
 Endpoint: POST /api/v1/projects
 Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-create.v1
-The new project key is shown exactly once or stored directly in the OS keychain.
+The new project key is shown exactly once or stored directly in the credential store (--store-key).
 ```
 
 ## `solwyn projects delete`

@@ -44,7 +44,7 @@ Use Solwyn to enforce and attribute caller-owned AI-provider spend without expos
 
 ## Trust boundary
 
-- Keep Solwyn credentials only in the OS keychain. Never echo them or place them in config files or argv.
+- Keep Solwyn credentials in the CLI's credential store (solwyn login) or in environment variables from a secret manager. Never echo them, read the credentials file, or place them in config files or argv.
 - Solwyn must never collect, store, or proxy provider keys, prompts, or responses.
 - The CLI sends only your own spend events; `sdk_instance_id` is a random per-invocation id; no telemetry.
 - Do not add telemetry or update checks.

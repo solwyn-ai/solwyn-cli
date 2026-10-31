@@ -269,7 +269,7 @@ def show_key(context: typer.Context) -> None:
         schema="solwyn.keys-rotate.v1",
         guidance=(
             "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",
-            "The replacement key is shown exactly once; store it in the OS keychain.",
+            "The replacement key is shown exactly once; keep it in a secret manager or solwyn login --with-key.",
         ),
     ),
 )
@@ -436,7 +436,7 @@ def export_line(project_key: str) -> str:
 @app.command(
     "env",
     epilog=help_contract(
-        endpoint="local keychain read",
+        endpoint="local credential store read",
         auth="local (stored project key)",
         exits="0 success; 2 usage; 3 no stored project key",
         schema="solwyn.keys-env.v1",

@@ -65,8 +65,8 @@ That command repeats only what you typed, plus every value the CLI generated
 for the request, pinned as an explicit flag: `plan upgrade`'s
 `--client-request-id`, and an absolute `--until` time for a relative snooze such
 as `--until +2h`. Re-running it rebuilds the same request bytes, so the approval
-matches. The CLI stores nothing: no request body, secret or prepared request is
-written to the keychain or to disk. If you change any argument, the request
+matches. The approval hand-off stores nothing: no request body, secret or
+prepared request is written anywhere. If you change any argument, the request
 differs, the server answers `approval_invalid` with reason `mismatch`, and you
 run the command again to request a new approval. Secrets never appear in the
 command. When the original run read one (`--secret-stdin`, `--config-stdin` or

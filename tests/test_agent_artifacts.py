@@ -77,7 +77,7 @@ def test_artifact_content_teaches_guardrail_machine_and_trust_contracts() -> Non
         "10 seconds",
         "free tier",
         "cache and back off",
-        "OS keychain",
+        "credential store (solwyn login)",
         "provider keys",
         "telemetry",
         "update checks",

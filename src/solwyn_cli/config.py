@@ -35,6 +35,8 @@ class Config(BaseModel):
     api_url: str = "https://api.solwyn.ai"
     default_project: str | None = None
     format: Literal["table", "json"] = "table"
+    # Where stored credentials live; SOLWYN_CREDENTIAL_STORE overrides it.
+    credential_store: Literal["auto", "keyring", "file"] = "auto"
 
     @field_validator("api_url")
     @classmethod
@@ -159,6 +161,8 @@ def save_config(config: Config, *, omit_default_api_url: bool = False) -> None:
     values = config.model_dump(include=CONFIG_KEYS, exclude_none=True)
     if omit_default_api_url and config.api_url == Config().api_url:
         values.pop("api_url", None)
+    if values.get("credential_store") == "auto":
+        values.pop("credential_store")  # The default; keep config minimal.
     content = tomli_w.dumps(values)
     temporary_path: Path | None = None
 

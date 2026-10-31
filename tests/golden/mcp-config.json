@@ -1,1 +1,1 @@
-{"schema":"solwyn.mcp-config.v1","command":"/installed/solwyn","args":["--project","proj_abababababababababababab","--api-url","https://api.solwyn.ai","mcp","--profile","read"],"env_vars":["DBUS_SESSION_BUS_ADDRESS","XDG_RUNTIME_DIR"]}
+{"schema":"solwyn.mcp-config.v1","command":"/installed/solwyn","args":["--project","proj_abababababababababababab","--api-url","https://api.solwyn.ai","mcp","--profile","read"],"env_vars":["SOLWYN_TOKEN","SOLWYN_API_KEY","SOLWYN_AUTH","SOLWYN_API_URL","SOLWYN_CREDENTIAL_STORE","SOLWYN_CREDENTIALS_FILE","XDG_DATA_HOME","XDG_CONFIG_HOME"]}

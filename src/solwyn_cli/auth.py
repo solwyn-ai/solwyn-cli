@@ -1,16 +1,27 @@
-"""Credential storage and class-based credential resolution."""
+"""Credential storage and class-based credential resolution.
 
-import json
+Stored credentials live in one store chosen by ``SOLWYN_CREDENTIAL_STORE``,
+then ``credential_store`` in config, then ``auto``:
+
+- ``auto``: the OS keychain on macOS and Windows, falling back to the file when
+  a keychain write fails; the file on every Linux. An existing file entry wins
+  on read, and every write deletes the stale copy in the other store.
+- ``keyring``: the OS keychain or a loud failure, never a fallback.
+- ``file``: the file only; the keyring is never touched.
+
+Everything stored is keyed by API origin (see ``credential_store``), so a login
+made against one API is never sent to another.
+"""
+
 import os
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, TypeAlias
 
-import keyring
-from keyring.errors import NoKeyringError, PasswordDeleteError
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -22,23 +33,47 @@ from pydantic import (
     field_validator,
 )
 
+from solwyn_cli import credential_store
 from solwyn_cli._vendor.validation import validate_project_key_format
+from solwyn_cli.credential_store import (
+    STORE_ENV,
+    STORE_MODES,
+    FileStore,
+    InsecureFileError,
+    KeyringStore,
+    StoreKind,
+    StoreMode,
+    StoreUnavailableError,
+    credential_origin,
+)
 
-KEYRING_SERVICE = "solwyn-cli"
 API_KEY_ENTRY = "api_key"
 CLI_CREDENTIAL_ENTRY = "cli_credential"
 CLI_CREDENTIAL_META_ENTRY = "cli_credential_meta"
 PENDING_DEVICE_ENTRY = "pending_device"
-# Pre-device-flow session tokens. They are never read, only deleted.
-LEGACY_ENTRIES = ("access_token", "refresh_token")
+LOGIN_ENTRIES = (CLI_CREDENTIAL_ENTRY, CLI_CREDENTIAL_META_ENTRY)
+ALL_ENTRIES = (API_KEY_ENTRY, *LOGIN_ENTRIES, PENDING_DEVICE_ENTRY)
+# Entries 0.3 and earlier wrote to the keyring without an origin. Never read
+# as credentials; login and logout delete them, and Linux points at them once.
+LEGACY_ENTRIES = (
+    API_KEY_ENTRY,
+    CLI_CREDENTIAL_ENTRY,
+    CLI_CREDENTIAL_META_ENTRY,
+    PENDING_DEVICE_ENTRY,
+    "access_token",
+    "refresh_token",
+)
 AUTH_EXIT_CODE = 3
 AUTH_SELECTION_ENV = "SOLWYN_AUTH"
+TOKEN_ENV = "SOLWYN_TOKEN"
+API_KEY_ENV = "SOLWYN_API_KEY"
 OAUTH_CLIENT_ID = "solwyn-cli"
 CLI_TOKEN_PATTERN = re.compile(r"solwyn_cli_[0-9a-f]{64}")
 DEVICE_CODE_PATTERN = re.compile(r"solwyn_dc_[0-9a-f]{64}")
 
 CredentialClass: TypeAlias = Literal["user", "metering"]
 AuthSelection: TypeAlias = Literal["login", "project_key"]
+CredentialSource: TypeAlias = Literal["environment", "keyring", "file"]
 
 
 class AuthError(RuntimeError):
@@ -47,18 +82,27 @@ class AuthError(RuntimeError):
     exit_code: ClassVar[int] = AUTH_EXIT_CODE
     # A terminal auth failure cannot erase an earlier ingest attempt's uncertainty.
     ingest_outcome_uncertain: bool = False
+    hint: str | None = None
 
 
 class CredentialStorageError(AuthError):
-    """The operating-system credential store could not be updated."""
+    """The credential store could not be read or updated."""
+
+    def __init__(self, message: str, hint: str | None = None) -> None:
+        super().__init__(message)
+        self.hint = hint
+
+
+class KeyringUnavailableError(CredentialStorageError):
+    """keyring mode was selected, and the OS keychain cannot be used."""
+
+
+class InsecureCredentialFileError(CredentialStorageError):
+    """The credentials file is readable by, or owned by, another user."""
 
 
 class LoginRequiredError(AuthError):
     """A user-plane operation resolved a project key instead of a Solwyn login."""
-
-
-class KeychainUnreachableError(AuthError):
-    """No keychain backend answered, so a stored credential could not be read."""
 
 
 class MeteringKeyRequiredError(AuthError):
@@ -66,39 +110,16 @@ class MeteringKeyRequiredError(AuthError):
 
 
 LOGIN_REQUIRED_HINT = (
-    "This needs a Solwyn login. Run solwyn login and retry. "
+    "This needs a Solwyn login. Run solwyn login, or set SOLWYN_TOKEN, and retry. "
     "If SOLWYN_AUTH=project_key is set, unset it."
 )
 METERING_KEY_HINT = (
     "Metering needs a project key. Run solwyn login --with-key or set SOLWYN_API_KEY."
 )
-_KEYCHAIN_UNREACHABLE_PREFIX = (
-    "No OS keychain is reachable from this process, so the stored Solwyn "
-    "credential cannot be read. "
+FILE_STORE_HINT = (
+    "Set SOLWYN_CREDENTIAL_STORE=file or run solwyn login --store file to use "
+    "the credentials file instead."
 )
-# A headless machine has no keychain to forward to, so a login cannot exist
-# there; a project key in the environment is the only way in.
-_KEYCHAIN_UNREACHABLE_HEADLESS = (
-    " Without a desktop keychain, set SOLWYN_API_KEY to a project key in the "
-    "host environment instead; tools that need a login cannot run there."
-)
-KEYCHAIN_UNREACHABLE_HINTS = {
-    "linux": _KEYCHAIN_UNREACHABLE_PREFIX
-    + "The MCP host must pass DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR to "
-    "the server (Codex: env_vars in its mcp_servers table; solwyn mcp-config "
-    "lists them). Restart the host, then retry." + _KEYCHAIN_UNREACHABLE_HEADLESS,
-    "other": _KEYCHAIN_UNREACHABLE_PREFIX
-    + "Run the MCP host as the account that ran solwyn login, with its keychain "
-    "unlocked. Restart the host, then retry." + _KEYCHAIN_UNREACHABLE_HEADLESS,
-}
-
-
-def keychain_unreachable_hint(platform: str | None = None) -> str:
-    """Return the fixed recovery hint for an unreachable keychain."""
-    current = sys.platform if platform is None else platform
-    return KEYCHAIN_UNREACHABLE_HINTS[
-        "linux" if current.startswith("linux") else "other"
-    ]
 
 
 class ProjectKeyCredential(BaseModel):
@@ -107,7 +128,9 @@ class ProjectKeyCredential(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     api_key: SecretStr
-    source: Literal["environment", "keyring"]
+    source: CredentialSource
+    # Where it came from: a file path, the keychain's name, or the env var.
+    location: str | None = None
 
     @field_validator("api_key")
     @classmethod
@@ -142,13 +165,17 @@ class LoginMetadata(BaseModel):
 
 
 class LoginCredential(BaseModel):
-    """A scoped, expiring CLI credential whose repr remains redacted."""
+    """A scoped, expiring CLI credential whose repr remains redacted.
+
+    A SOLWYN_TOKEN login has no local metadata; the API knows its expiry.
+    """
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     token: SecretStr
-    meta: LoginMetadata
-    source: Literal["keyring"] = "keyring"
+    meta: LoginMetadata | None
+    source: CredentialSource = "keyring"
+    location: str | None = None
 
     @field_validator("token")
     @classmethod
@@ -185,7 +212,7 @@ class PendingDevice(BaseModel):
 
     @field_serializer("device_code")
     def serialize_device_code(self, value: SecretStr) -> str:
-        """Reveal the device code only for keychain storage."""
+        """Reveal the device code only for credential storage."""
         return value.get_secret_value()
 
 
@@ -196,37 +223,292 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# --- API origin -------------------------------------------------------------
+
+_ACTIVE_API_URL: ContextVar[str | None] = ContextVar(
+    "solwyn_active_api_url", default=None
+)
+
+
+def use_api_url(api_url: str) -> Callable[[], None]:
+    """Scope stored-credential access to one API; return the matching reset."""
+    token = _ACTIVE_API_URL.set(api_url)
+    return lambda: _ACTIVE_API_URL.reset(token)
+
+
+def _default_api_url() -> str:
+    from solwyn_cli.config import Config, ConfigLoadError, load_config
+
+    try:
+        configured = load_config().api_url
+    except ConfigLoadError:
+        configured = Config().api_url
+    candidate = os.environ.get("SOLWYN_API_URL") or configured
+    try:
+        return Config(api_url=candidate).api_url
+    except ValidationError:
+        return Config().api_url
+
+
+def current_origin(api_url: str | None = None) -> str:
+    """Return the origin stored credentials are read and written under."""
+    return credential_origin(api_url or _ACTIVE_API_URL.get() or _default_api_url())
+
+
+# --- Store selection --------------------------------------------------------
+
+
+def store_mode(environ: Mapping[str, str] | None = None) -> StoreMode:
+    """Return SOLWYN_CREDENTIAL_STORE, then config credential_store, then auto."""
+    environment = os.environ if environ is None else environ
+    value = environment.get(STORE_ENV, "")
+    if value:
+        if value not in STORE_MODES:
+            raise CredentialStorageError(
+                f"{STORE_ENV} must be auto, keyring or file.",
+                "Unset it, or set it to auto, keyring or file.",
+            )
+        return value  # type: ignore[return-value]
+    from solwyn_cli.config import ConfigLoadError, load_config
+
+    try:
+        return load_config().credential_store
+    except ConfigLoadError:
+        return "auto"
+
+
+def primary_kind(mode: StoreMode, platform: str | None = None) -> StoreKind:
+    """Return the store a write tries first in this mode on this platform."""
+    if mode != "auto":
+        return mode
+    family = credential_store.platform_name(platform)
+    return "keyring" if family in ("macos", "windows") else "file"
+
+
+def _interactive() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stderr.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _file_store() -> FileStore:
+    try:
+        return FileStore()
+    except StoreUnavailableError as error:
+        raise CredentialStorageError(str(error)) from None
+
+
+def _keyring_store() -> KeyringStore:
+    return KeyringStore()
+
+
+def _keyring_error(error: StoreUnavailableError) -> KeyringUnavailableError:
+    hint = FILE_STORE_HINT
+    if credential_store.platform_name() == "linux":
+        hint += (
+            " To keep the keyring, an MCP host must pass DBUS_SESSION_BUS_ADDRESS "
+            "and XDG_RUNTIME_DIR to the server."
+        )
+    return KeyringUnavailableError(str(error), hint)
+
+
+def _file_error(error: Exception) -> CredentialStorageError:
+    if isinstance(error, InsecureFileError):
+        return InsecureCredentialFileError(str(error))
+    return CredentialStorageError(str(error))
+
+
+@dataclass(frozen=True)
+class Lookup:
+    """Where a credential lookup looked; never a secret."""
+
+    mode: StoreMode
+    kind: StoreKind
+    location: str
+    keyring_unavailable: bool = False
+
+    def describe(self) -> str:
+        """Return e.g. 'file, /home/a/.local/share/solwyn/credentials.json'."""
+        return f"{self.kind}, {self.location}"
+
+
+_LAST_LOOKUP: ContextVar[Lookup | None] = ContextVar("solwyn_last_lookup", default=None)
+
+
+def last_lookup() -> Lookup | None:
+    """Return where the last lookup in this context looked."""
+    return _LAST_LOOKUP.get()
+
+
+def where_stored(environ: Mapping[str, str] | None = None) -> Lookup:
+    """Describe the store this context reads and writes, without touching it."""
+    mode = store_mode(environ)
+    kind = primary_kind(mode)
+    if kind == "file":
+        return Lookup(mode=mode, kind="file", location=_file_store().describe())
+    return Lookup(mode=mode, kind="keyring", location=credential_store.keyring_name())
+
+
+def _record(lookup: Lookup) -> None:
+    _LAST_LOOKUP.set(lookup)
+
+
+# --- Reading ----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Found:
+    """Entries read from one store."""
+
+    values: dict[str, str | None]
+    kind: StoreKind | None
+    location: str | None
+
+
+def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
+    """Read entries from one store: the file if it holds this API, else keyring."""
+    if mode in ("file", "auto"):
+        file = _file_store()
+        try:
+            if (
+                mode == "file"
+                or primary_kind(mode) == "file"
+                or file.has_origin(origin)
+            ):
+                values = {entry: file.get(origin, entry) for entry in entries}
+                _record(Lookup(mode, "file", file.describe()))
+                return Found(values, "file", file.describe())
+        except (InsecureFileError, StoreUnavailableError) as error:
+            raise _file_error(error) from None
+    keyring_store = _keyring_store()
+    try:
+        values = {entry: keyring_store.get(origin, entry) for entry in entries}
+    except StoreUnavailableError as error:
+        if mode == "keyring":
+            raise _keyring_error(error) from None
+        # auto on macOS or Windows: an unusable keychain reads as empty.
+        _record(Lookup(mode, "keyring", keyring_store.describe(), True))
+        return Found(dict.fromkeys(entries), None, None)
+    _record(Lookup(mode, "keyring", keyring_store.describe()))
+    return Found(values, "keyring", keyring_store.describe())
+
+
+# --- Writing ----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Written:
+    """Where a write landed, and whether it fell back from the keychain."""
+
+    kind: StoreKind
+    location: str
+    fell_back: bool = False
+
+
+_LAST_WRITE: ContextVar[Written | None] = ContextVar("solwyn_last_write", default=None)
+
+
+def last_write() -> Written | None:
+    """Return where the last write in this context landed."""
+    return _LAST_WRITE.get()
+
+
+def _write(
+    values: Mapping[str, str],
+    *,
+    origin: str,
+    mode: StoreMode,
+    clear_first: tuple[str, ...] = (),
+) -> Written:
+    """Write entries to one store and delete the stale copy in the other."""
+    names = (*clear_first, *values)
+    if primary_kind(mode) == "keyring":
+        keyring_store = _keyring_store()
+        try:
+            # Drop the old token first: metadata without a token reads as no
+            # login, so a failed write never pairs old and new halves.
+            keyring_store.delete(origin, clear_first)
+            keyring_store.set_many(origin, values)
+        except StoreUnavailableError as error:
+            if mode == "keyring":
+                raise _keyring_error(error) from None
+            # auto: fall back to the file, then drop any keyring leftovers.
+            written = _write_file(values, origin=origin, names=names, fell_back=True)
+            try:
+                keyring_store.delete(origin, names)
+            except StoreUnavailableError:
+                pass
+            return written
+        try:
+            _file_store().delete(origin, names)
+        except (InsecureFileError, StoreUnavailableError, CredentialStorageError):
+            pass  # The keyring copy wins next time only if this succeeds; best effort.
+        written = Written("keyring", keyring_store.describe())
+        _LAST_WRITE.set(written)
+        return written
+    return _write_file(values, origin=origin, names=names, fell_back=False)
+
+
+def _write_file(
+    values: Mapping[str, str], *, origin: str, names: tuple[str, ...], fell_back: bool
+) -> Written:
+    file = _file_store()
+    try:
+        file.delete(origin, [name for name in names if name not in values])
+        file.set_many(origin, values)
+    except (InsecureFileError, StoreUnavailableError) as error:
+        raise _file_error(error) from None
+    written = Written("file", file.describe(), fell_back)
+    _LAST_WRITE.set(written)
+    return written
+
+
+@dataclass(frozen=True)
+class Cleared:
+    """What one store reported when entries were deleted."""
+
+    kind: StoreKind
+    location: str
+    cleared: bool
+
+
+def _keyring_in_use(mode: StoreMode) -> bool:
+    return mode == "keyring" or (mode == "auto" and primary_kind(mode) == "keyring")
+
+
+def _delete(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> list[Cleared]:
+    """Delete entries from the file and, where it is in use, the keychain."""
+    results: list[Cleared] = []
+    file = _file_store()
+    try:
+        file.delete(origin, entries)
+        results.append(Cleared("file", file.describe(), True))
+    except (InsecureFileError, StoreUnavailableError) as error:
+        raise _file_error(error) from None
+    if _keyring_in_use(mode):
+        keyring_store = _keyring_store()
+        try:
+            keyring_store.delete(origin, entries)
+            results.append(Cleared("keyring", keyring_store.describe(), True))
+        except StoreUnavailableError as error:
+            if mode == "keyring":
+                raise _keyring_error(error) from None
+            results.append(Cleared("keyring", keyring_store.describe(), False))
+    return results
+
+
+# --- Resolution -------------------------------------------------------------
+
+
 def _project_key_credential(
-    value: str, source: Literal["environment", "keyring"]
+    value: str, source: CredentialSource, location: str | None = None
 ) -> ProjectKeyCredential:
     try:
         validated = validate_project_key_format(value)
     except ValueError:
         raise AuthError("Configured project key is invalid.") from None
-    return ProjectKeyCredential(api_key=validated, source=source)
-
-
-# Set when a read in this context found no keychain backend at all (keyring fell
-# back to its fail backend), as when a host strips the desktop session bus.
-_KEYCHAIN_UNREACHABLE: ContextVar[bool] = ContextVar(
-    "solwyn_keychain_unreachable", default=False
-)
-
-
-def keychain_unreachable() -> bool:
-    """Return whether the last credential lookup here found no keychain backend."""
-    return _KEYCHAIN_UNREACHABLE.get()
-
-
-def _get_password(entry: str) -> tuple[bool, str | None]:
-    """Read one entry, reporting an unavailable backend as a safe outcome."""
-    try:
-        return True, keyring.get_password(KEYRING_SERVICE, entry)
-    except NoKeyringError:
-        _KEYCHAIN_UNREACHABLE.set(True)
-        return False, None
-    except Exception:
-        return False, None
+    return ProjectKeyCredential(api_key=validated, source=source, location=location)
 
 
 def auth_selection(environ: Mapping[str, str] | None = None) -> AuthSelection | None:
@@ -240,163 +522,199 @@ def auth_selection(environ: Mapping[str, str] | None = None) -> AuthSelection | 
     return value
 
 
-def _stored_login() -> LoginCredential | None:
-    """Read the stored login, or None when absent, unreadable or corrupt."""
-    available, token = _get_password(CLI_CREDENTIAL_ENTRY)
-    if not available or token is None:
-        return None
-    available, raw_meta = _get_password(CLI_CREDENTIAL_META_ENTRY)
-    if not available or raw_meta is None:
+def _environment_login(environment: Mapping[str, str]) -> LoginCredential | None:
+    if TOKEN_ENV not in environment:
         return None
     try:
         return LoginCredential(
-            token=token, meta=LoginMetadata.model_validate_json(raw_meta)
+            token=environment[TOKEN_ENV],
+            meta=None,
+            source="environment",
+            location=TOKEN_ENV,
+        )
+    except ValidationError:
+        raise AuthError(f"{TOKEN_ENV} is not a valid Solwyn CLI token.") from None
+
+
+def _stored_login(api_url: str | None = None) -> LoginCredential | None:
+    """Read the stored login, or None when absent or corrupt."""
+    mode = store_mode()
+    found = _read(LOGIN_ENTRIES, origin=current_origin(api_url), mode=mode)
+    token = found.values[CLI_CREDENTIAL_ENTRY]
+    raw_meta = found.values[CLI_CREDENTIAL_META_ENTRY]
+    if token is None or raw_meta is None or found.kind is None:
+        return None
+    try:
+        return LoginCredential(
+            token=token,
+            meta=LoginMetadata.model_validate_json(raw_meta),
+            source=found.kind,
+            location=found.location,
         )
     except ValidationError:
         return None
 
 
-def stored_login(*, include_expired: bool = False) -> LoginCredential | None:
+def stored_login(
+    *, include_expired: bool = False, api_url: str | None = None
+) -> LoginCredential | None:
     """Return the stored login while it is locally unexpired, unless asked."""
-    login = _stored_login()
-    if login is None or (not include_expired and login.meta.expires_at <= _now()):
+    login = _stored_login(api_url)
+    if login is None or login.meta is None:
+        return None
+    if not include_expired and login.meta.expires_at <= _now():
         return None
     return login
 
 
-def expired_login_date() -> datetime | None:
+def expired_login_date(api_url: str | None = None) -> datetime | None:
     """Return the expiry of a stored login that has already expired."""
-    login = _stored_login()
-    if login is None or login.meta.expires_at > _now():
+    try:
+        login = _stored_login(api_url)
+    except AuthError:
+        return None
+    if login is None or login.meta is None or login.meta.expires_at > _now():
         return None
     return login.meta.expires_at
 
 
-def _project_key(environment: Mapping[str, str]) -> ProjectKeyCredential | None:
-    if "SOLWYN_API_KEY" in environment:
-        return _project_key_credential(environment["SOLWYN_API_KEY"], "environment")
-    available, stored_key = _get_password(API_KEY_ENTRY)
-    if not available or stored_key is None:
+def stored_project_key(api_url: str | None = None) -> ProjectKeyCredential | None:
+    """Return the stored project key only, never the environment key."""
+    found = _read((API_KEY_ENTRY,), origin=current_origin(api_url), mode=store_mode())
+    stored_key = found.values[API_KEY_ENTRY]
+    if stored_key is None or found.kind is None:
         return None
-    return _project_key_credential(stored_key, "keyring")
+    return _project_key_credential(stored_key, found.kind, found.location)
 
 
-def stored_project_key() -> ProjectKeyCredential | None:
-    """Return the keychain project key only, never the environment key."""
-    available, stored_key = _get_password(API_KEY_ENTRY)
-    if not available or stored_key is None:
-        return None
-    return _project_key_credential(stored_key, "keyring")
+def _project_key(
+    environment: Mapping[str, str], api_url: str | None
+) -> ProjectKeyCredential | None:
+    if API_KEY_ENV in environment:
+        return _project_key_credential(
+            environment[API_KEY_ENV], "environment", API_KEY_ENV
+        )
+    return stored_project_key(api_url)
 
 
 def resolve_credential(
     environ: Mapping[str, str] | None = None,
     *,
     purpose: CredentialClass = "user",
+    api_url: str | None = None,
 ) -> ResolvedCredential | None:
     """Resolve one credential for a command class.
 
-    Metering never uses the login: environment key, then keychain key. User
-    commands prefer the login, then the environment key, then the keychain key.
-    SOLWYN_AUTH=project_key skips the login; SOLWYN_AUTH=login requires it.
+    Metering never uses a login: SOLWYN_API_KEY, then the stored key. User
+    commands: SOLWYN_TOKEN, the stored login, SOLWYN_API_KEY, the stored key.
+    SOLWYN_AUTH=project_key skips both logins; SOLWYN_AUTH=login requires one.
     """
     environment = os.environ if environ is None else environ
-    _KEYCHAIN_UNREACHABLE.set(False)
+    _LAST_LOOKUP.set(None)
     if purpose == "metering":
-        return _project_key(environment)
+        return _project_key(environment, api_url)
     try:
         selection = auth_selection(environment)
     except ValueError as error:
         raise AuthError(str(error)) from None
     if selection != "project_key":
-        login = stored_login()
+        login = _environment_login(environment) or stored_login(api_url=api_url)
         if login is not None or selection == "login":
             return login
-    return _project_key(environment)
+    return _project_key(environment, api_url)
 
 
-def _set_password(entry: str, value: str) -> None:
+def missing_credential_hint(purpose: CredentialClass = "user") -> str:
+    """Return a fixed hint naming where the lookup looked."""
+    lookup = last_lookup()
     try:
-        keyring.set_password(KEYRING_SERVICE, entry, value)
-    except NoKeyringError:
-        raise CredentialStorageError(
-            "Could not update credentials in the operating-system keychain."
-        ) from None
-    except Exception:
-        raise CredentialStorageError(
-            "Could not update credentials in the operating-system keychain."
-        ) from None
-
-
-def _confirm_entry_absent(entry: str) -> bool:
-    available, retained_value = _get_password(entry)
-    return available and retained_value is None
-
-
-def _delete_password(entry: str) -> bool:
-    try:
-        keyring.delete_password(KEYRING_SERVICE, entry)
-    except PasswordDeleteError:
-        return _confirm_entry_absent(entry)
-    except NoKeyringError:
-        return _confirm_entry_absent(entry)
-    except Exception:
-        return _confirm_entry_absent(entry)
-    return True
-
-
-def _delete_entries(entries: tuple[str, ...]) -> None:
-    results = [_delete_password(entry) for entry in entries]
-    if not all(results):
-        raise CredentialStorageError(
-            "Could not clear credentials from the operating-system keychain."
+        where = lookup or where_stored()
+    except AuthError:
+        where = None
+    looked = f" Looked in: {where.describe()}." if where is not None else ""
+    if where is not None and where.keyring_unavailable:
+        looked = f" {where.location} was not available." + (
+            f" {FILE_STORE_HINT}" if where.mode != "file" else ""
         )
+    if purpose == "metering":
+        return METERING_KEY_HINT + looked
+    return (
+        "Run solwyn login, or set SOLWYN_TOKEN (a login) or SOLWYN_API_KEY "
+        "(a project key) in the environment." + looked
+    )
 
 
-def store_project_key(project_key: str) -> ProjectKeyCredential:
-    """Validate and store a project key only in the OS keychain."""
+# --- Storing and clearing ---------------------------------------------------
+
+
+def store_project_key(
+    project_key: str, *, mode: StoreMode | None = None, api_url: str | None = None
+) -> ProjectKeyCredential:
+    """Validate and store a project key; ``last_write()`` says where."""
     credential = _project_key_credential(project_key, "keyring")
-    _set_password(API_KEY_ENTRY, credential.bearer_value())
-    return credential
+    written = _write(
+        {API_KEY_ENTRY: credential.bearer_value()},
+        origin=current_origin(api_url),
+        mode=store_mode() if mode is None else mode,
+    )
+    return credential.model_copy(
+        update={"source": written.kind, "location": written.location}
+    )
 
 
-def store_login(token: str, meta: LoginMetadata) -> LoginCredential:
-    """Store a CLI login and drop the pending device and legacy session entries."""
+def store_login(
+    token: str,
+    meta: LoginMetadata,
+    *,
+    mode: StoreMode | None = None,
+    api_url: str | None = None,
+) -> LoginCredential:
+    """Store a CLI login and drop the pending device; ``last_write()`` says where."""
     try:
         credential = LoginCredential(token=token, meta=meta)
     except ValidationError:
         raise CredentialStorageError("Received an invalid CLI credential.") from None
-    # Drop the old token first. Metadata without a token reads as no login, so a
-    # failed write can never pair the old token with the new metadata.
-    if not _delete_password(CLI_CREDENTIAL_ENTRY):
-        raise CredentialStorageError(
-            "Could not update credentials in the operating-system keychain."
-        )
+    origin = current_origin(api_url)
+    selected = store_mode() if mode is None else mode
+    written = _write(
+        {
+            CLI_CREDENTIAL_META_ENTRY: meta.model_dump_json(),
+            CLI_CREDENTIAL_ENTRY: credential.bearer_value(),
+        },
+        origin=origin,
+        mode=selected,
+        clear_first=(CLI_CREDENTIAL_ENTRY,),
+    )
     try:
-        _set_password(CLI_CREDENTIAL_META_ENTRY, meta.model_dump_json())
-        _set_password(CLI_CREDENTIAL_ENTRY, credential.bearer_value())
+        _delete((PENDING_DEVICE_ENTRY,), origin=origin, mode=selected)
     except CredentialStorageError:
-        _delete_password(CLI_CREDENTIAL_META_ENTRY)
-        raise
-    for entry in (PENDING_DEVICE_ENTRY, *LEGACY_ENTRIES):
-        _delete_password(entry)
-    return credential
+        pass
+    return credential.model_copy(
+        update={"source": written.kind, "location": written.location}
+    )
 
 
-def clear_login() -> None:
-    """Remove only the stored CLI login."""
-    _delete_entries((CLI_CREDENTIAL_ENTRY, CLI_CREDENTIAL_META_ENTRY))
+def clear_login(api_url: str | None = None) -> list[Cleared]:
+    """Remove only the stored CLI login for this API."""
+    return _delete(LOGIN_ENTRIES, origin=current_origin(api_url), mode=store_mode())
 
 
-def store_pending_device(pending: PendingDevice) -> None:
+def store_pending_device(pending: PendingDevice, *, api_url: str | None = None) -> None:
     """Keep an in-progress device login so login --continue can resume it."""
-    _set_password(PENDING_DEVICE_ENTRY, json.dumps(pending.model_dump(mode="json")))
+    _write(
+        {PENDING_DEVICE_ENTRY: pending.model_dump_json()},
+        origin=current_origin(api_url),
+        mode=store_mode(),
+    )
 
 
-def load_pending_device() -> PendingDevice | None:
+def load_pending_device(api_url: str | None = None) -> PendingDevice | None:
     """Return the stored device login, or None when absent or corrupt."""
-    available, raw = _get_password(PENDING_DEVICE_ENTRY)
-    if not available or raw is None:
+    found = _read(
+        (PENDING_DEVICE_ENTRY,), origin=current_origin(api_url), mode=store_mode()
+    )
+    raw = found.values[PENDING_DEVICE_ENTRY]
+    if raw is None:
         return None
     try:
         return PendingDevice.model_validate_json(raw)
@@ -404,25 +722,95 @@ def load_pending_device() -> PendingDevice | None:
         return None
 
 
-def clear_pending_device() -> None:
+def clear_pending_device(api_url: str | None = None) -> None:
     """Forget an in-progress device login. Best effort."""
-    _delete_password(PENDING_DEVICE_ENTRY)
-
-
-def delete_legacy_entries() -> None:
-    """Remove pre-device-flow session tokens. Best effort."""
-    for entry in LEGACY_ENTRIES:
-        _delete_password(entry)
-
-
-def clear_credentials() -> None:
-    """Remove every supported and legacy credential entry from the OS keychain."""
-    _delete_entries(
-        (
-            API_KEY_ENTRY,
-            CLI_CREDENTIAL_ENTRY,
-            CLI_CREDENTIAL_META_ENTRY,
-            PENDING_DEVICE_ENTRY,
-            *LEGACY_ENTRIES,
+    try:
+        _delete(
+            (PENDING_DEVICE_ENTRY,), origin=current_origin(api_url), mode=store_mode()
         )
-    )
+    except CredentialStorageError:
+        pass
+
+
+def clear_credentials(api_url: str | None = None) -> list[Cleared]:
+    """Remove every stored credential for this API from each store in use."""
+    return _delete(ALL_ENTRIES, origin=current_origin(api_url), mode=store_mode())
+
+
+def stored_entry_status(
+    api_url: str | None = None,
+) -> Literal["found", "missing", "incomplete", "unavailable"]:
+    """Classify what is stored for this API, for diagnostics."""
+    try:
+        found = _read(
+            (API_KEY_ENTRY, *LOGIN_ENTRIES),
+            origin=current_origin(api_url),
+            mode=store_mode(),
+        )
+    except AuthError:
+        return "unavailable"
+    lookup = last_lookup()
+    if lookup is not None and lookup.keyring_unavailable:
+        return "unavailable"
+    key = found.values[API_KEY_ENTRY]
+    token = found.values[CLI_CREDENTIAL_ENTRY]
+    meta = found.values[CLI_CREDENTIAL_META_ENTRY]
+    if (token is None) != (meta is None):
+        return "incomplete"
+    return "found" if key is not None or token is not None else "missing"
+
+
+# --- Entries from 0.3 and earlier -------------------------------------------
+
+
+def _legacy_keyring_allowed(mode: StoreMode) -> bool:
+    """Touch the keyring for old entries only where it is safe to.
+
+    file mode never touches the keyring. On Linux in auto mode the keyring may
+    hang on D-Bus or prompt, so only an interactive terminal probes it.
+    """
+    if mode == "file":
+        return False
+    if _keyring_in_use(mode):
+        return True
+    return _interactive()
+
+
+def delete_legacy_entries(mode: StoreMode | None = None) -> bool:
+    """Delete 0.x keyring entries, best effort; return whether any were tried."""
+    selected = store_mode() if mode is None else mode
+    if not _legacy_keyring_allowed(selected):
+        return False
+    keyring_store = _keyring_store()
+    try:
+        for entry in LEGACY_ENTRIES:
+            keyring_store.delete_raw(entry)
+    except StoreUnavailableError:
+        return False
+    return True
+
+
+LEGACY_LOGIN_NOTICE = (
+    "Your login from an earlier version is in the system keyring, which this CLI "
+    "no longer reads on Linux. Run solwyn login again, or set "
+    "SOLWYN_CREDENTIAL_STORE=keyring."
+)
+
+
+def legacy_login_notice() -> str | None:
+    """On Linux in auto mode at a terminal, point at a 0.x keyring login."""
+    try:
+        mode = store_mode()
+    except AuthError:
+        return None
+    if (
+        mode != "auto"
+        or credential_store.platform_name() != "linux"
+        or not _interactive()
+    ):
+        return None
+    try:
+        found = _keyring_store().get_raw(CLI_CREDENTIAL_ENTRY)
+    except StoreUnavailableError:
+        return None
+    return LEGACY_LOGIN_NOTICE if found else None

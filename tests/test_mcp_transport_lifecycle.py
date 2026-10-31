@@ -10,6 +10,8 @@ import anyio
 import httpx
 import pytest
 
+from login_fixtures import DictStore, install_store
+
 from solwyn_cli import auth, _mcp_operation as operation
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import budget
@@ -60,7 +62,7 @@ def test_401_through_the_operation_bridge_sends_nothing_else_and_writes_nothing(
     monkeypatch,
 ):
     sent, writes = [], []
-    monkeypatch.setattr(auth, "_set_password", lambda *args: writes.append(args))
+    install_store(monkeypatch, DictStore(read_only=True))
 
     async def handler(request):
         sent.append(request.url.path)

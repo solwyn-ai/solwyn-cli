@@ -36,7 +36,11 @@ from solwyn_cli.auth import (
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    credential_saved_note,
+    exit_with_error,
+    required_credential,
+)
 from solwyn_cli.config import ConfigLoadError, ConfigWriteError, clear_default_project
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -302,7 +306,7 @@ def _invalid_projects_response(context: typer.Context) -> None:
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.projects-create.v1",
         guidance=(
-            "The new project key is shown exactly once or stored directly in the OS keychain.",
+            "The new project key is shown exactly once or stored directly in the credential store (--store-key).",
         ),
     ),
 )
@@ -330,7 +334,7 @@ def create_project(
     ] = None,
     store_key: Annotated[
         bool,
-        typer.Option("--store-key", help="Store the new key in the OS keychain."),
+        typer.Option("--store-key", help="Store the new key in the credential store."),
     ] = False,
 ) -> None:
     """Create a project and capture its first API key exactly once."""
@@ -390,17 +394,20 @@ def create_project(
     raw_key = created.key.get_secret_value()
     if store_key:
         try:
-            store_project_key(raw_key)
+            stored_key = store_project_key(raw_key)
         except CredentialStorageError as error:
             exit_with_error(
                 context,
                 OutputError(
                     code="credential_storage_failed",
                     message=str(error),
-                    hint="Retry after configuring an operating-system keychain.",
+                    hint=error.hint or "Retry after fixing the credential store.",
                 ),
                 semantic=ErrorSemantic.AUTH,
             )
+        if isinstance(stored_key, ProjectKeyCredential):
+            if note := credential_saved_note(stored_key):
+                typer.echo(_terminal_safe(note), err=True)
         stored_data = _ProjectCreateStoredData.model_validate(created.model_dump())
         output_engine(context).write_success(
             schema="solwyn.projects-create.v1",

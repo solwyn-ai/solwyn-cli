@@ -116,7 +116,7 @@ Solwyn CLI:
 - never captures, logs, or transmits prompts or responses;
 - never collects, stores, or proxies provider API keys;
 - has no telemetry, update checks, or phone-home behavior; and
-- stores Solwyn credentials only in the operating system keychain, never in configuration files, command-line arguments, or output.
+- stores Solwyn credentials in the operating system keychain on macOS and Windows and in a private `0600` file (`~/.local/share/solwyn/credentials.json`) on Linux, keyed by API URL, never in configuration files, command-line arguments, or output. See [login](docs/commands/login.mdx) for the stores, `SOLWYN_TOKEN` for CI, and the tradeoffs.
 
 ## Development
 

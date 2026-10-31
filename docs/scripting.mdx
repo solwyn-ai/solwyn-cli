@@ -71,9 +71,11 @@ Credentials and tokens are never emitted. A 401 with `cli_credential_invalid`,
 do not log in again in a loop: create a personal account in the dashboard at
 https://app.solwyn.ai/no-account, then run `solwyn login`.
 
-User commands prefer the stored Solwyn login, then `SOLWYN_API_KEY`, then the
-keychain project key. Set `SOLWYN_AUTH=project_key` to skip the login, or
-`SOLWYN_AUTH=login` to require it; any other value exits 2. Metering commands
+User commands prefer `SOLWYN_TOKEN`, then the stored Solwyn login, then
+`SOLWYN_API_KEY`, then the stored project key. Set `SOLWYN_AUTH=project_key` to
+skip both logins, or `SOLWYN_AUTH=login` to require one; any other value exits 2.
+In CI, set `SOLWYN_TOKEN` to a `solwyn login --scope read --no-store` login for
+reads, and `SOLWYN_API_KEY` for metering. Metering commands
 (`budget check`, `budget confirm`, `record`) use only a project key.
 
 A change a login cannot make on its own (raising a cap, changing enforcement,

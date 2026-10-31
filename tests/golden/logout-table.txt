@@ -1,2 +1,2 @@
-Credentials   Status
-all          cleared
+Credentials                     Status
+file (/test/credentials.json)  cleared

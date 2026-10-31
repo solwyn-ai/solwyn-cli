@@ -61,13 +61,27 @@ def server(monkeypatch: pytest.MonkeyPatch) -> Server:
 def no_storage(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Fail on any keychain write; reads return nothing."""
     writes: list[str] = []
-    monkeypatch.setattr(auth.keyring, "get_password", lambda service, name: None)
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: writes.append(name),
-    )
-    monkeypatch.setattr(auth.keyring, "delete_password", lambda service, name: None)
+
+    class _RecordingStore:
+        kind = "file"
+
+        def describe(self) -> str:
+            return "/test/credentials.json"
+
+        def has_origin(self, origin: str) -> bool:
+            return False
+
+        def get(self, origin: str, entry: str) -> None:
+            return None
+
+        def set_many(self, origin: str, values: dict[str, str]) -> None:
+            writes.extend(values)
+
+        def delete(self, origin: str, entries: object) -> None:
+            return None
+
+    monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
+    monkeypatch.setattr(auth, "_file_store", _RecordingStore)
     return writes
 
 

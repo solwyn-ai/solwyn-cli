@@ -44,7 +44,8 @@ def test_config_get_set_and_list_stdout_stderr_discipline(
     assert get_result.stderr == ""
     assert list_result.exit_code == 0
     assert list_result.stdout == (
-        "api_url=https://api.solwyn.ai\ndefault_project=proj_x\nformat=table\n"
+        "api_url=https://api.solwyn.ai\ncredential_store=auto\ndefault_project=proj_x\n"
+        "format=table\n"
     )
     assert list_result.stderr == ""
 

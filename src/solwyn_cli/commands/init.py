@@ -24,7 +24,7 @@ from solwyn_cli.auth import (
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.commands._shared import credential_saved_note, exit_with_error
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
 from solwyn_cli.commands.budget_rules import build_rule, request_rule_add
 from solwyn_cli.commands.login import (
@@ -242,6 +242,9 @@ def _create_project(
             request=request,
         )
         stored_credential = store_project_key(created.key.get_secret_value())
+        if isinstance(stored_credential, ProjectKeyCredential):
+            if note := credential_saved_note(stored_credential):
+                typer.echo(_terminal_safe(note), err=True)
         if run_cap is not None:
             # Re-running init cannot add a cap to an existing project, so a
             # pending approval here continues with the rule add itself.

@@ -134,7 +134,7 @@ alias lets `uvx solwyn-cli` invoke it. `--project` is a required non-secret name
 argument before `mcp`; `--profile guardrails` follows it, matching the default
 `solwyn mcp` surface. The optional
 secret `SOLWYN_API_KEY` has no value/default; omission uses the same OS account's
-keychain. There is no hosted transport or public repository URL invented for
+credential store. There is no hosted transport or public repository URL invented for
 the private checkout.
 
 The Registry verifies PyPI ownership by finding `mcp-name: <server name>` in the

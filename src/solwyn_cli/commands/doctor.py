@@ -101,7 +101,7 @@ class _DoctorData(BaseModel):
 
     status: Literal["ok", "degraded"]
     config: _Diagnostic
-    keychain: _Diagnostic
+    credential_store: _Diagnostic
     readiness: _ReadinessDiagnostic
     authenticated_probe: _AuthenticatedProbe
     snapshot: _SnapshotDiagnostic
@@ -147,46 +147,39 @@ def _config_diagnostic() -> _Diagnostic:
     return _Diagnostic(status="ok", detail="Configuration loaded.")
 
 
-def _keychain_diagnostic() -> _Diagnostic:
-    entries = (
-        auth_module.API_KEY_ENTRY,
-        auth_module.CLI_CREDENTIAL_ENTRY,
-        auth_module.CLI_CREDENTIAL_META_ENTRY,
-    )
-    results = [auth_module._get_password(entry) for entry in entries]
-    if not all(available for available, _value in results):
-        return _Diagnostic(
-            status="error",
-            detail="Keychain is unavailable.",
-        )
-    project_key = results[0][1]
-    login_token = results[1][1]
-    login_meta = results[2][1]
-    if (login_token is None) != (login_meta is None):
-        return _Diagnostic(
-            status="degraded",
-            detail="Keychain contains an incomplete login. Run solwyn login.",
-        )
-    if (
-        login_token is not None
-        and auth_module.stored_login(include_expired=True) is None
-    ):
-        return _Diagnostic(
-            status="degraded",
-            detail="Keychain contains an unreadable login. Run solwyn login.",
-        )
-    if expired_on := auth_module.expired_login_date():
-        return _Diagnostic(
-            status="degraded",
-            detail=f"The stored login expired on {expired_on.date().isoformat()}. Run solwyn login.",
-        )
-    stored = project_key is not None or login_token is not None
+def _credential_store_diagnostic() -> _Diagnostic:
+    try:
+        where = auth_module.where_stored()
+        status = auth_module.stored_entry_status()
+        lookup = auth_module.last_lookup() or where
+        place = f"{lookup.kind} ({lookup.location})"
+        if status == "unavailable":
+            return _Diagnostic(status="error", detail=f"{place} is unavailable.")
+        if status == "incomplete":
+            return _Diagnostic(
+                status="degraded",
+                detail=f"{place} contains an incomplete login. Run solwyn login.",
+            )
+        login = auth_module.stored_login(include_expired=True)
+        token_found = status == "found" and auth_module.stored_project_key() is None
+        if token_found and login is None:
+            return _Diagnostic(
+                status="degraded",
+                detail=f"{place} contains an unreadable login. Run solwyn login.",
+            )
+        if expired_on := auth_module.expired_login_date():
+            return _Diagnostic(
+                status="degraded",
+                detail=f"The stored login expired on {expired_on.date().isoformat()}. Run solwyn login.",
+            )
+    except auth_module.AuthError as error:
+        return _Diagnostic(status="error", detail=str(error))
     return _Diagnostic(
         status="ok",
         detail=(
-            "Keychain available; stored credential found."
-            if stored
-            else "Keychain available; no stored credential found."
+            f"Stored credential found in {place}."
+            if status == "found"
+            else f"No stored credential in {place}."
         ),
     )
 
@@ -393,9 +386,8 @@ def _table(data: _DoctorData) -> TableData:
             data.config.status,
         ),
         (
-            "Keychain — "
-            + data.keychain.detail.removeprefix("Keychain available; ").capitalize(),
-            data.keychain.status,
+            f"Credentials: {data.credential_store.detail}",
+            data.credential_store.status,
         ),
         (f"Readiness — {readiness_detail}", data.readiness.status),
     ]
@@ -455,7 +447,7 @@ def doctor(
         raise typer.BadParameter("--executable and --profile require --mcp.")
     runtime = command_context(context)
     config = _config_diagnostic()
-    keychain = _keychain_diagnostic()
+    credential_store = _credential_store_diagnostic()
     credential_error: str | None = None
     try:
         credential = resolve_credential()
@@ -480,7 +472,7 @@ def doctor(
     status: Literal["ok", "degraded"] = (
         "ok"
         if config.status == "ok"
-        and keychain.status == "ok"
+        and credential_store.status == "ok"
         and readiness.status == "ready"
         and authenticated_probe.status == "ok"
         and snapshot.status == "ok"
@@ -489,7 +481,7 @@ def doctor(
     data = _DoctorData(
         status=status,
         config=config,
-        keychain=keychain,
+        credential_store=credential_store,
         readiness=readiness,
         authenticated_probe=authenticated_probe,
         snapshot=snapshot,

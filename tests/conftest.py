@@ -1,22 +1,21 @@
-"""Suite-wide isolation from the host's OS keychain.
+"""Suite-wide isolation from the host's credentials.
 
-In-process tests never touch the host's keyring. Each test starts with an
-empty in-memory backend that is reachable, as on a desktop, and with the
-keychain-unreachable flag cleared. GitHub's runners have no keyring backend
-at all, so without this a real read in one test flipped another test's
-login hint. A test that needs the unreachable path asks for
-``keychain_unreachable``.
+In-process tests never touch the host's keyring or credentials file. Each test
+gets a credentials file under its own temporary directory and an empty
+in-memory keyring that is reachable, as on a desktop. Host variables that pick
+a credential or a store are removed. A test that needs an unusable keyring
+asks for ``keychain_unreachable``.
 """
 
 from collections.abc import Iterator
+from pathlib import Path
 
-import keyring
 import pytest
 from keyring.backend import KeyringBackend
 from keyring.backends import fail
 from keyring.errors import PasswordDeleteError
 
-from solwyn_cli import auth
+from solwyn_cli import auth, credential_store
 
 
 class MemoryKeyring(KeyringBackend):
@@ -42,19 +41,31 @@ class MemoryKeyring(KeyringBackend):
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_keychain() -> Iterator[MemoryKeyring]:
-    previous = keyring.get_keyring()
+def memory_keyring(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[MemoryKeyring]:
     backend = MemoryKeyring()
-    keyring.set_keyring(backend)
-    auth._KEYCHAIN_UNREACHABLE.set(False)
+    monkeypatch.setattr(credential_store, "backend_factory", lambda: backend)
+    credentials = tmp_path_factory.mktemp("credentials") / "credentials.json"
+    monkeypatch.setenv(credential_store.FILE_ENV, str(credentials))
+    for name in (credential_store.STORE_ENV, auth.TOKEN_ENV):
+        monkeypatch.delenv(name, raising=False)
+    auth._LAST_LOOKUP.set(None)
+    auth._LAST_WRITE.set(None)
     try:
         yield backend
     finally:
-        auth._KEYCHAIN_UNREACHABLE.set(False)
-        keyring.set_keyring(previous)
+        auth._LAST_LOOKUP.set(None)
+        auth._LAST_WRITE.set(None)
 
 
 @pytest.fixture
-def keychain_unreachable() -> None:
-    """Opt in: no keychain backend answers, as on a headless runner."""
-    keyring.set_keyring(fail.Keyring())
+def credentials_file() -> Path:
+    """The isolated credentials file this test reads and writes."""
+    return credential_store.credentials_path()
+
+
+@pytest.fixture
+def keychain_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt in: no keyring backend answers, as on a headless runner."""
+    monkeypatch.setattr(credential_store, "backend_factory", fail.Keyring)

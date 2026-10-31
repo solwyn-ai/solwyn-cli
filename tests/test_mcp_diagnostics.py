@@ -16,21 +16,15 @@ from golden.harness import assert_matches_golden
 from solwyn_cli._mcp_doctor_ipc import HelperResult
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.main import app
-from login_fixtures import LOGIN_TOKEN, login_entries
+from login_fixtures import DictStore, install_store, LOGIN_TOKEN, login_entries
 
 KEY = "sk_proj_" + "a1" * 32
 runner = CliRunner()
 
 
 def _store(values, *, fail_on=()):
-    """Fake keychain reads; entries in fail_on must never be read."""
-
-    def get(entry):
-        if entry in fail_on:
-            pytest.fail(f"keychain read of {entry}")
-        return True, values.get(entry)
-
-    return get
+    """A credential store whose fail_on entries must never be read."""
+    return DictStore(values, fail_on=fail_on)
 
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -42,21 +36,29 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.delenv("SOLWYN_API_KEY", raising=False)
     monkeypatch.delenv("SOLWYN_PROJECT_ID", raising=False)
     monkeypatch.delenv("SOLWYN_API_URL", raising=False)
-    monkeypatch.setattr(auth, "_get_password", lambda entry: (True, None))
-    monkeypatch.setattr(
-        auth, "_set_password", lambda *args: pytest.fail("keychain write")
-    )
-    monkeypatch.setattr(
-        auth, "_delete_password", lambda *args: pytest.fail("keychain delete")
-    )
+    install_store(monkeypatch, DictStore(read_only=True))
 
 
-KEYCHAIN_ENV_VARS = ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"]
+FORWARDED = [
+    "SOLWYN_TOKEN",
+    "SOLWYN_API_KEY",
+    "SOLWYN_AUTH",
+    "SOLWYN_API_URL",
+    "SOLWYN_CREDENTIAL_STORE",
+    "SOLWYN_CREDENTIALS_FILE",
+    "XDG_DATA_HOME",
+    "XDG_CONFIG_HOME",
+]
+DBUS = ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"]
 
 
 def _pin_platform(monkeypatch, platform):
-    real = _mcp_launch.keychain_env_vars
-    monkeypatch.setattr(_mcp_launch, "keychain_env_vars", lambda: real(platform))
+    from solwyn_cli import credential_store
+
+    real = credential_store.platform_name
+    monkeypatch.setattr(
+        credential_store, "platform_name", lambda current=None: real(platform)
+    )
 
 
 def test_config_is_offline_and_keeps_global_options_before_mcp(monkeypatch, tmp_path):
@@ -66,9 +68,7 @@ def test_config_is_offline_and_keeps_global_options_before_mcp(monkeypatch, tmp_
     target.write_text("must never execute")
     target.chmod(0o755)
     monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-    monkeypatch.setattr(
-        auth, "_get_password", lambda *args: pytest.fail("keychain read")
-    )
+    install_store(monkeypatch, DictStore(fail_on="*"))
     monkeypatch.setattr(
         httpx.Client, "request", lambda *a, **kw: pytest.fail("network")
     )
@@ -99,25 +99,30 @@ def test_config_is_offline_and_keeps_global_options_before_mcp(monkeypatch, tmp_
             "--profile",
             "read",
         ],
-        "env_vars": KEYCHAIN_ENV_VARS,
+        "env_vars": FORWARDED,
     }
     assert result.stderr == ""
     assert KEY not in result.output
 
 
 @pytest.mark.parametrize(
-    ("platform", "expected"),
+    ("platform", "store", "expected"),
     [
-        ("linux", KEYCHAIN_ENV_VARS),
-        ("darwin", []),
-        ("win32", []),
-        ("freebsd14", []),
+        # Names only, never values; D-Bus only when the Linux keyring is used.
+        ("linux", "auto", FORWARDED),
+        ("linux", "file", FORWARDED),
+        ("linux", "keyring", FORWARDED + DBUS),
+        ("darwin", "auto", FORWARDED),
+        ("darwin", "keyring", FORWARDED),
+        ("win32", "auto", FORWARDED),
+        ("freebsd14", "keyring", FORWARDED + DBUS),
     ],
 )
-def test_config_lists_keychain_session_variables_only_on_linux(
-    monkeypatch, platform, expected
+def test_config_forwards_variable_names_and_dbus_only_for_the_linux_keyring(
+    monkeypatch, platform, store, expected
 ):
     _pin_platform(monkeypatch, platform)
+    monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", store)
     monkeypatch.setattr(
         mcp_config, "resolve_executable", lambda explicit: "/installed/solwyn"
     )
@@ -137,7 +142,7 @@ def test_config_table_shows_env_vars(monkeypatch):
     result = runner.invoke(app, ["--no-color", "mcp-config"])
 
     assert result.exit_code == 0, result.output
-    assert '{"env_vars":["DBUS_SESSION_BUS_ADDRESS","XDG_RUNTIME_DIR"]}' in "".join(
+    assert '"env_vars":["SOLWYN_TOKEN","SOLWYN_API_KEY"' in "".join(
         result.stdout.split()
     )
 
@@ -222,7 +227,7 @@ def test_actual_key_identity_is_separate_from_wrong_selected_project(
 ):
     requests, responses, launches = probes
     monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-    monkeypatch.setattr(auth, "_get_password", _store({}, fail_on={auth.API_KEY_ENTRY}))
+    install_store(monkeypatch, _store({}, fail_on={auth.API_KEY_ENTRY}))
     responses.extend(
         [
             httpx.Response(
@@ -276,7 +281,7 @@ def test_invalid_environment_presence_never_falls_back(
 ):
     requests, _, launches = probes
     monkeypatch.setenv("SOLWYN_API_KEY", value)
-    monkeypatch.setattr(auth, "_get_password", _store({}, fail_on={auth.API_KEY_ENTRY}))
+    install_store(monkeypatch, _store({}, fail_on={auth.API_KEY_ENTRY}))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
     assert result.exit_code == 1
@@ -303,17 +308,15 @@ def test_invalid_environment_presence_never_falls_back(
 def test_credential_store_availability_is_safe(
     monkeypatch, probes, available, token, meta, want
 ):
-    monkeypatch.setattr(
-        auth,
-        "_get_password",
-        lambda entry: (
-            available,
-            {
-                auth.CLI_CREDENTIAL_ENTRY: token,
-                auth.CLI_CREDENTIAL_META_ENTRY: meta,
-            }.get(entry),
-        ),
-    )
+    values = {
+        entry: value
+        for entry, value in (
+            (auth.CLI_CREDENTIAL_ENTRY, token),
+            (auth.CLI_CREDENTIAL_META_ENTRY, meta),
+        )
+        if value is not None
+    }
+    install_store(monkeypatch, DictStore(values, unavailable=not available))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
     assert result.exit_code == 1
@@ -330,11 +333,7 @@ def test_login_is_captured_once_and_mcp_read_is_skipped(
     entries = []
     stored_login = login_entries(LOGIN_TOKEN)
 
-    def stored(entry):
-        entries.append(entry)
-        return True, stored_login.get(entry)
-
-    monkeypatch.setattr(auth, "_get_password", stored)
+    install_store(monkeypatch, DictStore(stored_login, read_log=entries))
     responses.append(
         httpx.Response(
             status,
@@ -352,7 +351,7 @@ def test_login_is_captured_once_and_mcp_read_is_skipped(
     assert data["credential"] == {
         "status": "available",
         "kind": "login",
-        "source": "keyring",
+        "source": "file",
     }
     assert data["http_read"]["status"] == want
     assert data["key_context"]["scope"] is None
@@ -426,11 +425,9 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
     requests, _, launches = probes
     if kind == "project_key":
         monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-        monkeypatch.setattr(
-            auth, "_get_password", _store({}, fail_on={auth.API_KEY_ENTRY})
-        )
+        install_store(monkeypatch, _store({}, fail_on={auth.API_KEY_ENTRY}))
     else:
-        monkeypatch.setattr(auth, "_get_password", _store(login_entries(LOGIN_TOKEN)))
+        install_store(monkeypatch, _store(login_entries(LOGIN_TOKEN)))
 
     def respond(request):
         requests.append(request)
@@ -520,7 +517,7 @@ def test_config_error_never_sends_key_to_fallback_api(monkeypatch, tmp_path, pro
 
 def test_login_discovery_only_is_overall_degraded(monkeypatch, probes):
     """A skipped authenticated MCP read must never advertise all diagnostics passed."""
-    monkeypatch.setattr(auth, "_get_password", _store(login_entries(LOGIN_TOKEN)))
+    install_store(monkeypatch, _store(login_entries(LOGIN_TOKEN)))
     probes[1].append(httpx.Response(200, json={"user_id": "user_alpha"}))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     assert result.exit_code == 1
@@ -549,11 +546,7 @@ def test_successful_key_read_and_configured_project_source(
         'default_project = "proj_abababababababababababab"\n'
     )
     monkeypatch.setenv("SOLWYN_PROJECT_ID", "")
-    monkeypatch.setattr(
-        auth,
-        "_get_password",
-        lambda entry: (True, KEY if entry == auth.API_KEY_ENTRY else None),
-    )
+    install_store(monkeypatch, DictStore({auth.API_KEY_ENTRY: KEY}))
     probes[1].extend(
         [
             httpx.Response(
@@ -571,7 +564,7 @@ def test_successful_key_read_and_configured_project_source(
     assert result.exit_code == 0, result.output
     assert data["status"] == "ok"
     assert data["project_source"] == "config"
-    assert data["credential"]["source"] == "keyring"
+    assert data["credential"]["source"] == "file"
     assert data["mcp_read"]["status"] == "ok"
 
 
@@ -609,9 +602,7 @@ def test_mcp_doctor_json_golden(monkeypatch, probes):
 
 
 def test_plain_doctor_rejects_explicit_mcp_profile_before_credentials(monkeypatch):
-    monkeypatch.setattr(
-        auth, "_get_password", lambda *args: pytest.fail("credential read")
-    )
+    install_store(monkeypatch, DictStore(fail_on="*"))
     result = runner.invoke(app, ["doctor", "--profile", "read"])
     assert result.exit_code == 2
     assert "require --mcp" in unstyle(result.output)

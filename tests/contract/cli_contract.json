@@ -5159,6 +5159,34 @@
           "name": "resume",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--store"
+          ],
+          "default": null,
+          "help": "Where to store credentials: auto, keyring or file. Saved to config.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "store",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--no-store"
+          ],
+          "default": false,
+          "help": "Print the new login token once for SOLWYN_TOKEN; store nothing.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_store",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -5176,7 +5204,7 @@
       "path": [
         "logout"
       ],
-      "summary": "Revoke the stored login and clear all stored Solwyn credentials."
+      "summary": "Revoke the stored login and clear this API's stored Solwyn credentials."
     },
     {
       "hidden": false,
@@ -5959,7 +5987,7 @@
             "--store-key"
           ],
           "default": false,
-          "help": "Store the new key in the OS keychain.",
+          "help": "Store the new key in the credential store.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -8250,7 +8278,7 @@
       "keys": [
         "authenticated_probe",
         "config",
-        "keychain",
+        "credential_store",
         "readiness",
         "schema",
         "snapshot",
@@ -8376,9 +8404,11 @@
         "email",
         "expires_at",
         "label",
+        "location",
         "role",
         "schema",
-        "scope"
+        "scope",
+        "store"
       ],
       "optional_keys": [],
       "schema": "solwyn.login.v2",
@@ -8387,8 +8417,10 @@
     {
       "keys": [
         "cleared",
+        "legacy_entries_cleared",
         "revoked",
-        "schema"
+        "schema",
+        "stores"
       ],
       "optional_keys": [],
       "schema": "solwyn.logout.v1",

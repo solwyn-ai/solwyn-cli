@@ -37,7 +37,10 @@ def login_credential(token: str = LOGIN_TOKEN, **meta: Any) -> auth.LoginCredent
     the keychain path below always stores a valid ``solwyn_cli_`` token.
     """
     return auth.LoginCredential.model_construct(
-        token=SecretStr(token), meta=login_meta(**meta), source="keyring"
+        token=SecretStr(token),
+        meta=login_meta(**meta),
+        source="file",
+        location="/test/credentials.json",
     )
 
 
@@ -106,18 +109,76 @@ def approval_invalid(reason: str) -> httpx.Response:
     )
 
 
+class DictStore:
+    """A credential store over one dict, keyed by entry name for every origin.
+
+    ``fail_on`` entries (or every entry, with ``"*"``) must never be read;
+    ``read_only`` fails any write or delete; ``unavailable`` raises as an
+    unusable store does; ``read_log`` records every entry read.
+    """
+
+    kind = "file"
+
+    def __init__(
+        self,
+        values: dict[str, str] | None = None,
+        *,
+        fail_on: Any = (),
+        read_only: bool = False,
+        unavailable: bool = False,
+        read_log: list[str] | None = None,
+    ) -> None:
+        self.values = {} if values is None else values
+        self.fail_on = fail_on
+        self.read_only = read_only
+        self.unavailable = unavailable
+        self.read_log = read_log
+
+    def describe(self) -> str:
+        return "/test/credentials.json"
+
+    def _check_read(self, entry: str) -> None:
+        import pytest
+
+        from solwyn_cli.credential_store import StoreUnavailableError
+
+        if self.fail_on == "*" or entry in self.fail_on:
+            pytest.fail(f"credential store read of {entry}")
+        if self.unavailable:
+            raise StoreUnavailableError("The test store is unavailable.")
+        if self.read_log is not None:
+            self.read_log.append(entry)
+
+    def _check_write(self) -> None:
+        if self.read_only:
+            import pytest
+
+            pytest.fail("credential store write")
+
+    def has_origin(self, origin: str) -> bool:
+        return bool(self.values)
+
+    def get(self, origin: str, entry: str) -> str | None:
+        self._check_read(entry)
+        return self.values.get(entry)
+
+    def set_many(self, origin: str, values: dict[str, str]) -> None:
+        self._check_write()
+        self.values.update(values)
+
+    def delete(self, origin: str, entries: Any) -> None:
+        self._check_write()
+        for entry in entries:
+            self.values.pop(entry, None)
+
+
+def install_store(monkeypatch: Any, store: DictStore) -> DictStore:
+    """Make ``store`` the only credential store for one test (file mode)."""
+    monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
+    monkeypatch.setattr(auth, "_file_store", lambda: store)
+    return store
+
+
 def fake_keychain(monkeypatch: Any) -> dict[str, str]:
-    """Replace the OS keychain with a dict for one test."""
-    values: dict[str, str] = {}
-    monkeypatch.setattr(
-        auth.keyring, "get_password", lambda service, name: values.get(name)
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: values.__setitem__(name, value),
-    )
-    monkeypatch.setattr(
-        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
-    )
-    return values
+    """Replace the credential store with a dict for one test (file mode)."""
+    return install_store(monkeypatch, DictStore()).values

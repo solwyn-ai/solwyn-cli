@@ -1,2 +1,3 @@
 Field                 Value
 Authentication  project_key
+Stored in           keyring

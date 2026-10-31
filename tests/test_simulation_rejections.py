@@ -14,23 +14,15 @@ from solwyn_cli.main import app
 from solwyn_cli.mcp import server
 from solwyn_cli import auth
 from test_cost_advice_command import SIMULATION
-from login_fixtures import LOGIN_TOKEN, login_entries
+from login_fixtures import fake_keychain, LOGIN_TOKEN, login_entries
 
 
 @pytest.fixture
 def keychain(monkeypatch):
     values = {}
-    monkeypatch.setattr(
-        auth.keyring, "get_password", lambda service, name: values.get(name)
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: values.__setitem__(name, value),
-    )
-    monkeypatch.setattr(
-        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
-    )
+    store = fake_keychain(monkeypatch)
+    store.update(values)
+    values = store
     return values
 
 

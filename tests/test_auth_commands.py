@@ -146,7 +146,7 @@ def test_piped_project_key_is_validated_stored_and_matches_json_golden(
     monkeypatch.setattr(
         login_module,
         "store_project_key",
-        lambda value: (
+        lambda value, **_: (
             stored.append(value)
             or auth.ProjectKeyCredential(api_key=value, source="keyring")
         ),
@@ -179,7 +179,7 @@ def test_tty_project_key_prompt_is_hidden(
     monkeypatch.setattr(
         login_module,
         "store_project_key",
-        lambda value: auth.ProjectKeyCredential(api_key=value, source="keyring"),
+        lambda value, **_: auth.ProjectKeyCredential(api_key=value, source="keyring"),
     )
 
     result = runner.invoke(app, ["login", "--with-key"])
@@ -211,7 +211,7 @@ def test_invalid_piped_key_fails_without_echoing_secret(
 def test_project_key_storage_failure_is_structured_exit_three_without_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_store(value: str) -> None:
+    def fail_store(value: str, **_: object) -> None:
         assert value == VALID_KEY
         raise auth.CredentialStorageError(
             "Could not update credentials in the operating-system keychain."
@@ -239,7 +239,13 @@ def test_logout_clears_all_credentials_and_matches_both_format_goldens(
 ) -> None:
     calls: list[None] = []
     monkeypatch.setattr(auth, "stored_login", lambda **_: None)
-    monkeypatch.setattr(login_module, "clear_credentials", lambda: calls.append(None))
+    monkeypatch.setattr(
+        login_module,
+        "clear_credentials",
+        lambda: (
+            calls.append(None) or [auth.Cleared("file", "/test/credentials.json", True)]
+        ),
+    )
 
     json_result = runner.invoke(app, ["--json", "logout"])
     table_result = runner.invoke(app, ["logout"])
