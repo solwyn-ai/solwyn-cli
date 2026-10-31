@@ -33,11 +33,15 @@ Every outcome other than success exits 6, and nothing else is sent:
 | Error code | Meaning |
 | --- | --- |
 | `approval_pending` | The wait ended first. The error prints the exact command to run after approving (also in `detail.retry_command` and `detail.retry_argv`). |
-| `rate_limited` and other failures after an approval was attached | The CLI never re-sends a request that carries an approval. The approval may have been used before the failure; if a retry reports it consumed, request a new one. |
 | `approval_denied` | You denied the change in the browser. |
 | `approval_expired` | The approval expired. Run the command again to request a new one. |
 | `approval_invalid` | The attached approval was not usable. `mismatch` means the request changed since it was approved, for example because the state a command reads changed. Run the command again. |
 | `approval_limit_reached` | Five approvals are already pending for this login. |
+
+A failure after the approved request was sent keeps its normal exit code, for
+example `rate_limited` exits 1. The CLI never re-sends a request that carries an
+approval, so you see the original error. The approval may have been used before
+that failure; if a retry reports it consumed, request a new one.
 
 The global `--approval ID` option attaches an approval to the first change
 request of that invocation. Read-only requests such as `plan change`'s estimate
