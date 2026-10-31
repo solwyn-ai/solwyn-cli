@@ -110,9 +110,27 @@ def test_keyring_mode_without_a_session_bus_names_the_fix(
     assert requests == []
 
 
-def test_auto_on_macos_with_an_unusable_keychain_says_so(
+def test_auto_on_macos_with_no_usable_keychain_is_a_storage_error(
     monkeypatch: pytest.MonkeyPatch, real_resolution, keychain_unreachable: None
 ) -> None:
+    _platform(monkeypatch, "macos")
+    real_resolution()
+
+    result = _call("get_whoami")
+
+    error = result.structured_content["error"]
+    assert error["code"] == "credential_storage_failed"
+    assert auth.FILE_STORE_HINT in error["hint"]
+
+
+def test_auto_on_macos_with_a_locked_keychain_says_so(
+    monkeypatch: pytest.MonkeyPatch, real_resolution
+) -> None:
+    class Locked:
+        def get_password(self, service: str, username: str) -> None:
+            raise RuntimeError("keychain locked")
+
+    monkeypatch.setattr(credential_store, "backend_factory", Locked)
     _platform(monkeypatch, "macos")
     real_resolution()
 

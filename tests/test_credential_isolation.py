@@ -319,7 +319,7 @@ def test_logout_with_an_unreachable_keychain_reports_what_it_kept_and_fails(
     assert auth.stored_login(api_url=PROD) is not None
 
 
-def test_logout_where_no_keyring_exists_succeeds(
+def test_logout_without_a_usable_keyring_succeeds_when_the_file_is_in_use(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path, keychain_unreachable: None
 ) -> None:
     _platform(monkeypatch, "linux")
@@ -329,7 +329,8 @@ def test_logout_where_no_keyring_exists_succeeds(
 
     assert result.exit_code == 0, result.stderr
     stores = json.loads(result.stdout)["stores"]
-    assert [store["status"] for store in stores] == ["cleared", "absent"]
+    assert [store["status"] for store in stores] == ["cleared", "unavailable"]
+    assert "so it was not checked" in result.stderr
     assert not credentials_file.exists()
 
 

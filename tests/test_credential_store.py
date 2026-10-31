@@ -409,7 +409,7 @@ def test_platform_backend_ignores_global_keyring_configuration(
     monkeypatch.setattr(kwallet, "DBusKeyring", NotInstalled())
     _platform(monkeypatch, "linux")
 
-    with pytest.raises(credential_store.KeyringAbsentError):
+    with pytest.raises(credential_store.NoKeyringBackendError):
         credential_store._platform_backend()
 
 
@@ -448,10 +448,37 @@ def test_every_keyring_call_times_out_after_five_seconds(
 # --- auto on macOS and Windows ----------------------------------------------
 
 
-def test_auto_reads_an_unusable_keychain_as_empty(
+def test_auto_with_no_usable_keychain_backend_is_unreachable(
     monkeypatch: pytest.MonkeyPatch, keychain_unreachable: None
 ) -> None:
+    # The keychain is the store in use; no backend never proves it empty.
     _platform(monkeypatch, "macos")
+
+    with pytest.raises(auth.KeyringUnavailableError) as caught:
+        auth.resolve_credential({}, api_url=PROD)
+    assert caught.value.hint is not None and auth.FILE_STORE_HINT in caught.value.hint
+    with pytest.raises(auth.KeyringUnavailableError):
+        auth.resolve_credential({"SOLWYN_API_KEY": VALID_KEY}, api_url=PROD)
+    # Credentials that need no stored login still work.
+    environment = {"SOLWYN_API_KEY": VALID_KEY, "SOLWYN_AUTH": "project_key"}
+    assert auth.resolve_credential(environment, api_url=PROD) is not None
+    assert (
+        auth.resolve_credential(
+            {"SOLWYN_API_KEY": VALID_KEY}, purpose="metering", api_url=PROD
+        )
+        is not None
+    )
+
+
+def test_auto_reads_a_keychain_that_answers_with_an_error_as_empty(
+    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any
+) -> None:
+    _platform(monkeypatch, "macos")
+
+    def locked(*args: Any) -> None:
+        raise RuntimeError("keychain locked")
+
+    monkeypatch.setattr(memory_keyring, "get_password", locked)
 
     assert auth.resolve_credential({}, api_url=PROD) is None
     lookup = auth.last_lookup()

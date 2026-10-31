@@ -185,19 +185,28 @@ token it had not yet revoked is still stored. It reports each store with a
 `status`:
 
 - `cleared`: nothing of this API is left there.
-- `absent`: no keyring backend is usable here, the same case in which the
-  `keyring` library falls back to its fail backend (on Linux: no Secret Service
-  or KWallet reachable, as on a headless machine without a D-Bus session).
-- `unreachable`: a keyring backend resolved but did not work: locked, denied,
-  refused a delete (a delete is only trusted once a read finds the entry gone),
-  no session bus in this process for a resolved Secret Service, or no answer
-  within 5 seconds. Its entries were kept.
+- `unavailable` ("not checked" in the table): no keyring backend is usable from
+  this session and the keyring is not the store in use. This is the case in
+  which the `keyring` library falls back to its fail backend (on Linux: no
+  Secret Service or KWallet reachable, as on a headless machine or a session
+  whose D-Bus is missing or dead). It cannot tell a machine without a keyring
+  from a keyring this session cannot reach, so nothing is claimed about it.
+  Logout still exits 0 and says so on stderr: "No system keyring is reachable
+  from this session, so it was not checked. If you used --store keyring in a
+  desktop session, run solwyn logout there too."
+- `unreachable`: the keyring did not work: locked, denied, refused a delete (a
+  delete is only trusted once a read finds the entry gone), no session bus in
+  this process for a resolved Secret Service, or no answer within 5 seconds.
+  When the keyring is the store in use (`keyring`, or `auto` on macOS and
+  Windows), no usable backend is also `unreachable`, and every other command
+  fails with `credential_storage_failed` too. Its entries were kept.
 - `unread`: an entry exists but could not be read (for example a login entry
   the keychain will not return, or a malformed credentials file). It is never
   deleted or revoked; `kept` names it.
 
-`cleared` is true only when every store is `cleared` or `absent`. Otherwise
-logout exits 3 with `logout_incomplete`, names each store that kept entries and
+`cleared` covers only the stores that were checked: it is true when every
+store except an `unavailable` one is `cleared`, and an `unavailable` store's own
+`cleared` is false. When a checked store kept something, logout exits 3 with `logout_incomplete`, names each store that kept entries and
 why, and carries the same report in `detail`; fix that store and run
 `solwyn logout` again. If a login was read but its revoke fails, logout says so,
 still clears it, and exits 0; revoke the login in the dashboard under Settings,

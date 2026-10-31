@@ -1,5 +1,5 @@
 """Review r7 and r9: one effective store, no fallback (a failed keychain write
-fails and stores nothing), nothing copied between stores, the credential lock, absent vs unreachable keyrings, logout read failures,
+fails and stores nothing), nothing copied between stores, the credential lock, unusable keyrings never claimed absent, logout read failures,
 and whole-document validation.
 
 The OS is simulated by pinning the platform family; the keyring is an
@@ -665,7 +665,12 @@ def test_a_kill_after_the_mode_switch_leaves_one_consistent_store(
         )
 
 
-# --- D. absent vs unreachable -----------------------------------------------
+# --- D. A keyring that cannot be used is never claimed absent --------------
+
+UNCHECKED_NOTE = (
+    "No system keyring is reachable from this session, so it was not checked. "
+    "If you used --store keyring in a desktop session, run solwyn logout there too."
+)
 
 
 def _logout_statuses(result: Any) -> list[str]:
@@ -677,29 +682,118 @@ def _logout_statuses(result: Any) -> list[str]:
     return [store["status"] for store in stores]
 
 
-def test_a_placeholder_backend_is_absent(
-    monkeypatch: pytest.MonkeyPatch, backend: Backend
-) -> None:
-    from keyring.backends.fail import Keyring
+def _file_in_use(monkeypatch: pytest.MonkeyPatch, config_path: Path, how: str) -> None:
+    """Make the credentials file the effective store."""
+    if how == "linux auto":
+        _platform(monkeypatch, "linux")
+    elif how == "env file":
+        monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
+    else:
+        auth.save_store_mode("file")
 
-    monkeypatch.setattr(credential_store, "backend_factory", Keyring)
+
+def _keyring_in_use(monkeypatch: pytest.MonkeyPatch, how: str) -> None:
+    """Make the keyring the effective store."""
+    if how in ("macos", "windows"):
+        _platform(monkeypatch, how)  # auto
+    elif how == "linux env keyring":
+        _platform(monkeypatch, "linux")
+        monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "keyring")
+    else:
+        _platform(monkeypatch, "linux")
+        auth.save_store_mode("keyring")
+
+
+def _no_backend(monkeypatch: pytest.MonkeyPatch, backend: Backend, how: str) -> None:
+    """No keyring backend is usable: keyring's fail backend, or NoKeyringError."""
+    if how == "fail backend":
+        from keyring.backends.fail import Keyring
+
+        monkeypatch.setattr(credential_store, "backend_factory", Keyring)
+    else:
+
+        def no_keyring(*args: Any) -> None:
+            raise NoKeyringError("no backend")
+
+        monkeypatch.setattr(backend, "get_password", no_keyring)
+        monkeypatch.setattr(backend, "set_password", no_keyring)
+
+
+FILE_IN_USE = ["linux auto", "env file", "config file"]
+KEYRING_IN_USE = ["macos", "windows", "linux env keyring", "linux config keyring"]
+NO_BACKEND = ["fail backend", "NoKeyringError"]
+
+
+@pytest.mark.parametrize("cause", NO_BACKEND)
+@pytest.mark.parametrize("how", FILE_IN_USE)
+def test_no_usable_keyring_is_unavailable_when_the_file_is_in_use(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: Backend,
+    config_path: Path,
+    credentials_file: Path,
+    how: str,
+    cause: str,
+) -> None:
+    _file_in_use(monkeypatch, config_path, how)
+    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
+    _no_backend(monkeypatch, backend, cause)
+
     result = runner.invoke(app, ["--json", "logout"])
 
     assert result.exit_code == 0, result.stderr
-    assert _logout_statuses(result) == ["cleared", "absent"]
+    document = json.loads(result.stdout)
+    assert _logout_statuses(result) == ["cleared", "unavailable"]
+    # cleared covers only what was checked; the keyring is not claimed clear.
+    assert document["cleared"] is True
+    assert [store["cleared"] for store in document["stores"]] == [True, False]
+    assert UNCHECKED_NOTE in result.stderr
+    assert FileStore().section(credential_origin(PROD)) == {}
 
 
-def test_no_keyring_error_from_a_call_is_absent(
-    monkeypatch: pytest.MonkeyPatch, backend: Backend
+def test_the_table_says_an_unavailable_keyring_was_not_checked(
+    monkeypatch: pytest.MonkeyPatch, backend: Backend, config_path: Path
 ) -> None:
-    def no_keyring(*args: Any) -> None:
-        raise NoKeyringError("no backend")
+    _file_in_use(monkeypatch, config_path, "linux auto")
+    _no_backend(monkeypatch, backend, "fail backend")
 
-    monkeypatch.setattr(backend, "get_password", no_keyring)
-    result = runner.invoke(app, ["--json", "logout"])
+    result = runner.invoke(app, ["logout"], env={"COLUMNS": "200"})
 
     assert result.exit_code == 0, result.stderr
-    assert _logout_statuses(result) == ["cleared", "absent"]
+    assert "not checked" in result.stdout
+    assert "not present" not in result.stdout + result.stderr
+    assert UNCHECKED_NOTE in " ".join(result.stderr.split())
+
+
+@pytest.mark.parametrize("cause", NO_BACKEND)
+@pytest.mark.parametrize("how", KEYRING_IN_USE)
+def test_no_usable_keyring_is_unreachable_when_it_is_the_store_in_use(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: Backend,
+    config_path: Path,
+    credentials_file: Path,
+    how: str,
+    cause: str,
+) -> None:
+    _keyring_in_use(monkeypatch, how)
+    _no_backend(monkeypatch, backend, cause)
+
+    logout = runner.invoke(app, ["--json", "logout"])
+    stored = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    whoami = runner.invoke(app, ["--json", "whoami"])
+
+    assert logout.exit_code == 3
+    error = json.loads(logout.stderr)
+    assert error["code"] == "logout_incomplete"
+    assert error["detail"]["cleared"] is False
+    assert _logout_statuses(logout) == ["cleared", "unreachable"]
+    assert UNCHECKED_NOTE not in logout.stderr
+    for result in (stored, whoami):
+        assert result.exit_code == 3
+        assert json.loads(result.stderr)["code"] == "credential_storage_failed"
+    with pytest.raises(auth.KeyringUnavailableError):
+        auth.resolve_credential({}, api_url=PROD)
+    assert not credentials_file.exists()
+    assert KEY not in stored.stdout + stored.stderr
 
 
 def test_a_locked_keychain_is_unreachable(backend: Backend) -> None:
@@ -711,7 +805,7 @@ def test_a_locked_keychain_is_unreachable(backend: Backend) -> None:
 
 
 @pytest.mark.parametrize(
-    ("bus", "failure", "absent"),
+    ("bus", "failure", "no_backend"),
     [
         (None, None, True),  # No D-Bus session at all.
         ("unix:path=/run/user/1/bus", "SecretStorage required", True),
@@ -729,7 +823,10 @@ def test_a_locked_keychain_is_unreachable(backend: Backend) -> None:
     ],
 )
 def test_linux_keyring_discovery_is_classified_by_cause(
-    monkeypatch: pytest.MonkeyPatch, bus: str | None, failure: str | None, absent: bool
+    monkeypatch: pytest.MonkeyPatch,
+    bus: str | None,
+    failure: str | None,
+    no_backend: bool,
 ) -> None:
     from keyring.backends import SecretService, kwallet
 
@@ -754,18 +851,32 @@ def test_linux_keyring_discovery_is_classified_by_cause(
     with pytest.raises(credential_store.StoreUnavailableError) as caught:
         credential_store._platform_backend()
 
-    assert isinstance(caught.value, credential_store.KeyringAbsentError) is absent
+    assert (
+        isinstance(caught.value, credential_store.NoKeyringBackendError) is no_backend
+    )
 
 
-def test_a_secret_service_that_is_not_viable_is_absent_like_keyring_resolves(
-    monkeypatch: pytest.MonkeyPatch, backend: Backend
+@pytest.mark.parametrize(
+    ("mode", "status", "exit_code"),
+    [(None, "unavailable", 0), ("keyring", "unreachable", 3)],
+)
+def test_a_dead_session_bus_never_proves_the_keyring_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: Backend,
+    mode: str | None,
+    status: str,
+    exit_code: int,
 ) -> None:
     # keyring itself resolves its fail backend here (checked on Linux with no
-    # bus address, and with an address that has no bus behind it).
+    # bus address, and with an address that has no bus behind it), whether or
+    # not a keyring holding entries exists behind that bus.
     from keyring.backends import SecretService
 
+    backend.entries[(SERVICE, f"{PROD}/login")] = _login_document(LOGIN_TOKEN)
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1/bus")
     _platform(monkeypatch, "linux")
+    if mode is not None:
+        monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", mode)
 
     def disconnected() -> None:
         raise SecretService.exceptions.SecretStorageException("connection refused")
@@ -777,8 +888,11 @@ def test_a_secret_service_that_is_not_viable_is_absent_like_keyring_resolves(
 
     result = runner.invoke(app, ["--json", "logout"])
 
-    assert result.exit_code == 0, result.stderr
-    assert _logout_statuses(result) == ["cleared", "absent"]
+    assert result.exit_code == exit_code, result.stderr
+    assert _logout_statuses(result) == ["cleared", status]
+    assert (UNCHECKED_NOTE in result.stderr) is (status == "unavailable")
+    # The entry behind the dead bus was never touched.
+    assert (SERVICE, f"{PROD}/login") in backend.entries
 
 
 # --- E. Logout never deletes what it could not read -------------------------

@@ -51,7 +51,7 @@ from solwyn_cli.credential_store import (
     STORE_MODES,
     FileStore,
     InsecureFileError,
-    KeyringAbsentError,
+    NoKeyringBackendError,
     KeyringStore,
     MalformedFileError,
     StoreKind,
@@ -399,9 +399,13 @@ def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
     try:
         values = {entry: keyring_store.get(origin, entry) for entry in entries}
     except StoreUnavailableError as error:
-        if mode == "keyring":
+        if mode == "keyring" or isinstance(error, NoKeyringBackendError):
+            # No usable backend never proves the keychain empty: it is the
+            # store in use, so it is unreachable and the command fails.
             raise _keyring_error(error) from None
-        # auto on macOS or Windows: an unusable keychain reads as empty.
+        # auto on macOS or Windows: a keychain that answered with an error
+        # (locked, denied) reads as empty, and the missing-credential error
+        # says so.
         _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe(), True))
         return Found(dict.fromkeys(entries), None, None)
     _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe()))
@@ -554,20 +558,31 @@ def unused_store_holdings(api_url: str | None = None) -> Lookup | None:
 class Cleared:
     """What one store reported at logout.
 
-    ``cleared``: nothing of this API is left. ``absent``: no keyring exists
-    here, so nothing can be stored in it. ``unreachable``: the store did not
-    answer; its entries were kept. ``unread``: an entry exists but could not be
+    ``cleared``: nothing of this API is left. ``unavailable``: no keyring
+    backend is usable from this session and the keyring is not the store in
+    use, so it was not checked (nothing is claimed about it). ``unreachable``:
+    the store did not answer, or it is the store in use and no backend is
+    usable; its entries were kept. ``unread``: an entry exists but could not be
     read (so not revoked); it was kept, and ``kept`` names it.
     """
 
     kind: StoreKind
     location: str
-    status: Literal["cleared", "absent", "unreachable", "unread"] = "cleared"
+    status: Literal["cleared", "unavailable", "unreachable", "unread"] = "cleared"
     kept: tuple[str, ...] = ()
 
     @property
     def cleared(self) -> bool:
-        return self.status in ("cleared", "absent")
+        return self.status == "cleared"
+
+    @property
+    def checked(self) -> bool:
+        return self.status != "unavailable"
+
+    @property
+    def retained(self) -> bool:
+        """Checked, and something of this API was kept: logout fails."""
+        return self.checked and not self.cleared
 
 
 def _keyring_in_use(mode: StoreMode) -> bool:
@@ -873,7 +888,7 @@ class _Scan:
     location: str
     logins: list[LoginCredential]
     kept: list[str]
-    status: Literal["cleared", "absent", "unreachable", "unread"] = "cleared"
+    status: Literal["cleared", "unavailable", "unreachable", "unread"] = "cleared"
 
 
 def _scan_file(origin: str) -> _Scan:
@@ -892,13 +907,17 @@ def _scan_file(origin: str) -> _Scan:
     )
 
 
-def _scan_keyring(origin: str) -> _Scan:
+def _scan_keyring(origin: str, *, in_use: bool) -> _Scan:
     keyring_store = _keyring_store()
     where = keyring_store.describe()
     try:
         raw = keyring_store.get(origin, LOGIN_ENTRY)
-    except KeyringAbsentError:
-        return _Scan("keyring", where, [], [], "absent")
+    except NoKeyringBackendError:
+        # Never proof of absence: a dead or missing session bus looks the same
+        # as a machine without a keyring. The store in use must answer.
+        return _Scan(
+            "keyring", where, [], [], "unreachable" if in_use else "unavailable"
+        )
     except StoreUnavailableError:
         return _Scan("keyring", where, [], [LOGIN_ENTRY], "unread")
     if raw is None:
@@ -920,8 +939,8 @@ def _delete_file(origin: str, scan: _Scan) -> Cleared:
 
 
 def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
-    if scan.status == "absent":
-        return Cleared("keyring", scan.location, "absent")
+    if scan.status in ("unavailable", "unreachable"):
+        return Cleared("keyring", scan.location, scan.status)
     keyring_store = _keyring_store()
     kept = list(scan.kept)
     failed = False
@@ -958,7 +977,8 @@ def logout_everywhere(
     """
     origin = current_origin(api_url)
     with _locked():
-        scans = [_scan_file(origin), _scan_keyring(origin)]
+        in_use = primary_kind(store_mode()) == "keyring"
+        scans = [_scan_file(origin), _scan_keyring(origin, in_use=in_use)]
         logins: list[LoginCredential] = []
         for scan in scans:
             for login in scan.logins:

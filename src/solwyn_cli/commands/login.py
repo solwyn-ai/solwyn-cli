@@ -103,6 +103,12 @@ REVOKE_FAILED_NOTE = (
 sleep: Callable[[float], object] = time.sleep
 
 
+UNCHECKED_KEYRING_NOTE = (
+    "No system keyring is reachable from this session, so it was not checked. "
+    "If you used --store keyring in a desktop session, run solwyn logout there too."
+)
+
+
 def now() -> datetime:
     return datetime.now(UTC)
 
@@ -709,7 +715,7 @@ def login(
 
 _STATUS_TEXT = {
     "cleared": "cleared",
-    "absent": "not present",
+    "unavailable": "not checked",
     "unreachable": "kept (not reachable)",
     "unread": "kept (not readable)",
 }
@@ -728,13 +734,16 @@ def logout(context: typer.Context) -> None:
         _fail(context, "credential_storage_failed", str(error), error.hint)
     if report.revoked is False:
         _note(REVOKE_FAILED_NOTE)
+    if any(item.status == "unavailable" for item in report.stores):
+        _note(UNCHECKED_KEYRING_NOTE)
     if auth.TOKEN_ENV in os.environ:
         _note(
             "SOLWYN_TOKEN is set in this environment. Logout does not revoke it; "
             "use solwyn credentials revoke."
         )
     data = {
-        "cleared": all(item.cleared for item in report.stores),
+        # Only what was checked: an unavailable keyring is reported, not claimed.
+        "cleared": all(item.cleared for item in report.stores if item.checked),
         "revoked": report.revoked,
         "logins_found": report.logins_found,
         "stores": [
@@ -748,7 +757,7 @@ def logout(context: typer.Context) -> None:
             for item in report.stores
         ],
     }
-    retained = [item for item in report.stores if not item.cleared]
+    retained = [item for item in report.stores if item.retained]
     if retained:
         places = ", ".join(f"{item.location} ({item.status})" for item in retained)
         _fail(

@@ -81,13 +81,16 @@ class StoreUnavailableError(Exception):
     """
 
 
-class KeyringAbsentError(StoreUnavailableError):
-    """No keyring backend exists here ("absent").
+class NoKeyringBackendError(StoreUnavailableError):
+    """No keyring backend is usable from this session.
 
     keyring reported no usable backend (its fail or null backend, or a refused
     plaintext one), the Secret Service or KWallet libraries are not installed,
-    or there is no D-Bus session at all. Nothing can be stored there from this
-    session.
+    or the D-Bus session is missing or dead. This cannot tell "this machine
+    never had a keyring" from "a keyring exists but this session cannot reach
+    it", so it never proves absence: logout reports the keyring ``unavailable``
+    (not checked) when it is not the store in use, and ``unreachable`` when it
+    is. Reads and writes in keyring mode fail with a storage error.
     """
 
 
@@ -590,8 +593,9 @@ def _linux_backend() -> Any:
 
     When neither is viable, keyring itself resolves its fail backend (checked
     on Linux: no D-Bus session address, or an address with no bus behind it).
-    That is the only "absent". A viable backend whose calls then fail is
-    "unreachable", whatever the cause (locked, refused, missing session).
+    That raises NoKeyringBackendError, which proves nothing about whether a
+    keyring exists. A viable backend whose calls then fail is "unreachable",
+    whatever the cause (locked, refused, missing session).
     """
     from keyring.backends import SecretService, kwallet
 
@@ -610,7 +614,7 @@ def _linux_backend() -> Any:
                 "DBUS_SESSION_BUS_ADDRESS)."
             )
         return candidate()
-    raise KeyringAbsentError("The system keyring is not available.")
+    raise NoKeyringBackendError("The system keyring is not available.")
 
 
 def _platform_backend() -> Any:
@@ -658,7 +662,7 @@ class KeyringStore:
         if self._backend is None:
             backend = _with_timeout(backend_factory)
             if type(backend).__module__.startswith(_REFUSED_MODULES):
-                raise KeyringAbsentError("The system keyring is not available.")
+                raise NoKeyringBackendError("The system keyring is not available.")
             self._backend = backend
         return self._backend
 
@@ -671,7 +675,9 @@ class KeyringStore:
         except StoreUnavailableError:
             raise
         except NoKeyringError:
-            raise KeyringAbsentError("The system keyring is not available.") from None
+            raise NoKeyringBackendError(
+                "The system keyring is not available."
+            ) from None
         except Exception:  # noqa: BLE001 - locked, denied, refused connection.
             raise StoreUnavailableError(
                 "The system keyring is not available."
