@@ -167,6 +167,24 @@ Credential selection depends on the command:
 | Every other command that calls the API | `SOLWYN_TOKEN`, then the stored login, then `SOLWYN_API_KEY`, then the stored project key. |
 
 `SOLWYN_AUTH=project_key` makes user commands skip both logins.
+
+When the keychain is the store in use (`keyring`, or `auto` on macOS and
+Windows), a keychain that does not answer is never read as empty: locked,
+denied, no usable backend, or no answer within 5 seconds. Every command that
+reads stored credentials exits 3 with `credential_storage_failed`, naming the
+keychain and the reason:
+
+```text
+Could not read the macOS Keychain: The system keyring is not available
+(KeyringLocked: Keyring is locked).
+Hint: Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file. To use
+SOLWYN_API_KEY without the keychain, set SOLWYN_AUTH=project_key.
+```
+
+This includes user commands with `SOLWYN_API_KEY` set: the stored login comes
+first and the CLI cannot know whether one exists. Set `SOLWYN_AUTH=project_key`
+(skip logins, use the environment key) or `SOLWYN_CREDENTIAL_STORE=file`.
+Metering commands read `SOLWYN_API_KEY` first and are unaffected when it is set.
 `SOLWYN_AUTH=login` makes them require `SOLWYN_TOKEN` or the stored login, with
 no fallback. Any other value is a usage error (exit 2). An invalid
 `SOLWYN_TOKEN` is an error, never skipped. An expired login counts as absent; a

@@ -326,8 +326,21 @@ def _keyring_hint() -> str:
     return hint
 
 
+ENV_KEY_HINT = (
+    "To use SOLWYN_API_KEY without the keychain, set SOLWYN_AUTH=project_key."
+)
+
+
 def _keyring_error(error: StoreUnavailableError) -> KeyringUnavailableError:
-    return KeyringUnavailableError(str(error), _keyring_hint())
+    """The keychain in use did not answer: name it and why; never read empty.
+
+    Whether a stored login exists cannot be known, so SOLWYN_API_KEY (which
+    comes after the stored login) is not used either; the hint says how.
+    """
+    return KeyringUnavailableError(
+        f"Could not read {credential_store.keyring_name()}: {error}",
+        f"{_keyring_hint()} {ENV_KEY_HINT}",
+    )
 
 
 def _file_error(error: Exception) -> CredentialStorageError:
@@ -348,7 +361,6 @@ class Lookup:
     mode: StoreMode
     kind: StoreKind
     location: str
-    keyring_unavailable: bool = False
 
     def describe(self) -> str:
         """Return e.g. 'file, /home/a/.local/share/solwyn/credentials.json'."""
@@ -399,15 +411,9 @@ def _read(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> Found:
     try:
         values = {entry: keyring_store.get(origin, entry) for entry in entries}
     except StoreUnavailableError as error:
-        if mode == "keyring" or isinstance(error, NoKeyringBackendError):
-            # No usable backend never proves the keychain empty: it is the
-            # store in use, so it is unreachable and the command fails.
-            raise _keyring_error(error) from None
-        # auto on macOS or Windows: a keychain that answered with an error
-        # (locked, denied) reads as empty, and the missing-credential error
-        # says so.
-        _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe(), True))
-        return Found(dict.fromkeys(entries), None, None)
+        # The keychain is the store in use. No backend, locked, denied or
+        # silent: none of these proves it empty, so the command fails.
+        raise _keyring_error(error) from None
     _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe()))
     return Found(values, "keyring", keyring_store.describe())
 
@@ -731,10 +737,6 @@ def missing_credential_hint(purpose: CredentialClass = "user") -> str:
     except AuthError:
         where = None
     looked = f" Looked in: {where.describe()}." if where is not None else ""
-    if where is not None and where.keyring_unavailable:
-        looked = f" {where.location} was not available." + (
-            f" {FILE_STORE_HINT}" if where.mode != "file" else ""
-        )
     if purpose == "metering":
         return METERING_KEY_HINT + looked
     return (
@@ -1005,9 +1007,6 @@ def stored_entry_status(
                 mode=store_mode(),
             )
     except AuthError:
-        return "unavailable"
-    lookup = last_lookup()
-    if lookup is not None and lookup.keyring_unavailable:
         return "unavailable"
     raw = found.values[LOGIN_ENTRY]
     if raw is not None and not _complete(LOGIN_ENTRY, raw):

@@ -470,22 +470,100 @@ def test_auto_with_no_usable_keychain_backend_is_unreachable(
     )
 
 
-def test_auto_reads_a_keychain_that_answers_with_an_error_as_empty(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any
+def _denied(error: Exception) -> Any:
+    class Refusing:
+        def get_password(self, service: str, username: str) -> None:
+            raise error
+
+        def set_password(self, service: str, username: str, value: str) -> None:
+            raise error
+
+    return Refusing
+
+
+@pytest.mark.parametrize(
+    ("family", "name", "error", "reason"),
+    [
+        (
+            "macos",
+            "the macOS Keychain",
+            "locked",
+            "KeyringLocked: Keyring is locked",
+        ),
+        (
+            "windows",
+            "Windows Credential Manager",
+            "denied",
+            "PermissionError: [Errno 13] Access is denied",
+        ),
+    ],
+)
+def test_a_locked_or_denied_keychain_in_use_is_never_read_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    credentials_file: Path,
+    family: str,
+    name: str,
+    error: str,
+    reason: str,
 ) -> None:
-    _platform(monkeypatch, "macos")
+    from keyring.errors import KeyringLocked
 
-    def locked(*args: Any) -> None:
-        raise RuntimeError("keychain locked")
-
-    monkeypatch.setattr(memory_keyring, "get_password", locked)
-
-    assert auth.resolve_credential({}, api_url=PROD) is None
-    lookup = auth.last_lookup()
-    assert lookup is not None and lookup.keyring_unavailable
-    assert (
-        auth.resolve_credential({"SOLWYN_API_KEY": VALID_KEY}, api_url=PROD) is not None
+    failure = (
+        KeyringLocked("Keyring is locked")
+        if error == "locked"
+        else PermissionError(13, "Access is denied")
     )
+    monkeypatch.setattr(credential_store, "backend_factory", _denied(failure))
+    _platform(monkeypatch, family)  # auto: the keychain is the store in use.
+    for name_ in ("SOLWYN_API_KEY", "SOLWYN_AUTH"):
+        monkeypatch.delenv(name_, raising=False)
+
+    plain = runner.invoke(app, ["--json", "whoami"])
+    with_key = runner.invoke(
+        app, ["--json", "whoami"], env={"SOLWYN_API_KEY": VALID_KEY}
+    )
+    forced = runner.invoke(
+        app,
+        ["--json", "whoami"],
+        env={"SOLWYN_API_KEY": VALID_KEY, "SOLWYN_AUTH": "project_key"},
+    )
+    as_file = runner.invoke(
+        app,
+        ["--json", "whoami"],
+        env={"SOLWYN_API_KEY": VALID_KEY, "SOLWYN_CREDENTIAL_STORE": "file"},
+    )
+
+    for result in (plain, with_key):
+        assert result.exit_code == 3, result.stderr
+        document = json.loads(result.stderr)
+        assert document["code"] == "credential_storage_failed"
+        assert document["message"] == (
+            f"Could not read {name}: The system keyring is not available ({reason})."
+        )
+        assert document["hint"] == (
+            "Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file. "
+            "To use SOLWYN_API_KEY without the keychain, set "
+            "SOLWYN_AUTH=project_key."
+        )
+        assert VALID_KEY not in result.stdout + result.stderr
+    # Both documented ways out use the environment key.
+    for result in (forced, as_file):
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout)["auth_source"] == "environment"
+    assert not credentials_file.exists()
+
+
+def test_a_backend_reason_never_carries_anything_token_like() -> None:
+    secret = "sk_proj_" + "c3" * 32
+    token = "solwyn_cli_" + "4d" * 32
+    error = RuntimeError(f"denied for {secret} and {token}\nsecond line {secret}")
+
+    reason = credential_store.backend_reason(error)
+
+    assert secret not in reason and token not in reason
+    assert "second line" not in reason
+    assert reason.startswith("RuntimeError: denied for [redacted] and [redacted]")
+    assert len(reason) <= len("RuntimeError: ") + 160
 
 
 # --- --store, warnings and notes --------------------------------------------

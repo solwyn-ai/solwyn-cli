@@ -31,6 +31,7 @@ This module never prints. Callers turn its results into messages.
 import errno
 import json
 import os
+import re
 import secrets
 import stat
 import sys
@@ -647,6 +648,23 @@ def keyring_name(platform: str | None = None) -> str:
     }[platform_name(platform)]
 
 
+_TOKEN_LIKE = re.compile(r"[A-Za-z0-9_\-+/=.]{24,}")
+
+
+def backend_reason(error: BaseException) -> str:
+    """A short, safe reason from a keyring backend error.
+
+    The exception class and the first line of its message, with anything
+    token-like (24 or more key characters) replaced and control characters
+    dropped, capped at 160 characters. Never a secret.
+    """
+    lines = str(error).strip().splitlines()
+    message = _TOKEN_LIKE.sub("[redacted]", lines[0] if lines else "")
+    message = "".join(ch for ch in message if ch.isprintable())[:160].rstrip(" .")
+    name = type(error).__name__
+    return f"{name}: {message}" if message else name
+
+
 class KeyringStore:
     """One keyring entry per secret, named ``<origin>/<entry>``."""
 
@@ -678,9 +696,9 @@ class KeyringStore:
             raise NoKeyringBackendError(
                 "The system keyring is not available."
             ) from None
-        except Exception:  # noqa: BLE001 - locked, denied, refused connection.
+        except Exception as error:  # noqa: BLE001 - locked, denied, refused.
             raise StoreUnavailableError(
-                "The system keyring is not available."
+                f"The system keyring is not available ({backend_reason(error)})."
             ) from None
 
     def get_raw(self, username: str) -> str | None:

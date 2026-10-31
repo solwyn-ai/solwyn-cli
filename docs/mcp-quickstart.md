@@ -149,7 +149,7 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 | --- | --- |
 | Missing/non-executable launch target | Use the executable from the intended installed environment; an explicit bad target never falls back. |
 | Missing project | Select the project explicitly. Doctor can still show the supplied key's identity. |
-| Locked/unavailable keychain (macOS, Windows, or `--store keyring`) | Unlock the same OS account's keychain, or set `SOLWYN_CREDENTIAL_STORE=file` / run `solwyn login --store file`, or deliberately provide the intended credential in the host environment. |
+| Locked/unavailable keychain (macOS, Windows, or `--store keyring`): `credential_storage_failed` naming the keychain | Unlock the same OS account's keychain, or set `SOLWYN_CREDENTIAL_STORE=file` / run `solwyn login --store file`. A `SOLWYN_API_KEY` in the host environment is not used for non-metering tools while the keychain cannot be read; add `SOLWYN_AUTH=project_key` to use it. |
 | `credential_storage_failed`: credentials file is readable by other users | Run the `chmod 600 <path>` it names. The CLI refuses a file others can read. |
 | `authentication_required` names a different credentials file than your shell uses | The host dropped `XDG_DATA_HOME` (or `SOLWYN_CREDENTIALS_FILE`). Forward the `env_vars` names from `mcp-config`, then restart the host. |
 | Linux keyring mode: `credential_storage_failed`, the system keyring is not available | The host stripped the session bus. Forward `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` (listed by `mcp-config` in keyring mode), or switch to the default file store with `solwyn login --store file`. `doctor --mcp` passes its key in the environment, so it cannot catch this. |

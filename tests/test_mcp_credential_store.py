@@ -103,7 +103,10 @@ def test_keyring_mode_without_a_session_bus_names_the_fix(
 
     error = result.structured_content["error"]
     assert error["code"] == "credential_storage_failed"
-    assert error["message"] == "The system keyring is not available."
+    assert error["message"] == (
+        "Could not read the system keyring (Secret Service): The system keyring "
+        "is not available."
+    )
     assert "SOLWYN_CREDENTIAL_STORE=file" in error["hint"]
     assert "solwyn login --store file" in error["hint"]
     assert "DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR" in error["hint"]
@@ -123,12 +126,14 @@ def test_auto_on_macos_with_no_usable_keychain_is_a_storage_error(
     assert auth.FILE_STORE_HINT in error["hint"]
 
 
-def test_auto_on_macos_with_a_locked_keychain_says_so(
+def test_auto_on_macos_with_a_locked_keychain_is_a_storage_error(
     monkeypatch: pytest.MonkeyPatch, real_resolution
 ) -> None:
+    from keyring.errors import KeyringLocked
+
     class Locked:
         def get_password(self, service: str, username: str) -> None:
-            raise RuntimeError("keychain locked")
+            raise KeyringLocked("Keyring is locked")
 
     monkeypatch.setattr(credential_store, "backend_factory", Locked)
     _platform(monkeypatch, "macos")
@@ -136,9 +141,13 @@ def test_auto_on_macos_with_a_locked_keychain_says_so(
 
     result = _call("get_whoami")
 
-    hint = result.structured_content["error"]["hint"]
-    assert "the macOS Keychain was not available." in hint
-    assert auth.FILE_STORE_HINT in hint
+    error = result.structured_content["error"]
+    assert error["code"] == "credential_storage_failed"
+    assert error["message"] == (
+        "Could not read the macOS Keychain: The system keyring is not available "
+        "(KeyringLocked: Keyring is locked)."
+    )
+    assert error["hint"] == f"{auth.FILE_STORE_HINT} {auth.ENV_KEY_HINT}"
 
 
 def test_get_whoami_reports_the_store_and_path_it_used(
