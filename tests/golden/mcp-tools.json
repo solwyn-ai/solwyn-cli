@@ -8450,6 +8450,30 @@
               ],
               "title": "Stopped By User Id"
             },
+            "first_trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "First Trace Id"
+            },
+            "trace_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Url"
+            },
             "stoppable": {
               "title": "Stoppable",
               "type": "boolean"
@@ -8809,6 +8833,30 @@
                 }
               ],
               "title": "Stopped By User Id"
+            },
+            "first_trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "First Trace Id"
+            },
+            "trace_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Url"
             },
             "stoppable": {
               "title": "Stoppable",

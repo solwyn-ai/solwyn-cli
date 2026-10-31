@@ -89,6 +89,8 @@ class _AgentRunEntry(BaseModel):
     velocity_flags: list[str] | None
     stopped_at: AwareDatetime | None
     stopped_by_user_id: str | None
+    first_trace_id: str | None = None
+    trace_url: str | None = None
     stoppable: bool
 
 

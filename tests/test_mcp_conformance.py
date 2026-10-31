@@ -271,6 +271,8 @@ RUN_RESPONSE = {
     "velocity_flags": ["future_signal"],
     "stopped_at": None,
     "stopped_by_user_id": None,
+    "first_trace_id": None,
+    "trace_url": None,
     "stoppable": True,
 }
 RUN_LIST_RESPONSE = {

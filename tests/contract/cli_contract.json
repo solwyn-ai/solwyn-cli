@@ -8678,6 +8678,7 @@
     },
     {
       "keys": [
+        "first_trace_id",
         "has_more",
         "id",
         "last_seen_at",
@@ -8696,10 +8697,12 @@
         "total_denied_cost",
         "total_input_tokens",
         "total_output_tokens",
+        "trace_url",
         "velocity_flags",
         "window"
       ],
       "optional_keys": [
+        "first_trace_id",
         "has_more",
         "id",
         "last_seen_at",
@@ -8717,6 +8720,7 @@
         "total_denied_cost",
         "total_input_tokens",
         "total_output_tokens",
+        "trace_url",
         "velocity_flags",
         "window"
       ],

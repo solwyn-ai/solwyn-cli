@@ -177,6 +177,25 @@ def test_runs_list_supports_key_and_jwt_with_exact_filters_and_goldens(
     ]
 
 
+def test_runs_list_accepts_core_trace_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Core added trace correlation to every run; the CLI must not reject it."""
+    traced = {
+        **RUN,
+        "first_trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "trace_url": None,
+    }
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: JWT)
+    FakeClient.responses = [httpx.Response(200, json=_list_response(runs=[traced]))]
+
+    listed = runner.invoke(app, _run_args("list", json_output=True))
+
+    assert listed.exit_code == 0, listed.stderr
+    assert (
+        json.loads(listed.stdout)["runs"][0]["first_trace_id"]
+        == traced["first_trace_id"]
+    )
+
+
 def test_runs_list_reports_retention_clamp_without_corrupting_json_stdout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
