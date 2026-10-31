@@ -74,8 +74,9 @@ whose README carries the marker is live.
 1. Keep versions in sync. `server.json` `version` and `packages[0].version` must
    equal `pyproject.toml`'s version. The validator and
    `tests/test_mcp_registry.py` fail otherwise. A published Registry version
-   cannot change or be unpublished. To fix only Registry metadata for package
-   `X.Y.Z`, publish server version `X.Y.Z-1` with the package version unchanged.
+   cannot change or be unpublished, so a metadata-only fix ships with the next
+   package release. The validator does not accept Registry-only revisions such
+   as `X.Y.Z-1`.
 2. Prove ownership of `solwyn.ai` once. Generate an Ed25519 key and publish its
    public half as a TXT record on the apex domain:
 
