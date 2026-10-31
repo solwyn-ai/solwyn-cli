@@ -1,5 +1,6 @@
 """Safe typed errors for HTTP and API failures."""
 
+import ipaddress
 import re
 import unicodedata
 from typing import Any, Literal, TypeAlias
@@ -383,9 +384,40 @@ def safe_absolute_url(value: object) -> str | None:
     return value
 
 
-_APPROVAL_HOST = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?")
+_DNS_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _APPROVAL_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1"})
+
+
+def _approval_authority(host: str, port: int | None) -> tuple[str, bool] | None:
+    """Return a rebuilt ``host[:port]`` and whether it is loopback, or None.
+
+    IP literals are parsed as addresses (IPv6 comes back bracketed); names are
+    IDNA-encoded to ASCII and every label checked, so only a hostname or an
+    address can come out, never other server text.
+    """
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None:
+        rebuilt = (
+            f"[{address.compressed}]" if address.version == 6 else address.compressed
+        )
+        loopback = address.is_loopback
+    else:
+        name = host[:-1] if host.endswith(".") else host
+        try:
+            ascii_name = name.encode("idna").decode("ascii").lower()
+        except UnicodeError:
+            return None
+        labels = ascii_name.split(".")
+        if len(ascii_name) > 253 or not all(
+            _DNS_LABEL.fullmatch(label) for label in labels
+        ):
+            return None
+        rebuilt = ascii_name
+        loopback = ascii_name == "localhost"
+    return (rebuilt if port is None else f"{rebuilt}:{port}"), loopback
 
 
 def approval_url_from(detail: object) -> str | None:
@@ -407,12 +439,13 @@ def approval_url_from(detail: object) -> str | None:
         port = parsed.port
     except ValueError:
         return None
-    host = parsed.hostname or ""
-    if parsed.query or parsed.fragment or not _APPROVAL_HOST.fullmatch(host):
+    if parsed.query or parsed.fragment or not parsed.hostname:
         return None
-    if parsed.scheme != "https" and not (
-        parsed.scheme == "http" and host in _LOOPBACK_HOSTS
-    ):
+    checked = _approval_authority(parsed.hostname, port)
+    if checked is None:
+        return None
+    authority, loopback = checked
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
         return None
     segments = parsed.path.split("/")
     if len(segments) != 3 or segments[0] or segments[1] != "approve":
@@ -423,7 +456,6 @@ def approval_url_from(detail: object) -> str | None:
     expected_id = detail.get("approval_id")
     if expected_id is not None and expected_id != approval_id:
         return None
-    authority = host if port is None else f"{host}:{port}"
     return f"{parsed.scheme}://{authority}/approve/{approval_id}"
 
 
