@@ -98,7 +98,7 @@ def agent_guidance() -> str:
     """Return the canonical semantic source shared by every agent surface."""
     return """# Solwyn budget guardrails
 
-Use Solwyn to enforce and attribute caller-owned AI-provider spend without exposing credentials or duplicating reservations. This contract follows Solwyn SDK 0.6 semantics.
+Use Solwyn to enforce and attribute caller-owned AI-provider spend without exposing credentials or duplicating reservations. This contract follows the same reserve, settle and record loop as the Solwyn SDKs.
 
 ## Changes only a human makes
 

@@ -574,24 +574,26 @@ def _provider_scan_root(start: Path) -> Path:
 def _snippets(
     providers: list[Provider], module_imports: set[Provider]
 ) -> list[_Snippet]:
+    # Provider keys come from the environment; never invite pasting one into code.
     code = {
         "openai": (
-            "import openai; from solwyn import Solwyn; "
-            'client = Solwyn(openai.OpenAI(api_key="<OPENAI_API_KEY>"))'
+            "import os, openai; from solwyn import Solwyn; "
+            'client = Solwyn(openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"]))'
             if "openai" in module_imports
-            else "from openai import OpenAI; from solwyn import Solwyn; "
-            'client = Solwyn(OpenAI(api_key="<OPENAI_API_KEY>"))'
+            else "import os; from openai import OpenAI; from solwyn import Solwyn; "
+            'client = Solwyn(OpenAI(api_key=os.environ["OPENAI_API_KEY"]))'
         ),
         "anthropic": (
-            "import anthropic; from solwyn import Solwyn; "
-            'client = Solwyn(anthropic.Anthropic(api_key="<ANTHROPIC_API_KEY>"))'
+            "import os, anthropic; from solwyn import Solwyn; "
+            "client = Solwyn(anthropic.Anthropic("
+            'api_key=os.environ["ANTHROPIC_API_KEY"]))'
             if "anthropic" in module_imports
-            else "from anthropic import Anthropic; from solwyn import Solwyn; "
-            'client = Solwyn(Anthropic(api_key="<ANTHROPIC_API_KEY>"))'
+            else "import os; from anthropic import Anthropic; from solwyn import Solwyn; "
+            'client = Solwyn(Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"]))'
         ),
         "google-genai": (
-            "from google import genai; from solwyn import Solwyn; "
-            'client = Solwyn(genai.Client(api_key="<GOOGLE_API_KEY>"))'
+            "import os; from google import genai; from solwyn import Solwyn; "
+            'client = Solwyn(genai.Client(api_key=os.environ["GOOGLE_API_KEY"]))'
         ),
         "boto3": (
             "import boto3; from solwyn import Solwyn; bedrock = boto3.client("

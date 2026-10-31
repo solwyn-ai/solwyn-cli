@@ -2,8 +2,8 @@ Field                                                                      Value
 Project                                                               proj_alpha
 Configuration                                                            written
 Providers                                                                 openai
-SDK wiring                    import openai; from solwyn import Solwyn; client =
-                               Solwyn(openai.OpenAI(api_key="<OPENAI_API_KEY>"))
+SDK wiring                import os, openai; from solwyn import Solwyn; client =
+                     Solwyn(openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"]))
 Budget verification                                                     verified
 Budget remaining                                                           75.00
 Utilization                                                               25.00%

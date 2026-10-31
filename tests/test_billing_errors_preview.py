@@ -169,7 +169,12 @@ def test_mcp_preview_fixed_errors_private_detail_never_reflected(
                 json={
                     "detail": {
                         "code": code,
-                        "message": "PRIVATE STRIPE",
+                        # A 4xx message is carried; undocumented fields never are.
+                        "message": (
+                            "Only owners can preview plans."
+                            if status == 403
+                            else "PRIVATE STRIPE"
+                        ),
                         "private": "PRIVATE",
                     }
                 },

@@ -4,6 +4,8 @@ import json
 import inspect
 import logging
 import os
+import re
+import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -125,9 +127,11 @@ from solwyn_cli.errors import (
     INGEST_UNKNOWN_HINT,
     LEGACY_BATCH_BUSY_HINT,
     MEMBERSHIP_RECOVERY_HINT,
+    REDACTED,
     SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
     approval_url_from,
+    redact_secrets,
 )
 
 
@@ -326,6 +330,13 @@ _ENTITLEMENT_HINT_PREFIXES = {
 }
 _SAFE_CTA_PATHS = frozenset({"/billing"})
 _DEFAULT_CTA_PATH = "/billing"
+_REMOTE_REJECTED_MESSAGE = "The Solwyn API rejected the request."
+_REMOTE_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+# Project keys and JWTs, on top of the section 4 CLI token redaction.
+_REMOTE_CREDENTIAL = re.compile(
+    r"sk_proj_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*"
+)
+_MAX_REMOTE_MESSAGE_CHARS = 500
 
 
 class _PrivateMcpDiagnostics(logging.Filter):
@@ -1207,16 +1218,18 @@ def _operation_error(
             status_code=404,
         )
     if isinstance(error, ApiError):
-        code = _normalized_remote_error_code(error)
+        fixed_code = _normalized_remote_error_code(error)
+        code = _client_rejection_code(error) or fixed_code
         return _error(
             result_type,
             code=code,
             message=(
-                "The Solwyn API rejected the request."
-                if error.status_code is not None
-                else "Could not connect to the Solwyn API."
+                "Could not connect to the Solwyn API."
+                if error.status_code is None
+                else _client_rejection_message(error) or _REMOTE_REJECTED_MESSAGE
             ),
-            hint=_safe_remote_error_hint(error, code),
+            hint=_safe_remote_error_hint(error, code)
+            or _safe_remote_error_hint(error, fixed_code),
             status_code=error.status_code,
         )
     if isinstance(error, AuthError):
@@ -1257,8 +1270,45 @@ def _operation_error(
     )
 
 
+def _is_client_rejection(error: ApiError) -> bool:
+    return (
+        error.status_code is not None
+        and 400 <= error.status_code < 500
+        and isinstance(error.detail, dict)
+    )
+
+
+def _redact_remote_text(value: str) -> str:
+    return _REMOTE_CREDENTIAL.sub(REDACTED, redact_secrets(value))
+
+
+def _client_rejection_code(error: ApiError) -> str | None:
+    """Carry a well-formed 4xx code from the documented detail ``code`` field."""
+    if not _is_client_rejection(error) or error.code == "http_error":
+        return None
+    if _REMOTE_CODE.fullmatch(error.code) is None:
+        return None
+    if _redact_remote_text(error.code) != error.code:
+        return None
+    return error.code
+
+
+def _client_rejection_message(error: ApiError) -> str | None:
+    """Carry the 4xx detail ``message`` as one bounded, credential-free line."""
+    if not _is_client_rejection(error):
+        return None
+    text = "".join(
+        " " if unicodedata.category(character).startswith("C") else character
+        for character in _redact_remote_text(error.message)
+    )
+    text = " ".join(text.split())
+    if len(text) > _MAX_REMOTE_MESSAGE_CHARS:
+        text = text[: _MAX_REMOTE_MESSAGE_CHARS - 3].rstrip() + "..."
+    return text or None
+
+
 def _normalized_remote_error_code(error: ApiError) -> str:
-    """Return only fixed semantic codes; never reflect arbitrary server values."""
+    """Return a fixed semantic code when the server code cannot be carried."""
     if error.status_code == 429:
         return "rate_limited"
     if error.code == "account_membership_revoked":

@@ -40,7 +40,7 @@ Calls made through the Solwyn Python SDK are enforced and attributed automatical
 
 ### Give a coding agent a budget
 
-`solwyn mcp` serves read, guardrail, and attribution tools to any MCP client over local stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact SDK 0.6 capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
+`solwyn mcp` serves read, guardrail, and attribution tools to any MCP client over local stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
 ```console
 solwyn --project proj_0123456789abcdef01234567 mcp --profile read   # 33 read tools
@@ -84,7 +84,7 @@ solwyn budget confirm --call-id 12345678-1234-1234-1234-123456789abc --provider 
   --reservation-id "$RESERVATION" --input-tokens 1180 --output-tokens 640
 ```
 
-The CLI's caller-owned workflow maintains parity with Solwyn Python SDK 0.6.0 semantics and covers enforcement and attribution. Use `record` for a completed call that had no reservation, such as a local model. The same loop prices image, video, audio, and speech calls by their billed units, declares fallback intent, scopes enforcement to a single agent run, and reserves for a batch of calls at once; see [Meter un-instrumented calls](https://docs.solwyn.ai/cli/metering-uninstrumented-calls) for the walkthrough and [caller-owned spend reference](docs/caller-owned-spend.md) for the full rules.
+The CLI's caller-owned workflow follows the same reserve, settle and record loop as the Solwyn SDKs and covers enforcement and attribution. Use `record` for a completed call that had no reservation, such as a local model. The same loop prices image, video, audio, and speech calls by their billed units, declares fallback intent, scopes enforcement to a single agent run, and reserves for a batch of calls at once; see [Meter un-instrumented calls](https://docs.solwyn.ai/cli/metering-uninstrumented-calls) for the walkthrough and [caller-owned spend reference](docs/caller-owned-spend.md) for the full rules.
 
 ## Commands
 
