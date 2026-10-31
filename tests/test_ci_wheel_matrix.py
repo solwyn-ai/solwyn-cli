@@ -52,7 +52,7 @@ def select(repo, base, *, event="pull_request", head="HEAD"):
     ("path", "expected"),
     [
         ("docs/guide.md", LINUX),
-        ("docs/registry/server.json", LINUX),
+        ("server.json", LINUX),
         ("README.md", LINUX),
         ("LICENSE", LINUX),
         (".github/ISSUE_TEMPLATE/bug_report.yml", LINUX),

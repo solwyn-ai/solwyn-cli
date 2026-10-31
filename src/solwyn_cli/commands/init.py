@@ -324,6 +324,8 @@ def _resolve_jwt_project(
             if len(projects) == 1:
                 return projects[0].id, client.current_credential
             if not _stdin_is_tty():
+                if not projects:
+                    _project_creation_required(context)
                 exit_with_error(
                     context,
                     OutputError(
@@ -374,6 +376,23 @@ def _resolve_jwt_project(
                 message="The projects response was invalid.",
             ),
         )
+
+
+def _project_creation_required(context: typer.Context) -> None:
+    create = "solwyn projects create --name <name> --store-key"
+    rerun = "solwyn --project <project_id> init"
+    if context.params.get("agents"):
+        rerun += " --agents"
+    exit_with_error(
+        context,
+        OutputError(
+            code="project_required",
+            message="This account has no project to initialize.",
+            hint=f"Create one with: {create}. Then run: {rerun}",
+            detail={"next_commands": [create, rerun]},
+        ),
+        semantic=ErrorSemantic.USAGE,
+    )
 
 
 def _run_cap_requires_creation(context: typer.Context) -> None:

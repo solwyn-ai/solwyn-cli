@@ -114,6 +114,23 @@ def test_artifact_content_teaches_sdk_06_run_and_attribution_contracts() -> None
         assert phrase in guidance
 
 
+def test_artifact_content_reserves_guardrail_changes_for_a_human() -> None:
+    for surface in ArtifactSurface:
+        guidance = render_surface(surface)
+
+        required = (
+            "Never raise a budget cap.",
+            "Never switch enforcement from `hard_deny` to `alert_only`.",
+            "Never pause or remove budget rules.",
+            "Never rotate or revoke keys, and never change billing or the plan.",
+            "stop and ask the human",
+            "meters the calls your code makes",
+            "does not meter this coding assistant's own model usage",
+        )
+        for phrase in required:
+            assert phrase in guidance, (surface, phrase)
+
+
 def test_readme_frames_sdk_06_enforcement_attribution_and_mcp_capabilities() -> None:
     readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 

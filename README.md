@@ -1,5 +1,7 @@
 # Solwyn CLI
 
+<!-- mcp-name: ai.solwyn/solwyn -->
+
 Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and recover from leaked or expired project keys — from your terminal, your scripts, or your coding agent.
 
 This README describes solwyn-cli 0.3.0. The package is distributed on PyPI as `solwyn-cli`;
