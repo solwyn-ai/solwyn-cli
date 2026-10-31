@@ -9,8 +9,11 @@ fields) and agent runs (first_trace_id, trace_url).
 RESPONSE_MODELS maps each response-parsing model to its spec component. For
 every pair: a strict model declares every spec property; a property the spec
 allows to be null accepts null; the model allows every spec enum value; and the
-model requires nothing the spec may omit. CLASSIFIED_NOT_RESPONSES names every
-other strict model, so a new response model cannot skip this guard.
+model requires nothing the spec does not require. Every target must be an
+object schema, so a pairing with an enum or scalar component cannot pass
+vacuously. CLASSIFIED_NOT_RESPONSES names every other strict model, so a new
+response model cannot skip this guard; only MCP tool result envelopes are
+recognised by type, because their data models are classified on their own.
 """
 
 import copy
@@ -126,6 +129,13 @@ RESPONSE_MODELS = {
     "solwyn_cli.commands.budget:_AlertRouting": "AlertRouting",
     "solwyn_cli.commands.budget:_BudgetCheckBatchResponse": "BudgetCheckBatchResponse",
     "solwyn_cli.commands.budget:_BudgetCheckData": "BudgetCheckResponse",
+    "solwyn_cli.commands.budget:_JournalBudgetDecision": "BudgetCheckResponse",
+    "solwyn_cli.commands.budget:BudgetCheckOutcome[_JournalBudgetDecision]": (
+        "BudgetCheckOutcome"
+    ),
+    "solwyn_cli.commands.budget:RecoverableBudgetCheckResponse[_JournalBudgetDecision]": (
+        "RecoverableBudgetCheckResponse"
+    ),
     "solwyn_cli.commands.budget:_BudgetConstraints": "BudgetConstraintsResponse",
     "solwyn_cli.commands.budget:_BudgetStatusData": "BudgetStatusResponse",
     "solwyn_cli.commands.budget:_BudgetThresholdState": "ThresholdStateResponse",
@@ -187,19 +197,72 @@ RESPONSE_MODELS = {
 _LOCAL_STATE = "keychain, config, IPC or recovery state the CLI writes and reads itself"
 _CLI_OUTPUT = "a CLI or MCP output payload the CLI builds"
 _BASE = "a shared base that only sets model_config"
+_GENERIC = "an unparametrized generic; its parametrized response form is registered"
+_REQUEST = (
+    "a request body, or part of one, the CLI builds; test_request_drift guards it"
+)
+_MCP_INPUT = "an MCP tool input: a described copy of a request mirror"
 CLASSIFIED_NOT_RESPONSES = {
     "solwyn_cli._mcp_doctor_ipc:HelperResult": _LOCAL_STATE,
+    "solwyn_cli._mcp_doctor_ipc:PrivateRequest": _LOCAL_STATE,
     "solwyn_cli._mcp_launch:LaunchDescriptor": _LOCAL_STATE,
     "solwyn_cli._mcp_operation:OperationRecovery": _LOCAL_STATE,
     "solwyn_cli._mcp_operation:ReadRecovery": _LOCAL_STATE,
     "solwyn_cli._mcp_operation:RecoveryItem": _LOCAL_STATE,
+    "solwyn_cli._vendor.batch:BudgetCheckOutcome": _GENERIC,
+    "solwyn_cli._vendor.batch:BudgetCheckOutcome[_BudgetCheckData]": _CLI_OUTPUT,
+    "solwyn_cli._vendor.batch:RecoverableBudgetCheckRequest": _REQUEST,
+    "solwyn_cli._vendor.batch:RecoverableBudgetCheckResponse": _GENERIC,
+    "solwyn_cli._vendor.notification_wire:AlertEmailUpdate": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:DiscordConfig": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:EmailConfigUpdate": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:NotificationChannelCreate": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:NotificationChannelUpdate": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:NotificationConfigUpdate": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:NotificationWire": _BASE,
+    "solwyn_cli._vendor.notification_wire:PagerDutyConfig": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:PagerDutyTestRequest": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:SlackConfig": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:SlackTestRequest": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:SmsConfigUpdate": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:TeamsConfig": _REQUEST,
+    "solwyn_cli._vendor.notification_wire:TelegramConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:AccountAlertPreviewRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:AccountAlertSnoozeRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:AccountAlertUpdateRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:AlertPreviewItem": _REQUEST,
+    "solwyn_cli._vendor.wire:BudgetCheckBatchRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:BudgetCheckRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:BudgetConfirmRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:BudgetUpdateRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:CostSimulationRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:IngestMetadataEvent": _REQUEST,
+    "solwyn_cli._vendor.wire:MediaUsage": _REQUEST,
+    "solwyn_cli._vendor.wire:ProjectAlertsPreviewRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:ProjectCreateRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:ProjectKeyRotateRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:ProjectUpdateRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:SnoozeRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:TokenDetails": _REQUEST,
+    "solwyn_cli._vendor.wire:WebhookCreateRequest": _REQUEST,
+    "solwyn_cli._vendor.wire:_DailyAnomalyConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:_ForecastOverrunConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:_RunawayRunConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:_ScopedBudgetConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:_ThresholdConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:_UnitCostAnomalyConfig": _REQUEST,
+    "solwyn_cli._vendor.wire:_WireModel": _BASE,
     "solwyn_cli.artifacts:_ArtifactState": _LOCAL_STATE,
     "solwyn_cli.auth:LoginCredential": _LOCAL_STATE,
     "solwyn_cli.auth:LoginMetadata": _LOCAL_STATE,
     "solwyn_cli.auth:PendingDevice": _LOCAL_STATE,
     "solwyn_cli.auth:ProjectKeyCredential": _LOCAL_STATE,
     "solwyn_cli.commands._alert_reads:AccountAlertWithLatestResponse": _CLI_OUTPUT,
+    "solwyn_cli.commands._alert_reads:AlertLatestRequest": _REQUEST,
     "solwyn_cli.commands._alert_reads:RuleLatest": _CLI_OUTPUT,
+    "solwyn_cli.commands._billing:CheckoutRequest": _REQUEST,
+    "solwyn_cli.commands._billing:PlanChangeRequest": _REQUEST,
+    "solwyn_cli.commands._billing:PlanPreviewRequest": _REQUEST,
     "solwyn_cli.commands._billing:_BillingModel": _BASE,
     "solwyn_cli.commands._cost_advice_models:_Response": _BASE,
     "solwyn_cli.commands._cost_models:_Response": _BASE,
@@ -208,6 +271,9 @@ CLASSIFIED_NOT_RESPONSES = {
     "solwyn_cli.commands._notifications_common:ChannelList": _CLI_OUTPUT,
     "solwyn_cli.commands._notifications_common:ReadModel": _BASE,
     "solwyn_cli.commands._record:RecordingResult": _CLI_OUTPUT,
+    "solwyn_cli.commands._team:AccountUpdateRequest": _REQUEST,
+    "solwyn_cli.commands._team:InviteRequest": _REQUEST,
+    "solwyn_cli.commands._team:RoleUpdateRequest": _REQUEST,
     "solwyn_cli.commands._team:TeamInvitesData": _CLI_OUTPUT,
     "solwyn_cli.commands._team:TeamMembersData": _CLI_OUTPUT,
     "solwyn_cli.commands._team:TeamModel": _BASE,
@@ -256,6 +322,13 @@ CLASSIFIED_NOT_RESPONSES = {
     "solwyn_cli.commands.whoami:_CredentialSummary": _CLI_OUTPUT,
     "solwyn_cli.commands.whoami:_WhoamiData": _CLI_OUTPUT,
     "solwyn_cli.errors:_BillingErrorDetail": _BASE,
+    "solwyn_cli.mcp.parameters:BudgetCheckRequest": _MCP_INPUT,
+    "solwyn_cli.mcp.parameters:DenialRecordingRetry": _MCP_INPUT,
+    "solwyn_cli.mcp.parameters:IngestMetadataEvent": _MCP_INPUT,
+    "solwyn_cli.mcp.parameters:MediaUsage": _MCP_INPUT,
+    "solwyn_cli.mcp.parameters:TokenDetails": _MCP_INPUT,
+    "solwyn_cli.mcp.server:McpLaunchOptions": _LOCAL_STATE,
+    "solwyn_cli.mcp.server:_ToolError": _CLI_OUTPUT,
     "solwyn_cli.output:OneTimeSecretPanel": _CLI_OUTPUT,
     "solwyn_cli.output:OutputError": _CLI_OUTPUT,
     "solwyn_cli.output:TableData": _CLI_OUTPUT,
@@ -263,24 +336,25 @@ CLASSIFIED_NOT_RESPONSES = {
 }
 
 
-def _is_request_mirror(cls: type) -> bool:
-    """Request bodies the CLI builds; their drift guard is test_request_drift."""
-    return cls.__module__.startswith(
-        ("solwyn_cli._vendor", "solwyn_cli.mcp.parameters")
-    ) or cls.__name__.endswith("Request")
+def _is_mcp_tool_result(cls: type) -> bool:
+    """MCP result envelopes; the data models they wrap are classified above."""
+    from solwyn_cli.mcp import server
 
-
-def _is_mcp_tool_output(cls: type) -> bool:
-    """MCP result envelopes and launch options, built from parsed models."""
-    return cls.__module__ == "solwyn_cli.mcp.server"
+    return cls.__module__ == server.__name__ and issubclass(cls, server._ToolResult)
 
 
 def _load(qualified: str) -> type[BaseModel]:
     module, name = qualified.split(":")
-    target: Any = importlib.import_module(module)
-    for part in name.split("."):
-        target = getattr(target, part)
-    return target
+    # Parametrized generics ("Outcome[Item]") resolve in the module's namespace.
+    return eval(name, vars(importlib.import_module(module)))  # noqa: S307
+
+
+def _object_schema(component: str) -> dict:
+    schema = _resolve(COMPONENTS[component], SNAPSHOT)
+    assert schema.get("type", "object") == "object" and (
+        "properties" in schema or "allOf" in schema
+    ), f"{component} is not an object schema, so no response model can map to it"
+    return schema
 
 
 def _resolve(schema: dict, root: dict) -> dict:
@@ -317,7 +391,7 @@ def _enum_values(schema: dict, root: dict) -> set:
 
 
 def _properties(component: str) -> tuple[dict, set[str]]:
-    schema = _resolve(COMPONENTS[component], SNAPSHOT)
+    schema = _object_schema(component)
     properties = dict(schema.get("properties", {}))
     required = set(schema.get("required", []))
     for part in schema.get("allOf", []):
@@ -349,45 +423,60 @@ def test_response_model_accepts_everything_core_returns(
         if allowed:
             missing = _enum_values(remote, SNAPSHOT) - allowed
             assert not missing, f"{qualified}.{name} rejects {sorted(missing)}"
-    optional_in_core = sorted((local_required & set(spec_properties)) - spec_required)
-    assert optional_in_core == [], (
-        f"{qualified} requires {optional_in_core}, which {component} may omit"
+    cli_only = sorted(local_required - spec_required)
+    assert cli_only == [], (
+        f"{qualified} requires {cli_only}, which {component} does not require"
     )
 
 
-def test_every_strict_model_is_classified() -> None:
-    unclassified = []
-    for info in pkgutil.walk_packages(solwyn_cli.__path__, "solwyn_cli."):
-        module = importlib.import_module(info.name)
-        for name, value in vars(module).items():
-            if not (
+def _strict_models() -> dict[str, type[BaseModel]]:
+    # Import everything first: parametrizing a generic in one module (e.g.
+    # Outcome[Item] in commands.budget) adds a class to another module.
+    modules = [
+        importlib.import_module(info.name)
+        for info in pkgutil.walk_packages(solwyn_cli.__path__, "solwyn_cli.")
+    ]
+    found = {}
+    for module in modules:
+        for value in list(vars(module).values()):
+            if (
                 inspect.isclass(value)
                 and issubclass(value, BaseModel)
                 and value.__module__ == module.__name__
                 and value.model_config.get("extra") == "forbid"
             ):
-                continue
-            qualified = f"{value.__module__}:{value.__qualname__}"
-            if (
-                qualified in RESPONSE_MODELS
-                or qualified in CLASSIFIED_NOT_RESPONSES
-                or _is_request_mirror(value)
-                or _is_mcp_tool_output(value)
-            ):
-                continue
-            unclassified.append(qualified)
+                found[f"{value.__module__}:{value.__qualname__}"] = value
+    return found
+
+
+def _unclassified() -> list[str]:
+    # By identity: a registered generic such as Response[Item] reports the
+    # module that defines the generic, not the one that parametrizes it.
+    registered = {_load(qualified) for qualified in RESPONSE_MODELS}
+    return sorted(
+        qualified
+        for qualified, model in _strict_models().items()
+        if model not in registered
+        and qualified not in CLASSIFIED_NOT_RESPONSES
+        and not _is_mcp_tool_result(model)
+    )
+
+
+def test_every_strict_model_is_classified() -> None:
+    unclassified = _unclassified()
     assert unclassified == [], (
         "Classify each strict model: add a response model to RESPONSE_MODELS "
-        "with its Core component, or name why it never parses a response."
+        f"with its Core component, or name why it never parses a response: {unclassified}"
     )
 
 
 def test_registry_entries_exist() -> None:
     for qualified, component in RESPONSE_MODELS.items():
         assert component in COMPONENTS, (qualified, component)
+        _object_schema(component)
         assert issubclass(_load(qualified), BaseModel), qualified
-    for qualified in CLASSIFIED_NOT_RESPONSES:
-        _load(qualified)
+    stale = sorted(set(CLASSIFIED_NOT_RESPONSES) - set(_strict_models()))
+    assert stale == [], f"classified models that no longer exist: {stale}"
 
 
 @pytest.mark.parametrize(
@@ -423,3 +512,79 @@ def test_guard_trips_when_core_changes_a_response(
 
     with pytest.raises(AssertionError):
         test_response_model_accepts_everything_core_returns(model, target)
+
+
+# Review follow-ups: every required field and every target schema is checked,
+# and classification cannot be satisfied by a name or a module alone.
+
+COST_EVENT = "solwyn_cli.commands._cost_models:CostEventResponse"
+
+
+def test_guard_rejects_a_field_only_the_cli_requires(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solwyn_cli.commands._cost_models import CostEventResponse
+
+    class _ReviewCostEvent(CostEventResponse):
+        required_only_by_cli: str
+
+    monkeypatch.setattr(
+        sys.modules[__name__], "_ReviewCostEvent", _ReviewCostEvent, raising=False
+    )
+
+    with pytest.raises(AssertionError, match="required_only_by_cli"):
+        test_response_model_accepts_everything_core_returns(
+            f"{__name__}:_ReviewCostEvent", "CostEventResponse"
+        )
+
+
+@pytest.mark.parametrize("target", ["FailoverReason", "CallStatus"])
+def test_guard_rejects_a_target_that_is_not_an_object_schema(target: str) -> None:
+    with pytest.raises(AssertionError, match="object schema"):
+        test_response_model_accepts_everything_core_returns(COST_EVENT, target)
+
+
+def test_registry_rejects_every_model_mapped_to_an_unrelated_enum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "RESPONSE_MODELS",
+        {qualified: "FailoverReason" for qualified in RESPONSE_MODELS},
+    )
+
+    with pytest.raises(AssertionError, match="object schema"):
+        test_registry_entries_exist()
+
+
+@pytest.mark.parametrize(
+    ("module_name", "class_name"),
+    [
+        ("solwyn_cli.commands.costs", "ReviewRequest"),
+        ("solwyn_cli.commands.costs", "ReviewResponse"),
+        ("solwyn_cli.mcp.server", "_ReviewNotAToolResult"),
+        ("solwyn_cli._vendor.batch", "ReviewVendorResponse"),
+    ],
+)
+def test_classification_catches_a_new_strict_model(
+    monkeypatch: pytest.MonkeyPatch, module_name: str, class_name: str
+) -> None:
+    from pydantic import ConfigDict
+
+    module = importlib.import_module(module_name)
+    synthetic = type(
+        class_name,
+        (BaseModel,),
+        {
+            "__module__": module_name,
+            "__qualname__": class_name,
+            "__annotations__": {"value": str},
+            "model_config": ConfigDict(extra="forbid"),
+        },
+    )
+    monkeypatch.setattr(module, class_name, synthetic, raising=False)
+
+    with pytest.raises(AssertionError) as caught:
+        test_every_strict_model_is_classified()
+
+    assert f"{module_name}:{class_name}" in str(caught.value)
