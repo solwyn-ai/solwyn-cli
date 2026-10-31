@@ -383,11 +383,48 @@ def safe_absolute_url(value: object) -> str | None:
     return value
 
 
+_APPROVAL_HOST = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?")
+_APPROVAL_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1"})
+
+
 def approval_url_from(detail: object) -> str | None:
-    """Return a safe approval URL from an error detail, if present."""
+    """Rebuild Core's approval link from strictly validated parts, if present.
+
+    Core sends ``<app origin>/approve/<approval id>``. The link is shown to a
+    human and handed to agents over MCP, so the server's string is never
+    passed through: anything with a query, fragment, credentials, extra path or
+    characters outside a hostname and an id is dropped, and the returned URL is
+    built from the validated scheme, host, port and id only.
+    """
     if not isinstance(detail, dict):
         return None
-    return safe_absolute_url(detail.get("approval_url"))
+    value = safe_absolute_url(detail.get("approval_url"))
+    if value is None:
+        return None
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    host = parsed.hostname or ""
+    if parsed.query or parsed.fragment or not _APPROVAL_HOST.fullmatch(host):
+        return None
+    if parsed.scheme != "https" and not (
+        parsed.scheme == "http" and host in _LOOPBACK_HOSTS
+    ):
+        return None
+    segments = parsed.path.split("/")
+    if len(segments) != 3 or segments[0] or segments[1] != "approve":
+        return None
+    approval_id = segments[2]
+    if not _APPROVAL_ID.fullmatch(approval_id):
+        return None
+    expected_id = detail.get("approval_id")
+    if expected_id is not None and expected_id != approval_id:
+        return None
+    authority = host if port is None else f"{host}:{port}"
+    return f"{parsed.scheme}://{authority}/approve/{approval_id}"
 
 
 def is_budget_admission_busy(error: BaseException, *, path: str) -> bool:
