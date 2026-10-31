@@ -22,7 +22,6 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.whoami import _AccountSelf, _Identity
 from solwyn_cli.errors import (
     APPROVAL_INVALID_MESSAGES,
-    APPROVAL_USED_HINT,
     MEMBERSHIP_RECOVERY_HINT,
     ApiError,
     approval_url_from,
@@ -288,8 +287,8 @@ def safe_api_error(
         and code != "auth_capacity_exceeded"
     ):
         hint = ACCEPT_UNKNOWN_HINT if accepting else UNKNOWN_HINT
-    if error.approval_spent:
-        hint = f"{hint} {APPROVAL_USED_HINT}" if hint else APPROVAL_USED_HINT
+    if error.approval_note:
+        hint = f"{hint} {error.approval_note}" if hint else error.approval_note
     fail(
         context,
         code or ("rate_limited" if error.status_code == 429 else "team_request_failed"),

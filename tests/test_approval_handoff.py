@@ -424,3 +424,67 @@ def test_handoff_prompt_redacts_tokens_in_server_text() -> None:
 
     assert "Change [REDACTED]" in "".join(written)
     assert leaked not in "".join(written)
+
+
+# Round 3, item 3: an approval-bearing write is never replayed after a 429.
+
+RATE_LIMITED = httpx.Response(
+    429, headers={"Retry-After": "1"}, json={"detail": "Rate limit exceeded"}
+)
+
+
+@pytest.mark.parametrize("consumed_before_limit", [False, True])
+def test_explicit_approval_write_is_not_replayed_after_a_429(
+    consumed_before_limit: bool,
+) -> None:
+    sent: list[httpx.Request] = []
+    consumed = False
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal consumed
+        sent.append(request)
+        if consumed:
+            return httpx.Response(
+                403,
+                json={
+                    "detail": {
+                        "code": "approval_invalid",
+                        "message": "The approval was already used.",
+                        "reason": "consumed",
+                    }
+                },
+            )
+        consumed = consumed_before_limit
+        return RATE_LIMITED
+
+    with pytest.raises(ApiError) as exc_info:
+        _run(handle, approval_id=APPROVAL_ID)  # type: ignore[arg-type]
+
+    assert len(sent) == 1
+    assert exc_info.value.code == "rate_limited"
+    assert exc_info.value.hint is not None
+    assert "This approval may have been used" in exc_info.value.hint
+    assert "request a new one" in exc_info.value.hint
+
+
+def test_automatic_handoff_resend_is_not_replayed_after_a_429() -> None:
+    server = Server(
+        writes=[_approval_required(), RATE_LIMITED, httpx.Response(200, json={})],
+        statuses=["approved"],
+    )
+
+    with pytest.raises(ApiError) as exc_info:
+        _run(server)
+
+    assert len(server.sent_writes) == 2
+    assert exc_info.value.code == "rate_limited"
+    assert "This approval may have been used" in (exc_info.value.hint or "")
+
+
+def test_a_first_write_without_an_approval_still_gets_one_capacity_retry() -> None:
+    server = Server(writes=[RATE_LIMITED, httpx.Response(200, json={"ok": True})])
+
+    response, _ = _run(server)
+
+    assert response.json() == {"ok": True}
+    assert len(server.sent_writes) == 2

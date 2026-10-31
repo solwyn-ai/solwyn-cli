@@ -73,6 +73,9 @@ class ApprovalSettings:
     # for inputs the CLI never repeats itself (secrets read from stdin).
     pins: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    # A command that finishes this run's remaining work, as (project, argv),
+    # when re-running the original command can no longer do it.
+    continuation: tuple[str, list[str]] | None = None
 
     def take_approval_id(self) -> str | None:
         """Return the --approval ID once, for the first non-GET request."""
@@ -122,6 +125,14 @@ def add_retry_note(note: str) -> None:
         settings.notes.append(note)
 
 
+def continue_with(command: list[str], *, project: str, note: str) -> None:
+    """Make the printed retry finish this run's remaining step instead."""
+    settings = current_settings()
+    if settings is not None:
+        settings.continuation = (project, command)
+        settings.notes = [note]
+
+
 def _option_text(value: object) -> str:
     if isinstance(value, Enum):
         return str(value.value)
@@ -131,7 +142,11 @@ def _option_text(value: object) -> str:
 
 
 def _render_params(
-    context: object, pins: Mapping[str, str], skip: set[str]
+    context: object,
+    pins: Mapping[str, str],
+    skip: set[str],
+    *,
+    leaf: bool = False,
 ) -> list[str]:
     options: list[str] = []
     arguments: list[str] = []
@@ -164,7 +179,15 @@ def _render_params(
         values = value if param.multiple else [value]
         for item in values or ():
             options += [flag, _option_text(item)]
+    if leaf and arguments:
+        # Positionals can look like options ("--help", "-x"); "--" keeps them data.
+        return [*options, "--", *arguments]
     return options + arguments
+
+
+def render_leaf(context: object, pins: Mapping[str, str]) -> list[str]:
+    """Render a leaf command's own options and positionals for a re-run."""
+    return _render_params(context, pins, set(), leaf=True)
 
 
 def retry_argv(approval_id: str) -> list[str] | None:
@@ -184,11 +207,16 @@ def retry_argv(approval_id: str) -> list[str] | None:
         context = context.parent
     chain.reverse()
     pins = settings.pins if settings is not None else {}
+    root_skip = {"approval", "approval_wait", "version"}
     argv = ["solwyn", "--approval", approval_id]
-    argv += _render_params(chain[0], {}, {"approval", "approval_wait", "version"})
-    for context in chain[1:]:
+    if settings is not None and settings.continuation is not None:
+        project, command = settings.continuation
+        argv += _render_params(chain[0], {}, root_skip | {"project"})
+        return [*argv, "--project", project, *command]
+    argv += _render_params(chain[0], {}, root_skip)
+    for index, context in enumerate(chain[1:], start=1):
         argv.append(context.info_name)
-        argv += _render_params(context, pins, set())
+        argv += _render_params(context, pins, set(), leaf=index == len(chain) - 1)
     return argv
 
 

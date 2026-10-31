@@ -206,3 +206,218 @@ def test_human_hint_keeps_the_retry_command_on_one_line(
     assert argv[:3] == ["solwyn", "--approval", APPROVAL_ID]
     assert "--approval-wait" not in argv
     assert "--client-request-id" in argv
+
+
+# Round 3, item 2: positionals that look like options survive the retry.
+
+
+@pytest.fixture
+def team_server(server: Server, monkeypatch: pytest.MonkeyPatch) -> Server:
+    from solwyn_cli.commands import _team
+
+    factory = functools.partial(
+        SolwynClient, transport=httpx.MockTransport(server), sleeper=lambda _: None
+    )
+    monkeypatch.setattr(_team, "SolwynClient", factory)
+    monkeypatch.setattr(_team, "resolve_credential", lambda **_: LOGIN)
+    monkeypatch.setattr(_team, "is_interactive", lambda: False)
+    return server
+
+
+ACCOUNT = {
+    "id": "acct_one",
+    "display_name": "Team One",
+    "subscription_tier": "team",
+    "alert_email_override": None,
+    "seat_limit": 5,
+    "seats_used": 2,
+    "your_role": "owner",
+}
+
+
+@pytest.mark.parametrize("name", ["--help", "--production", "-x"])
+def test_option_like_positional_keeps_the_separator_on_retry(
+    team_server: Server, no_storage: list[str], name: str
+) -> None:
+    team_server.queue.append(httpx.Response(200, json=ACCOUNT))
+    error = _time_out(team_server, ["account", "rename", "--yes", "--", name])
+    first = team_server.changes[-1]
+
+    argv = error["detail"]["retry_argv"]
+    assert argv[-2:] == ["--", name]
+    assert json.loads(first.content) == {"display_name": name}
+    team_server.queue += [
+        httpx.Response(200, json=ACCOUNT),
+        httpx.Response(200, json={**ACCOUNT, "display_name": name}),
+    ]
+
+    retried = _rerun(error)
+
+    assert retried.exit_code == 0, retried.output
+    retry = team_server.changes[-1]
+    assert retry.method == "PATCH"
+    assert retry.content == first.content
+    assert retry.headers["Solwyn-Approval"] == APPROVAL_ID
+
+
+def _dummy(param: Any) -> list[str]:
+    choices = getattr(param.type, "choices", None)
+    if choices:
+        value = list(choices)[0]
+        return [str(getattr(value, "value", value))]
+    if param.type.name.startswith(("integer", "float")):
+        return ["1"]
+    return ["x"]
+
+
+def test_every_approval_capable_positional_round_trips_through_the_retry() -> None:
+    import typer.main
+
+    from test_help_snapshots import _NO_APPROVAL_WRITES, _WRITE, _commands
+
+    checked = []
+    for path, command in _commands(typer.main.get_command(app)):
+        endpoint = next(
+            (
+                line
+                for line in (command.epilog or "").splitlines()
+                if line.startswith("Endpoint:")
+            ),
+            "",
+        )
+        writes = [
+            r for _, r in _WRITE.findall(endpoint) if not _NO_APPROVAL_WRITES.match(r)
+        ]
+        arguments = [
+            p for p in command.params if getattr(p, "param_type_name", "") == "argument"
+        ]
+        if not writes or not arguments:
+            continue
+        options: list[str] = []
+        for param in command.params:
+            if param.required and getattr(param, "param_type_name", "") == "option":
+                options += [param.opts[0], *_dummy(param)]
+        values: list[str] = []
+        for param in arguments:
+            # Choice and numeric positionals are validated; free text may look
+            # like an option, which is exactly what the separator must protect.
+            constrained = getattr(param.type, "choices", None) or (
+                param.type.name.startswith(("integer", "float"))
+            )
+            dashed = _dummy(param)[0] if constrained else "--looks-like-an-option"
+            values += [dashed] * (2 if param.nargs == -1 else 1)
+        context = command.make_context(path[-1], [*options, "--", *values])
+        rendered = approvals.render_leaf(context, {})
+        assert "--" in rendered, path
+        again = command.make_context(path[-1], list(rendered))
+        assert again.params == context.params, path
+        checked.append(" ".join(path))
+    assert "account rename" in checked
+    assert len(checked) >= 10, checked
+
+
+# Round 3, item 1: init --run-cap resumes with the created project.
+
+
+def test_init_run_cap_waiting_for_approval_continues_with_budget_rule_add(
+    no_storage: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    import copy
+
+    from solwyn_cli import config as config_module
+    from solwyn_cli.commands import budget as budget_module
+    from solwyn_cli.commands import init as init_module
+    from test_budget_rules_command import ROUTING
+    from test_budget_set_command import BUDGET_RESPONSE
+
+    project = BUDGET_RESPONSE["project_id"]
+    created = {
+        "id": project,
+        "name": "Created project",
+        "budget_limit": 100.0,
+        "budget_period": "monthly",
+        "budget_mode": "alert_only",
+        "created_at": "2026-07-10T12:00:00Z",
+        "key": "sk_proj_" + "cd" * 32,
+        "key_prefix": ("sk_proj_" + "cd" * 32)[:24],
+        "scope": "full",
+    }
+    puts: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/projects" and request.method == "GET":
+            return httpx.Response(200, json=[])
+        if path == "/api/v1/projects":
+            return httpx.Response(201, json=created)
+        if "/cli/approvals/" in path:
+            return httpx.Response(200, json=approval_body("pending"))
+        if request.method == "PUT":
+            puts.append(request)
+            if "Solwyn-Approval" not in request.headers:
+                return approval_required()
+            rule = {
+                "type": "runaway_run",
+                "rule_key": "run-cap",
+                "channel_ids": [],
+                "paused": False,
+                "snoozed_until": None,
+                "routing": ROUTING,
+                "spend_threshold_usd": 5.0,
+                "mode": "hard_deny",
+                "call_threshold": None,
+                "window_minutes": None,
+            }
+            body = copy.deepcopy(BUDGET_RESPONSE)
+            body["thresholds"] = [*body["thresholds"], rule]
+            return httpx.Response(200, json=body)
+        return httpx.Response(200, json=BUDGET_RESPONSE)
+
+    factory = functools.partial(
+        SolwynClient, transport=httpx.MockTransport(handle), sleeper=lambda _: None
+    )
+    for module in (init_module, budget_module, budget_rules):
+        monkeypatch.setattr(module, "SolwynClient", factory)
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: LOGIN)
+    monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: LOGIN)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    answers = iter(["Created project", 100.0])
+    monkeypatch.setattr(init_module.typer, "prompt", lambda *a, **k: next(answers))
+    monkeypatch.setattr(init_module, "store_project_key", lambda value: None)
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
+    monkeypatch.setattr(init_module, "get_config_path", lambda: config_path)
+
+    waited = runner.invoke(
+        app, ["--json", "--approval-wait", "0", "init", "--run-cap", "5"]
+    )
+
+    assert waited.exit_code == 6, waited.output
+    error = json.loads(waited.stderr.splitlines()[-1])
+    assert error["detail"]["retry_argv"] == [
+        "solwyn",
+        "--approval",
+        APPROVAL_ID,
+        "--json",
+        "--project",
+        project,
+        "budget",
+        "rule",
+        "add",
+        "--type",
+        "runaway_run",
+        "--spend",
+        "5.0",
+        "--mode",
+        "hard_deny",
+    ]
+    assert f"Project {project} was created" in error["hint"]
+    assert "same project name" not in error["hint"]
+
+    retried = _rerun(error)
+
+    assert retried.exit_code == 0, retried.output
+    assert len(puts) == 2
+    assert puts[1].headers["Solwyn-Approval"] == APPROVAL_ID
+    assert puts[1].content == puts[0].content
+    assert no_storage == []

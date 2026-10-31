@@ -66,6 +66,7 @@ CLI_CREDENTIAL_HINTS = {
 APPROVAL_USED_HINT = (
     "The approval was used. Run the command again to request a new one."
 )
+APPROVAL_MAYBE_USED_HINT = "This approval may have been used; if a retry reports it consumed, request a new one."
 APPROVAL_INVALID_MESSAGES = {
     "not_found": "The approval was not found for this login.",
     "pending": "The approval is still pending. Approve it in the browser, then retry with --approval.",
@@ -182,8 +183,8 @@ class ApiError(RuntimeError):
         self.retry_after = retry_after
         # Whole-call evidence supplied by the client, never a public error field.
         self.ingest_outcome_uncertain = ingest_outcome_uncertain
-        # Set when the change failed after the gate consumed its approval.
-        self.approval_spent = False
+        # What is known about an attached approval after this failure, if any.
+        self.approval_note: str | None = None
 
 
 def _safe_cta_path(value: object) -> str | None:

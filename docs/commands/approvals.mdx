@@ -33,6 +33,7 @@ Every outcome other than success exits 6, and nothing else is sent:
 | Error code | Meaning |
 | --- | --- |
 | `approval_pending` | The wait ended first. The error prints the exact command to run after approving (also in `detail.retry_command` and `detail.retry_argv`). |
+| `rate_limited` and other failures after an approval was attached | The CLI never re-sends a request that carries an approval. The approval may have been used before the failure; if a retry reports it consumed, request a new one. |
 | `approval_denied` | You denied the change in the browser. |
 | `approval_expired` | The approval expired. Run the command again to request a new one. |
 | `approval_invalid` | The attached approval was not usable. `mismatch` means the request changed since it was approved, for example because the state a command reads changed. Run the command again. |
@@ -51,6 +52,11 @@ $ solwyn --approval-wait 0 plan upgrade --tier team --interval year --yes
 Hint: After approving, run: solwyn --approval 0b7d2c4e-0000-4000-8000-000000000003 plan upgrade --tier team --interval year --yes --client-request-id 6f1c2a90-0000-4000-8000-000000000001
 ```
 
+`detail.retry_command` is POSIX shell syntax (quoted with `shlex.join`) for bash,
+zsh and similar shells. On Windows, and from any automation, run
+`detail.retry_argv` directly: it is the same command as an argument list, with
+`solwyn` first, so nothing needs shell quoting.
+
 That command repeats only what you typed, plus every value the CLI generated
 for the request, pinned as an explicit flag: `plan upgrade`'s
 `--client-request-id`, and an absolute `--until` time for a relative snooze such
@@ -61,7 +67,21 @@ differs, the server answers `approval_invalid` with reason `mismatch`, and you
 run the command again to request a new approval. Secrets never appear in the
 command. When the original run read one (`--secret-stdin`, `--config-stdin` or
 `SOLWYN_CHANNEL_SECRET`), the hint says to supply it the same way again; `init`
-asks you to enter the same project name and budget again.
+asks you to enter the same project name and budget again. Positional arguments
+follow `--`, so a value such as `--help` or `-x` stays a value.
+
+If `init --run-cap` creates the project and then waits on the approval for the
+run cap, re-running `init` cannot finish the job. The retry command is the
+remaining step instead, for the created project:
+
+```console
+solwyn --approval 0b7d2c4e-0000-4000-8000-000000000003 --project proj_0123456789abcdef01234567 budget rule add --type runaway_run --spend 5.0 --mode hard_deny
+```
+
+The CLI never re-sends a request that carries an approval. Core can consume an
+approval before a later rejection such as a rate limit, so a replay could hide
+the real error. The original error is shown with "This approval may have been
+used; if a retry reports it consumed, request a new one."
 
 Approvals are single use and expire 5 minutes after you approve them. If the change then fails on the server (a validation error,
 for example), the approval is spent; the error says so, and you run the command

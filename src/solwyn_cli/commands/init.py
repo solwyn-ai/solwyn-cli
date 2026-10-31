@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from solwyn_cli._vendor.wire import ProjectCreateRequest
 from solwyn_cli.artifacts import ArtifactRecoveryError, write_agent_artifacts
-from solwyn_cli.approvals import add_retry_note
+from solwyn_cli.approvals import add_retry_note, continue_with
 from solwyn_cli.auth import (
     AuthError,
     auth_selection,
@@ -243,6 +243,23 @@ def _create_project(
         )
         stored_credential = store_project_key(created.key.get_secret_value())
         if run_cap is not None:
+            # Re-running init cannot add a cap to an existing project, so a
+            # pending approval here continues with the rule add itself.
+            continue_with(
+                [
+                    "budget",
+                    "rule",
+                    "add",
+                    "--type",
+                    "runaway_run",
+                    "--spend",
+                    str(run_cap),
+                    "--mode",
+                    "hard_deny",
+                ],
+                project=created.id,
+                note=f"Project {created.id} was created; this command adds only its run cap.",
+            )
             try:
                 request_rule_add(
                     client=client,

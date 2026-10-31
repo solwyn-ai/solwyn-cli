@@ -33,7 +33,7 @@ from solwyn_cli.commands.budget import (
     request_budget_status,
     request_budget_update,
 )
-from solwyn_cli.errors import APPROVAL_USED_HINT, ApiError
+from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
@@ -175,7 +175,7 @@ def _client(
                 message=error.message,
                 hint="Unknown notification channel IDs: "
                 + ", ".join(str(i) for i in ids)
-                + (f" {APPROVAL_USED_HINT}" if error.approval_spent else ""),
+                + (f" {error.approval_note}" if error.approval_note else ""),
                 detail=error.detail,
             )
         exit_with_error(context, error)

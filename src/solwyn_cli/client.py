@@ -30,6 +30,7 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.errors import (
+    APPROVAL_MAYBE_USED_HINT,
     APPROVAL_USED_HINT,
     BILLING_HINTS,
     BILLING_WRITE_UNKNOWN_HINT,
@@ -111,13 +112,27 @@ def _terminal_safe(value: object) -> str:
     )
 
 
+# Failures that can come before or after the gate consumes an approval. Core
+# consumes in the auth dependency, which can run before a route's own limiter.
+_UNCERTAIN_APPROVAL_STATUSES = frozenset({None, 429, 503})
+
+
 def _mark_approval_spent(error: ApiError) -> None:
-    """Say the approval was used when the change failed after the gate."""
-    if error.code.startswith("approval_") or error.status_code in (None, 401, 429):
+    """Say what is known about an attached approval after a failed change."""
+    if (
+        error.code.startswith("approval_")
+        or error.code == "session_required"
+        or error.status_code == 401
+    ):
+        # Authentication and the gate refuse before anything is consumed.
         return
-    error.approval_spent = True
+    error.approval_note = (
+        APPROVAL_MAYBE_USED_HINT
+        if error.status_code in _UNCERTAIN_APPROVAL_STATUSES
+        else APPROVAL_USED_HINT
+    )
     error.hint = (
-        f"{error.hint} {APPROVAL_USED_HINT}" if error.hint else APPROVAL_USED_HINT
+        f"{error.hint} {error.approval_note}" if error.hint else error.approval_note
     )
 
 
@@ -512,7 +527,10 @@ class SolwynClient:
                 request=prepared,
                 path=relative_path,
                 evidence=evidence,
-                retry_rate_limit=retry_rate_limit,
+                # Never replay a write that carries an approval: Core may have
+                # consumed it before the rejection (its route limiter can run
+                # after the gate), and a replay would hide the real error.
+                retry_rate_limit=retry_rate_limit and attached is None,
                 stream=_stream,
             )
             self._check_authentication(response, evidence)
@@ -534,7 +552,7 @@ class SolwynClient:
                     stream=_stream,
                 )
         except httpx.HTTPError:
-            raise ApiError(
+            transport = ApiError(
                 status_code=None,
                 code="transport_error",
                 message="Could not connect to the Solwyn API.",
@@ -550,7 +568,10 @@ class SolwynClient:
                 ),
                 detail=None,
                 ingest_outcome_uncertain=evidence.ingest_outcome_uncertain,
-            ) from None
+            )
+            if approval_spent:
+                _mark_approval_spent(transport)
+            raise transport from None
 
         try:
             self._raise_for_unsuccessful_response(
@@ -648,7 +669,7 @@ class SolwynClient:
             request=retry,
             path=path,
             evidence=evidence,
-            retry_rate_limit=retry_rate_limit,
+            retry_rate_limit=False,  # Carries the approval: never replay it.
             stream=stream,
         )
         self._check_authentication(retried, evidence)
