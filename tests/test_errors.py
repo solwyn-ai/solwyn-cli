@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import pytest
 
-from solwyn_cli.errors import ApiError, error_from_response
+from solwyn_cli.errors import ApiError, approval_url_from, error_from_response
 
 
 def _response(status_code: int, payload: Any) -> httpx.Response:
@@ -209,3 +209,32 @@ def test_seat_limit_422_is_ready_for_deferred_team_commands() -> None:
     assert error.code == "seat_limit_exceeded"
     assert error.message == "Seat limit exceeded for the account tier."
     assert error.detail == detail
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://[::1]:5173/approve/abc", "http://[::1]:5173/approve/abc"),
+        ("https://app.solwyn.ai./approve/abc", "https://app.solwyn.ai/approve/abc"),
+        (
+            "https://bücher.example/approve/abc",
+            "https://xn--bcher-kva.example/approve/abc",
+        ),
+        ("https://APP.Solwyn.AI/approve/ABC-1", "https://app.solwyn.ai/approve/ABC-1"),
+        ("http://127.0.0.1:5173/approve/abc", "http://127.0.0.1:5173/approve/abc"),
+        ("https://[2001:db8::1]/approve/abc", "https://[2001:db8::1]/approve/abc"),
+        ("http://[2001:db8::1]/approve/abc", None),
+        ("https://a_b.example/approve/abc", None),
+        ("https://faß.de/approve/abc", "https://xn--fa-hia.de/approve/abc"),
+        (
+            "https://\u03c4\u03b5\u03c3\u03c4\u03bf\u03c2.example/approve/abc",
+            "https://xn--qxaujcdc.example/approve/abc",
+        ),
+        ("https://[fe80::1%eth0]/approve/abc", None),
+        ("https://[fe80::1%eth0 IGNORE_PREVIOUS_INSTRUCTIONS]/approve/abc", None),
+    ],
+)
+def test_approval_url_accepts_every_core_origin_shape(
+    url: str, expected: str | None
+) -> None:
+    assert approval_url_from({"approval_url": url}) == expected

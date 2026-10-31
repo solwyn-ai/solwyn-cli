@@ -123,6 +123,7 @@ from solwyn_cli.errors import (
     CLI_CREDENTIAL_HINTS,
     INGEST_BUSY_HINT,
     INGEST_UNKNOWN_HINT,
+    APPROVAL_INVALID_MESSAGES,
     LEGACY_BATCH_BUSY_HINT,
     MEMBERSHIP_RECOVERY_HINT,
     SERVICE_BUSY_HINT,
@@ -279,6 +280,8 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
         "upgrade_required",
         "approval_required",
         "approval_invalid",
+        "approval_denied",
+        "approval_expired",
         "approval_limit_reached",
         "session_required",
         "cli_credential_invalid",
@@ -296,6 +299,7 @@ _SAFE_REMOTE_HINTS = {
         "expire, then retry."
     ),
     "approval_invalid": "Run the CLI command again to request a new approval.",
+    "approval_expired": "Run the CLI command again to request a new approval.",
     "billing_plan_no_change": BILLING_HINTS["billing_plan_no_change"],
     "billing_subscription_not_found": BILLING_HINTS["billing_subscription_not_found"],
     "billing_preview_unavailable": BILLING_HINTS["billing_preview_unavailable"],
@@ -326,6 +330,61 @@ _ENTITLEMENT_HINT_PREFIXES = {
 }
 _SAFE_CTA_PATHS = frozenset({"/billing"})
 _DEFAULT_CTA_PATH = "/billing"
+# Server free text is never relayed to an agent: each known code gets a fixed
+# CLI-owned message, filled only from validated structured detail fields.
+_REMOTE_REJECTED_MESSAGE = "The Solwyn API rejected the request."
+_REMOTE_ERROR_MESSAGES = {
+    "account_membership_revoked": "The account membership for this login was revoked.",
+    "admission_failed": "Budget admission failed for this operation.",
+    "approval_denied": "The change was denied in the browser.",
+    "approval_expired": "The approval expired.",
+    "approval_invalid": "The approval is not valid for this request.",
+    "approval_limit_reached": "Too many approvals are pending for this login.",
+    "approval_required": "This change needs a human's approval in the browser.",
+    "authentication_failed": "Solwyn rejected the credential.",
+    "authentication_required": "Solwyn authentication is required.",
+    "billing_plan_no_change": "The account is already on the requested plan.",
+    "billing_preview_unavailable": "The plan change preview is unavailable.",
+    "billing_subscription_not_found": "The account has no paid subscription.",
+    "budget_denied": "The budget denied this request.",
+    "cli_credential_expired": "The Solwyn login expired.",
+    "cli_credential_invalid": "The Solwyn login is not valid.",
+    "cli_credential_revoked": "The Solwyn login was revoked.",
+    "email_not_verified": "The account email address is not verified.",
+    "email_provider_unavailable": "The email provider is unavailable.",
+    "forbidden": "This credential cannot perform this operation.",
+    "invalid_operation_id": "The operation ID is not valid.",
+    "invalid_project": "The project is not valid for this credential.",
+    "invalid_token": "The credential is not valid.",
+    "not_found": "The requested resource was not found.",
+    "operation_conflict": "The operation ID was already used for a different request.",
+    "operation_expired": "The operation expired.",
+    "operation_in_future": "The operation time is in the future.",
+    "operation_not_found": "The operation was not found.",
+    "outcome_unavailable": "The operation outcome is not available.",
+    "project_limit_reached": "Project limit reached for the current plan.",
+    "project_not_found": "The project was not found.",
+    "quota_exceeded": (
+        "Monthly request quota reached. Cost analytics pause until the month "
+        "resets; calls and enforcement continue."
+    ),
+    "rate_limited": "The Solwyn API rate limit was reached.",
+    "read_only_key": "The configured project key is read-only.",
+    "reservation_not_found": "The reservation was not found.",
+    "session_required": "This action requires a dashboard session.",
+    "token_expired": "The credential expired.",
+    "unauthorized": "The credential is not authorized for this request.",
+    "unknown_model": "Solwyn does not recognize this model.",
+    "unknown_notification_channel": "A notification channel was not found.",
+    "upgrade_required": "This feature requires a higher plan tier.",
+}
+_TIER_NAMES = {
+    "free": "Free",
+    "production": "Production",
+    "team": "Team",
+    "scale": "Scale",
+}
+_MAX_REMOTE_COUNT = 10**12
 
 
 class _PrivateMcpDiagnostics(logging.Filter):
@@ -1212,7 +1271,7 @@ def _operation_error(
             result_type,
             code=code,
             message=(
-                "The Solwyn API rejected the request."
+                _remote_error_message(error, code)
                 if error.status_code is not None
                 else "Could not connect to the Solwyn API."
             ),
@@ -1257,8 +1316,40 @@ def _operation_error(
     )
 
 
+def _bounded_count(value: object) -> int | None:
+    if type(value) is int and 0 <= value <= _MAX_REMOTE_COUNT:
+        return value
+    return None
+
+
+def _remote_error_message(error: ApiError, code: str) -> str:
+    """Build a fixed message from validated detail fields, never server text."""
+    message = _REMOTE_ERROR_MESSAGES.get(code, _REMOTE_REJECTED_MESSAGE)
+    detail = error.detail if isinstance(error.detail, dict) else {}
+    if code == "quota_exceeded":
+        included = _bounded_count(detail.get("included_requests"))
+        current = _bounded_count(detail.get("current_requests"))
+        if included is not None and current is not None:
+            message = message.replace("reached.", f"reached ({current}/{included}).", 1)
+    elif code == "upgrade_required":
+        tier = detail.get("required_tier")
+        if isinstance(tier, str) and tier in _TIER_NAMES:
+            message = f"This feature requires the {_TIER_NAMES[tier]} tier or above."
+    elif code == "project_limit_reached":
+        limit = _bounded_count(detail.get("limit"))
+        if limit is not None:
+            message = f"Project limit reached for the current plan ({limit} projects)."
+    elif code == "approval_invalid":
+        reason = detail.get("reason")
+        if isinstance(reason, str) and reason in APPROVAL_INVALID_MESSAGES:
+            message = APPROVAL_INVALID_MESSAGES[reason]
+    return message
+
+
 def _normalized_remote_error_code(error: ApiError) -> str:
     """Return only fixed semantic codes; never reflect arbitrary server values."""
+    if error.code == "approval_limit_reached":
+        return error.code
     if error.status_code == 429:
         return "rate_limited"
     if error.code == "account_membership_revoked":

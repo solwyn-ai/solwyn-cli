@@ -427,7 +427,7 @@ def test_provider_detection_drives_placeholder_only_snippets(
     rendered_snippets = json.dumps(payload["snippets"])
     assert "from solwyn import Solwyn" in rendered_snippets
     assert VALID_KEY not in rendered_snippets
-    assert "<" in rendered_snippets and ">" in rendered_snippets
+    assert "api_key=" not in rendered_snippets.replace("api_key=os.environ[", "")
     assert source_path.read_bytes() == before
     assert [
         request for client in FakeClient.instances for request in client.requests
@@ -491,6 +491,36 @@ def test_snippet_matches_detected_client_import_style(
 
     assert result.exit_code == 0, result.stderr
     assert expected_fragment in json.loads(result.stdout)["snippets"][0]["code"]
+
+
+@pytest.mark.parametrize(
+    ("source", "variable"),
+    [
+        ("import openai\n", "OPENAI_API_KEY"),
+        ("from openai import OpenAI\n", "OPENAI_API_KEY"),
+        ("import anthropic\n", "ANTHROPIC_API_KEY"),
+        ("from anthropic import Anthropic\n", "ANTHROPIC_API_KEY"),
+        ("from google import genai\n", "GOOGLE_API_KEY"),
+    ],
+)
+def test_snippets_read_provider_keys_from_the_environment(
+    isolated_init: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    variable: str,
+) -> None:
+    """Never invite pasting a provider key into code."""
+    (isolated_init / "app.py").write_text(source, encoding="utf-8")
+    monkeypatch.setattr(init_module, "resolve_credential", _key)
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = _invoke("--project", "proj_alpha")
+
+    assert result.exit_code == 0, result.stderr
+    code = json.loads(result.stdout)["snippets"][0]["code"]
+    assert code.startswith("import os")
+    assert f'api_key=os.environ["{variable}"]' in code
+    assert 'api_key="' not in code
 
 
 def test_no_provider_uses_deterministic_generic_snippet(

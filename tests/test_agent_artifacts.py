@@ -1,6 +1,7 @@
 """Contract tests for the single-source agent artifacts."""
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -85,11 +86,11 @@ def test_artifact_content_teaches_guardrail_machine_and_trust_contracts() -> Non
         assert phrase in guidance
 
 
-def test_artifact_content_teaches_sdk_06_run_and_attribution_contracts() -> None:
+def test_artifact_content_teaches_sdk_run_and_attribution_contracts() -> None:
     guidance = render_surface(ArtifactSurface.AGENT_CONTEXT)
 
     required = (
-        "SDK 0.6",
+        "same reserve, settle and record loop as the Solwyn SDKs",
         "SOLWYN_AGENT_RUN_ID",
         "Reuse one run ID for the entire job",
         "run_terminated",
@@ -131,11 +132,17 @@ def test_artifact_content_reserves_guardrail_changes_for_a_human() -> None:
             assert phrase in guidance, (surface, phrase)
 
 
-def test_readme_frames_sdk_06_enforcement_attribution_and_mcp_capabilities() -> None:
+def test_guidance_and_readme_name_no_sdk_version_that_can_go_stale() -> None:
+    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    for text in (readme, *(render_surface(surface) for surface in ArtifactSurface)):
+        assert re.search(r"SDK v?\d", text) is None
+
+
+def test_readme_frames_sdk_enforcement_attribution_and_mcp_capabilities() -> None:
     readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "enforce and attribute LLM spend" in readme
-    assert "SDK 0.6.0" in readme
+    assert "same reserve, settle and record loop as the Solwyn SDKs" in readme
     assert "covers enforcement and attribution" in readme
     assert "MCP capability and schema discovery" in readme
     assert "serves read, guardrail, and attribution tools" in readme

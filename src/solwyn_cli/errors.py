@@ -1,11 +1,13 @@
 """Safe typed errors for HTTP and API failures."""
 
+import ipaddress
 import re
 import unicodedata
 from typing import Any, Literal, TypeAlias
 from urllib.parse import urlsplit
 
 import httpx
+import idna
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 
@@ -383,11 +385,87 @@ def safe_absolute_url(value: object) -> str | None:
     return value
 
 
+_DNS_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_APPROVAL_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def _approval_authority(host: str, port: int | None) -> tuple[str, bool] | None:
+    """Return a rebuilt ``host[:port]`` and whether it is loopback, or None.
+
+    IP literals are parsed as addresses (IPv6 comes back bracketed); names are
+    IDNA-encoded to ASCII and every label checked, so only a hostname or an
+    address can come out, never other server text.
+    """
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None:
+        # A zone id ("fe80::1%eth0 ...") is free text that survives .compressed.
+        if getattr(address, "scope_id", None) is not None:
+            return None
+        rebuilt = (
+            f"[{address.compressed}]" if address.version == 6 else address.compressed
+        )
+        loopback = address.is_loopback
+    else:
+        name = host[:-1] if host.endswith(".") else host
+        if "%" in name:
+            return None
+        try:
+            # UTS 46 non-transitional, as browsers resolve it: faß.de is xn--fa-hia.de.
+            ascii_name = idna.encode(name, uts46=True, transitional=False).decode(
+                "ascii"
+            )
+        except (idna.IDNAError, UnicodeError):
+            return None
+        labels = ascii_name.split(".")
+        if len(ascii_name) > 253 or not all(
+            _DNS_LABEL.fullmatch(label) for label in labels
+        ):
+            return None
+        rebuilt = ascii_name
+        loopback = ascii_name == "localhost"
+    return (rebuilt if port is None else f"{rebuilt}:{port}"), loopback
+
+
 def approval_url_from(detail: object) -> str | None:
-    """Return a safe approval URL from an error detail, if present."""
+    """Rebuild Core's approval link from strictly validated parts, if present.
+
+    Core sends ``<app origin>/approve/<approval id>``. The link is shown to a
+    human and handed to agents over MCP, so the server's string is never
+    passed through: anything with a query, fragment, credentials, extra path or
+    characters outside a hostname and an id is dropped, and the returned URL is
+    built from the validated scheme, host, port and id only.
+    """
     if not isinstance(detail, dict):
         return None
-    return safe_absolute_url(detail.get("approval_url"))
+    value = safe_absolute_url(detail.get("approval_url"))
+    if value is None:
+        return None
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.query or parsed.fragment or not parsed.hostname:
+        return None
+    checked = _approval_authority(parsed.hostname, port)
+    if checked is None:
+        return None
+    authority, loopback = checked
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
+        return None
+    segments = parsed.path.split("/")
+    if len(segments) != 3 or segments[0] or segments[1] != "approve":
+        return None
+    approval_id = segments[2]
+    if not _APPROVAL_ID.fullmatch(approval_id):
+        return None
+    expected_id = detail.get("approval_id")
+    if expected_id is not None and expected_id != approval_id:
+        return None
+    return f"{parsed.scheme}://{authority}/approve/{approval_id}"
 
 
 def is_budget_admission_busy(error: BaseException, *, path: str) -> bool:

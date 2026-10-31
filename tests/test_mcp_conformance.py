@@ -1303,7 +1303,7 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
     error = result.structured_content["error"]
     assert error == {
         "code": "upgrade_required",
-        "message": "The Solwyn API rejected the request.",
+        "message": "This feature requires a higher plan tier.",
         "hint": "Review upgrade options in the dashboard: /billing",
         "status_code": 402,
     }
@@ -1499,7 +1499,7 @@ def test_read_only_key_403_keeps_its_code_and_points_agents_at_key_scope(
     error = result.structured_content["error"]
     assert error == {
         "code": "read_only_key",
-        "message": "The Solwyn API rejected the request.",
+        "message": "The configured project key is read-only.",
         "hint": (
             "The configured project key is read-only; set SOLWYN_API_KEY to a "
             "write-scoped key, then retry. Confirm a key's scope with "
@@ -1881,7 +1881,7 @@ def test_budget_confirm_429_is_structured_safe_and_never_replayed(
         "ok": False,
         "error": {
             "code": "rate_limited",
-            "message": "The Solwyn API rejected the request.",
+            "message": "The Solwyn API rate limit was reached.",
             "hint": None,
             "status_code": 429,
         },

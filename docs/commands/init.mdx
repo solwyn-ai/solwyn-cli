@@ -4,7 +4,8 @@ title: Repository setup
 
 Run from the repository to configure its Solwyn project, detect Python provider
 SDK imports, print SDK wiring and read budget status. Provider credentials are
-never collected. `--agents` additionally writes Claude, Cursor and AGENTS.md
+never collected: the printed wiring reads each provider key from its environment
+variable, such as `OPENAI_API_KEY`. `--agents` additionally writes Claude, Cursor and AGENTS.md
 guidance; `--run-cap` applies only to newly created projects.
 
 ```sh
