@@ -131,7 +131,7 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 | Missing/non-executable launch target | Use the executable from the intended installed environment; an explicit bad target never falls back. |
 | Missing project | Select the project explicitly. Doctor can still show the supplied key's identity. |
 | Locked/unavailable keychain | Unlock the same OS account's keychain, or deliberately provide the intended key in the host environment. |
-| `authentication_required` hint says no OS keychain is reachable | The host stripped the session bus. On Linux, forward the `env_vars` names from `mcp-config` (Codex: `env_vars`; Cursor: `env`), then restart the host. `doctor --mcp` passes its key in the environment, so it cannot catch this. |
+| `authentication_required` hint says no OS keychain is reachable | The host stripped the session bus. On Linux, forward the `env_vars` names from `mcp-config` (Codex: `env_vars`; Cursor: `env`), then restart the host. On a headless machine with no keychain, set `SOLWYN_API_KEY` to a project key instead; login-only tools cannot run there. `doctor --mcp` passes its key in the environment, so it cannot catch this. |
 | Read/key project mismatch | Correct the read selector or choose the intended key. Do not test identity by reserving budget. |
 | Identity endpoint unsupported/404 | Deploy the dependent Core release. Scope stays unknown on older Core. |
 | Read-only key or login cannot write | Use the appropriate authorized project key for the caller-owned workflow; changing profiles does not change scope. |

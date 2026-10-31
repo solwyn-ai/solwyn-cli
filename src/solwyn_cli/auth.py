@@ -76,14 +76,20 @@ _KEYCHAIN_UNREACHABLE_PREFIX = (
     "No OS keychain is reachable from this process, so the stored Solwyn "
     "credential cannot be read. "
 )
+# A headless machine has no keychain to forward to, so a login cannot exist
+# there; a project key in the environment is the only way in.
+_KEYCHAIN_UNREACHABLE_HEADLESS = (
+    " Without a desktop keychain, set SOLWYN_API_KEY to a project key in the "
+    "host environment instead; tools that need a login cannot run there."
+)
 KEYCHAIN_UNREACHABLE_HINTS = {
     "linux": _KEYCHAIN_UNREACHABLE_PREFIX
     + "The MCP host must pass DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR to "
     "the server (Codex: env_vars in its mcp_servers table; solwyn mcp-config "
-    "lists them). Restart the host, then retry.",
+    "lists them). Restart the host, then retry." + _KEYCHAIN_UNREACHABLE_HEADLESS,
     "other": _KEYCHAIN_UNREACHABLE_PREFIX
     + "Run the MCP host as the account that ran solwyn login, with its keychain "
-    "unlocked. Restart the host, then retry.",
+    "unlocked. Restart the host, then retry." + _KEYCHAIN_UNREACHABLE_HEADLESS,
 }
 
 

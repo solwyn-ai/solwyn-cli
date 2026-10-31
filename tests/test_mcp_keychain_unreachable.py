@@ -12,7 +12,6 @@ import sys
 import anyio
 import httpx
 import pytest
-from keyring.errors import NoKeyringError
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
@@ -39,13 +38,6 @@ def real_resolution(monkeypatch: pytest.MonkeyPatch):
     return install
 
 
-def _no_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    def unreachable(service: str, name: str) -> str | None:
-        raise NoKeyringError("No recommended backend was available.")
-
-    monkeypatch.setattr(auth.keyring, "get_password", unreachable)
-
-
 def _call(name: str, arguments: dict | None = None):
     async def exercise():
         async with Client(server.create_server(), cache=None) as client:
@@ -63,6 +55,11 @@ def test_hint_is_fixed_and_platform_specific(platform: str) -> None:
     )
     assert ("DBUS_SESSION_BUS_ADDRESS" in hint) == (platform == "linux")
     assert ("env_vars" in hint) == (platform == "linux")
+    # A headless machine is never left without a way in.
+    assert hint.endswith(
+        "Without a desktop keychain, set SOLWYN_API_KEY to a project key in the "
+        "host environment instead; tools that need a login cannot run there."
+    )
 
 
 @pytest.mark.parametrize(
@@ -76,11 +73,11 @@ def test_hint_is_fixed_and_platform_specific(platform: str) -> None:
         ),
     ],
 )
+@pytest.mark.usefixtures("keychain_unreachable")
 def test_unreachable_keychain_returns_the_keychain_hint(
-    monkeypatch: pytest.MonkeyPatch, real_resolution, tool: str, arguments: dict
+    real_resolution, tool: str, arguments: dict
 ) -> None:
     requests = real_resolution()
-    _no_backend(monkeypatch)
 
     result = _call(tool, arguments)
 
@@ -92,11 +89,11 @@ def test_unreachable_keychain_returns_the_keychain_hint(
     assert requests == []
 
 
+@pytest.mark.usefixtures("keychain_unreachable")
 def test_login_only_tool_with_an_env_key_names_the_unreachable_keychain(
     monkeypatch: pytest.MonkeyPatch, real_resolution
 ) -> None:
     real_resolution()
-    _no_backend(monkeypatch)
     monkeypatch.setenv("SOLWYN_API_KEY", "sk_proj_" + "a1" * 32)
 
     result = _call("list_projects")
@@ -115,10 +112,10 @@ def test_login_only_tool_with_an_env_key_names_the_unreachable_keychain(
     ],
 )
 def test_reachable_empty_keychain_keeps_the_login_hint(
-    monkeypatch: pytest.MonkeyPatch, real_resolution, tool: str, hint: str
+    real_resolution, tool: str, hint: str
 ) -> None:
+    # The suite's default backend is reachable and empty (tests/conftest.py).
     real_resolution()
-    fake_keychain(monkeypatch)
 
     result = _call(tool)
 
@@ -126,13 +123,13 @@ def test_reachable_empty_keychain_keeps_the_login_hint(
     assert result.structured_content["error"]["hint"] == hint
 
 
+@pytest.mark.usefixtures("keychain_unreachable")
 def test_a_reachable_keychain_clears_an_earlier_unreachable_lookup(
     monkeypatch: pytest.MonkeyPatch, real_resolution
 ) -> None:
     requests = real_resolution(
         [httpx.Response(200, json={"projects": [], "next_cursor": None})]
     )
-    _no_backend(monkeypatch)
     assert auth.resolve_credential() is None
     assert auth.keychain_unreachable()
 
@@ -182,3 +179,22 @@ def test_minimal_host_environment_reproduces_and_reports_the_keychain_hint(
     error = result.structured_content["error"]
     assert error["code"] == "authentication_required"
     assert error["hint"] == auth.KEYCHAIN_UNREACHABLE_HINTS["linux"]
+
+
+def test_suite_default_keychain_is_reachable_whatever_the_host() -> None:
+    # tests/conftest.py replaces the host backend, so CI runners with no keyring
+    # and desktops with one see the same reachable, empty keychain.
+    assert auth.stored_login() is None
+    assert not auth.keychain_unreachable()
+
+
+def test_a_stale_unreachable_flag_does_not_leak_into_the_next_test_part_one(
+    keychain_unreachable,
+) -> None:
+    assert auth.resolve_credential() is None
+    assert auth.keychain_unreachable()
+
+
+def test_a_stale_unreachable_flag_does_not_leak_into_the_next_test_part_two() -> None:
+    # Runs after part one in file order; the conftest fixture cleared the flag.
+    assert not auth.keychain_unreachable()
