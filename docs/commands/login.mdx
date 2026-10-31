@@ -78,9 +78,10 @@ fails with a storage error.
 The file is plaintext protected only by those permissions. Anything running as
 your user can read it, including backup tools and an AI agent's file-reading
 tools, and it is copied into unencrypted backups. A login is scoped, expires
-after 30 days and can be revoked, which is why Linux uses the file: the Linux
-system keyring gives no protection from programs running as you, and agent
-hosts often cannot reach it. A project key has full project access and does not
+after 30 days and can be revoked. A system keyring encrypts secrets at rest and
+a locked one blocks retrieval, but an unlocked one serves any program running as
+you. Linux defaults to the file because agent hosts and headless sessions often
+cannot reach or unlock a keyring. A project key has full project access and does not
 expire, so storing one in the file prints a warning steering you to
 `SOLWYN_API_KEY` from a secret manager instead. Keep the credentials directory
 out of dotfile sync and unencrypted backups.
