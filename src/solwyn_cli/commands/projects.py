@@ -42,7 +42,12 @@ from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.commands.keys import export_line
-from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
+from solwyn_cli.output import (
+    OneTimeSecretPanel,
+    OutputError,
+    TableData,
+    _terminal_safe,
+)
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -641,12 +646,14 @@ def delete_project(
                 if response.status_code != 200:
                     raise ValueError("Project lookup did not return 200")
                 project = _Project.model_validate(response.json())
+                shown = _terminal_safe(project.name)
                 confirmation = typer.prompt(
-                    f"Type the project name '{project.name}' to confirm",
+                    f"Type the project name '{shown}' to confirm",
                     err=True,
                     hide_input=True,
                 )
-                if confirmation != project.name:
+                # The name as shown also confirms when redaction changed it.
+                if confirmation not in {project.name, shown}:
                     exit_with_error(
                         context,
                         OutputError(

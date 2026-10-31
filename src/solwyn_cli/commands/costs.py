@@ -35,7 +35,13 @@ from solwyn_cli.commands._entitlement import get_capabilities
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, OutputFormat, TableData, write_byte_stream
+from solwyn_cli.output import (
+    OutputError,
+    OutputFormat,
+    TableData,
+    write_byte_stream,
+    _terminal_safe,
+)
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -157,7 +163,7 @@ def report_window_headers(headers: httpx.Headers) -> None:
     ):
         name = f"X-Solwyn-{suffix}"
         if name in headers:
-            typer.echo(f"{name}: {headers[name]}", err=True)
+            typer.echo(_terminal_safe(f"{name}: {headers[name]}"), err=True)
 
 
 def report_window(window: CostWindow) -> None:
@@ -182,7 +188,9 @@ def stream_export(*, client: SolwynClient, path: str, params: dict[str, Any]) ->
         ):
             name = f"X-Solwyn-{suffix}"
             if name in response.headers:
-                typer.echo(f"{name}: {response.headers[name]}", err=True)
+                typer.echo(
+                    _terminal_safe(f"{name}: {response.headers[name]}"), err=True
+                )
         write_byte_stream(chunks=response.iter_bytes(), output=sys.stdout.buffer)
 
 
@@ -507,8 +515,10 @@ def _run(
     ):
         if data.next_cursor is not None:
             typer.echo(
-                "More events are available. Next cursor (pass with --cursor): "
-                + json.dumps(data.next_cursor),
+                _terminal_safe(
+                    "More events are available. Next cursor (pass with --cursor): "
+                    + json.dumps(data.next_cursor)
+                ),
                 err=True,
             )
         else:

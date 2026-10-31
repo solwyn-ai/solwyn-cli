@@ -45,7 +45,7 @@ from solwyn_cli.config import (
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -270,7 +270,9 @@ def _create_project(
                 )
             except (ApiError, AuthError, ValueError, TypeError):
                 typer.echo(
-                    f"Project {created.id} was created; review its budget rules before retrying the run-cap setup.",
+                    _terminal_safe(
+                        f"Project {created.id} was created; review its budget rules before retrying the run-cap setup."
+                    ),
                     err=True,
                 )
                 raise
@@ -346,7 +348,7 @@ def _resolve_login_project(
                 project_id, _ = _create_project(context, client, run_cap)
                 return project_id, client.current_credential
 
-            project_ids = ", ".join(project.id for project in projects)
+            project_ids = _terminal_safe(", ".join(project.id for project in projects))
             selection = typer.prompt(
                 f"Project ({project_ids}, or create)",
                 err=True,

@@ -60,7 +60,7 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError, LEGACY_BATCH_BUSY_HINT, is_budget_admission_busy
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -825,8 +825,10 @@ def _check_batch_command(
             table=_batch_check_table(error.data),
         )
         typer.echo(
-            f"Batch failed at input index {error.data.failed_chunk_start} "
-            f"of {error.data.total_checks} checks. {error.hint}",
+            _terminal_safe(
+                f"Batch failed at input index {error.data.failed_chunk_start} "
+                f"of {error.data.total_checks} checks. {error.hint}"
+            ),
             err=True,
         )
         if isinstance(error.cause, ApiError):
@@ -1574,7 +1576,7 @@ def check(
         if data.denied_by_period == "tag":
             keys = list(request.tags or {})
             suffix = f" `{keys[0]}`" if len(keys) == 1 else ""
-            typer.echo(f"denied by tag cap{suffix}", err=True)
+            typer.echo(_terminal_safe(f"denied by tag cap{suffix}"), err=True)
         raise typer.Exit(code=ExitCode.BUDGET_DENIED)
     if data.reservation_id is None:
         typer.echo(_FAIL_OPEN_NOTICE, err=True)

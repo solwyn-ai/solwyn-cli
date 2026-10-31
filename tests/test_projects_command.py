@@ -557,6 +557,44 @@ def test_projects_delete_tty_name_mismatch_never_deletes_or_clears_config(
     assert cleared == []
 
 
+@pytest.mark.parametrize(
+    "secret", ["solwyn_cli_" + "9a" * 32, "solwyn_dc_" + "4f" * 32]
+)
+@pytest.mark.parametrize("typed", ["wrong name", "name_[REDACTED]_suffix"])
+def test_projects_delete_tty_prompt_redacts_tokens_in_the_project_name(
+    monkeypatch: pytest.MonkeyPatch, secret: str, typed: str
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: True, raising=False)
+    monkeypatch.setattr(
+        projects_module, "clear_default_project", lambda _id: False, raising=False
+    )
+    FakeClient.responses = [
+        httpx.Response(
+            200, json={**PROJECTS_RESPONSE[0], "name": f"name_{secret}_suffix"}
+        ),
+        httpx.Response(204),
+    ]
+
+    # The real prompt, so the terminal text is what a TTY would print.
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_alpha", "--yes"],
+        input=f"{typed}\n",
+    )
+
+    assert secret not in result.stdout + result.stderr
+    assert "Type the project name 'name_[REDACTED]_suffix' to confirm" in result.stderr
+    methods = [method for method, *_ in FakeClient.instances[0].requests]
+    if typed == "wrong name":
+        assert result.exit_code == 2
+        assert methods == ["GET"]
+    else:
+        # The name as shown confirms, since the token itself is never shown.
+        assert result.exit_code == 0, result.stderr
+        assert methods == ["GET", "DELETE"]
+
+
 def test_projects_delete_rejects_nonempty_204_and_keeps_local_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

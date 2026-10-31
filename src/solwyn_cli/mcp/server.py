@@ -129,6 +129,7 @@ from solwyn_cli.errors import (
     SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
     approval_url_from,
+    redact_secrets,
 )
 
 
@@ -1156,7 +1157,8 @@ def _execution_outcome(result: ResultT) -> ResultT:
 
 
 def _protocol_result(result: _ToolResult) -> types.CallToolResult:
-    payload = result.model_dump(mode="json", by_alias=True)
+    # Every tool result passes here; both representations share one redaction.
+    payload = redact_secrets(result.model_dump(mode="json", by_alias=True))
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(payload))],
         structured_content=payload,

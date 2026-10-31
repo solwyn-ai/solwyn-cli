@@ -21,7 +21,7 @@ from solwyn_cli.commands.costs import report_window
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import CommandContext, command_context, output_engine
 
 
@@ -179,12 +179,16 @@ def unit_economics(
         rows.insert(1, _delta_row("Cost / agent run", data.cost_per_agent_run))
     if data.suspected_cause is not None:
         typer.echo(
-            f"Suspected cause ({data.suspected_cause.confidence}): {data.suspected_cause.summary}",
+            _terminal_safe(
+                f"Suspected cause ({data.suspected_cause.confidence}): {data.suspected_cause.summary}"
+            ),
             err=True,
         )
         for span in data.suspected_cause.spans:
             typer.echo(
-                f"Cause {span.kind}: {span.label} ({span.contribution_pct:.2f}%).",
+                _terminal_safe(
+                    f"Cause {span.kind}: {span.label} ({span.contribution_pct:.2f}%)."
+                ),
                 err=True,
             )
     output_engine(context).write_success(
@@ -237,8 +241,10 @@ def drift(
         else data.caveats.estimate_heuristic
     )
     typer.echo(
-        f"Drift caveats: estimate heuristic is {estimate_heuristic}; null estimates "
-        "excluded; unit-priced and unpriced estimates are null; denied events included.",
+        _terminal_safe(
+            f"Drift caveats: estimate heuristic is {estimate_heuristic}; null estimates "
+            "excluded; unit-priced and unpriced estimates are null; denied events included."
+        ),
         err=True,
     )
     typer.echo(

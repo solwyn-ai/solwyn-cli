@@ -195,3 +195,54 @@ def test_stream_busy_retries_before_yielding_any_export_bytes():
             assert b"".join(response.iter_bytes()) == b"name,cost\n'=SUM(A1),2\n"
     assert len(requests) == 2
     assert second.closed
+
+
+@pytest.mark.parametrize("fmt", ["csv", "json"])
+def test_export_body_stays_byte_exact_while_header_notices_are_redacted(
+    monkeypatch, fmt
+):
+    token = "solwyn_cli_" + "9a" * 32
+    device_code = "solwyn_dc_" + "4f" * 32
+    body = f"name,cost\nname_{token}_x,{device_code}\n".encode()
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        @contextmanager
+        def stream(self, method, path, **kwargs):
+            response = httpx.Response(
+                200,
+                content=body,
+                headers={"X-Solwyn-Export-Snapshot": f"snap_{device_code}"},
+            )
+            try:
+                yield response
+            finally:
+                response.close()
+
+    monkeypatch.setattr(costs, "SolwynClient", FakeClient)
+    monkeypatch.setattr(costs, "get_capabilities", lambda **kwargs: None)
+    monkeypatch.setattr(
+        costs,
+        "resolve_credential",
+        lambda **_: ProjectKeyCredential(
+            api_key="sk_proj_" + "a1" * 32, source="environment"
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app, ["-p", "project", "costs", "export", "--format", fmt]
+    )
+
+    assert result.exit_code == 0, result.exception
+    # Raw exports are byte-for-byte copies of the server data, by design.
+    assert result.stdout_bytes == body
+    assert "X-Solwyn-Export-Snapshot: snap_[REDACTED]" in result.stderr
+    assert device_code not in result.stderr
