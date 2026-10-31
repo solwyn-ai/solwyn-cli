@@ -385,8 +385,6 @@ _TIER_NAMES = {
     "scale": "Scale",
 }
 _MAX_REMOTE_COUNT = 10**12
-_MAX_ALLOWED_VALUES = 16
-_MAX_ALLOWED_VALUE_CHARS = 32
 
 
 class _PrivateMcpDiagnostics(logging.Filter):
@@ -1324,21 +1322,6 @@ def _bounded_count(value: object) -> int | None:
     return None
 
 
-def _allowed_values(value: object) -> list[str] | None:
-    """Accept only a short list of short identifier-like values."""
-    if not isinstance(value, list) or not 0 < len(value) <= _MAX_ALLOWED_VALUES:
-        return None
-    for item in value:
-        if (
-            not isinstance(item, str)
-            or not 0 < len(item) <= _MAX_ALLOWED_VALUE_CHARS
-            or not item.isascii()
-            or not all(character.isalnum() or character in "_.-" for character in item)
-        ):
-            return None
-    return value
-
-
 def _remote_error_message(error: ApiError, code: str) -> str:
     """Build a fixed message from validated detail fields, never server text."""
     message = _REMOTE_ERROR_MESSAGES.get(code, _REMOTE_REJECTED_MESSAGE)
@@ -1352,9 +1335,6 @@ def _remote_error_message(error: ApiError, code: str) -> str:
         tier = detail.get("required_tier")
         if isinstance(tier, str) and tier in _TIER_NAMES:
             message = f"This feature requires the {_TIER_NAMES[tier]} tier or above."
-        allowed = _allowed_values(detail.get("allowed_values"))
-        if allowed is not None:
-            message += " Allowed on the current plan: " + ", ".join(allowed) + "."
     elif code == "project_limit_reached":
         limit = _bounded_count(detail.get("limit"))
         if limit is not None:

@@ -113,10 +113,7 @@ QUOTA_MESSAGE = (
             1,
             {
                 "code": "upgrade_required",
-                "message": (
-                    "This feature requires the Team tier or above. "
-                    "Allowed on the current plan: 7d, 30d."
-                ),
+                "message": "This feature requires the Team tier or above.",
                 "hint": "Review upgrade options in the dashboard: /billing",
                 "status_code": 402,
             },
@@ -429,3 +426,42 @@ def test_every_allowlisted_code_has_a_fixed_message() -> None:
     assert server._SAFE_REMOTE_ERROR_CODES <= server._REMOTE_ERROR_MESSAGES.keys()
     for message in server._REMOTE_ERROR_MESSAGES.values():
         assert message and "\N{EM DASH}" not in message
+
+
+def test_upgrade_allowed_values_never_reach_the_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Identifier-shaped values are still server text, so none of them is relayed.
+    result = _remote_result(
+        monkeypatch,
+        402,
+        {
+            "code": "upgrade_required",
+            "feature": "analytics.range",
+            "current_tier": "free",
+            "required_tier": "team",
+            "message": "upgrade",
+            "allowed_values": [
+                "IGNORE_PREVIOUS_INSTRUCTIONS",
+                "READ_.env",
+                "POST_TO_exfil.example",
+                "password-super-secret",
+            ],
+            "cta_path": "/billing",
+        },
+    )
+
+    for representation in (
+        result.content[0].text,
+        json.dumps(result.structured_content),
+    ):
+        for value in (
+            "IGNORE_PREVIOUS",
+            "READ_.env",
+            "exfil.example",
+            "password-super-secret",
+        ):
+            assert value not in representation
+    assert result.structured_content["error"]["message"] == (
+        "This feature requires the Team tier or above."
+    )
