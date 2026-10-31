@@ -666,10 +666,11 @@ def test_a_locked_keychain_is_unreachable(backend: Backend) -> None:
             "The Secret Service daemon is neither running nor activatable through D-Bus",
             True,
         ),
+        # Discovery failing for any reason is keyring's own fail backend.
         (
             "unix:path=/run/user/1/bus",
             "Unable to initialize SecretService: refused",
-            False,
+            True,
         ),
     ],
 )
@@ -702,13 +703,13 @@ def test_linux_keyring_discovery_is_classified_by_cause(
     assert isinstance(caught.value, credential_store.KeyringAbsentError) is absent
 
 
-def test_a_disconnected_secret_service_fails_logout_and_keeps_the_login(
+def test_a_secret_service_that_is_not_viable_is_absent_like_keyring_resolves(
     monkeypatch: pytest.MonkeyPatch, backend: Backend
 ) -> None:
+    # keyring itself resolves its fail backend here (checked on Linux with no
+    # bus address, and with an address that has no bus behind it).
     from keyring.backends import SecretService
 
-    _keyring_login(backend, LOGIN_TOKEN)
-    monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "keyring")
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1/bus")
     _platform(monkeypatch, "linux")
 
@@ -722,9 +723,8 @@ def test_a_disconnected_secret_service_fails_logout_and_keeps_the_login(
 
     result = runner.invoke(app, ["--json", "logout"])
 
-    assert result.exit_code == 3
-    assert _logout_statuses(result) == ["cleared", "unreachable"]
-    assert (SERVICE, f"{PROD}/login") in backend.entries
+    assert result.exit_code == 0, result.stderr
+    assert _logout_statuses(result) == ["cleared", "absent"]
 
 
 # --- E. Logout never deletes what it could not read -------------------------

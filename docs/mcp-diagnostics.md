@@ -14,7 +14,7 @@ executable to an absolute path (`Scripts/solwyn.exe` on Windows), and prints the
 `solwyn.mcp-config.v1` envelope with `command`, `args` and `env_vars`. Extract those
 fields for the configuration format your host supports. `env_vars` lists the
 names (never values) of environment variables a host should pass through:
-Solwyn's own variables and `XDG_DATA_HOME`/`XDG_CONFIG_HOME`, plus
+Solwyn's own variables and `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME`, plus
 `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` when the Linux keyring is the
 credential store. Hosts that start servers with a minimal environment, such as
 Codex, need them (see the [quickstart](mcp-quickstart.md)). Arguments remain separate array

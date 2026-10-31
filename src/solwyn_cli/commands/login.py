@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from solwyn_cli import auth
+from solwyn_cli import auth, credential_store
 from solwyn_cli.approvals import default_wait_seconds
 from solwyn_cli.auth import (
     AuthError,
@@ -390,8 +390,16 @@ def _poll(
                 if continue_command is not None:
                     try:
                         auth.store_pending_device(pending)
-                    except CredentialStorageError:
-                        pass
+                    except CredentialStorageError as storage_error:
+                        # A timed-out keyring write may still land: stop now
+                        # rather than keep the lock through the browser wait.
+                        if credential_store.stranded():
+                            _fail(
+                                context,
+                                "credential_storage_failed",
+                                str(storage_error),
+                                storage_error.hint,
+                            )
                 continue
             if error.error == "access_denied":
                 auth.clear_pending_device()

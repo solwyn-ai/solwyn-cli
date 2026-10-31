@@ -62,15 +62,15 @@ configuration container. For example, the descriptor portion on POSIX is:
   "env_vars": [
     "SOLWYN_TOKEN", "SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL",
     "SOLWYN_CREDENTIAL_STORE", "SOLWYN_CREDENTIALS_FILE",
-    "XDG_DATA_HOME", "XDG_CONFIG_HOME"
+    "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"
   ]
 }
 ```
 
 `env_vars` lists the names (never values) of parent environment variables the
-host should pass to the server: Solwyn's own variables, and `XDG_DATA_HOME` and
-`XDG_CONFIG_HOME` so a server finds the same credentials file and config as your
-shell when you have moved them. When the Linux keyring is the credential store
+host should pass to the server: Solwyn's own variables, and `XDG_DATA_HOME`,
+`XDG_CONFIG_HOME` and `XDG_STATE_HOME` so a server finds the same credentials
+file, config and credential lock as your shell when you have moved them. When the Linux keyring is the credential store
 (`--store keyring`), it adds `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR`,
 which the keyring needs. Never write a secret's value into a host config such as
 `~/.codex/config.toml` or `.mcp.json`; those files get shared and committed.
@@ -86,7 +86,7 @@ skipped:
 [mcp_servers.solwyn]
 command = "/absolute/path/to/solwyn"
 args = ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"]
-env_vars = ["SOLWYN_TOKEN", "SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL", "SOLWYN_CREDENTIAL_STORE", "SOLWYN_CREDENTIALS_FILE", "XDG_DATA_HOME", "XDG_CONFIG_HOME"]
+env_vars = ["SOLWYN_TOKEN", "SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL", "SOLWYN_CREDENTIAL_STORE", "SOLWYN_CREDENTIALS_FILE", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"]
 ```
 
 Claude Code (checked with 2.1.314) starts stdio servers with its full

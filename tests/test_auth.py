@@ -168,12 +168,15 @@ def test_unexpired_login_reports_no_expiry(keychain: dict[str, str]) -> None:
         {auth.LOGIN_ENTRY: "{"},
     ],
 )
-def test_incomplete_or_corrupt_login_is_not_a_credential(
+def test_incomplete_or_corrupt_login_is_a_structured_error(
     keychain: dict[str, str], entries: dict[str, str]
 ) -> None:
+    # Never skipped: skipping would fall through to a stored project key.
     keychain.update(entries)
+    keychain[auth.API_KEY_ENTRY] = VALID_KEY
 
-    assert auth.resolve_credential({}) is None
+    with pytest.raises(auth.MalformedCredentialFileError):
+        auth.resolve_credential({})
 
 
 def test_invalid_environment_key_fails_without_echoing_it(

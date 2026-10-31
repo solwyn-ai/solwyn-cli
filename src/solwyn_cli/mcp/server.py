@@ -4,6 +4,7 @@ import json
 import inspect
 import logging
 import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -17,7 +18,7 @@ from mcp.shared import jsonrpc_dispatcher as sdk_dispatcher
 from mcp.shared import direct_dispatcher as sdk_direct_dispatcher
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from solwyn_cli import __version__, auth, runtime
+from solwyn_cli import __version__, auth, credential_store, runtime
 from solwyn_cli.mcp.declarations import ToolDeclaration
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli._vendor.batch import new_operation_id, operation_expiry
@@ -529,9 +530,11 @@ class _ToolCatalog:
                             )
                 result = await self._call_tool(ctx, params)
                 # Serialization is CPU work too; the same deadline owns it.
-                return await operation.run_sync(
+                wire = await operation.run_sync(
                     partial(_bounded_protocol_result, result, control)
                 )
+                _exit_if_stranded()
+                return wire
         except (operation.OperationLimit, TimeoutError) as error:
             code = (
                 error.code
@@ -1176,6 +1179,19 @@ def _login_required_hint() -> str:
     if lookup is None:
         return LOGIN_REQUIRED_HINT
     return f"{LOGIN_REQUIRED_HINT} Looked in: {lookup.describe()}."
+
+
+def _exit_if_stranded() -> None:
+    """A timed-out keyring write may still land: leave instead of holding.
+
+    The process keeps the credential lock until it exits, so a server that
+    stayed up would block every other Solwyn process. Exit shortly after this
+    result is written; the host starts a fresh server on the next call.
+    """
+    if credential_store.stranded():
+        timer = threading.Timer(1.0, os._exit, args=(1,))
+        timer.daemon = True
+        timer.start()
 
 
 def _protocol_result(result: _ToolResult) -> types.CallToolResult:

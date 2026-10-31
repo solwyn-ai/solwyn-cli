@@ -57,6 +57,7 @@ from solwyn_cli.credential_store import (
     InsecureFileError,
     KeyringAbsentError,
     KeyringStore,
+    KeyringTimeoutError,
     MalformedFileError,
     StoreKind,
     StoreMode,
@@ -118,7 +119,7 @@ class InsecureCredentialFileError(CredentialStorageError):
 
 
 class MalformedCredentialFileError(CredentialStorageError):
-    """The credentials file is not a valid Solwyn credentials document."""
+    """The credentials file, or a keychain login, is not a valid credential."""
 
 
 class LoginRequiredError(AuthError):
@@ -541,6 +542,12 @@ def _store(
         try:
             for entry, value in values.items():
                 keyring_store.set(origin, entry, value)
+        except KeyringTimeoutError as error:
+            # The write may still land: never continue, never fall back. The
+            # process is stranded and keeps the lock until it exits.
+            raise CredentialStorageError(
+                str(error), credential_store.STRANDED_MESSAGE
+            ) from None
         except StoreUnavailableError as error:
             # Only auto on macOS or Windows falls back, and only when config
             # decides the store: an environment variable would override the
@@ -555,14 +562,17 @@ def _store(
         return written
 
 
-def _locked() -> Any:
-    """The credential lock, with its failures as storage errors."""
-    return _LockGuard()
+def _locked(*, shared: bool = False) -> Any:
+    """The credential lock (shared for reads), with failures as storage errors."""
+    return _LockGuard(shared)
 
 
 class _LockGuard:
+    def __init__(self, shared: bool) -> None:
+        self._shared = shared
+
     def __enter__(self) -> None:
-        self._context = credential_lock()
+        self._context = credential_lock(shared=self._shared)
         try:
             self._context.__enter__()
         except InsecureFileError as error:
@@ -669,15 +679,24 @@ def _environment_login(environment: Mapping[str, str]) -> LoginCredential | None
 
 
 def _stored_login(api_url: str | None = None) -> LoginCredential | None:
-    """Read the stored login, or None when absent or corrupt."""
-    found = _read((LOGIN_ENTRY,), origin=current_origin(api_url), mode=store_mode())
+    """Read the stored login; a malformed one is an error, never skipped.
+
+    Skipping it would fall through to a stored full-scope project key.
+    """
+    origin = current_origin(api_url)
+    with _locked(shared=True):
+        found = _read((LOGIN_ENTRY,), origin=origin, mode=store_mode())
     raw = found.values[LOGIN_ENTRY]
     if raw is None or found.kind is None or found.location is None:
         return None
     try:
         return _parse_login(raw, found.kind, found.location)
     except (ValidationError, ValueError, TypeError):
-        return None
+        raise MalformedCredentialFileError(
+            f"The login stored in {found.location} for {origin} is not valid. "
+            f"Delete the {credential_store.KEYRING_SERVICE!r} entry "
+            f"{origin}/{LOGIN_ENTRY!s} there, then run solwyn login."
+        ) from None
 
 
 def stored_login(
@@ -705,7 +724,10 @@ def expired_login_date(api_url: str | None = None) -> datetime | None:
 
 def stored_project_key(api_url: str | None = None) -> ProjectKeyCredential | None:
     """Return the stored project key only, never the environment key."""
-    found = _read((API_KEY_ENTRY,), origin=current_origin(api_url), mode=store_mode())
+    with _locked(shared=True):
+        found = _read(
+            (API_KEY_ENTRY,), origin=current_origin(api_url), mode=store_mode()
+        )
     stored_key = found.values[API_KEY_ENTRY]
     if stored_key is None or found.kind is None:
         return None
@@ -736,17 +758,20 @@ def resolve_credential(
     """
     environment = os.environ if environ is None else environ
     _LAST_LOOKUP.set(None)
-    if purpose == "metering":
+    # The store choice and every read (login, then key) see one consistent
+    # state: no switch or write can land between them.
+    with _locked(shared=True):
+        if purpose == "metering":
+            return _project_key(environment, api_url)
+        try:
+            selection = auth_selection(environment)
+        except ValueError as error:
+            raise AuthError(str(error)) from None
+        if selection != "project_key":
+            login = _environment_login(environment) or stored_login(api_url=api_url)
+            if login is not None or selection == "login":
+                return login
         return _project_key(environment, api_url)
-    try:
-        selection = auth_selection(environment)
-    except ValueError as error:
-        raise AuthError(str(error)) from None
-    if selection != "project_key":
-        login = _environment_login(environment) or stored_login(api_url=api_url)
-        if login is not None or selection == "login":
-            return login
-    return _project_key(environment, api_url)
 
 
 def missing_credential_hint(purpose: CredentialClass = "user") -> str:
@@ -874,9 +899,10 @@ def store_pending_device(pending: PendingDevice, *, api_url: str | None = None) 
 
 def load_pending_device(api_url: str | None = None) -> PendingDevice | None:
     """Return the stored device login, or None when absent or corrupt."""
-    found = _read(
-        (PENDING_DEVICE_ENTRY,), origin=current_origin(api_url), mode=store_mode()
-    )
+    with _locked(shared=True):
+        found = _read(
+            (PENDING_DEVICE_ENTRY,), origin=current_origin(api_url), mode=store_mode()
+        )
     raw = found.values[PENDING_DEVICE_ENTRY]
     if raw is None:
         return None
@@ -905,64 +931,83 @@ class LogoutReport:
     stores: list[Cleared]
 
 
-def _scan_file(origin: str) -> tuple[Cleared, list[LoginCredential]]:
+@dataclass
+class _Scan:
+    """What one store holds for this API, read without changing anything."""
+
+    kind: StoreKind
+    location: str
+    logins: list[LoginCredential]
+    kept: list[str]
+    status: Literal["cleared", "absent", "unreachable", "unread"] = "cleared"
+
+
+def _scan_file(origin: str) -> _Scan:
     file = _file_store()
     try:
         section = file.section(origin)
     except _FILE_ERRORS:
         # Unreadable as a whole (malformed, insecure, I/O): keep it all.
-        return Cleared("file", file.describe(), "unread", ("credentials file",)), []
-    logins: list[LoginCredential] = []
-    kept: tuple[str, ...] = ()
+        return _Scan("file", file.describe(), [], ["credentials file"], "unread")
     raw = section.get(LOGIN_ENTRY)
-    if raw is not None:
-        try:
-            logins.append(_parse_login(raw, "file", file.describe()))
-        except (ValidationError, ValueError, TypeError):
-            kept = (LOGIN_ENTRY,)
-    try:
-        file.delete(origin, tuple(entry for entry in ENTRIES if entry not in kept))
-    except _FILE_ERRORS:
-        return Cleared("file", file.describe(), "unreachable", ENTRIES), logins
-    return (
-        Cleared("file", file.describe(), "unread" if kept else "cleared", kept),
-        logins,
+    if raw is None:
+        return _Scan("file", file.describe(), [], [])
+    # The document was validated whole, so a present login parses.
+    return _Scan(
+        "file", file.describe(), [_parse_login(raw, "file", file.describe())], []
     )
 
 
-def _scan_keyring(origin: str) -> tuple[Cleared, list[LoginCredential]]:
+def _scan_keyring(origin: str) -> _Scan:
     keyring_store = _keyring_store()
     where = keyring_store.describe()
-    logins: list[LoginCredential] = []
-    kept: list[str] = []
     try:
         raw = keyring_store.get(origin, LOGIN_ENTRY)
     except KeyringAbsentError:
-        return Cleared("keyring", where, "absent"), []
+        return _Scan("keyring", where, [], [], "absent")
     except StoreUnavailableError:
-        raw, kept = None, [LOGIN_ENTRY]  # Could not read: never delete it.
-    if raw is not None:
-        try:
-            logins.append(_parse_login(raw, "keyring", where))
-        except (ValidationError, ValueError, TypeError):
-            kept.append(LOGIN_ENTRY)
+        return _Scan("keyring", where, [], [LOGIN_ENTRY], "unread")
+    if raw is None:
+        return _Scan("keyring", where, [], [])
+    try:
+        return _Scan("keyring", where, [_parse_login(raw, "keyring", where)], [])
+    except (ValidationError, ValueError, TypeError):
+        return _Scan("keyring", where, [], [LOGIN_ENTRY], "unread")
+
+
+def _delete_file(origin: str, scan: _Scan) -> Cleared:
+    if scan.status == "unread":
+        return Cleared("file", scan.location, "unread", tuple(scan.kept))
+    try:
+        _file_store().delete(origin, ENTRIES)
+    except _FILE_ERRORS:
+        return Cleared("file", scan.location, "unreachable", ENTRIES)
+    return Cleared("file", scan.location)
+
+
+def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
+    if scan.status == "absent":
+        return Cleared("keyring", scan.location, "absent")
+    keyring_store = _keyring_store()
+    kept = list(scan.kept)
     failed = False
-    for username in [f"{origin}/{entry}" for entry in ENTRIES if entry not in kept]:
+    for entry in ENTRIES:
+        if entry in kept:
+            continue  # Never delete what could not be read (or revoked).
         try:
-            keyring_store.delete_raw(username)
+            keyring_store.delete(origin, entry)
         except StoreUnavailableError:
             failed = True
-            kept.append(username.rsplit("/", 1)[1])
+            kept.append(entry)
     for entry in LEGACY_ENTRIES:
         try:
             keyring_store.delete_raw(entry)
         except StoreUnavailableError:
             failed = True
-    if failed:
-        return Cleared("keyring", where, "unreachable", tuple(kept)), logins
-    return Cleared(
-        "keyring", where, "unread" if kept else "cleared", tuple(kept)
-    ), logins
+    status: Literal["cleared", "unreachable", "unread"] = (
+        "unreachable" if failed else "unread" if kept else "cleared"
+    )
+    return Cleared("keyring", scan.location, status, tuple(kept))
 
 
 def logout_everywhere(
@@ -970,25 +1015,27 @@ def logout_everywhere(
 ) -> LogoutReport:
     """Revoke and clear this API's logins in both stores, whatever the mode.
 
-    The one exception to store isolation. Runs as one transaction under the
-    credential lock: scan, revoke every login read, then delete. An entry that
-    exists but could not be read is never deleted and is reported; a login
-    that was read is cleared even if its revoke fails.
+    The one exception to store isolation, run as one transaction under the
+    exclusive credential lock: read both stores without changing anything,
+    revoke every login found, then delete. A kill at any point before the
+    delete leaves every not-yet-revoked token stored. An entry that could not
+    be read is never deleted or revoked; a login that was read is cleared even
+    if its revoke fails.
     """
     origin = current_origin(api_url)
     with _locked():
-        file_report, file_logins = _scan_file(origin)
-        keyring_report, keyring_logins = _scan_keyring(origin)
-        logins = file_logins + [
-            login
-            for login in keyring_logins
-            if all(login.bearer_value() != seen.bearer_value() for seen in file_logins)
-        ]
+        scans = [_scan_file(origin), _scan_keyring(origin)]
+        logins: list[LoginCredential] = []
+        for scan in scans:
+            for login in scan.logins:
+                if all(login.bearer_value() != seen.bearer_value() for seen in logins):
+                    logins.append(login)
         results = [revoke(login.bearer_value()) for login in logins]
+        stores = [_delete_file(origin, scans[0]), _delete_keyring(origin, scans[1])]
     return LogoutReport(
         logins_found=len(logins),
         revoked=all(results) if results else None,
-        stores=[file_report, keyring_report],
+        stores=stores,
     )
 
 
@@ -997,11 +1044,12 @@ def stored_entry_status(
 ) -> Literal["found", "missing", "incomplete", "unavailable"]:
     """Classify what is stored for this API, for diagnostics."""
     try:
-        found = _read(
-            (API_KEY_ENTRY, LOGIN_ENTRY),
-            origin=current_origin(api_url),
-            mode=store_mode(),
-        )
+        with _locked(shared=True):
+            found = _read(
+                (API_KEY_ENTRY, LOGIN_ENTRY),
+                origin=current_origin(api_url),
+                mode=store_mode(),
+            )
     except AuthError:
         return "unavailable"
     lookup = last_lookup()

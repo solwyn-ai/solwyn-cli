@@ -221,9 +221,20 @@ def test_an_existing_directory_we_own_is_tightened_to_0700(
 def test_a_directory_owned_by_another_user_is_refused(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path
 ) -> None:
+    from types import SimpleNamespace
+
     credentials_file.parent.mkdir(parents=True, exist_ok=True)
     other_uid = os.getuid() + 1
-    monkeypatch.setattr(credential_store.os, "getuid", lambda: other_uid)
+    real_stat = os.stat
+
+    def stat(path: Any, *args: Any, **kwargs: Any) -> Any:
+        status = real_stat(path, *args, **kwargs)
+        if Path(path) == credentials_file.parent:
+            return SimpleNamespace(st_uid=other_uid, st_mode=status.st_mode)
+        return status
+
+    # Only the credentials directory belongs to someone else (not the lock's).
+    monkeypatch.setattr(credential_store.os, "stat", stat)
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
 
     with pytest.raises(auth.InsecureCredentialFileError) as caught:

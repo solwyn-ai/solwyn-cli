@@ -92,6 +92,9 @@ def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
     """Resolve once; availability reads after absence never select another identity."""
     try:
         credential = auth.resolve_credential()
+    except auth.MalformedCredentialFileError:
+        # Present but not a valid credential: never silently skipped.
+        return None, CredentialCheck(status="incomplete", source=_stored_kind())
     except auth.CredentialStorageError:
         return None, CredentialCheck(status="unavailable", source=_stored_kind())
     except AuthError:

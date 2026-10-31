@@ -48,6 +48,12 @@ def memory_keyring(
     monkeypatch.setattr(credential_store, "backend_factory", lambda: backend)
     credentials = tmp_path_factory.mktemp("credentials") / "credentials.json"
     monkeypatch.setenv(credential_store.FILE_ENV, str(credentials))
+    # The credential lock lives in the per-user state dir; give each test its
+    # own (XDG_STATE_HOME reaches child processes; the patch covers macOS).
+    state = tmp_path_factory.mktemp("state")
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    monkeypatch.setattr(credential_store, "lock_directory", lambda: state / "solwyn")
+    monkeypatch.setattr(credential_store, "_STRANDED", False)
     for name in (credential_store.STORE_ENV, auth.TOKEN_ENV):
         monkeypatch.delenv(name, raising=False)
     auth._LAST_LOOKUP.set(None)

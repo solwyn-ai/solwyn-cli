@@ -70,10 +70,19 @@ Windows. `SOLWYN_CREDENTIALS_FILE` (an absolute path) overrides it. On Linux and
 macOS the directory is `0700` and the file `0600`, written atomically. The CLI
 refuses to read a file that other users can read, or that another user owns, and
 says how to fix it (`chmod 600 <path>`). It also refuses a file that is not a
-valid Solwyn credentials document, naming the file. Every change to stored
-credentials holds a lock (a file in the credentials directory) so two `solwyn`
-processes never interleave; a command that waits more than 10 seconds for it
-fails with a storage error.
+valid Solwyn credentials document, naming the file; every login, pending login
+and project key in it must be complete. A stored login that is not valid, in
+the file or the keychain, is an error, never skipped in favor of a stored
+project key.
+
+Every read and change of stored credentials holds one per-user lock,
+`credentials.lock` in the user state directory (`~/.local/state/solwyn/` on
+Linux, `$XDG_STATE_HOME/solwyn/` when set), whatever `SOLWYN_CREDENTIALS_FILE`
+says. Reads share it; changes hold it alone, so two `solwyn` processes never
+interleave. A command that waits more than 10 seconds for it fails with a
+storage error. If a keychain write does not finish within 5 seconds, the
+command fails and the process exits still holding the lock, so the unfinished
+write can never land after another process has moved on.
 
 The file is plaintext protected only by those permissions. Anything running as
 your user can read it, including backup tools and an AI agent's file-reading
@@ -168,16 +177,21 @@ next in line. `whoami` shows where its credential came from (`Stored in`).
 
 `solwyn logout` is the one exception to store isolation. Whatever
 `SOLWYN_CREDENTIAL_STORE` or `--store` says, it looks for this API's login in
-both the credentials file and the keychain, revokes every login it can read on
-the server (one attempt each, 5 seconds), then deletes this API's entries and
-the 0.3.0 entries from both stores, all while holding the credential lock. It
-reports each store with a `status`:
+both the credentials file and the keychain without changing anything, revokes
+every login it can read on the server (one attempt each, 5 seconds), and only
+then deletes this API's entries and the 0.3.0 entries from both stores, all
+while holding the credential lock. If it is stopped before the delete, every
+token it had not yet revoked is still stored. It reports each store with a
+`status`:
 
 - `cleared`: nothing of this API is left there.
-- `absent`: no keyring exists on this machine (keyring has no usable backend,
-  the Secret Service or KWallet is not installed, or there is no D-Bus session).
-- `unreachable`: the keyring exists but is locked, refused the connection or did
-  not answer within 5 seconds; its entries were kept.
+- `absent`: no keyring backend is usable here, the same case in which the
+  `keyring` library falls back to its fail backend (on Linux: no Secret Service
+  or KWallet reachable, as on a headless machine without a D-Bus session).
+- `unreachable`: a keyring backend resolved but did not work: locked, denied,
+  refused a delete (a delete is only trusted once a read finds the entry gone),
+  no session bus in this process for a resolved Secret Service, or no answer
+  within 5 seconds. Its entries were kept.
 - `unread`: an entry exists but could not be read (for example a login entry
   the keychain will not return, or a malformed credentials file). It is never
   deleted or revoked; `kept` names it.

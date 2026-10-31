@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeAlias, TypeVar
 from urllib.parse import urlsplit
 
-from platformdirs import user_data_dir
+from platformdirs import user_data_dir, user_state_dir
 
 from solwyn_cli.config import _fsync_parent_directory
 
@@ -60,7 +60,7 @@ FILE_ENV = "SOLWYN_CREDENTIALS_FILE"
 KEYRING_SERVICE = "solwyn-cli"
 KEYRING_TIMEOUT_SECONDS = 5.0
 LOCK_TIMEOUT_SECONDS = 10.0
-LOCK_NAME = ".credentials.lock"
+LOCK_NAME = "credentials.lock"
 FILE_VERSION = 1
 
 LOGIN_ENTRY = "login"
@@ -93,6 +93,16 @@ class KeyringAbsentError(StoreUnavailableError):
 
 class LockTimeoutError(StoreUnavailableError):
     """Another process held the credential lock past the bounded wait."""
+
+
+class KeyringTimeoutError(StoreUnavailableError):
+    """A keyring call did not finish within KEYRING_TIMEOUT_SECONDS."""
+
+
+STRANDED_MESSAGE = (
+    "A system keyring call did not finish, so this process stopped changing "
+    "stored credentials. Run the command again."
+)
 
 
 InsecureReason: TypeAlias = Literal[
@@ -195,47 +205,80 @@ def private_directory(directory: Path, *, create: bool) -> bool:
     return True
 
 
-# --- The credential lock ----------------------------------------------------
+# --- The credential lock ---------------------------------------------------
 
 # One process-wide lock (threads: MCP tool calls run in worker threads) plus
 # the cross-process advisory lock. Re-entrant within a thread, so a transaction
-# may call helpers that take the lock again.
+# may call helpers that take the lock again. Reads take it shared, writes
+# exclusive (Windows has no shared mode, so reads are exclusive there too).
 _PROCESS_LOCK = threading.RLock()
 _HELD = threading.local()
+# Set once a keyring write or delete timed out: its worker thread may still
+# change the keyring, so this process never releases the lock again and every
+# later transaction fails. The thread dies with the process.
+_STRANDED = False
+
+
+def stranded() -> bool:
+    """Whether a keyring write timed out in this process (see above)."""
+    return _STRANDED
+
+
+def lock_directory() -> Path:
+    """One stable per-user directory for the lock.
+
+    Never derived from SOLWYN_CREDENTIALS_FILE: every process touching this
+    user's keychain, config or credentials file must meet on the same lock.
+    """
+    return Path(user_state_dir("solwyn", appauthor=False, roaming=False))
 
 
 def lock_path() -> Path:
-    return credentials_path().parent / LOCK_NAME
+    return lock_directory() / LOCK_NAME
 
 
-def _open_lock(path: Path) -> int:
+def _open_lock(path: Path, *, shared: bool) -> int | None:
+    """Open the lock file; None only for a read where no writer could exist."""
     flags = getattr(os, "O_BINARY", 0)
     if os.name != "nt":
         flags |= os.O_NOFOLLOW | os.O_CLOEXEC
     try:
         private_directory(path.parent, create=True)
-        try:
-            return os.open(path, os.O_RDWR | os.O_CREAT | flags, 0o600)
-        except PermissionError:
-            # A read-only directory may still hold an existing lock file;
-            # flock works on a read-only descriptor.
-            return os.open(path, os.O_RDONLY | flags)
     except InsecureFileError:
         raise
     except OSError:
+        if shared and not path.parent.exists():
+            # Nobody can create the lock here, so no writer can hold it.
+            return None
         raise StoreUnavailableError(
-            f"Could not open the credential lock {path}. Check that the "
-            "credentials directory is writable."
+            f"Could not open the credential lock {path}. Check that "
+            f"{path.parent} is writable."
+        ) from None
+    try:
+        try:
+            return os.open(path, os.O_RDWR | os.O_CREAT | flags, 0o600)
+        except PermissionError:
+            # flock works on a read-only descriptor of an existing lock file.
+            return os.open(path, os.O_RDONLY | flags)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise StoreUnavailableError(
+                f"The credential lock {path} is a symbolic link. Remove it."
+            ) from None
+        raise StoreUnavailableError(
+            f"Could not open the credential lock {path}. Check that "
+            f"{path.parent} is writable."
         ) from None
 
 
-def _try_lock(descriptor: int) -> bool:
+def _try_lock(descriptor: int, *, shared: bool) -> bool:
     try:
         if os.name == "nt":
             os.lseek(descriptor, 0, os.SEEK_SET)
             msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
         else:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+            fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
     except OSError as error:
         if error.errno in (
             errno.EAGAIN,
@@ -257,9 +300,13 @@ def _unlock(descriptor: int) -> None:
 
 
 @contextmanager
-def credential_lock() -> Iterator[None]:
-    """Hold the exclusive credential lock, waiting at most LOCK_TIMEOUT_SECONDS."""
+def credential_lock(*, shared: bool = False) -> Iterator[None]:
+    """Hold the credential lock (shared for reads), waiting a bounded time."""
+    if _STRANDED:
+        raise KeyringTimeoutError(STRANDED_MESSAGE)
     if getattr(_HELD, "depth", 0):
+        if not shared and getattr(_HELD, "shared", False):
+            raise RuntimeError("cannot upgrade a shared credential lock")
         _HELD.depth += 1
         try:
             yield
@@ -275,28 +322,41 @@ def credential_lock() -> Iterator[None]:
     if not _PROCESS_LOCK.acquire(timeout=LOCK_TIMEOUT_SECONDS):
         raise timeout_error
     try:
-        descriptor = _open_lock(path)
+        descriptor = _open_lock(path, shared=shared)
+        if descriptor is None:
+            _HELD.depth, _HELD.shared = 1, True
+            try:
+                yield
+            finally:
+                _HELD.depth = 0
+            return
+        release = True
         try:
             while True:
                 try:
-                    if _try_lock(descriptor):
+                    if _try_lock(descriptor, shared=shared and os.name != "nt"):
                         break
                 except OSError:
                     raise StoreUnavailableError(f"Could not lock {path}.") from None
                 if time.monotonic() >= deadline:
                     raise timeout_error
                 time.sleep(0.02)
-            _HELD.depth = 1
+            _HELD.depth, _HELD.shared = 1, shared
             try:
                 yield
             finally:
                 _HELD.depth = 0
-                try:
-                    _unlock(descriptor)
-                except OSError:
-                    pass  # Closing the descriptor releases it as well.
+                # A keyring write that timed out may still land: keep the lock
+                # (and its descriptor) until the process exits.
+                release = not _STRANDED
+                if release:
+                    try:
+                        _unlock(descriptor)
+                    except OSError:
+                        pass  # Closing the descriptor releases it as well.
         finally:
-            os.close(descriptor)
+            if release:
+                os.close(descriptor)
     finally:
         _PROCESS_LOCK.release()
 
@@ -305,21 +365,40 @@ def credential_lock() -> Iterator[None]:
 
 
 def _valid_section(section: Any) -> bool:
+    """Every entry present is complete and well typed; null is never valid."""
     if not isinstance(section, dict) or not set(section) <= set(ENTRIES):
         return False
-    login = section.get(LOGIN_ENTRY)
-    if login is not None and not (
-        isinstance(login, dict)
-        and set(login) == {"token", "meta"}
-        and isinstance(login["token"], str)
-        and isinstance(login["meta"], dict)
-    ):
+    from pydantic import ValidationError
+
+    from solwyn_cli import auth
+    from solwyn_cli._vendor.validation import validate_project_key_format
+
+    try:
+        if LOGIN_ENTRY in section:
+            login = section[LOGIN_ENTRY]
+            if not isinstance(login, dict) or set(login) != {"token", "meta"}:
+                return False
+            if not isinstance(login["token"], str) or not isinstance(
+                login["meta"], dict
+            ):
+                return False
+            auth.LoginCredential(
+                token=login["token"],
+                meta=auth.LoginMetadata.model_validate(login["meta"]),
+            )
+        if PENDING_DEVICE_ENTRY in section:
+            pending = section[PENDING_DEVICE_ENTRY]
+            if not isinstance(pending, dict):
+                return False
+            auth.PendingDevice.model_validate(pending)
+        if API_KEY_ENTRY in section:
+            key = section[API_KEY_ENTRY]
+            if not isinstance(key, str):
+                return False
+            validate_project_key_format(key)
+    except (ValidationError, ValueError, TypeError):
         return False
-    pending = section.get(PENDING_DEVICE_ENTRY)
-    if pending is not None and not isinstance(pending, dict):
-        return False
-    key = section.get(API_KEY_ENTRY)
-    return key is None or isinstance(key, str)
+    return True
 
 
 def _valid_document(document: Any) -> bool:
@@ -472,8 +551,13 @@ class FileStore:
 # --- The keyring ------------------------------------------------------------
 
 
-def _with_timeout(call: Callable[[], T]) -> T:
-    """Run one keyring call, giving up after KEYRING_TIMEOUT_SECONDS."""
+def _with_timeout(call: Callable[[], T], *, may_write: bool = False) -> T:
+    """Run one keyring call, giving up after KEYRING_TIMEOUT_SECONDS.
+
+    A write or delete that times out strands the process (see ``_STRANDED``):
+    its worker may still change the keyring, so the lock is never released.
+    """
+    global _STRANDED
     outcome: dict[str, Any] = {}
 
     def run() -> None:
@@ -487,7 +571,11 @@ def _with_timeout(call: Callable[[], T]) -> T:
     worker.start()
     worker.join(KEYRING_TIMEOUT_SECONDS)
     if worker.is_alive():
-        raise StoreUnavailableError("The system keyring did not answer within 5 s.")
+        if may_write:
+            _STRANDED = True
+        raise KeyringTimeoutError(
+            f"The system keyring did not answer within {KEYRING_TIMEOUT_SECONDS:g} s."
+        )
     if "error" in outcome:
         raise outcome["error"]
     return outcome["value"]
@@ -498,38 +586,30 @@ _REFUSED_MODULES = ("keyrings.alt", "keyring.backends.fail", "keyring.backends.n
 
 
 def _linux_backend() -> Any:
-    """Secret Service, then KWallet; classify why neither is usable.
+    """Secret Service, then KWallet: the first viable one, as keyring picks.
 
-    No D-Bus session address, or the libraries or the service not installed,
-    means no keyring exists here: absent. A session bus that refuses the
-    connection or errors means a keyring may hold entries: unreachable.
+    When neither is viable, keyring itself resolves its fail backend (checked
+    on Linux: no D-Bus session address, or an address with no bus behind it).
+    That is the only "absent". A viable backend whose calls then fail is
+    "unreachable", whatever the cause (locked, refused, missing session).
     """
     from keyring.backends import SecretService, kwallet
 
-    if not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
-        raise KeyringAbsentError(
-            "The system keyring is not available (no D-Bus session)."
-        )
-    unreachable = False
     for candidate in (SecretService.Keyring, kwallet.DBusKeyring):
         try:
-            candidate.priority  # noqa: B018 - raises when unusable.
-        except Exception as error:  # noqa: BLE001 - classified below.
-            message = str(error)
-            missing = (
-                message.startswith("SecretStorage")  # Library not installed.
-                or "neither running nor activatable" in message  # No service.
-                or "dbus" in message.lower()
-                and "not installed" in message
-            )
-            unreachable = unreachable or not missing
+            candidate.priority  # noqa: B018 - raises when not viable.
+        except Exception:  # noqa: BLE001 - not viable here.
             continue
+        if candidate is SecretService.Keyring and not os.environ.get(
+            "DBUS_SESSION_BUS_ADDRESS"
+        ):
+            # Resolved, but this process lost the session bus: the keyring
+            # still exists and may hold entries.
+            raise StoreUnavailableError(
+                "The system keyring is not reachable from this process (no "
+                "DBUS_SESSION_BUS_ADDRESS)."
+            )
         return candidate()
-    if unreachable:
-        raise StoreUnavailableError(
-            "The system keyring is not reachable (the D-Bus session refused the "
-            "connection)."
-        )
     raise KeyringAbsentError("The system keyring is not available.")
 
 
@@ -582,12 +662,12 @@ class KeyringStore:
             self._backend = backend
         return self._backend
 
-    def _call(self, operation: Callable[[Any], T]) -> T:
+    def _call(self, operation: Callable[[Any], T], *, may_write: bool = False) -> T:
         from keyring.errors import NoKeyringError
 
         try:
             backend = self._get_backend()
-            return _with_timeout(lambda: operation(backend))
+            return _with_timeout(lambda: operation(backend), may_write=may_write)
         except StoreUnavailableError:
             raise
         except NoKeyringError:
@@ -604,19 +684,32 @@ class KeyringStore:
 
     def set_raw(self, username: str, value: str) -> None:
         self._call(
-            lambda backend: backend.set_password(KEYRING_SERVICE, username, value)
+            lambda backend: backend.set_password(KEYRING_SERVICE, username, value),
+            may_write=True,
         )
 
     def delete_raw(self, username: str) -> None:
+        """Delete one entry; absent counts only if a read then finds nothing.
+
+        PasswordDeleteError also means denied or cancelled (macOS, KWallet), so
+        it is not proof of absence.
+        """
         from keyring.errors import PasswordDeleteError
 
-        def delete(backend: Any) -> None:
+        def delete(backend: Any) -> bool:
             try:
                 backend.delete_password(KEYRING_SERVICE, username)
             except PasswordDeleteError:
-                pass  # Already absent.
+                return False
+            return True
 
-        self._call(delete)
+        if (
+            not self._call(delete, may_write=True)
+            and self.get_raw(username) is not None
+        ):
+            raise StoreUnavailableError(
+                "The system keyring refused to delete a Solwyn entry."
+            )
 
     def get(self, origin: str, entry: str) -> str | None:
         return self.get_raw(f"{origin}/{entry}")

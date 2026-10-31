@@ -22,6 +22,9 @@ FORWARDED_ENV_VARS = (
     "SOLWYN_CREDENTIALS_FILE",
     "XDG_DATA_HOME",
     "XDG_CONFIG_HOME",
+    # The credential lock lives in the state dir; a server must meet the shell
+    # on the same lock.
+    "XDG_STATE_HOME",
 )
 # The Linux keyring (Secret Service) is reached over the desktop session bus.
 LINUX_KEYRING_ENV_VARS = ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
