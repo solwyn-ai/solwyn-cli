@@ -155,3 +155,20 @@ def test_engine_redacts_human_tables_and_errors() -> None:
     for secret in (LEAKED_TOKEN, DEVICE_CODE):
         assert secret not in rendered
     assert rendered.count("[REDACTED]") == 4
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"_{LEAKED_TOKEN}_",
+        f"name_{DEVICE_CODE}_suffix",
+        f"x{LEAKED_TOKEN}9",
+        f"{DEVICE_CODE}abc",
+    ],
+)
+def test_tokens_wrapped_in_word_characters_are_redacted(text: str) -> None:
+    from solwyn_cli.errors import redact_secrets
+
+    redacted = redact_secrets({"name": text})
+    assert LEAKED_TOKEN not in json.dumps(redacted)
+    assert DEVICE_CODE not in json.dumps(redacted)
