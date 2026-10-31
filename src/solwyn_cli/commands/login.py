@@ -58,7 +58,7 @@ LOGIN_HELP = help_contract(
         "0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or credential "
         "storage; 6 still waiting for browser approval"
     ),
-    schema="solwyn.login.v2",
+    schema="solwyn.login.v2; with --no-store --json: solwyn.login.token.v1",
     guidance=(
         "Prints a URL and a code on stderr; approve in a browser, where you can also sign up.",
         "The CLI never opens a browser, so SSH and agent sandboxes work the same way.",

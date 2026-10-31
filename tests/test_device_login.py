@@ -826,6 +826,7 @@ def test_no_store_prints_the_token_once_and_stores_nothing(
     assert ISSUED_TOKEN not in result.stderr
     assert result.stdout.count(ISSUED_TOKEN) == 1
     if output == "json":
+        assert_matches_golden(result.stdout, GOLDEN_DIR / "login-token.json")
         document = json.loads(result.stdout)
         assert document["schema"] == "solwyn.login.token.v1"
         assert document["token"] == ISSUED_TOKEN

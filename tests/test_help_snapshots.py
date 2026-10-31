@@ -509,7 +509,7 @@ HELP_CONTRACTS = {
             "0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or "
             "credential storage; 6 still waiting for browser approval"
         ),
-        "schema": "solwyn.login.v2",
+        "schema": "solwyn.login.v2; with --no-store --json: solwyn.login.token.v1",
     },
     ("logout",): {
         "endpoint": (

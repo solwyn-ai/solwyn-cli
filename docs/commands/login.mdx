@@ -192,7 +192,7 @@ Usage: solwyn login [OPTIONS]
 Endpoint: POST /oauth/device_authorization and POST /oauth/token, or a local credential store write with --with-key
 Auth: none
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or credential storage; 6 still waiting for browser approval
-JSON schema: solwyn.login.v2
+JSON schema: solwyn.login.v2; with --no-store --json: solwyn.login.token.v1
 Prints a URL and a code on stderr; approve in a browser, where you can also sign up.
 The CLI never opens a browser, so SSH and agent sandboxes work the same way.
 Default --wait is 600 s with a terminal, else 90 s; --wait 0 starts and returns.

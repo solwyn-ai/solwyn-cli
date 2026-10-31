@@ -5085,6 +5085,10 @@
       "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.login.v2",
+      "json_schemas": [
+        "solwyn.login.v2",
+        "solwyn.login.token.v1"
+      ],
       "name": "login",
       "output_kind": "json-envelope",
       "params": [
@@ -8393,6 +8397,23 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.keys-show.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "account_name",
+        "credential_id",
+        "email",
+        "expires_at",
+        "label",
+        "role",
+        "schema",
+        "scope",
+        "token"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.login.token.v1",
       "universal_error_envelope": false
     },
     {

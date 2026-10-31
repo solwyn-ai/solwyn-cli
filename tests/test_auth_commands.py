@@ -287,7 +287,10 @@ def test_logout_clear_failure_is_structured_exit_three_without_secrets(
 def test_whoami_project_key_uses_configured_project_without_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    # Resolved the real way, so the golden shows what the CLI prints.
+    credential = auth.resolve_credential(
+        {"SOLWYN_API_KEY": VALID_KEY}, purpose="metering"
+    )
     monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
     monkeypatch.setattr(whoami_module, "SolwynClient", FakeClient)
 
@@ -472,7 +475,10 @@ def test_auth_command_goldens_never_contain_synthetic_secrets() -> None:
 def test_whoami_table_and_no_color_match_golden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    # Resolved the real way, so the golden shows what the CLI prints.
+    credential = auth.resolve_credential(
+        {"SOLWYN_API_KEY": VALID_KEY}, purpose="metering"
+    )
     monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
 
     result = runner.invoke(app, ["--no-color", "-p", "proj_alpha", "whoami"])
