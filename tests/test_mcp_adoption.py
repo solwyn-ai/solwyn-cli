@@ -301,5 +301,5 @@ def test_wheel_runner_is_a_delivered_acceptance_command():
     assert (ROOT / "scripts/mcp_wheel_smoke.py").is_file()
 
 
-def test_registry_draft_validator_is_a_delivered_release_check():
+def test_registry_validator_is_a_delivered_release_check():
     assert (ROOT / "scripts/validate_mcp_registry.py").is_file()

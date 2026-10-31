@@ -936,6 +936,46 @@ def test_non_tty_jwt_project_ambiguity_is_usage_error(
     assert "--project" in json.loads(result.stderr)["hint"]
 
 
+def test_non_tty_jwt_without_projects_names_the_create_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: False)
+    FakeClient.responses = [httpx.Response(200, json=[])]
+
+    result = _invoke()
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["code"] == "project_required"
+    assert error["detail"] == {
+        "next_commands": [
+            "solwyn projects create --name <name> --store-key",
+            "solwyn --project <project_id> init",
+        ]
+    }
+    assert "solwyn projects create --name <name> --store-key" in error["hint"]
+    assert [
+        request for client in FakeClient.instances for request in client.requests
+    ] == [("GET", "/api/v1/projects", {})]
+
+
+def test_non_tty_create_hint_keeps_agents_and_reaches_human_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: False)
+    FakeClient.responses = [httpx.Response(200, json=[])]
+
+    result = runner.invoke(app, ["init", "--agents"])
+
+    assert result.exit_code == 2
+    assert "project_required" in result.stderr
+    assert "solwyn projects create --name <name> --store-key" in result.stderr
+    assert "solwyn --project <project_id> init --agents" in result.stderr
+
+
 def test_explicit_jwt_project_is_validated_against_project_list(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -2,6 +2,18 @@
 
 Use Solwyn to enforce and attribute caller-owned AI-provider spend without exposing credentials or duplicating reservations. This contract follows Solwyn SDK 0.6 semantics.
 
+## Changes only a human makes
+
+- Never raise a budget cap.
+- Never switch enforcement from `hard_deny` to `alert_only`.
+- Never pause or remove budget rules.
+- Never rotate or revoke keys, and never change billing or the plan.
+- If one of these changes looks necessary, stop and ask the human.
+
+## What Solwyn meters
+
+- The Solwyn MCP server meters the calls your code makes. It does not meter this coding assistant's own model usage.
+
 ## Polling and reservations
 
 - Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget.

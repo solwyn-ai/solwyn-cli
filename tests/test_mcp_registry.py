@@ -1,15 +1,18 @@
-"""Offline schema validity is separate from release/namespace ownership."""
+"""Offline server.json validity is separate from namespace ownership."""
 
+import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DRAFT = ROOT / "docs/registry/server.draft.json"
+SERVER = ROOT / "server.json"
 
 
 def validate(path):
@@ -17,7 +20,7 @@ def validate(path):
         [
             sys.executable,
             str(ROOT / "scripts/validate_mcp_registry.py"),
-            "--draft",
+            "--server",
             str(path),
         ],
         capture_output=True,
@@ -26,25 +29,39 @@ def validate(path):
     )
 
 
-def test_registry_draft_validates_offline():
-    result = validate(DRAFT)
+def test_server_json_validates_offline():
+    result = validate(SERVER)
     assert result.returncode == 0, result.stderr
-    assert "Unpublished Registry draft shape and metadata verified" in result.stderr
+    assert "server.json shape, README marker and release metadata verified" in (
+        result.stderr
+    )
     assert result.stdout == ""
+
+
+def test_server_json_matches_the_package_release():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    server = json.loads(SERVER.read_text())
+    (package,) = server["packages"]
+
+    assert server["version"] == project["version"]
+    assert package["version"] == project["version"]
+    assert package["identifier"] == project["name"]
+    assert project["readme"] == "README.md"
+    assert f"<!-- mcp-name: {server['name']} -->" in (ROOT / "README.md").read_text()
 
 
 @pytest.mark.parametrize(
     "mutation",
     ["version", "namespace", "secret", "transport", "profile", "order", "description"],
 )
-def test_invalid_or_misleading_draft_fails(tmp_path, mutation):
-    assert DRAFT.is_file(), "Registry draft is missing"
-    draft = json.loads(DRAFT.read_text())
-    package = draft["packages"][0]
+def test_invalid_or_misleading_server_json_fails(tmp_path, mutation):
+    assert SERVER.is_file(), "server.json is missing"
+    server = json.loads(SERVER.read_text())
+    package = server["packages"][0]
     if mutation == "version":
         package["version"] = "9.9.9"
     elif mutation == "namespace":
-        draft["name"] = "io.github.someone/solwyn"
+        server["name"] = "io.github.someone/solwyn"
     elif mutation == "secret":
         package["environmentVariables"][0]["default"] = "PRIVATE_KEY_CANARY"
     elif mutation == "transport":
@@ -53,32 +70,27 @@ def test_invalid_or_misleading_draft_fails(tmp_path, mutation):
             "url": "https://example.test",
         }
     elif mutation == "profile":
-        package["packageArguments"][-1]["value"] = "guardrails"
+        package["packageArguments"][-1]["value"] = "read"
     elif mutation == "order":
         package["packageArguments"].reverse()
     else:
-        draft["description"] = "x" * 101
+        server["description"] = "x" * 101
     path = tmp_path / "candidate.json"
-    path.write_text(json.dumps(draft))
+    path.write_text(json.dumps(server))
     result = validate(path)
     assert result.returncode == 1
     assert "PRIVATE_KEY_CANARY" not in result.stderr
 
 
 @pytest.mark.parametrize(
-    "state",
+    "readme",
     [
-        "published_package",
-        "ownership_marker",
-        "registry_checkpoint",
-        "namespace_checkpoint",
+        "Install the published package: uv tool install solwyn-cli\n",
+        "<!-- mcp-name: io.github.someone/solwyn -->\n",
+        "mcp-name: ai.solwyn/solwyn-other\n",
     ],
 )
-def test_registry_publication_guard_is_independent_of_pypi(tmp_path, state):
-    """A live package is compatible with a draft; Registry claims need review."""
-    import importlib.util
-    import shutil
-
+def test_readme_must_carry_the_exact_ownership_marker(tmp_path, readme):
     spec = importlib.util.spec_from_file_location(
         "registry_validator", ROOT / "scripts/validate_mcp_registry.py"
     )
@@ -88,23 +100,8 @@ def test_registry_publication_guard_is_independent_of_pypi(tmp_path, state):
     scratch.mkdir()
     shutil.copytree(ROOT / "docs/registry", scratch / "docs/registry")
     shutil.copyfile(ROOT / "pyproject.toml", scratch / "pyproject.toml")
-    notes = (ROOT / "docs/mcp-release.md").read_text()
-    readme = "Install the published package: uv tool install solwyn-cli\n"
-    if state == "ownership_marker":
-        readme += "<!-- mcp-name: ai.solwyn/solwyn -->\n"
-    elif state == "registry_checkpoint":
-        notes = notes.replace(
-            "**Unpublished Registry draft.**", "Published Registry listing."
-        )
-    elif state == "namespace_checkpoint":
-        notes = notes.replace(
-            "namespace ownership is **unverified**.", "Namespace verified."
-        )
+    shutil.copyfile(SERVER, scratch / "server.json")
     (scratch / "README.md").write_text(readme)
-    (scratch / "docs/mcp-release.md").write_text(notes)
     validator.ROOT = scratch
-    if state == "published_package":
-        validator.validate_draft(scratch / "docs/registry/server.draft.json")
-    else:
-        with pytest.raises(ValueError, match="Reassess draft state"):
-            validator.validate_draft(scratch / "docs/registry/server.draft.json")
+    with pytest.raises(ValueError, match="ownership marker"):
+        validator.validate_server(scratch / "server.json")

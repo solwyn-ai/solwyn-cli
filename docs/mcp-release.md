@@ -1,11 +1,11 @@
 # MCP release preparation
 
-**Unpublished Registry draft.** This checkout prepares `solwyn-cli` 0.3.0; verify its
-PyPI publication separately (0.2.0 was verified on PyPI on 2026-10-14). The
-[Registry draft](registry/server.draft.json) proposes `ai.solwyn/solwyn`;
-namespace ownership is **unverified**. Neither local validation nor MCP discovery proves
-Registry publication, ownership, safety certification or availability of checkout-only
-features in a published wheel.
+The Registry entry is [`server.json`](../server.json) at the repository root, named
+`ai.solwyn/solwyn`. It is not published yet. The published 0.3.0 package predates
+the README ownership marker, so the next CLI release must ship before the Registry
+publish. Neither local validation nor MCP discovery proves Registry publication,
+ownership, safety certification or availability of checkout-only features in a
+published wheel.
 
 ## Validate locally
 
@@ -59,59 +59,86 @@ releasing. The kit neither runs providers nor supplies production rollout proof.
    fallback from the durable MCP batch journal to the ambiguous legacy route.
    A successful source test is not evidence the deployment contains these paths.
 3. Choose the actual package version and update package, locks where needed,
-   draft metadata and docs together. Validate the exact final wheel and both
+   `server.json` and docs together. Validate the exact final wheel and both
    entrypoints from outside the checkout. Distinguish a prepared checkout from
    the published distribution; update install guidance only after the new release is verified.
-4. Verify namespace ownership before adding any package README ownership marker.
-   A domain namespace such as `ai.solwyn/*` needs the Registry's domain proof;
-   package-index ownership is a separate prerequisite. If the namespace changes,
-   update the draft and corresponding validator expectation before release.
-5. Only in an authorized release session, publish the reviewed package artifact,
+4. Only in an authorized release session, publish the reviewed package artifact,
    verify the published wheel's metadata/content and clean-install behavior,
-   then submit the matching Registry metadata. None of these steps is performed
-   by the adoption-kit task.
+   then publish the matching Registry entry as described below.
 
-The eventual publication commands are `uv publish` for the reviewed `dist`
-artifacts and the Registry publisher's `mcp-publisher publish` from the directory
-containing the final `server.json`. Obtain credentials through the release
-system, and follow the publisher's current authentication/namespace verification
-instructions. Do not run these commands for `server.draft.json` or infer
-that the draft is an approved Registry listing or that a published wheel
-contains changes made after its release.
+## Publish to the MCP Registry
+
+Run these steps only in an authorized release session, after the PyPI release
+whose README carries the marker is live.
+
+1. Keep versions in sync. `server.json` `version` and `packages[0].version` must
+   equal `pyproject.toml`'s version. The validator and
+   `tests/test_mcp_registry.py` fail otherwise. A published Registry version
+   cannot change or be unpublished. To fix only Registry metadata for package
+   `X.Y.Z`, publish server version `X.Y.Z-1` with the package version unchanged.
+2. Prove ownership of `solwyn.ai` once. Generate an Ed25519 key and publish its
+   public half as a TXT record on the apex domain:
+
+   ```sh
+   openssl genpkey -algorithm Ed25519 -out key.pem
+   PUBLIC_KEY="$(openssl pkey -in key.pem -pubout -outform DER | tail -c 32 | base64)"
+   echo "solwyn.ai. IN TXT \"v=MCPv1; k=ed25519; p=${PUBLIC_KEY}\""
+   ```
+
+   Keep `key.pem` in the release secret store, never in the repository. Wait for
+   the record to propagate.
+3. Log in with the DNS proof:
+
+   ```sh
+   PRIVATE_KEY="$(openssl pkey -in key.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n')"
+   mcp-publisher login dns --domain solwyn.ai --private-key "${PRIVATE_KEY}"
+   ```
+
+4. From the repository root, check and publish. `mcp-publisher` reads
+   `./server.json` by default:
+
+   ```sh
+   uv run --no-sync python scripts/validate_mcp_registry.py
+   mcp-publisher validate
+   mcp-publisher publish
+   ```
+
+5. Confirm the listing appears in the Registry search for `ai.solwyn/solwyn`.
+
+Install `mcp-publisher` with `brew install mcp-publisher` or from the Registry's
+GitHub releases. See the official [package types](https://modelcontextprotocol.io/registry/package-types),
+[authentication](https://modelcontextprotocol.io/registry/authentication) and
+[versioning](https://modelcontextprotocol.io/registry/versioning) pages.
 
 ## Registry schema and ownership marker
 
 The vendored [schema](registry/server.schema.2025-12-11.json) is the official
 [stable Registry schema 2025-12-11](https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json),
-fetched on 2026-09-07. Its SHA256 is
+fetched on 2026-09-07 and rechecked as the newest released schema on 2026-10-30. Its SHA256 is
 `3fba09590c99f61735d234822279f4223fab9e300c0a81e81c91ab62a4114de0`.
 The adjacent checksum file guards local changes. The validator uses this local
 Draft7 schema and checks package/version/stdio/argument/secret semantics offline.
 Registry schema date **2025-12-11** is unrelated to MCP protocol **2026-07-28**
 or Python/TypeScript SDK package versions. No remote schema lookup is needed.
 
-The draft declares the PyPI identifier `solwyn-cli`, whose same-name console
-alias allows a Registry installer to invoke it. `--project` is a required
-non-secret named argument before `mcp`; `--profile read` follows it. The optional
+`server.json` declares the PyPI identifier `solwyn-cli`, whose same-name console
+alias lets `uvx solwyn-cli` invoke it. `--project` is a required non-secret named
+argument before `mcp`; `--profile guardrails` follows it, matching the default
+`solwyn mcp` surface. The optional
 secret `SOLWYN_API_KEY` has no value/default; omission uses the same OS account's
 keychain. There is no hosted transport or public repository URL invented for
 the private checkout.
 
-For the proposed namespace **only after ownership is verified**, the eventual
-package README marker would be:
+The Registry verifies PyPI ownership by finding `mcp-name: <server name>` in the
+package description, which PyPI renders from `README.md` (`readme` in
+`pyproject.toml`). The README carries it as a hidden comment:
 
 ```html
 <!-- mcp-name: ai.solwyn/solwyn -->
 ```
 
-That marker is intentionally absent from the package README today. The offline
-validator enforces this explicit unpublished Registry checkpoint and the absent
-README ownership marker, independently of PyPI package availability. Transition
-its tests and checks deliberately when preparing the verified release, rather than treating
-this draft as a ready-to-submit listing. The final marker must exactly match
-the verified Registry name. See official [Registry package types](https://modelcontextprotocol.io/registry/package-types),
-[authentication](https://modelcontextprotocol.io/registry/authentication), and
-[publisher quickstart](https://modelcontextprotocol.io/registry/quickstart).
+The offline validator requires this exact marker and fails if it drifts from
+`server.json`'s `name`.
 
 Remote HTTP hosting, MCP Apps, Tasks, Skills extensions and lease coordination
 remain follow-up work. This release kit adds none of those capabilities.

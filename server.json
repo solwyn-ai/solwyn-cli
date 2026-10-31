@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "ai.solwyn/solwyn",
   "title": "Solwyn",
-  "description": "Inspect Solwyn budgets and attribute model spend through local MCP tools.",
+  "description": "Check budgets before AI spend, record what your code spends and read Solwyn costs.",
   "version": "0.3.0",
   "packages": [
     {
@@ -13,9 +13,9 @@
       "runtimeHint": "uvx",
       "transport": {"type": "stdio"},
       "packageArguments": [
-        {"type": "named", "name": "--project", "description": "Selected read project ID (proj_ followed by 24 lowercase hex characters).", "format": "string", "isRequired": true},
+        {"type": "named", "name": "--project", "description": "Solwyn project ID (proj_ followed by 24 lowercase hex characters).", "format": "string", "isRequired": true},
         {"type": "positional", "value": "mcp"},
-        {"type": "named", "name": "--profile", "value": "read"}
+        {"type": "named", "name": "--profile", "value": "guardrails"}
       ],
       "environmentVariables": [
         {"name": "SOLWYN_API_KEY", "description": "Project API key; omit to use the same OS account's existing keychain credential.", "format": "string", "isSecret": true, "isRequired": false}
