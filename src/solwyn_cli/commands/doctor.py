@@ -65,15 +65,6 @@ class ReadinessResponse(BaseModel):
     checks: list[ReadinessCheck]
 
 
-class HealthResponse(BaseModel):
-    """Pinned liveness shape; Core intentionally exposes no version field."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    status: str
-    service: str
-
-
 class _ReadinessCheckDiagnostic(ReadinessCheck):
     gating: bool
 

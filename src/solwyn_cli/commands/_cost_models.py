@@ -111,8 +111,16 @@ class CostEventResponse(_Response):
     tags: dict[str, str] | None = None
     status: str
     is_model_fallback: bool
+    is_provider_fallback: bool
+    failover_reason: (
+        Literal["circuit_open", "primary_error", "model_fallback", "cost_routed"] | None
+    )
     latency_ms: float
     sdk_instance_id: str
+    trace_id: str | None = None
+    span_id: str | None = None
+    trace_sampled: bool | None = None
+    trace_url: str | None = None
     created_at: str
 
 

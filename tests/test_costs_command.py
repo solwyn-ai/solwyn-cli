@@ -917,8 +917,15 @@ EVENT = {
     "estimated_cost": None,
     "status": "budget_denied",
     "is_model_fallback": False,
+    # Core always returns the failover pair, and the trace fields when known.
+    "is_provider_fallback": False,
+    "failover_reason": None,
     "latency_ms": 0,
     "sdk_instance_id": "instance_1",
+    "trace_id": None,
+    "span_id": None,
+    "trace_sampled": None,
+    "trace_url": None,
     "created_at": "2026-07-10T00:00:00Z",
     "tags": {"customer": "example"},
 }

@@ -53,7 +53,6 @@ from solwyn_cli.commands._team import (
     AccountUpdateRequest,
     RoleUpdateRequest,
     InviteRequest,
-    AcceptInvitationRequest,
 )
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
@@ -63,7 +62,6 @@ REQUEST_MIRRORS = {
     AccountUpdateRequest: "AccountUpdateRequest",
     RoleUpdateRequest: "RoleUpdateRequest",
     InviteRequest: "InviteRequest",
-    AcceptInvitationRequest: "AcceptInvitationRequest",
     CheckoutRequest: "CheckoutRequest",
     PlanPreviewRequest: "PlanPreviewRequest",
     PlanChangeRequest: "PlanChangeRequest",

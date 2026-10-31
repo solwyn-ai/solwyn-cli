@@ -1,0 +1,425 @@
+"""Every response model the CLI parses accepts what Core's spec says it returns.
+
+The vendored snapshot is Core's OpenAPI document. A strict model (extra="forbid")
+that lacks a property Core returns rejects every response that carries it, so
+the CLI reports invalid_*_response and MCP reports invalid_read_response. That
+happened for cost events (is_provider_fallback, failover_reason and the trace
+fields) and agent runs (first_trace_id, trace_url).
+
+RESPONSE_MODELS maps each response-parsing model to its spec component. For
+every pair: a strict model declares every spec property; a property the spec
+allows to be null accepts null; the model allows every spec enum value; and the
+model requires nothing the spec may omit. CLASSIFIED_NOT_RESPONSES names every
+other strict model, so a new response model cannot skip this guard.
+"""
+
+import copy
+import importlib
+import inspect
+import json
+import pkgutil
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+from pydantic import BaseModel
+
+import solwyn_cli
+
+
+SNAPSHOT = json.loads(Path("src/solwyn_cli/spec/openapi_snapshot.json").read_text())
+COMPONENTS = SNAPSHOT["components"]["schemas"]
+
+# "module:QualifiedName" -> Core component. Nested models are listed too.
+RESPONSE_MODELS = {
+    "solwyn_cli.client:ApprovalView": "CliApprovalResponse",
+    "solwyn_cli.commands._account_reads:AccountPhoneResponse": "AccountPhoneResponse",
+    "solwyn_cli.commands._account_reads:UncountedTallyResponse": "UncountedTallyResponse",
+    "solwyn_cli.commands._alert_models:AlertDeliveryLegEntry": "AlertDeliveryLegEntry",
+    "solwyn_cli.commands._alert_models:AlertDeliveryStatus": "AlertDeliveryStatus",
+    "solwyn_cli.commands._alert_models:AlertEventEntry": "AlertEventEntry",
+    "solwyn_cli.commands._alert_models:AlertEventListResponse": "AlertEventListResponse",
+    "solwyn_cli.commands._alert_models:AlertEventWindow": "AlertEventWindow",
+    "solwyn_cli.commands._alert_reads:AlertLatestResponse": "AlertLatestResponse",
+    "solwyn_cli.commands._alert_reads:AlertOpenResponse": "AlertOpenResponse",
+    "solwyn_cli.commands._alert_reads:AlertRuleLookup": "AlertRuleLookup",
+    "solwyn_cli.commands._billing:CancelResponse": "CancelResponse",
+    "solwyn_cli.commands._billing:CheckoutResponse": "CheckoutResponse",
+    "solwyn_cli.commands._billing:PlanChangeResponse": "PlanChangeResponse",
+    "solwyn_cli.commands._billing:PlanPreviewLineResponse": "PlanPreviewLineResponse",
+    "solwyn_cli.commands._billing:PlanPreviewResponse": "PlanPreviewResponse",
+    "solwyn_cli.commands._billing:PortalResponse": "PortalResponse",
+    "solwyn_cli.commands._cost_advice_models:BaselineResult": "BaselineResult",
+    "solwyn_cli.commands._cost_advice_models:CauseResult": "CauseResult",
+    "solwyn_cli.commands._cost_advice_models:CauseSpan": "CauseSpan",
+    "solwyn_cli.commands._cost_advice_models:CostDriftResponse": "CostDriftResponse",
+    "solwyn_cli.commands._cost_advice_models:CostSimulationResponse": "CostSimulationResponse",
+    "solwyn_cli.commands._cost_advice_models:CostSimulationTarget": "CostSimulationTarget",
+    "solwyn_cli.commands._cost_advice_models:DeltaCell": "DeltaCell",
+    "solwyn_cli.commands._cost_advice_models:DriftCaveats": "DriftCaveats",
+    "solwyn_cli.commands._cost_advice_models:DriftGroup": "DriftGroup",
+    "solwyn_cli.commands._cost_advice_models:PricedModelTarget": "PricedModelTarget",
+    "solwyn_cli.commands._cost_advice_models:PricedModelsResponse": "PricedModelsResponse",
+    "solwyn_cli.commands._cost_advice_models:SimulationCaveats": "SimulationCaveats",
+    "solwyn_cli.commands._cost_advice_models:SimulationExcludedCounts": "SimulationExcludedCounts",
+    "solwyn_cli.commands._cost_advice_models:UnitEconomicsResponse": "UnitEconomicsResponse",
+    "solwyn_cli.commands._cost_models:AccountCostDailyPoint": "AccountCostDailyPoint",
+    "solwyn_cli.commands._cost_models:AccountCostGroup": "AccountCostGroup",
+    "solwyn_cli.commands._cost_models:AccountCostQueryResponse": "AccountCostQueryResponse",
+    "solwyn_cli.commands._cost_models:CostEventResponse": "CostEventResponse",
+    "solwyn_cli.commands._cost_models:CostEventsResponse": "CostEventsResponse",
+    "solwyn_cli.commands._cost_models:CostGroup": "CostGroup",
+    "solwyn_cli.commands._cost_models:CostQueryResponse": "CostQueryResponse",
+    "solwyn_cli.commands._cost_models:CostTotalResponse": "CostTotalResponse",
+    "solwyn_cli.commands._cost_models:CostWindow": "CostWindow",
+    "solwyn_cli.commands._cost_models:MediaBreakdown": "MediaBreakdown",
+    "solwyn_cli.commands._cost_models:SavingsSummary": "SavingsSummary",
+    "solwyn_cli.commands._entitlement:AnalyticsCapabilities": "AnalyticsCapabilities",
+    "solwyn_cli.commands._entitlement:ApiKeyCapabilities": "ApiKeyCapabilities",
+    "solwyn_cli.commands._entitlement:BillingCatalogOverage": "BillingCatalogOverage",
+    "solwyn_cli.commands._entitlement:BillingCatalogPriceMonth": "BillingCatalogPriceMonth",
+    "solwyn_cli.commands._entitlement:BillingCatalogPriceYear": "BillingCatalogPriceYear",
+    "solwyn_cli.commands._entitlement:BillingCatalogPrices": "BillingCatalogPrices",
+    "solwyn_cli.commands._entitlement:BillingCatalogResponse": "BillingCatalogResponse",
+    "solwyn_cli.commands._entitlement:BillingCatalogTier": "BillingCatalogTier",
+    "solwyn_cli.commands._entitlement:BudgetCapabilities": "BudgetCapabilities",
+    "solwyn_cli.commands._entitlement:EnforcementCapabilities": "EnforcementCapabilities",
+    "solwyn_cli.commands._entitlement:IngestCapabilities": "IngestCapabilities",
+    "solwyn_cli.commands._entitlement:InvoiceSummary": "InvoiceSummary",
+    "solwyn_cli.commands._entitlement:NotificationCapabilities": "NotificationCapabilities",
+    "solwyn_cli.commands._entitlement:PendingPlan": "PendingPlan",
+    "solwyn_cli.commands._entitlement:ScheduledPlanChange": "ScheduledPlanChangeResponse",
+    "solwyn_cli.commands._entitlement:SubscriptionStatusResponse": "SubscriptionStatusResponse",
+    "solwyn_cli.commands._entitlement:TierCapabilities": "TierCapabilities",
+    "solwyn_cli.commands._notifications_common:AlertEmailResponse": "AlertEmailResponse",
+    "solwyn_cli.commands._notifications_common:DeliveryResponse": "SlackTestResponse",
+    "solwyn_cli.commands._notifications_common:EmailConfig": "EmailConfig",
+    "solwyn_cli.commands._notifications_common:EmailTestResponse": "EmailTestResponse",
+    "solwyn_cli.commands._notifications_common:NotificationCapabilitiesResponse": "NotificationCapabilitiesResponse",
+    "solwyn_cli.commands._notifications_common:NotificationChannelResponse": "NotificationChannelResponse",
+    "solwyn_cli.commands._notifications_common:NotificationConfigResponse": "NotificationConfigResponse",
+    "solwyn_cli.commands._notifications_common:SmsConfig": "SmsConfig",
+    "solwyn_cli.commands._record:IngestDuplicate": "IngestDuplicate",
+    "solwyn_cli.commands._record:IngestRejection": "IngestRejection",
+    "solwyn_cli.commands._record:IngestResponse": "IngestResponse",
+    "solwyn_cli.commands._team:InvitationOut": "InvitationOut",
+    "solwyn_cli.commands._team:InvitationPreviewResponse": "InvitationPreviewResponse",
+    "solwyn_cli.commands._team:MemberOut": "MemberOut",
+    "solwyn_cli.commands.alerts:AccountAlertResponse": "AccountAlertResponse",
+    "solwyn_cli.commands.alerts:AccountAlertSnoozeResponse": "AccountAlertSnoozeResponse",
+    "solwyn_cli.commands.attest:AttestationAccountSpendAlert": "AttestationAccountSpendAlert",
+    "solwyn_cli.commands.attest:AttestationAlertEvent": "AttestationAlertEvent",
+    "solwyn_cli.commands.attest:AttestationAlerts": "AttestationAlerts",
+    "solwyn_cli.commands.attest:AttestationAudit": "AttestationAudit",
+    "solwyn_cli.commands.attest:AttestationAuditEvent": "AttestationAuditEvent",
+    "solwyn_cli.commands.attest:AttestationBudget": "AttestationBudget",
+    "solwyn_cli.commands.attest:AttestationScope": "AttestationScope",
+    "solwyn_cli.commands.attest:AttestationSpendSummary": "AttestationSpendSummary",
+    "solwyn_cli.commands.attest:AttestationSubscription": "AttestationSubscription",
+    "solwyn_cli.commands.attest:AttestationSubscriptionSnapshot": "AttestationSubscriptionSnapshot",
+    "solwyn_cli.commands.attest:AttestationWindow": "AttestationWindow",
+    "solwyn_cli.commands.attest:SpendControlAttestation": "SpendControlAttestation",
+    "solwyn_cli.commands.audit:AuditEventEntry": "AuditEventEntry",
+    "solwyn_cli.commands.audit:AuditEventListResponse": "AuditEventListResponse",
+    "solwyn_cli.commands.budget:BudgetCheckBatchItem": "BudgetCheckBatchItem",
+    "solwyn_cli.commands.budget:_AlertRouting": "AlertRouting",
+    "solwyn_cli.commands.budget:_BudgetCheckBatchResponse": "BudgetCheckBatchResponse",
+    "solwyn_cli.commands.budget:_BudgetCheckData": "BudgetCheckResponse",
+    "solwyn_cli.commands.budget:_BudgetConstraints": "BudgetConstraintsResponse",
+    "solwyn_cli.commands.budget:_BudgetStatusData": "BudgetStatusResponse",
+    "solwyn_cli.commands.budget:_BudgetThresholdState": "ThresholdStateResponse",
+    "solwyn_cli.commands.budget:_DailyAnomalyState": "DailyAnomalyStateResponse",
+    "solwyn_cli.commands.budget:_ForecastOverrunState": "ForecastOverrunStateResponse",
+    "solwyn_cli.commands.budget:_RoutingChannel": "RoutingChannel",
+    "solwyn_cli.commands.budget:_RoutingMuted": "RoutingMuted",
+    "solwyn_cli.commands.budget:_RunControlDirective": "RunControlDirective",
+    "solwyn_cli.commands.budget:_RunawayRunState": "RunawayRunStateResponse",
+    "solwyn_cli.commands.budget:_ScopedBudgetState": "ScopedBudgetStateResponse",
+    "solwyn_cli.commands.budget:_UnitCostAnomalyState": "UnitCostAnomalyStateResponse",
+    "solwyn_cli.commands.budget_rules:AlertsPreviewResponse": "AlertsPreviewResponse",
+    "solwyn_cli.commands.budget_rules:BudgetRestoreDefaultsResponse": "BudgetRestoreDefaultsResponse",
+    "solwyn_cli.commands.budget_rules:RuleActionResponse": "RuleActionResponse",
+    "solwyn_cli.commands.budget_rules:SnoozeResponse": "SnoozeResponse",
+    "solwyn_cli.commands.budget_rules:_RestoreThreshold": "BudgetThresholdEntry",
+    "solwyn_cli.commands.credentials:_CredentialList": "CliCredentialListResponse",
+    "solwyn_cli.commands.doctor:ReadinessCheck": "ReadinessCheck",
+    "solwyn_cli.commands.doctor:ReadinessResponse": "ReadinessResponse",
+    "solwyn_cli.commands.doctor:_BudgetProbeResponse": "BudgetStatusResponse",
+    "solwyn_cli.commands.doctor:_MeProbeResponse": "MeResponse",
+    "solwyn_cli.commands.forecast:_ForecastResponse": "ForecastResponse",
+    "solwyn_cli.commands.keys:_ProjectKeyMetadata": "ProjectKeyResponse",
+    "solwyn_cli.commands.keys:_ProjectKeyRotateResponse": "ProjectKeyRotateResponse",
+    "solwyn_cli.commands.mcp_doctor:_AccountResponse": "MeResponse",
+    "solwyn_cli.commands.mcp_doctor:_KeyResponse": "AuthenticatedKeyResponse",
+    "solwyn_cli.commands.mcp_doctor:_ReadResponse": "BudgetStatusResponse",
+    "solwyn_cli.commands.overview:OverviewResponse": "OverviewResponse",
+    "solwyn_cli.commands.projects:_Project": "ProjectResponse",
+    "solwyn_cli.commands.projects:_ProjectCreateResponse": "ProjectCreateResponse",
+    "solwyn_cli.commands.providers:ProviderFailoverResponse": "ProviderFailoverResponse",
+    "solwyn_cli.commands.providers:UntrackedSurfaceResponse": "UntrackedSurfaceResponse",
+    "solwyn_cli.commands.runs:_AgentRunEntry": "AgentRunEntry",
+    "solwyn_cli.commands.runs:_AgentRunListData": "AgentRunListResponse",
+    "solwyn_cli.commands.runs:_AgentRunStopData": "AgentRunStopResponse",
+    "solwyn_cli.commands.runs:_CostWindow": "CostWindow",
+    "solwyn_cli.commands.status:_BudgetResponse": "BudgetStatusResponse",
+    "solwyn_cli.commands.status:_ProviderHealth": "ProviderHealthResponse",
+    "solwyn_cli.commands.tags:TagDiscoveryResponse": "TagDiscoveryResponse",
+    "solwyn_cli.commands.tags:TagKeySummary": "TagKeySummary",
+    "solwyn_cli.commands.tags:TagRegistryUsage": "TagRegistryUsage",
+    "solwyn_cli.commands.tags:TagValueSummary": "TagValueSummary",
+    "solwyn_cli.commands.tags:TagValuesPage": "TagValuesPage",
+    "solwyn_cli.commands.webhooks:WebhookCreateResponse": "WebhookCreateResponse",
+    "solwyn_cli.commands.webhooks:WebhookResponse": "WebhookResponse",
+    "solwyn_cli.commands.webhooks:WebhookRotateResponse": "WebhookRotateResponse",
+    "solwyn_cli.commands.whoami:_AccountSelf": "AccountSelfResponse",
+    "solwyn_cli.commands.whoami:_Identity": "MeResponse",
+    "solwyn_cli.commands.whoami:_Project": "ProjectResponse",
+    "solwyn_cli.errors:BillingConflictDetail": "BillingConflictDetail",
+    "solwyn_cli.errors:BillingNotFoundDetail": "BillingNotFoundDetail",
+    "solwyn_cli.errors:BillingUnavailableDetail": "BillingUnavailableDetail",
+    "solwyn_cli.errors:BillingValidationDetail": "BillingValidationDetail",
+    "solwyn_cli.oauth:DeviceAuthorization": "DeviceAuthorizationResponse",
+    "solwyn_cli.oauth:TokenResponse": "DeviceTokenResponse",
+}
+
+# Strict models that never parse a Core response, by reason.
+_LOCAL_STATE = "keychain, config, IPC or recovery state the CLI writes and reads itself"
+_CLI_OUTPUT = "a CLI or MCP output payload the CLI builds"
+_BASE = "a shared base that only sets model_config"
+CLASSIFIED_NOT_RESPONSES = {
+    "solwyn_cli._mcp_doctor_ipc:HelperResult": _LOCAL_STATE,
+    "solwyn_cli._mcp_launch:LaunchDescriptor": _LOCAL_STATE,
+    "solwyn_cli._mcp_operation:OperationRecovery": _LOCAL_STATE,
+    "solwyn_cli._mcp_operation:ReadRecovery": _LOCAL_STATE,
+    "solwyn_cli._mcp_operation:RecoveryItem": _LOCAL_STATE,
+    "solwyn_cli.artifacts:_ArtifactState": _LOCAL_STATE,
+    "solwyn_cli.auth:LoginCredential": _LOCAL_STATE,
+    "solwyn_cli.auth:LoginMetadata": _LOCAL_STATE,
+    "solwyn_cli.auth:PendingDevice": _LOCAL_STATE,
+    "solwyn_cli.auth:ProjectKeyCredential": _LOCAL_STATE,
+    "solwyn_cli.commands._alert_reads:AccountAlertWithLatestResponse": _CLI_OUTPUT,
+    "solwyn_cli.commands._alert_reads:RuleLatest": _CLI_OUTPUT,
+    "solwyn_cli.commands._billing:_BillingModel": _BASE,
+    "solwyn_cli.commands._cost_advice_models:_Response": _BASE,
+    "solwyn_cli.commands._cost_models:_Response": _BASE,
+    "solwyn_cli.commands._entitlement:_Response": _BASE,
+    "solwyn_cli.commands._notifications_common:ChannelDeleted": _CLI_OUTPUT,
+    "solwyn_cli.commands._notifications_common:ChannelList": _CLI_OUTPUT,
+    "solwyn_cli.commands._notifications_common:ReadModel": _BASE,
+    "solwyn_cli.commands._record:RecordingResult": _CLI_OUTPUT,
+    "solwyn_cli.commands._team:TeamInvitesData": _CLI_OUTPUT,
+    "solwyn_cli.commands._team:TeamMembersData": _CLI_OUTPUT,
+    "solwyn_cli.commands._team:TeamModel": _BASE,
+    "solwyn_cli.commands.attest:_AttestationModel": _BASE,
+    "solwyn_cli.commands.audit:_AuditQuery": _LOCAL_STATE,
+    "solwyn_cli.commands.budget:BudgetCheckBatchData": _CLI_OUTPUT,
+    "solwyn_cli.commands.budget:DenialRecordingRetry": _LOCAL_STATE,
+    "solwyn_cli.commands.budget:RecoverableBatchData": _CLI_OUTPUT,
+    "solwyn_cli.commands.budget:RecoverableBatchItem": _CLI_OUTPUT,
+    "solwyn_cli.commands.budget:_BudgetConfirmData": _CLI_OUTPUT,
+    "solwyn_cli.commands.budget:_BudgetSetData": _CLI_OUTPUT,
+    "solwyn_cli.commands.budget:_BudgetStatusOutput": _CLI_OUTPUT,
+    "solwyn_cli.commands.budget:_ThresholdStateBase": _BASE,
+    "solwyn_cli.commands.budget_rules:BudgetRulesData": _CLI_OUTPUT,
+    "solwyn_cli.commands.credentials:_RevokeData": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_AuthenticatedProbe": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_Diagnostic": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_DoctorData": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_ReadinessCheckDiagnostic": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_ReadinessDiagnostic": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_SnapshotDiagnostic": _CLI_OUTPUT,
+    "solwyn_cli.commands.forecast:ForecastData": _CLI_OUTPUT,
+    "solwyn_cli.commands.init:_InitData": _CLI_OUTPUT,
+    "solwyn_cli.commands.init:_Snippet": _CLI_OUTPUT,
+    "solwyn_cli.commands.init:_Verification": _CLI_OUTPUT,
+    "solwyn_cli.commands.keys:_ProjectKeyRevokeData": _CLI_OUTPUT,
+    "solwyn_cli.commands.login:_LoginData": _CLI_OUTPUT,
+    "solwyn_cli.commands.mcp_doctor:Check": _CLI_OUTPUT,
+    "solwyn_cli.commands.mcp_doctor:CredentialCheck": _CLI_OUTPUT,
+    "solwyn_cli.commands.mcp_doctor:KeyContext": _CLI_OUTPUT,
+    "solwyn_cli.commands.mcp_doctor:McpDoctorData": _CLI_OUTPUT,
+    "solwyn_cli.commands.mcp_doctor:ToolConstraint": _CLI_OUTPUT,
+    "solwyn_cli.commands.plan:_PlanChangeData": _CLI_OUTPUT,
+    "solwyn_cli.commands.plan:_PlanData": _CLI_OUTPUT,
+    "solwyn_cli.commands.plan:_PlanDiscardData": _CLI_OUTPUT,
+    "solwyn_cli.commands.plan:_PlanDismissData": _CLI_OUTPUT,
+    "solwyn_cli.commands.projects:_ProjectDeleteData": _CLI_OUTPUT,
+    "solwyn_cli.commands.projects:_ProjectsListData": _CLI_OUTPUT,
+    "solwyn_cli.commands.providers:ProviderFailoversData": _CLI_OUTPUT,
+    "solwyn_cli.commands.providers:UntrackedSurfacesData": _CLI_OUTPUT,
+    "solwyn_cli.commands.status:_ProjectStatusData": _CLI_OUTPUT,
+    "solwyn_cli.commands.status:_StatusData": _CLI_OUTPUT,
+    "solwyn_cli.commands.tags:TagRetirement": _CLI_OUTPUT,
+    "solwyn_cli.commands.webhooks:_WebhookDeleteData": _CLI_OUTPUT,
+    "solwyn_cli.commands.webhooks:_WebhookListData": _CLI_OUTPUT,
+    "solwyn_cli.commands.whoami:_CredentialSummary": _CLI_OUTPUT,
+    "solwyn_cli.commands.whoami:_WhoamiData": _CLI_OUTPUT,
+    "solwyn_cli.errors:_BillingErrorDetail": _BASE,
+    "solwyn_cli.output:OneTimeSecretPanel": _CLI_OUTPUT,
+    "solwyn_cli.output:OutputError": _CLI_OUTPUT,
+    "solwyn_cli.output:TableData": _CLI_OUTPUT,
+    "solwyn_cli.runtime:CommandContext": _LOCAL_STATE,
+}
+
+
+def _is_request_mirror(cls: type) -> bool:
+    """Request bodies the CLI builds; their drift guard is test_request_drift."""
+    return cls.__module__.startswith(
+        ("solwyn_cli._vendor", "solwyn_cli.mcp.parameters")
+    ) or cls.__name__.endswith("Request")
+
+
+def _is_mcp_tool_output(cls: type) -> bool:
+    """MCP result envelopes and launch options, built from parsed models."""
+    return cls.__module__ == "solwyn_cli.mcp.server"
+
+
+def _load(qualified: str) -> type[BaseModel]:
+    module, name = qualified.split(":")
+    target: Any = importlib.import_module(module)
+    for part in name.split("."):
+        target = getattr(target, part)
+    return target
+
+
+def _resolve(schema: dict, root: dict) -> dict:
+    while "$ref" in schema:
+        parts = schema["$ref"].removeprefix("#/").split("/")
+        node: Any = root
+        for part in parts:
+            node = node[part]
+        schema = node
+    return schema
+
+
+def _branches(schema: dict, root: dict) -> list[dict]:
+    schema = _resolve(schema, root)
+    for key in ("anyOf", "oneOf"):
+        if key in schema:
+            return [b for item in schema[key] for b in _branches(item, root)]
+    return [schema]
+
+
+def _accepts_null(schema: dict, root: dict) -> bool:
+    return not schema or any(
+        b.get("type") == "null" or not b for b in _branches(schema, root)
+    )
+
+
+def _enum_values(schema: dict, root: dict) -> set:
+    values: set = set()
+    for branch in _branches(schema, root):
+        values |= set(branch.get("enum", []))
+        if "const" in branch:
+            values.add(branch["const"])
+    return values
+
+
+def _properties(component: str) -> tuple[dict, set[str]]:
+    schema = _resolve(COMPONENTS[component], SNAPSHOT)
+    properties = dict(schema.get("properties", {}))
+    required = set(schema.get("required", []))
+    for part in schema.get("allOf", []):
+        part = _resolve(part, SNAPSHOT)
+        properties.update(part.get("properties", {}))
+        required |= set(part.get("required", []))
+    return properties, required
+
+
+@pytest.mark.parametrize(("qualified", "component"), sorted(RESPONSE_MODELS.items()))
+def test_response_model_accepts_everything_core_returns(
+    qualified: str, component: str
+) -> None:
+    model = _load(qualified)
+    spec_properties, spec_required = _properties(component)
+    local = model.model_json_schema(mode="validation", by_alias=True)
+    local_properties = local.get("properties", {})
+    local_required = set(local.get("required", []))
+    if model.model_config.get("extra") == "forbid":
+        rejected = sorted(set(spec_properties) - set(local_properties))
+        assert rejected == [], f"{qualified} rejects {component} fields {rejected}"
+    for name, remote in spec_properties.items():
+        if name not in local_properties:
+            continue
+        mine = local_properties[name]
+        if _accepts_null(remote, SNAPSHOT):
+            assert _accepts_null(mine, local), f"{qualified}.{name} rejects null"
+        allowed = _enum_values(mine, local)
+        if allowed:
+            missing = _enum_values(remote, SNAPSHOT) - allowed
+            assert not missing, f"{qualified}.{name} rejects {sorted(missing)}"
+    optional_in_core = sorted((local_required & set(spec_properties)) - spec_required)
+    assert optional_in_core == [], (
+        f"{qualified} requires {optional_in_core}, which {component} may omit"
+    )
+
+
+def test_every_strict_model_is_classified() -> None:
+    unclassified = []
+    for info in pkgutil.walk_packages(solwyn_cli.__path__, "solwyn_cli."):
+        module = importlib.import_module(info.name)
+        for name, value in vars(module).items():
+            if not (
+                inspect.isclass(value)
+                and issubclass(value, BaseModel)
+                and value.__module__ == module.__name__
+                and value.model_config.get("extra") == "forbid"
+            ):
+                continue
+            qualified = f"{value.__module__}:{value.__qualname__}"
+            if (
+                qualified in RESPONSE_MODELS
+                or qualified in CLASSIFIED_NOT_RESPONSES
+                or _is_request_mirror(value)
+                or _is_mcp_tool_output(value)
+            ):
+                continue
+            unclassified.append(qualified)
+    assert unclassified == [], (
+        "Classify each strict model: add a response model to RESPONSE_MODELS "
+        "with its Core component, or name why it never parses a response."
+    )
+
+
+def test_registry_entries_exist() -> None:
+    for qualified, component in RESPONSE_MODELS.items():
+        assert component in COMPONENTS, (qualified, component)
+        assert issubclass(_load(qualified), BaseModel), qualified
+    for qualified in CLASSIFIED_NOT_RESPONSES:
+        _load(qualified)
+
+
+@pytest.mark.parametrize(
+    ("component", "change"),
+    [
+        ("CostEventResponse", "new_property"),
+        ("AgentRunEntry", "new_property"),
+        ("CostEventResponse", "nullable_cost"),
+        ("FailoverReason", "new_enum_value"),
+    ],
+)
+def test_guard_trips_when_core_changes_a_response(
+    monkeypatch: pytest.MonkeyPatch, component: str, change: str
+) -> None:
+    snapshot = copy.deepcopy(SNAPSHOT)
+    schemas = snapshot["components"]["schemas"]
+    if change == "new_property":
+        schemas[component]["properties"]["added_by_core"] = {"type": "string"}
+    elif change == "nullable_cost":
+        schemas[component]["properties"]["cost"] = {
+            "anyOf": [{"type": "number"}, {"type": "null"}]
+        }
+    else:
+        schemas[component]["enum"].append("added_by_core")
+    monkeypatch.setattr(sys.modules[__name__], "SNAPSHOT", snapshot)
+    monkeypatch.setattr(sys.modules[__name__], "COMPONENTS", schemas)
+    model = {
+        "CostEventResponse": "solwyn_cli.commands._cost_models:CostEventResponse",
+        "FailoverReason": "solwyn_cli.commands._cost_models:CostEventResponse",
+        "AgentRunEntry": "solwyn_cli.commands.runs:_AgentRunEntry",
+    }[component]
+    target = RESPONSE_MODELS[model]
+
+    with pytest.raises(AssertionError):
+        test_response_model_accepts_everything_core_returns(model, target)
