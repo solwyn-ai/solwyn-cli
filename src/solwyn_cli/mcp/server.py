@@ -39,10 +39,13 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.artifacts import agent_guidance
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    CredentialClass,
+    LoginCredential,
     ProjectKeyCredential,
-    JwtRequiredError,
-    JWT_REQUIRED_HINT,
+    LoginRequiredError,
+    LOGIN_REQUIRED_HINT,
+    METERING_KEY_HINT,
+    MeteringKeyRequiredError,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
@@ -117,12 +120,14 @@ from solwyn_cli.errors import (
     ApiError,
     BILLING_HINTS,
     BUDGET_BUSY_HINT,
+    CLI_CREDENTIAL_HINTS,
     INGEST_BUSY_HINT,
     INGEST_UNKNOWN_HINT,
     LEGACY_BATCH_BUSY_HINT,
     MEMBERSHIP_RECOVERY_HINT,
     SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
+    approval_url_from,
 )
 
 
@@ -272,9 +277,25 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
         "unknown_model",
         "unknown_notification_channel",
         "upgrade_required",
+        "approval_required",
+        "approval_invalid",
+        "approval_limit_reached",
+        "session_required",
+        "cli_credential_invalid",
+        "cli_credential_expired",
+        "cli_credential_revoked",
     }
 )
 _SAFE_REMOTE_HINTS = {
+    "cli_credential_invalid": CLI_CREDENTIAL_HINTS["cli_credential_invalid"],
+    "cli_credential_expired": CLI_CREDENTIAL_HINTS["cli_credential_expired"],
+    "cli_credential_revoked": CLI_CREDENTIAL_HINTS["cli_credential_revoked"],
+    "session_required": "This action is only available in the dashboard.",
+    "approval_limit_reached": (
+        "Approve or deny pending approvals in the browser, or wait for them to "
+        "expire, then retry."
+    ),
+    "approval_invalid": "Run the CLI command again to request a new approval.",
     "billing_plan_no_change": BILLING_HINTS["billing_plan_no_change"],
     "billing_subscription_not_found": BILLING_HINTS["billing_subscription_not_found"],
     "billing_preview_unavailable": BILLING_HINTS["billing_preview_unavailable"],
@@ -285,7 +306,7 @@ _SAFE_REMOTE_HINTS = {
     "authentication_required": "Run solwyn login, then retry.",
     "forbidden": "Check account access for this operation, then retry.",
     "invalid_token": "Run solwyn login again, then retry.",
-    # Rotation is JWT-only and destructive, so the agent-facing hint stops at the
+    # Rotation is login-only and destructive, so the agent-facing hint stops at the
     # remedy an agent can actually apply and at a read-only way to inspect scope.
     "read_only_key": (
         "The configured project key is read-only; set SOLWYN_API_KEY to a "
@@ -375,7 +396,7 @@ class _ToolCatalog:
         title: str,
         description: str,
         read_only: bool = True,
-        credential_requirement: Literal["jwt", "project_key", "either"] = "either",
+        credential_requirement: Literal["login", "project_key", "either"] = "either",
         credential_note: str | None = None,
     ):
         def register(fn):
@@ -384,9 +405,9 @@ class _ToolCatalog:
             note = (
                 credential_note
                 or {
-                    "jwt": "Requires login/JWT; a configured project key takes precedence over stored login.",
+                    "login": "Requires a Solwyn login.",
                     "project_key": "Requires a write-scoped project API key; writes use its project, not the selected read project.",
-                    "either": "Accepts a project API key or login/JWT with access to the selected project.",
+                    "either": "Accepts a Solwyn login or a project API key with access to the selected project.",
                 }[credential_requirement]
             )
             if name in self.tools:
@@ -825,8 +846,13 @@ class _GetAccountAlertResult(
 @contextmanager
 def tool_call_client(
     launch_options: McpLaunchOptions | None = None,
+    *,
+    purpose: CredentialClass = "user",
 ) -> Iterator[tuple[runtime.CommandContext, SolwynClient]]:
-    """Resolve fresh runtime, credential, and client state for one MCP tool call."""
+    """Resolve fresh runtime, credential, and client state for one MCP tool call.
+
+    Metering tools resolve only a project key; every other tool prefers the login.
+    """
     launch = launch_options or McpLaunchOptions()
     command_runtime = runtime.resolve_command_context(
         api_url=launch.api_url,
@@ -836,9 +862,11 @@ def tool_call_client(
         no_color=True,
     )
     operation.checkpoint()
-    credential = auth.resolve_credential()
+    credential = auth.resolve_credential(purpose=purpose)
     operation.checkpoint()
     if credential is None:
+        if purpose == "metering":
+            raise MeteringKeyRequiredError(METERING_KEY_HINT)
         raise AuthError("Authentication required. Configure credentials and retry.")
     with SolwynClient(
         api_url=command_runtime.api_url,
@@ -871,7 +899,7 @@ FORECAST_DESCRIPTION = (
     "authorizing spend."
 )
 PROJECTS_DESCRIPTION = (
-    "List projects visible to the logged-in user. Requires login/JWT authentication."
+    "List projects visible to the logged-in user. Requires a Solwyn login."
 )
 AGENT_RUNS_DESCRIPTION = (
     "List project agent runs. Costs are lifetime totals; the window only selects "
@@ -1134,7 +1162,7 @@ def _operation_error(
     error: Exception,
     *,
     invalid_response_code: str,
-    jwt_required: bool = False,
+    login_required: bool = False,
     invalid_response_hint: str | None = None,
 ) -> ResultT:
     if isinstance(error, AccountProjectConflictError):
@@ -1199,8 +1227,10 @@ def _operation_error(
             hint=(
                 INGEST_UNKNOWN_HINT
                 if error.ingest_outcome_uncertain
-                else JWT_REQUIRED_HINT
-                if jwt_required or isinstance(error, JwtRequiredError)
+                else METERING_KEY_HINT
+                if isinstance(error, MeteringKeyRequiredError)
+                else LOGIN_REQUIRED_HINT
+                if login_required or isinstance(error, LoginRequiredError)
                 else "Configure a project key or run solwyn login, then retry."
             ),
         )
@@ -1256,6 +1286,14 @@ def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
         WRITE_BUSY_HINT,
     }:
         return error.hint
+    if code == "approval_required":
+        # MCP tools never wait: hand the validated approval URL to the human.
+        approval_url = approval_url_from(error.detail)
+        return (
+            f"A human must approve this change in the browser: {approval_url}"
+            if approval_url is not None
+            else "A human must approve this change in the browser."
+        )
     prefix = _ENTITLEMENT_HINT_PREFIXES.get(code)
     if prefix is None:
         return _SAFE_REMOTE_HINTS.get(code)
@@ -1272,7 +1310,7 @@ def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
 
 def _require_project_key(
     result_type: type[ResultT],
-    credential: JwtCredential | ProjectKeyCredential,
+    credential: LoginCredential | ProjectKeyCredential,
     operation: str,
 ) -> ResultT | None:
     if isinstance(credential, ProjectKeyCredential):
@@ -1319,7 +1357,7 @@ def _alert_events_operation(
             _AlertEventsResult,
             error,
             invalid_response_code="invalid_alerts_response",
-            jwt_required=account,
+            login_required=account,
         )
 
 
@@ -1361,7 +1399,7 @@ def _budget_rules_operation(
             _BudgetRulesResult,
             error,
             invalid_response_code="invalid_budget_rules_response",
-            jwt_required=with_last_fired,
+            login_required=with_last_fired,
         )
 
 
@@ -1442,7 +1480,7 @@ def _budget_check_operation(
             message="The budget check request is invalid.",
         )
     try:
-        with tool_call_client(launch_options) as (_, client):
+        with tool_call_client(launch_options, purpose="metering") as (_, client):
             auth_error = _require_project_key(
                 _BudgetCheckResult, client.current_credential, "checks"
             )
@@ -1516,7 +1554,7 @@ def _budget_check_batch_operation(
             message="Provide 1–32 checks, or only the retained operation_id with recover_only or record_only.",
         )
     try:
-        with tool_call_client(launch_options) as (_, client):
+        with tool_call_client(launch_options, purpose="metering") as (_, client):
             auth_error = _require_project_key(
                 _BudgetCheckBatchResult, client.current_credential, "checks"
             )
@@ -1653,7 +1691,7 @@ def _budget_confirm_operation(
             hint=CALL_ID_HINT,
         )
     try:
-        with tool_call_client(launch_options) as (_, client):
+        with tool_call_client(launch_options, purpose="metering") as (_, client):
             auth_error = _require_project_key(
                 _BudgetConfirmResult, client.current_credential, "confirmation"
             )
@@ -1767,7 +1805,7 @@ def _costs_operation(
             _CostsResult,
             error,
             invalid_response_code="invalid_costs_response",
-            jwt_required=account,
+            login_required=account,
         )
 
 
@@ -1801,7 +1839,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
                     _ProjectsResult,
                     code="authentication_required",
                     message="User login is required to list projects.",
-                    hint=JWT_REQUIRED_HINT,
+                    hint=LOGIN_REQUIRED_HINT,
                 )
             data = ProjectsListData(projects=fetch_projects(client=client))
         return _success(_ProjectsResult, data)
@@ -1810,7 +1848,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
             _ProjectsResult,
             error,
             invalid_response_code="invalid_projects_response",
-            jwt_required=True,
+            login_required=True,
         )
 
 
@@ -1832,7 +1870,7 @@ def _record_operation(
             hint=CALL_ID_HINT,
         )
     try:
-        with tool_call_client(launch_options) as (_, client):
+        with tool_call_client(launch_options, purpose="metering") as (_, client):
             auth_error = _require_project_key(
                 _RecordResult, client.current_credential, "recording"
             )
@@ -2037,7 +2075,7 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
                     _OverviewResult,
                     code="authentication_required",
                     message="User login is required to read the account overview.",
-                    hint=JWT_REQUIRED_HINT,
+                    hint=LOGIN_REQUIRED_HINT,
                 )
             data = fetch_overview(client=client)
         return _success(_OverviewResult, data)
@@ -2046,7 +2084,7 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
             _OverviewResult,
             error,
             invalid_response_code="invalid_overview_response",
-            jwt_required=True,
+            login_required=True,
         )
 
 
@@ -2079,7 +2117,7 @@ def _read_operation(
     project_id=None,
     project_read=False,
     identity=False,
-    jwt_required=False,
+    login_required=False,
     transport_read_hint=None,
     **options,
 ):
@@ -2107,7 +2145,7 @@ def _read_operation(
             result_type,
             error,
             invalid_response_code="invalid_read_response",
-            jwt_required=jwt_required,
+            login_required=login_required,
             invalid_response_hint=READ_HINT,
         )
 
@@ -2301,7 +2339,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         name="get_costs",
         title="Read grouped costs",
         description=COSTS_DESCRIPTION,
-        credential_note="Project mode accepts a project key or JWT; account=true requires JWT and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
+        credential_note="Project mode accepts a project key or a Solwyn login; account=true requires a Solwyn login and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
     )
     async def get_costs(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -2349,7 +2387,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_projects",
         title="List account projects",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description=PROJECTS_DESCRIPTION,
     )
     async def list_projects() -> _ProjectsResult:
@@ -2402,7 +2440,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_budget_rules",
         title="List budget rules",
-        credential_note="Project keys or JWT can list rules; with_last_fired=true requires JWT for the account latest-events read.",
+        credential_note="Project keys or a Solwyn login can list rules; with_last_fired=true requires a Solwyn login for the account latest-events read.",
         description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
     )
     async def list_budget_rules(
@@ -2552,8 +2590,8 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_alert_events",
         title="Read alert history",
-        credential_note="Project history accepts a project key or JWT; account=true reads account-scope history, requires login/JWT and ignores project_id. Use list_alert_activity for all projects plus account scope.",
-        description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires JWT. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
+        credential_note="Project history accepts a project key or a Solwyn login; account=true reads account-scope history, requires a Solwyn login and ignores project_id. Use list_alert_activity for all projects plus account scope.",
+        description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires a Solwyn login. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
     )
     async def list_alert_events(
         project_id: Annotated[str | None, Field(min_length=1)] = None,
@@ -2629,10 +2667,10 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="get_overview",
         title="Read account overview",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description=(
             "Read calendar-month account spend, requests, trend, savings, and "
-            "free-tier quota metadata. Requires login/JWT authentication."
+            "free-tier quota metadata. Requires a Solwyn login."
         ),
     )
     async def get_overview() -> _OverviewResult:
@@ -2792,7 +2830,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         name="simulate_costs",
         title="Simulate costs",
         credential_requirement="either",
-        description="Read-only historical repricing; never reserves or bills. Definite 401: one JWT refresh/replay; 429: one bounded retry. No 503/transport replay.",
+        description="Read-only historical repricing; never reserves or bills. 429: one bounded retry. No 503/transport replay.",
     )
     async def simulate_costs(
         provider: ProviderName,
@@ -2869,7 +2907,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_audit_events",
         title="List audit events",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read account audit events newest first with exact action filters and bounded pagination.",
     )
     async def list_audit_events(
@@ -2884,7 +2922,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListAuditEventsResult,
                 fetch_audit_events,
                 launch,
-                jwt_required=True,
+                login_required=True,
                 time_range=time_range,
                 action=action,
                 cursor=cursor,
@@ -2894,7 +2932,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
 
     @catalog.tool(
         name="plan_status",
-        credential_note="Accepts JWT or a project key with account context; no project selection is required.",
+        credential_note="Accepts a Solwyn login or a project key with account context; no project selection is required.",
         title="Plan status",
         credential_requirement="either",
         description="Read current plan limits, capabilities and subscription lifecycle state.",
@@ -2911,7 +2949,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
 
     @catalog.tool(
         name="plan_catalog",
-        credential_note="Accepts JWT or project keys with authenticated user context; no project selection is required.",
+        credential_note="Accepts a Solwyn login or project keys with authenticated user context; no project selection is required.",
         title="Plan catalog",
         credential_requirement="either",
         description="Read plan catalog: prices in cents, currency, included requests, decimal cent overage, limits and capabilities.",
@@ -2928,7 +2966,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
 
     @catalog.tool(
         name="get_whoami",
-        credential_note="JWT reads user/account/project identity; project keys return only local auth and selected-project context without revealing the key.",
+        credential_note="A Solwyn login reads user/account/project identity; project keys return only local auth and selected-project context without revealing the key.",
         title="Get whoami",
         credential_requirement="either",
         description="Read account identity and email verification; project keys return local key context without a user identity.",
@@ -2947,7 +2985,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="get_account_phone",
         title="Get account phone",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read user phone verification and SMS consent state. Verification and consent writes stay in the dashboard.",
     )
     async def get_account_phone() -> _GetAccountPhoneResult:
@@ -2957,14 +2995,14 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetAccountPhoneResult,
                 fetch_phone,
                 launch,
-                jwt_required=True,
+                login_required=True,
             )
         )
 
     @catalog.tool(
         name="list_alert_activity",
         title="List alert activity",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read account-wide activity across all projects plus account scope with delivery receipts.",
     )
     async def list_alert_activity(
@@ -2979,7 +3017,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListAlertActivityResult,
                 request_account_alert_page,
                 launch,
-                jwt_required=True,
+                login_required=True,
                 time_range=time_range,
                 event_type=event_type,
                 cursor=cursor,
@@ -2990,7 +3028,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_open_alert_deliveries",
         title="List open alert deliveries",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read pending/retrying deliveries and attempts regardless of event retention.",
     )
     async def list_open_alert_deliveries(
@@ -3002,7 +3040,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListOpenAlertDeliveriesResult,
                 request_account_alert_page,
                 launch,
-                jwt_required=True,
+                login_required=True,
                 pending=True,
                 cursor=cursor,
                 all_pages=all_pages,
@@ -3032,7 +3070,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="get_account_alert",
         title="Get account alert",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read account spend alert configuration, optionally latest firing and lifecycle history within Core’s 30d retention window.",
     )
     async def get_account_alert(
@@ -3044,7 +3082,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetAccountAlertResult,
                 request_account_alert,
                 launch,
-                jwt_required=True,
+                login_required=True,
                 with_last_fired=with_last_fired,
             )
         )
@@ -3052,8 +3090,8 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="plan_preview",
         title="Plan preview",
-        credential_requirement="jwt",
-        credential_note="Requires login/JWT at any account role; no selected project required. A selected project key takes precedence over login.",
+        credential_requirement="login",
+        credential_note="Requires a Solwyn login at any account role; no selected project required.",
         description="Read a plan-change estimate: immediate proration or scheduling at term end, integer cents, currency and line periods. Never changes a subscription or bills; not a price lock. No 503/transport replay.",
     )
     async def plan_preview(
@@ -3065,7 +3103,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _PlanPreviewResult,
                 fetch_plan_preview,
                 launch,
-                jwt_required=True,
+                login_required=True,
                 transport_read_hint="The preview is read-only and has no billing effect; retry the preview when connectivity returns.",
                 tier=tier,
                 interval=interval,
@@ -3075,7 +3113,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     @catalog.tool(
         name="list_team_members",
         title="List team members",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read the complete active account roster in join order. Any account member may read it; no project selection is required.",
     )
     async def list_team_members() -> _ListTeamMembersResult:
@@ -3085,14 +3123,14 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListTeamMembersResult,
                 fetch_members,
                 launch,
-                jwt_required=True,
+                login_required=True,
             )
         )
 
     @catalog.tool(
         name="list_team_invites",
         title="List team invites",
-        credential_requirement="jwt",
+        credential_requirement="login",
         description="Read all open account invitations and their delivery status, including expired invitations. Core requires owner/admin role; no project selection is required.",
     )
     async def list_team_invites() -> _ListTeamInvitesResult:
@@ -3102,7 +3140,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListTeamInvitesResult,
                 fetch_invites,
                 launch,
-                jwt_required=True,
+                login_required=True,
             )
         )
 

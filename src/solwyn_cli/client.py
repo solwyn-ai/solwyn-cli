@@ -1,5 +1,6 @@
 """Synchronous authenticated HTTP client with bounded retries."""
 
+import math
 import time
 import re
 from collections.abc import Callable, Mapping, Iterator
@@ -7,20 +8,26 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any, cast
-from urllib.parse import unquote, urlsplit
+from typing import Any, Literal, cast
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx
+from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
 
 from solwyn_cli import __version__
+from solwyn_cli.approvals import (
+    APPROVAL_HEADER,
+    APPROVAL_POLL_SECONDS,
+    ApprovalSettings,
+    current_settings,
+)
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
     ResolvedCredential,
-    request_with_refresh_retry,
     resolve_credential,
 )
 from solwyn_cli.errors import (
+    APPROVAL_USED_HINT,
     BILLING_HINTS,
     BILLING_WRITE_UNKNOWN_HINT,
     ApiError,
@@ -30,6 +37,7 @@ from solwyn_cli.errors import (
     LEGACY_BATCH_BUSY_HINT,
     SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
+    approval_url_from,
     error_from_response,
     is_budget_admission_busy,
     is_ingest_unaccepted,
@@ -43,6 +51,89 @@ POOL_TIMEOUT_SECONDS = 5.0
 MAX_RETRY_AFTER_SECONDS = 10.0
 
 _UNSET = object()
+# Server 401 codes that carry their own safe message and hint.
+_EXPLAINED_UNAUTHORIZED_CODES = frozenset(
+    {
+        "account_membership_revoked",
+        "cli_credential_invalid",
+        "cli_credential_expired",
+        "cli_credential_revoked",
+    }
+)
+_APPROVAL_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
+_EFFECT_TEXT = {
+    "raises_cap": "raises the cap",
+    "lowers_cap": "lowers the cap",
+    "weakens_enforcement": "weakens enforcement",
+    "strengthens_enforcement": "strengthens enforcement",
+    "changes_period": "changes the period",
+    "changes_rules": "changes rules",
+}
+
+
+class ApprovalChange(BaseModel):
+    """One described field change on an approval page."""
+
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+
+    field: str
+    label: str
+    before: str | None = None
+    after: str | None = None
+    effect: str | None = None
+
+
+class ApprovalView(BaseModel):
+    """The approval fields the CLI shows and decides on."""
+
+    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
+
+    id: str
+    status: Literal["pending", "approved", "denied", "consumed", "expired"]
+    action: str
+    title: str
+    reasons: list[str]
+    changes: list[ApprovalChange]
+    created_at: AwareDatetime
+    expires_at: AwareDatetime
+
+
+def _terminal_safe(value: object) -> str:
+    return "".join(
+        "\N{REPLACEMENT CHARACTER}"
+        if ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
+        else character
+        for character in str(value)
+    )
+
+
+def approval_path(approval_id: str) -> str:
+    """Return the approval read path for a validated approval ID."""
+    return f"/api/v1/cli/approvals/{quote(approval_id, safe='')}"
+
+
+def approval_error(
+    code: str,
+    message: str,
+    *,
+    hint: str | None,
+    approval_id: str,
+    approval_url: str | None = None,
+    expires_at: str | None = None,
+) -> ApiError:
+    """Build a local approval outcome error with its stable detail fields."""
+    detail: dict[str, Any] = {"approval_id": approval_id}
+    if approval_url is not None:
+        detail["approval_url"] = approval_url
+    if expires_at is not None:
+        detail["expires_at"] = expires_at
+    return ApiError(
+        status_code=403,
+        code=code,
+        message=message,
+        hint=hint,
+        detail=detail,
+    )
 
 
 @dataclass
@@ -120,7 +211,7 @@ class SolwynClient:
 
     @property
     def current_credential(self) -> ResolvedCredential:
-        """Return the credential currently retained after any JWT rotation."""
+        """Return the credential this client sends."""
         return self._resolve_credential()
 
     def close(self) -> None:
@@ -184,27 +275,22 @@ class SolwynClient:
     def _send_with_capacity_retry(
         self,
         *,
-        method: str,
+        request: httpx.Request,
         path: str,
-        headers: httpx.Headers,
-        kwargs: dict[str, Any],
         evidence: _RequestEvidence,
         retry_rate_limit: bool = True,
         stream: bool = False,
     ) -> httpx.Response:
-        """Share one bounded 429/eligible-503 retry across JWT rotation.
+        """Share one bounded 429/eligible-503 retry for one prepared request.
 
         retry_rate_limit controls only 429; eligible 503 retries remain enabled.
+        Every attempt sends the same prepared request bytes.
         """
+        method = request.method
 
         def send() -> httpx.Response:
-            if not stream:
-                return self._client.request(method, path, headers=headers, **kwargs)
-            request = self._client.build_request(
-                method, path, headers=headers, **kwargs
-            )
-            response = self._client.send(request, stream=True)
-            if not response.is_success:
+            response = self._client.send(request, stream=stream)
+            if stream and not response.is_success:
                 try:
                     response.read()
                 finally:
@@ -215,7 +301,11 @@ class SolwynClient:
         while True:
             endpoint = urlsplit(path).path.rstrip("/")
             retryable = False
-            if retry_rate_limit and response.status_code == 429:
+            if (
+                retry_rate_limit
+                and response.status_code == 429
+                and error_from_response(response).code != "approval_limit_reached"
+            ):
                 retryable = True
             elif response.status_code == 503:
                 safe_busy_retry = "Retry-After" in response.headers and (
@@ -223,20 +313,7 @@ class SolwynClient:
                     or method.upper() == "POST"
                     and endpoint == "api/v1/metadata/ingest"
                 )
-                # Core invitation JIT capacity rejects before password hashing,
-                # user creation and membership acceptance. Other invitation
-                # POST failures may follow commits or email I/O; never replay.
-                auth_capacity = (
-                    method.upper() == "POST"
-                    and (
-                        endpoint == "api/v1/auth/login"
-                        or re.fullmatch(
-                            r"api/v1/invitations/[A-Za-z0-9_-]{1,4096}/accept", endpoint
-                        )
-                    )
-                    and error_from_response(response).code == "auth_capacity_exceeded"
-                )
-                if safe_busy_retry or auth_capacity:
+                if safe_busy_retry:
                     retryable = True
             if not retryable or evidence.capacity_retry_used:
                 return response
@@ -264,14 +341,12 @@ class SolwynClient:
         response: httpx.Response, *, method: str, path: str, evidence: _RequestEvidence
     ) -> None:
         if not response.is_success:
-            error = error_from_response(
-                response,
-                code_override=(
-                    "rate_limited"
-                    if response.status_code == httpx.codes.TOO_MANY_REQUESTS
-                    else None
-                ),
-            )
+            error = error_from_response(response)
+            if (
+                response.status_code == httpx.codes.TOO_MANY_REQUESTS
+                and error.code != "approval_limit_reached"
+            ):
+                error = error_from_response(response, code_override="rate_limited")
             error.ingest_outcome_uncertain = evidence.ingest_outcome_uncertain
             endpoint = urlsplit(path).path.rstrip("/")
             if (
@@ -330,10 +405,10 @@ class SolwynClient:
         evidence = _RequestEvidence()
         try:
             response = self._send_with_capacity_retry(
-                method=method,
+                request=self._client.build_request(
+                    method, relative_path, headers=request_headers, **kwargs
+                ),
                 path=relative_path,
-                headers=request_headers,
-                kwargs=kwargs,
                 evidence=evidence,
             )
         except httpx.HTTPError:
@@ -357,51 +432,55 @@ class SolwynClient:
         path: str,
         *,
         retry_rate_limit: bool = True,
-        retry_auth: bool = True,
         _stream: bool = False,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Make one logical request with bounded capacity and auth retries.
+        """Make one logical request with bounded capacity retries.
 
         retry_rate_limit=False disables 429 retries only; eligible GET/ingest
-        503 responses still share the single capacity retry budget.
+        503 responses still share the single capacity retry budget. A write
+        that needs a browser approval waits for it when the invocation allows,
+        then re-sends the exact prepared request once with Solwyn-Approval.
         """
         relative_path, request_headers = self._prepare_request(path, kwargs)
         credential = self._resolve_credential()
         evidence = _RequestEvidence()
+        settings = current_settings()
+        is_write = method.upper() != "GET"
+        request_headers["Authorization"] = f"Bearer {credential.bearer_value()}"
+        if is_write and settings is not None:
+            attached = settings.take_approval_id()
+            if attached is not None:
+                request_headers[APPROVAL_HEADER] = attached
+        prepared = self._client.build_request(
+            method, relative_path, headers=request_headers, **kwargs
+        )
 
-        def retain_rotated_credential(rotated: JwtCredential) -> None:
-            if self._credential is not _UNSET:
-                self._credential = rotated
-
-        def send(resolved: ResolvedCredential) -> httpx.Response:
-            headers = request_headers.copy()
-            headers["Authorization"] = f"Bearer {resolved.bearer_value()}"
-            return self._send_with_capacity_retry(
-                method=method,
+        try:
+            response = self._send_with_capacity_retry(
+                request=prepared,
                 path=relative_path,
-                headers=headers,
-                kwargs=kwargs,
                 evidence=evidence,
                 retry_rate_limit=retry_rate_limit,
                 stream=_stream,
             )
-
-        try:
-            response = (
-                request_with_refresh_retry(
-                    client=self._client,
-                    api_url=self._api_url,
-                    credential=credential,
-                    request=send,
-                    on_credential_rotated=retain_rotated_credential,
+            self._check_authentication(response, evidence)
+            if (
+                is_write
+                and settings is not None
+                and APPROVAL_HEADER not in prepared.headers
+                and response.status_code == httpx.codes.FORBIDDEN
+                and error_from_response(response).code == "approval_required"
+            ):
+                response = self._approval_handoff(
+                    prepared,
+                    response,
+                    settings,
+                    path=relative_path,
+                    evidence=evidence,
+                    retry_rate_limit=retry_rate_limit,
+                    stream=_stream,
                 )
-                if retry_auth
-                else send(credential)
-            )
-        except AuthError as error:
-            error.ingest_outcome_uncertain = evidence.ingest_outcome_uncertain
-            raise
         except httpx.HTTPError:
             raise ApiError(
                 status_code=None,
@@ -426,6 +505,163 @@ class SolwynClient:
         )
         return response
 
+    @staticmethod
+    def _check_authentication(
+        response: httpx.Response, evidence: _RequestEvidence
+    ) -> None:
+        """Turn an unexplained 401 into a credential-free auth failure."""
+        if response.status_code != httpx.codes.UNAUTHORIZED:
+            return
+        if error_from_response(response).code in _EXPLAINED_UNAUTHORIZED_CODES:
+            return
+        error = AuthError("Authentication failed. Check your credentials.")
+        error.ingest_outcome_uncertain = evidence.ingest_outcome_uncertain
+        raise error
+
+    def read_approval(self, approval_id: str) -> ApprovalView:
+        """Read one approval owned by the current login."""
+        response = self.request("GET", approval_path(approval_id))
+        return ApprovalView.model_validate(response.json())
+
+    def _approval_handoff(
+        self,
+        prepared: httpx.Request,
+        response: httpx.Response,
+        settings: ApprovalSettings,
+        *,
+        path: str,
+        evidence: _RequestEvidence,
+        retry_rate_limit: bool,
+        stream: bool,
+    ) -> httpx.Response:
+        """Print the approval URL, wait for a decision, then re-send once."""
+        required = error_from_response(response)
+        detail = required.detail if isinstance(required.detail, dict) else {}
+        approval_id = detail.get("approval_id")
+        approval_url = approval_url_from(detail)
+        if not isinstance(approval_id, str) or not _APPROVAL_ID.fullmatch(approval_id):
+            return response
+        try:
+            view = self.read_approval(approval_id)
+        except (ValidationError, ValueError, TypeError):
+            raise ApiError(
+                status_code=None,
+                code="invalid_approval_response",
+                message="The approval response was invalid.",
+                hint=None,
+                detail=None,
+            ) from None
+        self._print_approval_request(view, approval_url, settings)
+        status = self._wait_for_decision(view, settings.wait_seconds)
+        expires_at = view.expires_at.isoformat().replace("+00:00", "Z")
+        if status == "pending":
+            raise approval_error(
+                "approval_pending",
+                f"Still waiting for approval {approval_id}. After approving, run "
+                f"the same command again with --approval {approval_id}.",
+                hint=(
+                    f"Approve the change in the browser: {approval_url}"
+                    if approval_url is not None
+                    else None
+                ),
+                approval_id=approval_id,
+                approval_url=approval_url,
+                expires_at=expires_at,
+            )
+        if status == "denied":
+            raise approval_error(
+                "approval_denied",
+                "The change was denied in the browser. Nothing was sent.",
+                hint=None,
+                approval_id=approval_id,
+            )
+        if status != "approved":
+            raise approval_error(
+                "approval_expired" if status == "expired" else "approval_invalid",
+                "The approval expired before it was used."
+                if status == "expired"
+                else "The approval was already used.",
+                hint="Run the command again to request a new approval.",
+                approval_id=approval_id,
+            )
+        settings.write("Approved. Applying the change.\n")
+        retry_headers = prepared.headers.copy()
+        retry_headers[APPROVAL_HEADER] = approval_id
+        retry = httpx.Request(
+            prepared.method,
+            prepared.url,
+            headers=retry_headers,
+            content=prepared.read(),
+            extensions=prepared.extensions,
+        )
+        retried = self._send_with_capacity_retry(
+            request=retry,
+            path=path,
+            evidence=evidence,
+            retry_rate_limit=retry_rate_limit,
+            stream=stream,
+        )
+        self._check_authentication(retried, evidence)
+        if not retried.is_success:
+            error = error_from_response(retried)
+            if error.code != "approval_invalid":
+                try:
+                    self._raise_for_unsuccessful_response(
+                        retried,
+                        method=prepared.method,
+                        path=path,
+                        evidence=evidence,
+                    )
+                except ApiError as handler_error:
+                    handler_error.hint = (
+                        f"{handler_error.hint} {APPROVAL_USED_HINT}"
+                        if handler_error.hint
+                        else APPROVAL_USED_HINT
+                    )
+                    raise
+        return retried
+
+    def _print_approval_request(
+        self,
+        view: ApprovalView,
+        approval_url: str | None,
+        settings: ApprovalSettings,
+    ) -> None:
+        lines = ["This change needs your approval in the browser:", ""]
+        if approval_url is not None:
+            lines.extend([f"  {_terminal_safe(approval_url)}", ""])
+        lines.append(f"  {_terminal_safe(view.title)}")
+        for change in view.changes:
+            effect = _EFFECT_TEXT.get(change.effect or "", change.effect or "")
+            line = (
+                f"  {change.label}: {change.before or 'none'} -> "
+                f"{change.after or 'none'}"
+            )
+            if effect:
+                line += f" ({effect.replace('_', ' ')})"
+            lines.append(_terminal_safe(line))
+        remaining = (view.expires_at - self._clock()).total_seconds()
+        minutes = max(1, math.ceil(remaining / 60))
+        lines.extend(
+            [
+                "",
+                f"Waiting for approval... (expires in {minutes} "
+                f"minute{'s' if minutes != 1 else ''}, Ctrl-C to stop)",
+                "",
+            ]
+        )
+        settings.write("\n".join(lines))
+
+    def _wait_for_decision(self, view: ApprovalView, wait_seconds: float) -> str:
+        """Poll every 3 s until a decision, expiry or the end of the wait."""
+        return wait_for_approval(
+            read=lambda: self.read_approval(view.id),
+            initial=view,
+            wait_seconds=wait_seconds,
+            sleeper=self._sleeper,
+            clock=self._clock,
+        )
+
     @contextmanager
     def stream(self, method: str, path: str, **kwargs: Any) -> Iterator[httpx.Response]:
         """Yield an unread successful response with the normal auth/retry policy.
@@ -446,3 +682,27 @@ class SolwynClient:
             ) from None
         finally:
             response.close()
+
+
+def wait_for_approval(
+    *,
+    read: Callable[[], ApprovalView],
+    initial: ApprovalView,
+    wait_seconds: float,
+    sleeper: Callable[[float], object],
+    clock: Callable[[], datetime],
+) -> str:
+    """Return the approval status after polling every 3 s within the wait."""
+    view = initial
+    started = clock()
+    while True:
+        status = view.status
+        if status == "pending" and view.expires_at <= clock():
+            status = "expired"
+        if status != "pending":
+            return status
+        waited = (clock() - started).total_seconds()
+        if waited + APPROVAL_POLL_SECONDS > wait_seconds:
+            return "pending"
+        sleeper(APPROVAL_POLL_SECONDS)
+        view = read()

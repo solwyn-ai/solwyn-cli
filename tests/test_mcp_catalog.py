@@ -58,7 +58,7 @@ def test_catalog_metadata_and_runtime_models(profile):
             )
     by_name = {tool.definition.name: tool for tool in catalog}
     for name in ("get_overview", "list_projects"):
-        assert by_name[name].credential_requirement == "jwt"
+        assert by_name[name].credential_requirement == "login"
     assert by_name["list_alert_events"].credential_requirement == "either"
     assert "account=true" in by_name["list_alert_events"].credential_note
 

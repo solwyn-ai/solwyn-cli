@@ -11,7 +11,7 @@ from solwyn_cli.commands import tags
 from solwyn_cli.main import app
 from solwyn_cli.errors import error_from_response
 from golden.harness import assert_matches_golden
-from solwyn_cli import auth
+from login_fixtures import login_credential
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 runner = CliRunner()
@@ -102,11 +102,13 @@ def test_values_reserved_characters_are_query_parameter(transport):
     }
 
 
-def test_retirement_requires_jwt_before_request(transport):
+def test_retirement_requires_login_before_request(transport):
     requests, _ = transport
     result = runner.invoke(app, ["--json", "tags", "retire", "--yes", "env"])
     assert result.exit_code == 3
-    assert "JWT" in result.stderr
+    error = json.loads(result.stderr)
+    assert error["code"] == "login_required"
+    assert "Solwyn login" in error["message"]
     assert requests == []
 
 
@@ -118,7 +120,7 @@ def test_tag_goldens(transport, monkeypatch, mode, case):
         monkeypatch.setattr(
             tags,
             "resolve_credential",
-            lambda: auth.JwtCredential(access_token="jwt", refresh_token="refresh"),
+            lambda **_: login_credential("jwt"),
         )
         replies.append(httpx.Response(204))
     else:
@@ -186,7 +188,7 @@ def test_retire_never_registered_is_not_found(transport, monkeypatch):
     monkeypatch.setattr(
         tags,
         "resolve_credential",
-        lambda: auth.JwtCredential(access_token="jwt", refresh_token="refresh"),
+        lambda **_: login_credential("jwt"),
     )
     replies.append(
         error_from_response(httpx.Response(404, json={"detail": "Tag key not found"}))

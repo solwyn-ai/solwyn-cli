@@ -128,7 +128,7 @@ def command_help(
     endpoint: str,
     schema: str,
     *,
-    auth: str = "JWT; owner for mutations",
+    auth: str = "login; owner for mutations",
     guidance: tuple[str, ...] = (),
 ) -> str:
     return help_contract(
@@ -196,19 +196,19 @@ def request(
     model: type[T],
     *,
     body: BaseModel | None = None,
-    jwt: bool = True,
+    login: bool = True,
     secrets: tuple[str, ...] = (),
     list_response: bool = False,
     deleted_id: str | None = None,
 ) -> T:
     credential = required_credential(context, resolve=resolve_credential)
-    if jwt and isinstance(credential, ProjectKeyCredential):
+    if login and isinstance(credential, ProjectKeyCredential):
         exit_with_error(
             context,
             OutputError(
                 code="authentication_required",
                 message="This operation requires user login.",
-                hint="Unset SOLWYN_API_KEY and run solwyn login; mutations require the account owner.",
+                hint="Run solwyn login; mutations require the account owner.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -223,7 +223,7 @@ def request(
                 options["json"]["enabled_event_types"] = sorted(
                     options["json"]["enabled_event_types"]
                 )
-        # Preserve the client's bounded 429 and JWT-refresh defaults. Core
+        # Preserve the client's bounded 429 defaults. Core
         # rejects these requests before entering the mutation/delivery handler.
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential

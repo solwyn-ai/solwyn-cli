@@ -14,6 +14,7 @@ from solwyn_cli import auth
 from solwyn_cli.commands import providers as providers_module
 from solwyn_cli.errors import ApiError, error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -142,7 +143,7 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _key() -> auth.ProjectKeyCredential:
+def _key(**_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
@@ -161,7 +162,7 @@ def test_providers_commands_are_registered() -> None:
     "credential",
     [
         auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN),
+        login_credential(ACCESS_TOKEN),
     ],
 )
 def test_failovers_supports_key_and_jwt_and_preserves_the_wire_payload(
@@ -169,7 +170,7 @@ def test_failovers_supports_key_and_jwt_and_preserves_the_wire_payload(
     credential: auth.ResolvedCredential,
 ) -> None:
     monkeypatch.setattr(
-        providers_module, "resolve_credential", lambda: credential, raising=False
+        providers_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [httpx.Response(200, json=FAILOVERS_RESPONSE)]
 
@@ -233,7 +234,7 @@ def test_failovers_accepts_only_the_frozen_ranges(
     "credential",
     [
         auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN),
+        login_credential(ACCESS_TOKEN),
     ],
 )
 def test_untracked_supports_key_and_jwt_and_prints_effective_billing_retention(
@@ -241,7 +242,7 @@ def test_untracked_supports_key_and_jwt_and_prints_effective_billing_retention(
     credential: auth.ResolvedCredential,
 ) -> None:
     monkeypatch.setattr(
-        providers_module, "resolve_credential", lambda: credential, raising=False
+        providers_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         httpx.Response(200, json=BILLING_STATUS_RESPONSE),
@@ -349,7 +350,7 @@ def test_provider_commands_reject_missing_project_before_authentication(
     monkeypatch.setattr(
         providers_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -388,7 +389,7 @@ def test_provider_cross_project_key_403_has_an_actionable_project_hint(
 ) -> None:
     credential = _key()
     monkeypatch.setattr(
-        providers_module, "resolve_credential", lambda: credential, raising=False
+        providers_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         error_from_response(

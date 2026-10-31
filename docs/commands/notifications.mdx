@@ -2,8 +2,9 @@
 title: Project notifications
 ---
 
-Read or update selected-project routing. Reads accept a project key or JWT;
-settings writes need a full-scope key or JWT. Omitted options keep current
+Read or update selected-project routing. Reads accept a project key or a Solwyn
+login; settings writes need a full-scope key, or a login plus a one-time browser
+approval (see [approvals](approvals.mdx)). Omitted options keep current
 settings. `--clear-channels` clears channel references and `--all-events` clears the
 event filter to allow all events;
 email/SMS resets send explicit null. Core accepts future event names.
@@ -95,7 +96,7 @@ Usage: solwyn notifications test [OPTIONS] CHANNEL:{slack|pagerduty|sms|email}
 
 ```text
 Endpoint: POST /api/v1/projects/{project}/notifications/test-{channel}
-Auth: any; Slack/PagerDuty require JWT or full-scope key; email requires JWT
+Auth: any; Slack/PagerDuty require a login or full-scope key; email requires a login
 Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found
 JSON schema: solwyn.notifications.test.v1
 SMS checks eligibility only (no message sent). Slack, PagerDuty and email send a real test. Slack/PagerDuty require --secret-stdin or SOLWYN_CHANNEL_SECRET; use channels test ID for stored credentials.

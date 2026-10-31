@@ -1,11 +1,14 @@
 """Command-line entrypoint for Solwyn."""
 
+import re
 from typing import Annotated
 
 import typer
 from pydantic import ValidationError
 
 from solwyn_cli import __version__
+from solwyn_cli.approvals import ApprovalSettings, activate, default_wait_seconds
+from solwyn_cli.auth import auth_selection
 from solwyn_cli.commands.account import app as account_app
 from solwyn_cli.commands.team import app as team_app
 from solwyn_cli.commands.invite import app as invite_app
@@ -17,11 +20,13 @@ from solwyn_cli.commands.audit import AUDIT_HELP, audit
 from solwyn_cli.commands.overview import OVERVIEW_HELP, overview
 from solwyn_cli.commands.budget import app as budget_app
 from solwyn_cli.commands.alerts import app as alerts_app
+from solwyn_cli.commands.approvals import app as approvals_app
 from solwyn_cli.commands.budget_rules import register as register_budget_rules
 from solwyn_cli.commands.config import app as config_app
 from solwyn_cli.commands.cost_analysis import register_cost_analysis_commands
 from solwyn_cli.commands.cost_pricing import register_cost_pricing_commands
 from solwyn_cli.commands.costs import app as costs_app
+from solwyn_cli.commands.credentials import app as credentials_app
 from solwyn_cli.commands.forecast import FORECAST_HELP, forecast
 from solwyn_cli.commands.doctor import DOCTOR_HELP, doctor
 from solwyn_cli.commands.init import INIT_HELP, init
@@ -46,6 +51,8 @@ from solwyn_cli.runtime import (
     resolve_command_context,
     validate_output_intent,
 )
+
+_APPROVAL_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 app = typer.Typer(
     add_completion=False,
@@ -83,6 +90,8 @@ app.add_typer(providers_app, name="providers")
 app.command("forecast", epilog=FORECAST_HELP)(forecast)
 app.command("doctor", epilog=DOCTOR_HELP)(doctor)
 app.add_typer(alerts_app, name="alerts")
+app.add_typer(approvals_app, name="approvals")
+app.add_typer(credentials_app, name="credentials")
 app.command("audit", epilog=AUDIT_HELP)(audit)
 app.command("init", epilog=INIT_HELP)(init)
 app.command("login", epilog=LOGIN_HELP)(login)
@@ -125,6 +134,24 @@ def main(
         bool,
         typer.Option("--no-color", help="Disable terminal color."),
     ] = False,
+    approval_wait: Annotated[
+        int | None,
+        typer.Option(
+            "--approval-wait",
+            min=0,
+            help=(
+                "Seconds to wait for a browser approval before exiting 6. "
+                "Defaults to 600 with a terminal, else 90."
+            ),
+        ),
+    ] = None,
+    approval: Annotated[
+        str | None,
+        typer.Option(
+            "--approval",
+            help="Approval ID to attach to this invocation's first change request.",
+        ),
+    ] = None,
 ) -> None:
     """Work with Solwyn from the command line."""
     if version:
@@ -135,6 +162,24 @@ def main(
         return
     if context.invoked_subcommand in {"agent-context", "config"}:
         return
+    try:
+        auth_selection()
+    except ValueError:
+        raise typer.BadParameter(
+            "SOLWYN_AUTH must be login or project_key.", param_hint="SOLWYN_AUTH"
+        ) from None
+    if approval is not None and _APPROVAL_ID.fullmatch(approval) is None:
+        raise typer.BadParameter("Invalid approval ID.", param_hint="approval")
+    context.call_on_close(
+        activate(
+            ApprovalSettings(
+                wait_seconds=(
+                    default_wait_seconds() if approval_wait is None else approval_wait
+                ),
+                approval_id=approval,
+            )
+        )
+    )
     try:
         validate_output_intent(
             output_format=output_format,

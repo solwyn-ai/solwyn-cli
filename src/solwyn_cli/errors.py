@@ -36,6 +36,27 @@ _INGEST_UNACCEPTED_DETAILS = frozenset(
     }
 )
 MEMBERSHIP_RECOVERY_HINT = "Run solwyn account recover to recover a personal account."
+CLI_CREDENTIAL_HINTS = {
+    "cli_credential_invalid": "Your Solwyn login is not valid. Run solwyn login.",
+    "cli_credential_expired": "Your Solwyn login expired. Run solwyn login.",
+    "cli_credential_revoked": "Your Solwyn login was revoked. Run solwyn login.",
+}
+APPROVAL_USED_HINT = (
+    "The approval was used. Run the command again to request a new one."
+)
+APPROVAL_INVALID_MESSAGES = {
+    "not_found": "The approval was not found for this login.",
+    "pending": "The approval is still pending. Approve it in the browser, then retry with --approval.",
+    "denied": "The approval was denied in the browser.",
+    "expired": "The approval expired.",
+    "consumed": "The approval was already used.",
+    "mismatch": "The request changed since it was approved.",
+}
+APPROVAL_INVALID_HINTS = {
+    "pending": None,
+    "mismatch": "Run the command again to request a new approval.",
+}
+APPROVAL_RETRY_HINT = "Run the command again to request a new approval."
 
 
 BILLING_WRITE_UNKNOWN_HINT = (
@@ -259,6 +280,37 @@ def error_from_response(
         code = "account_membership_revoked"
         hint = MEMBERSHIP_RECOVERY_HINT
 
+    if response.status_code == 401 and code in CLI_CREDENTIAL_HINTS:
+        hint = CLI_CREDENTIAL_HINTS[code]
+
+    if isinstance(detail, dict):
+        if response.status_code == 403 and code == "approval_required":
+            approval_url = approval_url_from(detail)
+            hint = (
+                f"Approve the change in the browser: {approval_url}"
+                if approval_url is not None
+                else "Approve the change in the browser."
+            )
+        elif response.status_code == 403 and code == "approval_invalid":
+            reason = detail.get("reason")
+            if isinstance(reason, str) and reason in APPROVAL_INVALID_MESSAGES:
+                message = APPROVAL_INVALID_MESSAGES[reason]
+                hint = APPROVAL_INVALID_HINTS.get(reason, APPROVAL_RETRY_HINT)
+        elif response.status_code == 403 and code == "session_required":
+            hint = "This action is only available in the dashboard."
+        elif response.status_code == 429 and code == "approval_limit_reached":
+            hint = (
+                "You have 5 pending approvals. Approve or deny them in the browser, "
+                "or wait for them to expire, then retry."
+            )
+        elif response.status_code == 410 and code == "cli_password_login_retired":
+            server_hint = detail.get("hint")
+            hint = (
+                server_hint
+                if isinstance(server_hint, str) and server_hint
+                else "Upgrade solwyn-cli and run solwyn login."
+            )
+
     if response.status_code == 503:
         if code == "http_error":
             code = "service_busy"
@@ -287,6 +339,30 @@ def error_from_response(
         detail=detail,
         retry_after=response.headers.get("Retry-After"),
     )
+
+
+def safe_absolute_url(value: object) -> str | None:
+    """Return an absolute http(s) URL without credentials or control characters."""
+    if not isinstance(value, str) or len(value) > 2048:
+        return None
+    if any(unicodedata.category(character).startswith("C") for character in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return None
+    if parsed.username or parsed.password:
+        return None
+    return value
+
+
+def approval_url_from(detail: object) -> str | None:
+    """Return a safe approval URL from an error detail, if present."""
+    if not isinstance(detail, dict):
+        return None
+    return safe_absolute_url(detail.get("approval_url"))
 
 
 def is_budget_admission_busy(error: BaseException, *, path: str) -> bool:

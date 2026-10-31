@@ -25,10 +25,12 @@ Requires Python 3.11 or newer. The package installs two identical executables: `
 ## Getting started
 
 ```console
-solwyn login          # authenticate; use --with-key to store a project key instead
+solwyn login          # approve this CLI in your browser; --with-key stores a project key instead
 solwyn init           # configure Solwyn for the current repository
 solwyn status         # project budget and provider health at a glance
 ```
+
+`solwyn login` prints a URL and a code. Open the URL in any browser, sign in or sign up, and approve. It works over SSH and in agent sandboxes, and an agent can relay the code to you. The login is scoped: it can read, stop agent runs and lower caps. Raising a cap, changing enforcement mode, pausing rules, keys, billing and team changes ask for your approval in the browser each time, and the command waits for it (exit 6 if it is not given). `eval "$(solwyn keys env)"` hands the stored project key to the SDK in your shell. See [login](docs/commands/login.mdx) and [approvals](docs/commands/approvals.mdx).
 
 `solwyn init` authenticates, selects a project, writes local configuration, detects the provider SDKs your code imports, prints the wiring for each, and verifies your budget end-to-end. Add `--agents` to also write guidance files for Claude, Cursor, and `AGENTS.md`.
 
@@ -52,9 +54,9 @@ phone/SMS prerequisites, team roster/invitations, cost analysis/simulation, prov
 The 33 reads appear in both profiles; billing/team/member writes remain CLI-only.
 See [alerts](docs/commands/alerts.mdx), [budget](docs/commands/budget.mdx),
 [plan](docs/commands/plan.mdx), [account](docs/commands/account.mdx),
-[team](docs/commands/team.mdx) and [invitation acceptance](docs/commands/invite.mdx).
+[team](docs/commands/team.mdx) and [invitation preview](docs/commands/invite.mdx).
 
-Start with the [MCP quickstart](docs/mcp-quickstart.md). Profiles are fixed at launch and never grant permissions; see [MCP profiles and tool contracts](docs/mcp-profiles.md) and the [agent integration guide](https://docs.solwyn.ai/docs/cli/agents).
+Start with the [MCP quickstart](docs/mcp-quickstart.md). Profiles are fixed at launch and never grant permissions; see [MCP profiles and tool contracts](docs/mcp-profiles.md) and the [agent integration guide](https://docs.solwyn.ai/cli/agents).
 
 ### Gate CI on budget
 
@@ -65,7 +67,7 @@ One pipeline step, one exit code, no code change. `budget status` is a pure read
 solwyn --json budget status --max-utilization 80
 ```
 
-See [Gate CI on budget](https://docs.solwyn.ai/docs/cli/ci-budget-gate).
+See [Gate CI on budget](https://docs.solwyn.ai/cli/ci-budget-gate).
 
 ### Meter a call the SDK does not wrap
 
@@ -82,7 +84,7 @@ solwyn budget confirm --call-id 12345678-1234-1234-1234-123456789abc --provider 
   --reservation-id "$RESERVATION" --input-tokens 1180 --output-tokens 640
 ```
 
-The CLI's caller-owned workflow maintains parity with Solwyn Python SDK 0.6.0 semantics and covers enforcement and attribution. Use `record` for a completed call that had no reservation, such as a local model. The same loop prices image, video, audio, and speech calls by their billed units, declares fallback intent, scopes enforcement to a single agent run, and reserves for a batch of calls at once; see [Meter un-instrumented calls](https://docs.solwyn.ai/docs/cli/metering-uninstrumented-calls) for the walkthrough and [caller-owned spend reference](docs/caller-owned-spend.md) for the full rules.
+The CLI's caller-owned workflow maintains parity with Solwyn Python SDK 0.6.0 semantics and covers enforcement and attribution. Use `record` for a completed call that had no reservation, such as a local model. The same loop prices image, video, audio, and speech calls by their billed units, declares fallback intent, scopes enforcement to a single agent run, and reserves for a batch of calls at once; see [Meter un-instrumented calls](https://docs.solwyn.ai/cli/metering-uninstrumented-calls) for the walkthrough and [caller-owned spend reference](docs/caller-owned-spend.md) for the full rules.
 
 ## Commands
 
@@ -90,7 +92,7 @@ Every command's `--help` states its exit codes, authentication requirements, and
 
 | Group | Commands |
 | --- | --- |
-| Setup and identity | `init`, `login`, `logout`, `whoami`, `doctor` |
+| Setup and identity | `init`, `login`, `logout`, `whoami`, `credentials`, `approvals`, `doctor` |
 | Monitoring | `status`, `costs`, `forecast`, `overview`, `providers` |
 | Budget guardrails | `budget status` / `check` / `confirm` / `set`, `record`, `runs` |
 | Agents | `mcp`, `mcp-config`, `agent-context` |
@@ -98,13 +100,13 @@ Every command's `--help` states its exit codes, authentication requirements, and
 
 Account management includes subscription preview, change, cancellation/resume,
 scheduled-change discard, hosted checkout/portal links and pending-intent dismissal.
-Billing writes require owner JWT and confirmation or `--yes`; preview is a JWT
-read at any role. See the [plan reference](docs/commands/plan.mdx). The [in-repo command reference](docs/commands/README.md) describes this checkout.
-The published guide lives in the [CLI docs](https://docs.solwyn.ai/docs/cli).
+Billing writes require an owner login, a browser approval, and confirmation or
+`--yes`; preview is a login read at any role. See the [plan reference](docs/commands/plan.mdx). The [in-repo command reference](docs/commands/README.md) describes this checkout.
+The published guide lives in the [CLI docs](https://docs.solwyn.ai/cli).
 
 ## Scripting
 
-API and setup commands support global `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, and not-found failures. The local `config` commands emit plain text. Global flags select the project (`--project`), API base URL (`--api-url`), and output format, and go before the subcommand.
+API and setup commands support global `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, not-found, and approval (`6`) outcomes. The local `config` commands emit plain text. Global flags select the project (`--project`), API base URL (`--api-url`), and output format, and go before the subcommand.
 
 ## Trust posture
 

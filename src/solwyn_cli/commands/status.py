@@ -6,7 +6,7 @@ from urllib.parse import quote
 import typer
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
@@ -41,7 +41,7 @@ STATUS_HELP = help_contract(
     endpoint=(
         "GET /api/v1/projects/{project}/budget and "
         "GET /api/v1/projects/{project}/providers; optionally GET forecast "
-        "and provider failovers; JWT also GET /api/v1/overview"
+        "and provider failovers; login also GET /api/v1/overview"
     ),
     auth="any",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
@@ -253,7 +253,7 @@ def status(
                 ),
                 savings=(
                     fetch_overview(client=client).savings
-                    if isinstance(credential, JwtCredential)
+                    if isinstance(credential, LoginCredential)
                     else None
                 ),
             )
@@ -286,5 +286,5 @@ def status(
     output_engine(context).write_success(
         schema="solwyn.status.v1",
         data=response_data,
-        table=_table(data, include_savings=isinstance(credential, JwtCredential)),
+        table=_table(data, include_savings=isinstance(credential, LoginCredential)),
     )

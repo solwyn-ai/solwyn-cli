@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
 
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
-    JwtRequiredError,
+    LoginCredential,
+    LoginRequiredError,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -32,7 +32,7 @@ InvitableRole = Literal["admin", "member"]
 READ_HINT = "No write was submitted. Retry the read; if it remains invalid, update the CLI or contact support about the API response."
 UNKNOWN_HINT = "The write may already have completed. Inspect team/account state before a deliberate retry; do not blindly replay."
 ACCEPT_UNKNOWN_HINT = "Acceptance may already have completed. Try solwyn login and inspect solwyn whoami before a deliberate retry; do not automatically accept again."
-JWT_HINT = "Run solwyn login; unset SOLWYN_API_KEY and clear any selected stored project key to use JWT."
+LOGIN_HINT = "Run solwyn login. If SOLWYN_AUTH=project_key is set, unset it."
 
 
 class TeamModel(BaseModel):
@@ -99,13 +99,13 @@ _MEMBERS = TypeAdapter(list[MemberOut])
 _INVITES = TypeAdapter(list[InvitationOut])
 
 
-def require_team_jwt(client: SolwynClient) -> None:
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError(JWT_HINT)
+def require_team_login(client: SolwynClient) -> None:
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError(LOGIN_HINT)
 
 
 def fetch_members(*, client: SolwynClient) -> TeamMembersData:
-    require_team_jwt(client)
+    require_team_login(client)
     return TeamMembersData(
         members=_MEMBERS.validate_python(
             client.request("GET", BASE + "/members").json()
@@ -114,7 +114,7 @@ def fetch_members(*, client: SolwynClient) -> TeamMembersData:
 
 
 def fetch_invites(*, client: SolwynClient) -> TeamInvitesData:
-    require_team_jwt(client)
+    require_team_login(client)
     return TeamInvitesData(
         invitations=_INVITES.validate_python(
             client.request("GET", BASE + "/invitations").json()
@@ -234,7 +234,7 @@ def safe_api_error(
     elif error.status_code in (401, 403) and code is None:
         code, hint = (
             "team_access_denied",
-            JWT_HINT + " Check your account role and invited identity.",
+            LOGIN_HINT + " Check your account role and invited identity.",
         )
     if (
         submitted
@@ -266,7 +266,7 @@ def team_client(context: typer.Context):
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential
         ) as client:
-            require_team_jwt(client)
+            require_team_login(client)
             yield client
     except ApiError as error:
         safe_api_error(context, error)
@@ -275,7 +275,7 @@ def team_client(context: typer.Context):
             context,
             "authentication_required",
             "Team/account management requires a valid user login.",
-            JWT_HINT,
+            LOGIN_HINT,
             ErrorSemantic.AUTH,
         )
     except (ValueError, TypeError):
@@ -353,7 +353,7 @@ def emit(context, schema, data):
     )
 
 
-def command_help(endpoint, schema, auth="JWT; account role enforced by Core"):
+def command_help(endpoint, schema, auth="login; account role enforced by Core"):
     return help_contract(
         endpoint=endpoint,
         auth=auth,

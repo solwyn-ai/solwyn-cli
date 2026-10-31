@@ -1,5 +1,6 @@
-"""Project key recovery commands."""
+"""Project key recovery and hand-off commands."""
 
+import shlex
 from typing import Annotated
 from urllib.parse import quote
 
@@ -18,9 +19,10 @@ from pydantic import (
 
 from solwyn_cli._vendor.validation import validate_project_key_format
 from solwyn_cli._vendor.wire import ProjectKeyRotateRequest, ProjectKeyScope
+from solwyn_cli import auth
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
 )
@@ -35,10 +37,10 @@ from solwyn_cli.runtime import command_context, output_engine
 
 
 app = typer.Typer(
-    help="Recover from leaked or expired project keys.",
+    help="Recover from leaked or expired project keys, and hand a key to an SDK.",
     epilog=help_contract(
         endpoint="composite router for project-key subcommands",
-        auth="JWT",
+        auth="login",
         exits="0 success; 2 usage",
         schema="varies by subcommand",
         guidance=("Metadata help never reveals existing key material.",),
@@ -166,14 +168,10 @@ def _validated_identifier(
     return value.strip()
 
 
-def _jwt_credential(context: typer.Context, *, operation: str) -> JwtCredential:
+def _login_credential(context: typer.Context, *, operation: str) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            f"Unset SOLWYN_API_KEY, run solwyn login, then retry keys {operation}."
-            if credential.source == "environment"
-            else (f"Run solwyn logout, then solwyn login, and retry keys {operation}.")
-        )
+        hint = f"Run solwyn login, then retry keys {operation}."
         exit_with_error(
             context,
             OutputError(
@@ -226,7 +224,7 @@ def _validate_metadata_response(payload: object) -> _ProjectKeyMetadata:
     "show",
     epilog=help_contract(
         endpoint="GET /api/v1/projects/{project}/key",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.keys-show.v1",
         guidance=("Shows metadata only and never reveals existing key material.",),
@@ -236,7 +234,7 @@ def show_key(context: typer.Context) -> None:
     """Show active project-key metadata without revealing key material."""
     runtime = command_context(context)
     project_id = _validated_identifier(context, runtime.project, label="project")
-    credential = _jwt_credential(context, operation="show")
+    credential = _login_credential(context, operation="show")
     path = quote(project_id, safe="")
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -266,7 +264,7 @@ def show_key(context: typer.Context) -> None:
     "rotate",
     epilog=help_contract(
         endpoint="POST /api/v1/projects/{project}/key/rotate",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.keys-rotate.v1",
         guidance=(
@@ -327,7 +325,7 @@ def rotate_key(
         )
     )
     check_confirmation(context, yes=yes, effect=effect)
-    credential = _jwt_credential(context, operation="rotate")
+    credential = _login_credential(context, operation="rotate")
     confirm_effects(context, yes=yes, effect=effect)
     path = quote(project_id, safe="")
     try:
@@ -337,7 +335,6 @@ def rotate_key(
                 f"/api/v1/projects/{path}/key/rotate",
                 json=request.model_dump(mode="json"),
                 retry_rate_limit=False,
-                retry_auth=False,
             )
         if response.status_code != 200:
             raise ValueError("Key rotation did not return 200")
@@ -368,7 +365,7 @@ def rotate_key(
     "revoke",
     epilog=help_contract(
         endpoint="DELETE /api/v1/projects/{project}/key/{key_id}",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.keys-revoke.v1 (CLI output after bodyless 204)",
         guidance=(
@@ -396,7 +393,7 @@ def revoke_key(
     validated_key_id = _validated_identifier(context, key_id, label="key_id")
     effect = f"Hard-revoke key {validated_key_id!r} in project {project_id!r}: invalidates it without a replacement."
     check_confirmation(context, yes=yes, effect=effect)
-    credential = _jwt_credential(context, operation="revoke")
+    credential = _login_credential(context, operation="revoke")
     confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     key_path = quote(validated_key_id, safe="")
@@ -406,7 +403,6 @@ def revoke_key(
                 "DELETE",
                 f"/api/v1/projects/{project_path}/key/{key_path}",
                 retry_rate_limit=False,
-                retry_auth=False,
             )
         if response.status_code != 204 or response.content:
             raise ValueError("Key revocation did not return a bodyless 204")
@@ -430,3 +426,47 @@ def revoke_key(
         data=data,
         table=_revoke_table(data),
     )
+
+
+def export_line(project_key: str) -> str:
+    """Return the shell line that hands a project key to the SDK."""
+    return f"export SOLWYN_API_KEY={shlex.quote(project_key)}"
+
+
+@app.command(
+    "env",
+    epilog=help_contract(
+        endpoint="local keychain read",
+        auth="local (stored project key)",
+        exits="0 success; 2 usage; 3 no stored project key",
+        schema="solwyn.keys-env.v1",
+        guidance=(
+            'Prints one export line to stdout and nothing to stderr, so eval "$(solwyn keys env)" works.',
+            "Never writes .env or any other file.",
+        ),
+    ),
+)
+def env_key(context: typer.Context) -> None:
+    """Print an export line for the stored project key."""
+    try:
+        stored = auth.stored_project_key()
+    except AuthError:
+        stored = None
+    if stored is None:
+        exit_with_error(
+            context,
+            OutputError(
+                code="authentication_required",
+                message="No project key is stored.",
+                hint="Run solwyn login --with-key, or solwyn projects create --store-key.",
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
+    line = export_line(stored.bearer_value())
+    if command_context(context).output_format.value == "json":
+        output_engine(context).write_success(
+            schema="solwyn.keys-env.v1",
+            data={"name": "SOLWYN_API_KEY", "export": line},
+        )
+        return
+    typer.echo(line)

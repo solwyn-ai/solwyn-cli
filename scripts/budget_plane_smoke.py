@@ -179,6 +179,8 @@ class Cli:
         self.timeout = timeout
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("SOLWYN_")}
         self.env["SOLWYN_API_KEY"] = api_key
+        # A stored Solwyn login would otherwise win for user-plane reads.
+        self.env["SOLWYN_AUTH"] = "project_key"
         self.env["PYTHONPATH"] = str(ROOT / "src")
         self.commands = 0
 

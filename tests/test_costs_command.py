@@ -20,6 +20,7 @@ from solwyn_cli.commands._cost_models import AccountCostDailyPoint
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -173,7 +174,7 @@ def _queue_costs_response(**kwargs: str) -> None:
     FakeClient.responses = [httpx.Response(200, json=_response(**kwargs))]
 
 
-def _credential() -> auth.ProjectKeyCredential:
+def _credential(**_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
@@ -187,12 +188,9 @@ def test_costs_command_is_registered() -> None:
 def test_account_costs_defaults_to_project_rollup_without_a_project_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        costs_module, "resolve_credential", lambda: credential, raising=False
+        costs_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [httpx.Response(200, json=ACCOUNT_RESPONSE)]
 
@@ -238,10 +236,7 @@ def test_account_cost_sparkline_distinguishes_empty_and_all_zero_series(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     payload = copy.deepcopy(ACCOUNT_RESPONSE)
@@ -262,10 +257,7 @@ def test_account_cost_project_rollup_and_sparkline_match_goldens(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     FakeClient.responses = [httpx.Response(200, json=ACCOUNT_RESPONSE)]
@@ -291,10 +283,7 @@ def test_account_costs_withheld_rows_never_render_analytic_zeros(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     withheld = copy.deepcopy(ACCOUNT_RESPONSE)
@@ -346,10 +335,7 @@ def test_account_costs_forward_only_supported_filters_and_custom_window(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     payload = copy.deepcopy(ACCOUNT_RESPONSE)
@@ -424,10 +410,7 @@ def test_account_costs_reject_project_only_filters_before_http(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
 
@@ -444,10 +427,7 @@ def test_account_costs_print_core_window_headers_on_stderr(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     headers = {
@@ -472,10 +452,7 @@ def test_account_bad_group_by_is_left_to_core_422_validation(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     FakeClient.responses = [
@@ -531,10 +508,7 @@ def test_account_costs_keep_core_402_and_403_messages_safe(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     FakeClient.responses = [
@@ -555,10 +529,7 @@ def test_account_costs_keep_core_402_and_403_messages_safe(
     "credential",
     [
         auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-        auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        login_credential(ACCESS_TOKEN),
     ],
 )
 def test_costs_supports_bare_key_and_jwt_with_one_read_only_get(
@@ -566,7 +537,7 @@ def test_costs_supports_bare_key_and_jwt_with_one_read_only_get(
     credential: auth.ResolvedCredential,
 ) -> None:
     monkeypatch.setattr(
-        costs_module, "resolve_credential", lambda: credential, raising=False
+        costs_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue_costs_response()
 
@@ -697,7 +668,7 @@ def test_costs_missing_project_is_safe_usage_error_without_api_calls(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -721,7 +692,9 @@ def test_costs_missing_project_is_safe_usage_error_without_api_calls(
 def test_costs_missing_credentials_is_auth_error_without_api_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(costs_module, "resolve_credential", lambda: None, raising=False)
+    monkeypatch.setattr(
+        costs_module, "resolve_credential", lambda **_: None, raising=False
+    )
 
     result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs"])
 
@@ -752,7 +725,7 @@ def test_costs_relays_production_gated_402_for_free_project_key(
 ) -> None:
     credential = _credential()
     monkeypatch.setattr(
-        costs_module, "resolve_credential", lambda: credential, raising=False
+        costs_module, "resolve_credential", lambda **_: credential, raising=False
     )
     detail = {
         "code": "upgrade_required",
@@ -801,12 +774,9 @@ def test_costs_relays_production_gated_402_for_free_project_key(
 def test_costs_rejects_invalid_response_without_leaking_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        costs_module, "resolve_credential", lambda: credential, raising=False
+        costs_module, "resolve_credential", lambda **_: credential, raising=False
     )
     invalid = _response()
     invalid["groups"][0].pop("call_count")
@@ -1189,10 +1159,7 @@ def test_account_project_grouping_never_gets_a_false_capability_hint(
     monkeypatch.setattr(
         costs_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     monkeypatch.setattr(

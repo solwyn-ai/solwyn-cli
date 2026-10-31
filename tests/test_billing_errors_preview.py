@@ -137,7 +137,7 @@ def test_mcp_preview_exact_read_policy_jwt_no_project_and_units(monkeypatch, mod
             next(
                 t for t in catalog if t.definition.name == "plan_preview"
             ).credential_requirement
-            == "jwt"
+            == "login"
         )
         assert {
             t.definition.name
@@ -232,38 +232,25 @@ def test_transport_failure_is_not_replayed_and_classifies_read_vs_write(billing,
 
 
 @pytest.mark.parametrize("first_status", [401, 429])
-def test_checkout_rejection_retry_preserves_request_identity_and_refresh_is_mocked(
-    billing, monkeypatch, first_status
+def test_checkout_retries_only_429_with_identical_request_and_never_replays_401(
+    billing, first_status
 ):
     queue, calls = billing
     queue.append(httpx.Response(first_status, headers={"Retry-After": "0"}))
-    if first_status == 401:
-        queue.append(
-            httpx.Response(
-                200,
-                json={
-                    "access_token": "synthetic-new",
-                    "refresh_token": "synthetic-new-refresh",
-                },
-            )
-        )
     queue.append(
         httpx.Response(
             200, json={"checkout_url": "https://billing.example.test/session"}
         )
     )
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access, refresh: auth.JwtCredential(
-            access_token=access, refresh_token=refresh
-        ),
-    )
     result = invoke("upgrade", "--tier", "team", "--interval", "year", "--yes")
-    assert result.exit_code == 0, result.output
     posts = [c for c in calls if c[1] == "/api/v1/billing/checkout"]
-    assert len(posts) == 2 and posts[0][2] == posts[1][2]
-    assert len(calls) == (3 if first_status == 401 else 2)
+    if first_status == 401:
+        assert result.exit_code == 3, result.output
+        assert len(posts) == 1 and len(calls) == 1
+    else:
+        assert result.exit_code == 0, result.output
+        assert len(posts) == 2 and posts[0][2] == posts[1][2]
+        assert len(calls) == 2
 
 
 @pytest.mark.parametrize("role", ["admin", "member"])
@@ -319,7 +306,7 @@ def test_mcp_selected_key_preview_refusal_before_http(monkeypatch):
                 "plan_preview", {"tier": "team", "interval": "month"}
             )
             assert result.is_error
-            assert "JWT" in result.structured_content["error"]["hint"]
+            assert "Solwyn login" in result.structured_content["error"]["hint"]
 
     anyio.run(exercise)
     assert requests == []
@@ -338,7 +325,7 @@ def test_mcp_preview_transport_failure_has_fixed_read_guidance(monkeypatch):
     def handler(request):
         raise httpx.ReadTimeout("PRIVATE transport")
 
-    monkeypatch.setattr(auth, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: JWT)
     from solwyn_cli.client import SolwynClient
 
     monkeypatch.setattr(
@@ -396,7 +383,7 @@ def test_native_mcp_preview_uses_existing_response_result_and_deadline_fences(
     monkeypatch.setattr(operation, "operation_scope", scope)
     if fence == "deadline":
         monkeypatch.setattr(operation, "DEADLINE_SECONDS", 1)
-    monkeypatch.setattr(auth, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: JWT)
 
     async def exercise():
         # Warm a worker before starting the timed operation; startup is not
@@ -421,35 +408,19 @@ def test_native_mcp_preview_uses_existing_response_result_and_deadline_fences(
     assert len(calls) == 1
 
 
-def test_checkout_429_retry_budget_is_shared_across_jwt_refresh(billing, monkeypatch):
+def test_checkout_401_after_the_429_retry_stops_without_replay(billing):
     queue, calls = billing
     queue.extend(
         [
             httpx.Response(429, headers={"Retry-After": "0"}),
             httpx.Response(401),
-            httpx.Response(
-                200,
-                json={
-                    "access_token": "synthetic-new",
-                    "refresh_token": "synthetic-new-refresh",
-                },
-            ),
-            httpx.Response(429, headers={"Retry-After": "0"}),
         ]
     )
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access, refresh: auth.JwtCredential(
-            access_token=access, refresh_token=refresh
-        ),
-    )
     result = invoke("upgrade", "--tier", "team", "--interval", "year", "--yes")
-    assert result.exit_code == 1
-    assert json.loads(result.stderr.splitlines()[-1])["code"] == "rate_limited"
+    assert result.exit_code == 3
     posts = [c for c in calls if c[1] == "/api/v1/billing/checkout"]
-    assert len(calls) == 4 and len(posts) == 3
-    assert posts[0][2] == posts[1][2] == posts[2][2]
+    assert len(calls) == 2 and len(posts) == 2
+    assert posts[0][2] == posts[1][2]
 
 
 @pytest.mark.parametrize("status_value", ["incomplete", None, "absent"])

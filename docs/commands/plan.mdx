@@ -15,15 +15,15 @@ display cents, currency/tax metadata, included requests, published overage rate,
 string decimal cent metered price, limits and capabilities. Null prices/overage
 remain null. No currency conversion or floating-point money conversion occurs.
 
-Both reads accept JWT or project keys with the required account/user context;
+Both reads accept a Solwyn login or project keys with the required account/user context;
 Core enforces access. No project selection is required. Group/subcommand help
 performs no API read. MCP offers `plan_status` and `plan_catalog` in both profiles.
 
 ```sh
-# Any account JWT can read this estimate; no confirmation or billing effect.
+# Any account login can read this estimate; no confirmation or billing effect.
 solwyn --json plan change --tier team --interval year --dry-run
 
-# Owner JWT required for every write below. Review effects before using --yes.
+# Owner login and a browser approval required for every write below.
 solwyn plan change --tier team --interval year
 solwyn plan change --discard
 solwyn plan cancel
@@ -37,8 +37,9 @@ Every billing write, including checkout and portal session creation, displays it
 effects and requires interactive confirmation or `--yes`. Without an interactive
 terminal and without `--yes`, the command exits 2 before HTTP. Declining or EOF
 also exits 2 without submitting a write. Core alone enforces `billing.manage`,
-currently owner-only: admin/member JWTs cannot write. Billing commands require
-JWT; an environment or stored project key masks login and must be unselected.
+currently owner-only: admin/member logins cannot write. Billing commands require
+a Solwyn login, and every billing write also needs a one-time browser approval
+(see [approvals](approvals.mdx)).
 These commands have no MCP writer equivalents.
 
 `plan cancel` ends the plan at the **current plan term end**: the current paid
@@ -98,13 +99,14 @@ No billing POST/DELETE automatically replays a 503 or transport failure. For a
 write, an unsuccessful response can leave its outcome unknown: inspect `plan`
 and hosted billing state before deliberately retrying. A preview remains a read
 and can be retried explicitly. Definite 401/429 rejection handling follows the
-shared bounded client policy; checkout keeps the same request identity. Numeric
-exit codes are unchanged: 0 success, 1 API/invalid response, 2 usage/confirmation,
-3 authentication/role refusal and 5 not found. Applicable 409 details preserve
+shared bounded client policy; checkout keeps the same request identity. Exit
+codes: 0 success, 1 API/invalid response, 2 usage/confirmation, 3
+authentication/role refusal, 5 not found, and 6 when the browser approval is
+pending, denied, expired or no longer matches. Applicable 409 details preserve
 the typed optional `status`; private or unexpected billing detail fields fail
 closed.
 
 MCP `plan_preview(tier, interval)` is the same read-only estimate in **both**
-profiles, with `solwyn.plan.preview.v1`. Like CLI dry-run it requires JWT at any
+profiles, with `solwyn.plan.preview.v1`. Like CLI dry-run it requires a Solwyn login at any
 account role and no project selection; Core does not apply the owner write gate.
 It retains the common deadline, response/result limits and safe error policy.

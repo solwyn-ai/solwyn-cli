@@ -15,6 +15,7 @@ from solwyn_cli.errors import error_from_response
 from solwyn_cli.commands import alerts
 from solwyn_cli.main import app
 from test_budget_set_command import FakeClient, ROUTING
+from login_fixtures import login_credential
 
 runner = CliRunner()
 STAMP = "2026-09-01T00:00:00Z"
@@ -83,7 +84,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(
         alerts,
         "resolve_credential",
-        lambda: auth.JwtCredential(access_token="access", refresh_token="refresh"),
+        lambda **_: login_credential("access"),
     )
 
 
@@ -219,7 +220,7 @@ def test_account_requires_jwt(monkeypatch, args):
     monkeypatch.setattr(
         alerts,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(
+        lambda **_: auth.ProjectKeyCredential(
             api_key="sk_proj_" + "ab" * 32, source="environment"
         ),
     )
@@ -412,15 +413,6 @@ def test_mutations_only_retry_definite_rejections(monkeypatch, status):
     ]
 
     def handle(request):
-        if request.url.path.endswith("/auth/refresh"):
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "new",
-                    "refresh_token": "refresh",
-                    "token_type": "bearer",
-                },
-            )
         requests.append(request)
         response = responses.pop(0)
         if isinstance(response, Exception):
@@ -433,16 +425,11 @@ def test_mutations_only_retry_definite_rejections(monkeypatch, status):
         )
 
     monkeypatch.setattr(alerts, "SolwynClient", client_factory)
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access_token, refresh_token: auth.JwtCredential(
-            access_token=access_token, refresh_token=refresh_token
-        ),
-    )
     result = invoke(["account", "set", "--spend", "10"])
-    assert len(requests) == (2 if status in {401, 429} else 1)
-    assert result.exit_code == (0 if status in {401, 429} else 1), result.output
+    # Only a definite 429 is retried; a 401 is never replayed.
+    assert len(requests) == (2 if status == 429 else 1)
+    expected_exit = {429: 0, 401: 3}.get(status, 1)
+    assert result.exit_code == expected_exit, result.output
 
 
 def test_documented_filtered_json_invocation():

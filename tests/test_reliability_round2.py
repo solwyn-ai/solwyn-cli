@@ -84,7 +84,7 @@ def test_logical_ingest_rejection_state_and_hint(
             )
 
         if interface == "cli":
-            monkeypatch.setattr(record, "resolve_credential", lambda: KEY)
+            monkeypatch.setattr(record, "resolve_credential", lambda **_: KEY)
             monkeypatch.setattr(record, "SolwynClient", client_factory)
             result = CliRunner().invoke(
                 app,
@@ -171,7 +171,7 @@ def test_canonical_success_resolves_earlier_ingest_uncertainty(
             requests.append(request)
             return responses.pop(0)
 
-        monkeypatch.setattr(record, "resolve_credential", lambda: KEY)
+        monkeypatch.setattr(record, "resolve_credential", lambda **_: KEY)
         monkeypatch.setattr(
             record,
             "SolwynClient",
@@ -202,59 +202,33 @@ def test_canonical_success_resolves_earlier_ingest_uncertainty(
 
 
 @pytest.mark.parametrize("first", ["unknown", "known", "rate_limit"])
-@pytest.mark.parametrize("rotation_first", [False, True])
-def test_ingest_evidence_survives_jwt_rotation_with_shared_retry_budget(
-    monkeypatch, first, rotation_first
+def test_ingest_evidence_survives_a_terminal_401_after_the_shared_retry(
+    monkeypatch, first
 ):
     # Core requires project keys for ingest. This deliberately synthetic sequence
-    # protects the shared HTTP client's auth callback, without enabling JWT ingest.
-    responses = [
-        rejection(first),
-        rejection("auth"),
-        httpx.Response(
-            200,
-            json={
-                "access_token": "synthetic-new-access",
-                "refresh_token": "synthetic-new-refresh",
-            },
-        ),
-        rejection("known"),
-    ]
-    if rotation_first:
-        responses = [responses[1], responses[2], responses[0], responses[3]]
+    # protects the shared HTTP client's auth failure, without enabling login ingest.
+    responses = [rejection(first), rejection("auth")]
     requests, waits = [], []
 
     def handler(request):
         requests.append(request)
         return responses.pop(0)
 
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access, refresh: auth.JwtCredential(
-            access_token=access, refresh_token=refresh
-        ),
-    )
     with SolwynClient(
         api_url="https://example.test",
         credential=JWT,
         transport=httpx.MockTransport(handler),
         sleeper=waits.append,
     ) as client:
-        with pytest.raises(ApiError) as failure:
+        with pytest.raises(auth.AuthError) as failure:
             client.request(
                 "POST",
                 "/api/v1/metadata/ingest",
                 json=[{"call_id": CALL_ID, "attempt_index": 7}],
             )
-        assert client.current_credential.bearer_value() == "synthetic-new-access"
-    assert is_ingest_unaccepted(failure.value) is (first != "unknown")
-    assert ("Nothing recorded" in failure.value.hint) is (first != "unknown")
-    assert len(requests) == 4
-    ingest = [r for r in requests if r.url.path.endswith("/metadata/ingest")]
-    assert len(ingest) == 3
-    assert all(r.content == ingest[0].content for r in ingest)
-    assert ingest[-1].headers["Authorization"] == "Bearer synthetic-new-access"
+    assert failure.value.ingest_outcome_uncertain is (first == "unknown")
+    assert len(requests) == 2
+    assert requests[0].content == requests[1].content
     assert waits == [10.0 if first != "known" else 1.0]
     assert not responses
 
@@ -281,7 +255,7 @@ def test_known_settlement_and_exact_retry_event_survive_mixed_failure(
         data = result.structured_content["data"]
         assert "Nothing recorded" not in result.structured_content["error"]["hint"]
     else:
-        monkeypatch.setattr(budget, "resolve_credential", lambda: KEY)
+        monkeypatch.setattr(budget, "resolve_credential", lambda **_: KEY)
         monkeypatch.setattr(budget, "SolwynClient", server.SolwynClient)
         args = ["--json", "budget", "confirm"]
         for name, value in values.items():
@@ -338,7 +312,7 @@ def test_completed_ingest_chunk_retains_dispositions_without_submitting_suffix(
         requests.append(request)
         return responses.pop(0)
 
-    monkeypatch.setattr(record, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(record, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(
         record,
         "SolwynClient",

@@ -1,2 +1,2 @@
 Error [authentication_required]: User login is required to manage project keys.
-Hint: Run solwyn logout, then solwyn login, and retry keys show.
+Hint: Run solwyn login, then retry keys show.

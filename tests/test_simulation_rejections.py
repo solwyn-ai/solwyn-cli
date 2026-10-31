@@ -1,4 +1,4 @@
-"""Public simulation calls retain definite-rejection retries and stored JWT rotation."""
+"""Public simulation calls retain definite-rejection retries and never replay a 401."""
 
 import json
 
@@ -12,14 +12,33 @@ from solwyn_cli.client import MAX_RETRY_AFTER_SECONDS, SolwynClient
 from solwyn_cli.commands import cost_pricing
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server
-from test_auth import keychain  # noqa: F401, F811
+from solwyn_cli import auth
 from test_cost_advice_command import SIMULATION
+from login_fixtures import LOGIN_TOKEN, login_entries
+
+
+@pytest.fixture
+def keychain(monkeypatch):
+    values = {}
+    monkeypatch.setattr(
+        auth.keyring, "get_password", lambda service, name: values.get(name)
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "set_password",
+        lambda service, name, value: values.__setitem__(name, value),
+    )
+    monkeypatch.setattr(
+        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
+    )
+    return values
 
 
 @pytest.fixture(params=["cli", "mcp"])
-def simulation(monkeypatch, keychain, request):  # noqa: F811
+def simulation(monkeypatch, keychain, request):
     monkeypatch.delenv("SOLWYN_API_KEY", raising=False)
-    keychain.update(access_token="synthetic-expired", refresh_token="synthetic-refresh")
+    monkeypatch.delenv("SOLWYN_AUTH", raising=False)
+    keychain.update(login_entries(LOGIN_TOKEN))
     calls = []
     delays = []
     responses = []
@@ -88,49 +107,18 @@ def rejected(status):
     )
 
 
-def refreshed():
-    return httpx.Response(
-        200,
-        json={
-            "access_token": "synthetic-rotated",
-            "refresh_token": "synthetic-rotated-refresh",
-            "token_type": "bearer",
-        },
-    )
-
-
-@pytest.mark.parametrize("exhausted", [False, True])
-def test_simulation_refreshes_stored_jwt_once_and_replays_once(simulation, exhausted):
+def test_simulation_401_is_never_replayed_with_the_stored_login(simulation):
     invoke, calls, delays, stored, interface = simulation
-    status, payload = invoke(
-        [
-            rejected(401),
-            refreshed(),
-            rejected(401) if exhausted else httpx.Response(200, json=SIMULATION),
-        ]
+    status, payload = invoke([rejected(401)])
+    assert status == (3 if interface == "cli" else 1)
+    assert payload["code"] == (
+        "authentication_failed" if interface == "cli" else "authentication_required"
     )
-    expected_status = (3 if interface == "cli" else 1) if exhausted else 0
-    assert status == expected_status
-    if exhausted:
-        assert payload["code"] == (
-            "authentication_failed" if interface == "cli" else "authentication_required"
-        )
-    else:
-        assert payload["simulated_cost"] == SIMULATION["simulated_cost"]
     assert [call.url.path for call in calls] == [
         "/api/v1/projects/proj_alpha/costs/simulate",
-        "/api/v1/auth/refresh",
-        "/api/v1/projects/proj_alpha/costs/simulate",
     ]
-    assert calls[0].headers["Authorization"] == "Bearer synthetic-expired"
-    assert json.loads(calls[1].content) == {"refresh_token": "synthetic-refresh"}
-    assert calls[2].headers["Authorization"] == "Bearer synthetic-rotated"
-    assert calls[0].content == calls[2].content
-    assert calls[0].url == calls[2].url
-    assert stored == {
-        "access_token": "synthetic-rotated",
-        "refresh_token": "synthetic-rotated-refresh",
-    }
+    assert calls[0].headers["Authorization"] == f"Bearer {LOGIN_TOKEN}"
+    assert stored[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN
     assert delays == []
 
 
@@ -151,12 +139,11 @@ def test_simulation_429_uses_one_capped_capacity_retry(simulation, exhausted):
     assert delays == [MAX_RETRY_AFTER_SECONDS]
 
 
-def test_simulation_capacity_budget_is_shared_across_refresh(simulation):
-    invoke, calls, delays, _, _ = simulation
-    status, payload = invoke([rejected(429), rejected(401), refreshed(), rejected(429)])
-    assert status == 1
-    assert payload["code"] == "rate_limited"
-    assert len(calls) == 4
+def test_simulation_401_after_capacity_retry_stops(simulation):
+    invoke, calls, delays, _, interface = simulation
+    status, payload = invoke([rejected(429), rejected(401)])
+    assert status == (3 if interface == "cli" else 1)
+    assert len(calls) == 2
     assert delays == [MAX_RETRY_AFTER_SECONDS]
 
 
@@ -175,4 +162,4 @@ def test_simulation_503_and_transport_never_replay(simulation, failure):
     assert payload["code"] == expected_code
     assert len(calls) == 1
     assert delays == []
-    assert stored["access_token"] == "synthetic-expired"
+    assert stored[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN

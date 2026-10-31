@@ -98,7 +98,7 @@ def test_invalid_arguments_are_private_and_stop_before_auth(
 ):
     calls = []
 
-    def unexpected_auth():
+    def unexpected_auth(**_: object):
         calls.append("auth")
         raise RuntimeError(CANARY)
 
@@ -142,7 +142,7 @@ def test_unexpected_exception_is_private_in_wire_and_logs(monkeypatch, caplog, c
 def test_validation_canary_is_private_with_sdk_debug_logging(
     monkeypatch, caplog, capsys
 ):
-    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: None)
     caplog.set_level(logging.DEBUG, logger="mcp.server.lowlevel.server")
     result = anyio.run(
         _call_tool, "budget_check", {**CHECK, "estimated_input_tokens": CANARY}
@@ -152,7 +152,7 @@ def test_validation_canary_is_private_with_sdk_debug_logging(
 
 
 def test_unknown_tool_name_is_not_reflected(monkeypatch, caplog, capsys):
-    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: None)
 
     async def exercise():
         async with Client(mcp_server.create_server(), cache=None) as client:
@@ -465,7 +465,7 @@ def test_malformed_tool_envelope_has_safe_protocol_error_and_diagnostics(
     monkeypatch, caplog, capsys, params
 ):
     calls = []
-    monkeypatch.setattr(auth, "resolve_credential", lambda: calls.append("auth"))
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: calls.append("auth"))
 
     async def exercise():
         async with Client(mcp_server.create_server(), cache=None) as session:
@@ -492,7 +492,7 @@ def test_malformed_tool_envelope_has_safe_protocol_error_and_diagnostics(
 def test_malformed_notification_is_private_and_session_remains_usable(
     monkeypatch, caplog, capsys
 ):
-    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: None)
 
     async def exercise():
         async with Client(mcp_server.create_server(), cache=None) as session:

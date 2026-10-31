@@ -215,7 +215,7 @@ def test_cli_observed_media_flags_reach_both_writes(monkeypatch, flags, expected
             else httpx.Response(202, json={"ingested": 1})
         )
 
-    monkeypatch.setattr(budget, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(budget, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(
         budget,
         "SolwynClient",
@@ -381,7 +381,7 @@ def test_cli_record_only_consumes_exact_event_and_rejects_other_flags(
     path.write_text(json.dumps(event))
     monkeypatch.setenv("SOLWYN_TAGS", "changed=ambient")
     monkeypatch.setenv("SOLWYN_AGENT_RUN_ID", "changed")
-    monkeypatch.setattr(budget, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(budget, "resolve_credential", lambda **_: KEY)
 
     def handle(request):
         sent.append((request.url.path, json.loads(request.content)))
@@ -612,7 +612,7 @@ def test_cli_lost_confirm_error_does_not_return_unseen_event(monkeypatch):
         sent.append(request.url.path)
         raise httpx.ReadError("PRIVATE_CANARY", request=request)
 
-    monkeypatch.setattr(budget, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(budget, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(
         budget,
         "SolwynClient",
@@ -654,7 +654,9 @@ def test_fresh_confirm_requires_identity_before_auth(monkeypatch, missing):
 )
 def test_cli_invalid_media_is_rejected_before_auth(monkeypatch, flags):
     monkeypatch.setattr(
-        budget, "resolve_credential", lambda: pytest.fail("invalid media reached auth")
+        budget,
+        "resolve_credential",
+        lambda **_: pytest.fail("invalid media reached auth"),
     )
     args = ["--json", "budget", "confirm"]
     for name, value in CONFIRM.items():
@@ -670,7 +672,7 @@ def test_cli_invalid_observations_do_not_echo_private_values(
     monkeypatch.setattr(
         budget,
         "resolve_credential",
-        lambda: pytest.fail("invalid observations reached auth"),
+        lambda **_: pytest.fail("invalid observations reached auth"),
     )
     args = ["--json", "budget", "confirm"]
     if kind == "record_only":

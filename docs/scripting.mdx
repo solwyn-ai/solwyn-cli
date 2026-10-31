@@ -33,8 +33,8 @@ ingest once, sharing the existing 429 retry budget and waiting at most
 supported). It never retries a download after yielding output bytes. Other
 POSTs, including read-only cost simulation, are not automatically retried
 on 503. Simulation receives a service-busy read hint. Capacity and rate-limit
-retries share one replay allowance across JWT refresh; authentication refresh
-does not replenish that allowance.
+retries share one replay allowance. A 401 is never replayed: there is no token
+refresh.
 Do not infer a write's outcome
 from a generic service-busy response: inspect retained state before retrying.
 
@@ -53,7 +53,7 @@ Core's three rejection details: `Budget admission is busy; retry shortly`,
 `Accounting maintenance is in progress; retry the batch.` Every earlier attempt
 must also be provably nonaccepting: a recognized rejection or Core's pre-ingest
 429/401 response. A recognized final rejection cannot erase uncertainty from
-an earlier potentially accepted attempt, including across JWT refresh.
+an earlier potentially accepted attempt.
 Missing/different headers, unrecognized HTML/JSON proxy responses, and transport
 failures keep MCP
 `recording=unknown` and CLI `status=failed` with retained call IDs. A valid 202
@@ -65,15 +65,28 @@ to inspect it.
 Other 503s, including accounting-gauge rebuilds, carry no absence guarantee.
 CLI service-busy failures use existing exit 1, not an auth or budget-denied exit.
 
-`solwyn login` retries `auth_capacity_exceeded` once with the same capped wait.
-Continued exhaustion exits 1 and preserves that machine-readable code with a
-retry hint. Credentials and tokens are never emitted. If a JWT request returns
-`account_membership_revoked`, run `solwyn account recover` instead of repeatedly
-logging in. Recovery requires JWT authentication and idempotently creates a
-personal account when no active membership exists (or returns the existing
-account); it emits `solwyn.account.recover.v1` with `account_id`. Project keys
-cannot recover accounts. Unset `SOLWYN_API_KEY` and clear a stored project key
-with `solwyn logout` before using user login if necessary. Recovery is CLI-only.
+Credentials and tokens are never emitted. A 401 with `cli_credential_invalid`,
+`cli_credential_expired` or `cli_credential_revoked` exits 3 with a
+`Run solwyn login` hint. If a login request returns `account_membership_revoked`,
+run `solwyn account recover` instead of repeatedly logging in. Recovery requires a
+Solwyn login and idempotently creates a personal account when no active
+membership exists (or returns the existing account); it emits
+`solwyn.account.recover.v1` with `account_id`. Project keys cannot recover
+accounts. Recovery is CLI-only.
+
+User commands prefer the stored Solwyn login, then `SOLWYN_API_KEY`, then the
+keychain project key. Set `SOLWYN_AUTH=project_key` to skip the login, or
+`SOLWYN_AUTH=login` to require it; any other value exits 2. Metering commands
+(`budget check`, `budget confirm`, `record`) use only a project key.
+
+A change a login cannot make on its own (raising a cap, changing enforcement,
+keys, billing, team or channels) returns an approval URL. The CLI prints it on
+stderr, polls every 3 seconds for up to `--approval-wait` seconds (600 with a
+terminal, else 90), then re-sends the exact same request once with the approval.
+Exit 6 means the change was not applied: the approval is still pending, was
+denied, expired, or no longer matches the request. The pending error names the
+approval ID; approve it, then re-run the same command with `--approval ID`.
+`solwyn login --wait 0` also exits 6 with `login_pending` and the code to relay.
 
 Budget and quota periods use server receive time. Analytics use the event's
 stored timestamp: a backdated batch counts against today's applicable budget
@@ -82,31 +95,25 @@ clock bounds and retention. Backdating cannot bypass current-period limits.
 
 For subscription planning, use
 `solwyn --json plan change --tier team --interval year --dry-run` or MCP
-`plan_preview(tier="team", interval="year")`. Both are JWT reads at any role and
+`plan_preview(tier="team", interval="year")`. Both are login reads at any role and
 preserve integer cents, signed credits, currency, dates and proration lines.
-Estimates are not price locks. Billing writes remain CLI-only and require owner
-JWT plus interactive confirmation or `--yes`; effects/prompts go to stderr and
-stdout holds one JSON result. Non-TTY use without `--yes` exits 2 before HTTP.
+Estimates are not price locks. Billing writes remain CLI-only and require the
+owner's login, a browser approval, and interactive confirmation or `--yes`;
+effects/prompts go to stderr and stdout holds one JSON result. Non-TTY use without `--yes` exits 2 before HTTP.
 Checkout/portal links always print, never open a browser without a terminal, and
 support `--no-browser`. Inspect known subscription/hosted state after write
 503/transport failures; do not blindly replay. See the [plan reference](commands/plan.mdx).
 
 Customer team/account reads need no selected project. MCP now exposes 33 reads in
 both profiles and 37 tools in `guardrails`, with four existing writers unchanged.
-`list_team_members` permits any account JWT role; `list_team_invites` requires an
-owner/admin JWT. Lists retain Core ordering and every invitation delivery status.
-Team writes, account rename and invitation acceptance remain CLI-only. Use
+`list_team_members` permits any account role; `list_team_invites` requires an
+owner/admin login. Lists retain Core ordering and every invitation delivery status.
+Team writes and account rename remain CLI-only. Use
 `--yes` deliberately after reviewing their stderr effects; otherwise non-TTY writes
 exit 2 before credentials or HTTP. Success JSON is one flat schema-bearing object
 on stdout; error JSON is on stderr. See [team](commands/team.mdx),
 [invite](commands/invite.mdx) and [account](commands/account.mdx).
 
 `invite show` reads one private token from bounded stdin or a hidden prompt and
-never sends Authorization. Signed-in `invite accept --yes` sends exactly `{}` and
-stores the returned JWT pair without emitting it. `--new-user` explicitly requires
-a terminal for hidden password collection and no selected credentials. Accept
-retries only definite `auth_capacity_exceeded` once with the existing 10-second cap
-and shared capacity/429 retry budget. Generic 503/transport errors do not replay;
-acceptance or email delivery may already have happened. Parse/storage failures
-after acceptance have distinct fixed codes and guidance to log in and inspect
-identity. Never automatically accept again after an uncertain outcome.
+never sends Authorization. `invite accept` is retired: it exits 2 and asks you to
+accept the invitation from the link in your email, then run `solwyn login`.

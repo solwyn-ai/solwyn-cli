@@ -2,18 +2,24 @@
 title: Identity
 ---
 
-Project keys return local credential source and selected-project context without
-network identity lookup, user identity, email verification or raw key material.
-JWT reads user/account identity, role, seats and projects and preserves email
-verification state. A project key masks a stored JWT without falling back.
+`whoami` names the credential in use first: `Credential: CLI login dev-laptop
+(read, contain), expires 2026-11-29` for a Solwyn login, or `Credential: project
+key (environment)` for a key. A login also reads user and account identity,
+role, seats and projects, and keeps email verification state. A project key
+returns only the local credential source and selected-project context, with no
+network lookup, user identity or raw key material. The login comes before any
+project key, so a stored key no longer hides it; see [login](login.mdx) for the
+order and `SOLWYN_AUTH`.
 
 ```sh
 solwyn whoami
 solwyn --json whoami
 ```
 
-The output uses `solwyn.whoami.v1`; MCP exposes `get_whoami`. See [account](account.mdx)
-for phone prerequisites and membership-independent personal-account recovery.
+The output uses `solwyn.whoami.v1` (`auth_type` is `login` or `project_key`, and
+`credential` carries the kind, source, label, scopes and expiry); MCP exposes
+`get_whoami`. See [account](account.mdx) for phone prerequisites and
+membership-independent personal-account recovery.
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.

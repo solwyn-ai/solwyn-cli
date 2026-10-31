@@ -341,7 +341,7 @@ def test_tool_call_client_resolves_fresh_runtime_and_credential_each_time(
         return runtimes.pop(0)
 
     monkeypatch.setattr(runtime, "resolve_command_context", resolve_runtime)
-    monkeypatch.setattr(auth, "resolve_credential", lambda: credentials.pop(0))
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: credentials.pop(0))
     monkeypatch.setattr(mcp_server, "SolwynClient", FakeClient)
 
     launch = mcp_server.McpLaunchOptions(
@@ -404,7 +404,7 @@ def test_tool_call_client_without_overrides_defers_to_runtime_resolution(
         return command_runtime
 
     monkeypatch.setattr(runtime, "resolve_command_context", resolve_runtime)
-    monkeypatch.setattr(auth, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: credential)
     monkeypatch.setattr(mcp_server, "SolwynClient", FakeClient)
 
     with mcp_server.tool_call_client(mcp_server.McpLaunchOptions()) as resolved:

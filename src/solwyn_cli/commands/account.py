@@ -15,7 +15,7 @@ from solwyn_cli.commands._notifications_common import (
     request,
     usage,
 )
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
@@ -45,7 +45,7 @@ class PersonalAccountResponse(BaseModel):
     "recover",
     epilog=help_contract(
         endpoint="POST /api/v1/accounts/me/personal",
-        auth="JWT; active membership not required",
+        auth="login; active membership not required",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.account.recover.v1",
         guidance=(
@@ -57,13 +57,13 @@ class PersonalAccountResponse(BaseModel):
 def recover(context: typer.Context) -> None:
     """Recover a personal account after membership removal."""
     credential = required_credential(context, resolve=resolve_credential)
-    if not isinstance(credential, JwtCredential):
+    if not isinstance(credential, LoginCredential):
         exit_with_error(
             context,
             OutputError(
                 code="authentication_required",
                 message="Account recovery requires user login.",
-                hint="Unset SOLWYN_API_KEY, clear any stored project key with solwyn logout, and run solwyn login.",
+                hint="Run solwyn login.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -96,7 +96,9 @@ def recover(context: typer.Context) -> None:
     )
 
 
-@alert_email_app.command("show", epilog=command_help("GET " + BASE, SCHEMA, auth="JWT"))
+@alert_email_app.command(
+    "show", epilog=command_help("GET " + BASE, SCHEMA, auth="login")
+)
 def show(context: typer.Context) -> None:
     """Show the override and effective alert destination."""
     emit(context, SCHEMA, request(context, "GET", BASE, AlertEmailResponse))
@@ -130,7 +132,7 @@ phone_app = typer.Typer(
     help="Inspect phone verification and SMS consent.",
     epilog=help_contract(
         endpoint="GET /api/v1/account/phone",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.account.phone.v1",
     ),
@@ -142,7 +144,7 @@ app.add_typer(phone_app, name="phone")
     "show",
     epilog=help_contract(
         endpoint="GET /api/v1/account/phone",
-        auth="JWT",
+        auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.account.phone.v1",
     ),
@@ -190,7 +192,7 @@ def phone_show(context: typer.Context) -> None:
     "rename",
     epilog=help_contract(
         endpoint="PATCH /api/v1/accounts/me",
-        auth="owner JWT",
+        auth="owner login",
         exits="0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.account.rename.v1",
         guidance=(

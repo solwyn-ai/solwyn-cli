@@ -15,6 +15,7 @@ from solwyn_cli import auth
 from solwyn_cli.commands import runs as runs_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -22,7 +23,7 @@ GOLDEN_DIR = Path(__file__).parent / "golden"
 VALID_KEY = "sk_proj_" + "a4" * 32
 STORAGE_ID = "run_" + "1a" * 16
 SECOND_STORAGE_ID = "run_" + "2b" * 16
-JWT = auth.JwtCredential(access_token="runs-access", refresh_token="runs-refresh")
+JWT = login_credential("runs-access")
 
 RUN = {
     "id": STORAGE_ID,
@@ -97,7 +98,7 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _key(source: str = "environment") -> auth.ProjectKeyCredential:
+def _key(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
 
 
@@ -134,7 +135,7 @@ def test_runs_list_supports_key_and_jwt_with_exact_filters_and_goldens(
     json_output: bool,
     golden: str,
 ) -> None:
-    monkeypatch.setattr(runs_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [httpx.Response(200, json=_list_response())]
 
     result = runner.invoke(
@@ -214,7 +215,7 @@ def test_runs_list_rejects_cursor_sort_mismatch_before_auth_or_network(
     monkeypatch.setattr(
         runs_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
     )
 
     result = runner.invoke(
@@ -235,7 +236,7 @@ def test_runs_list_rejects_unpaired_custom_window_before_auth(
     monkeypatch.setattr(
         runs_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
     )
 
     result = runner.invoke(
@@ -262,7 +263,7 @@ def test_runs_list_rejects_non_rfc3339_custom_window_before_auth(
     monkeypatch.setattr(
         runs_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
     )
 
     result = runner.invoke(
@@ -461,7 +462,7 @@ def test_runs_stop_refuses_project_keys_before_network(
     monkeypatch: pytest.MonkeyPatch,
     source: str,
 ) -> None:
-    monkeypatch.setattr(runs_module, "resolve_credential", lambda: _key(source))
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: _key(source))
 
     result = runner.invoke(app, _run_args("stop", STORAGE_ID, json_output=True))
 
@@ -500,7 +501,7 @@ def test_runs_stop_project_key_refusal_matches_goldens(
 def test_runs_stop_surfaces_missing_budget_write_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(runs_module, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: JWT)
     FakeClient.responses = [
         error_from_response(httpx.Response(403, json={"detail": "permission_required"}))
     ]
@@ -520,7 +521,7 @@ def test_runs_stop_resolves_raw_name_and_emits_honest_stop_result(
     monkeypatch: pytest.MonkeyPatch,
     json_output: bool,
 ) -> None:
-    monkeypatch.setattr(runs_module, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: JWT)
     stop_response = {
         "project_id": "proj_alpha",
         "run_id": STORAGE_ID,
@@ -567,7 +568,7 @@ def test_runs_stop_surfaces_not_stoppable_conflict_as_generic_failure(
     json_output: bool,
     golden: str,
 ) -> None:
-    monkeypatch.setattr(runs_module, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: JWT)
     FakeClient.responses = [
         error_from_response(
             httpx.Response(

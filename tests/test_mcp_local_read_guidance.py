@@ -5,10 +5,10 @@ import pytest
 
 from solwyn_cli import auth
 from solwyn_cli.mcp import server
-from test_auth import keychain  # noqa: F401
 from test_mcp_conformance import _call_tool, _install_http
+from login_fixtures import OTHER_LOGIN_TOKEN, login_credential, login_entries
 
-JWT_MODES = [
+LOGIN_MODES = [
     ("get_costs", {"account": True}),
     ("list_budget_rules", {"with_last_fired": True}),
     ("list_alert_events", {"account": True}),
@@ -22,26 +22,46 @@ JWT_MODES = [
 ]
 
 
-@pytest.mark.parametrize("name,args", JWT_MODES)
-@pytest.mark.parametrize("source", ["environment", "keyring", "absent"])
-def test_jwt_mode_guidance_with_real_credential_precedence(
+@pytest.fixture
+def keychain(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    values: dict[str, str] = {}
+    monkeypatch.setattr(
+        auth.keyring, "get_password", lambda service, name: values.get(name)
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "set_password",
+        lambda service, name, value: values.__setitem__(name, value),
+    )
+    monkeypatch.setattr(
+        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
+    )
+    return values
+
+
+@pytest.mark.parametrize("name,args", LOGIN_MODES)
+@pytest.mark.parametrize(
+    "source", ["environment", "keyring", "absent", "forced_project_key"]
+)
+def test_login_mode_guidance_with_real_credential_precedence(
     monkeypatch,
-    keychain,  # noqa: F811
+    keychain,
     name,
     args,
     source,
 ):
     monkeypatch.delenv("SOLWYN_API_KEY", raising=False)
-    keychain.update(
-        access_token="synthetic-stored-jwt", refresh_token="synthetic-refresh"
-    )
+    monkeypatch.delenv("SOLWYN_AUTH", raising=False)
     key = "sk_proj_" + "a1" * 32
     if source == "environment":
         monkeypatch.setenv("SOLWYN_API_KEY", key)
     elif source == "keyring":
         keychain[auth.API_KEY_ENTRY] = key
-    else:
-        keychain.clear()
+    elif source == "forced_project_key":
+        # A stored login is skipped only when SOLWYN_AUTH asks for the key.
+        keychain.update(login_entries(OTHER_LOGIN_TOKEN))
+        keychain[auth.API_KEY_ENTRY] = key
+        monkeypatch.setenv("SOLWYN_AUTH", "project_key")
     resolve = auth.resolve_credential
     calls, _, _ = _install_http(monkeypatch, responses=[], credentials=[])
     monkeypatch.setattr(auth, "resolve_credential", resolve)
@@ -49,14 +69,11 @@ def test_jwt_mode_guidance_with_real_credential_precedence(
     assert result.is_error
     error = result.structured_content["error"]
     assert error["code"] == "authentication_required"
-    assert "JWT" in error["hint"]
-    assert "Unset SOLWYN_API_KEY" in error["hint"]
-    assert "stored project key" in error["hint"]
-    assert "solwyn logout" in error["hint"]
+    assert error["hint"] == auth.LOGIN_REQUIRED_HINT
     assert "solwyn login" in error["hint"]
     assert "Configure a project key" not in error["hint"]
     assert calls == []
-    assert key not in str(result) and "synthetic-stored-jwt" not in str(result)
+    assert key not in str(result) and OTHER_LOGIN_TOKEN not in str(result)
 
 
 def test_project_key_capable_mode_retains_normal_auth_guidance(monkeypatch):
@@ -87,9 +104,7 @@ def test_account_cost_query_has_specific_safe_hint(monkeypatch, args, expected):
     calls, _, _ = _install_http(
         monkeypatch,
         responses=[],
-        credentials=[
-            auth.JwtCredential(access_token="synthetic", refresh_token="synthetic")
-        ],
+        credentials=[login_credential("synthetic")],
     )
     result = anyio.run(_call_tool, "get_costs", args)
     error = result.structured_content["error"]
@@ -100,14 +115,14 @@ def test_account_cost_query_has_specific_safe_hint(monkeypatch, args, expected):
     assert calls == []
 
 
-def test_ingest_uncertainty_keeps_priority_over_jwt_guidance():
+def test_ingest_uncertainty_keeps_priority_over_login_guidance():
     error = auth.AuthError("private-exception-text")
     error.ingest_outcome_uncertain = True
     result = server._operation_error(
         server._CostsResult,
         error,
         invalid_response_code="invalid_costs_response",
-        jwt_required=True,
+        login_required=True,
     )
     assert result.error.hint == server.INGEST_UNKNOWN_HINT
     assert "private-exception-text" not in str(result)

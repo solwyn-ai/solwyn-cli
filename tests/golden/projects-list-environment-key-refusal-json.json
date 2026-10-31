@@ -1,1 +1,1 @@
-{"schema":"solwyn.error.v1","code":"authentication_required","message":"User login is required to list projects.","hint":"Unset SOLWYN_API_KEY, run solwyn login, then retry projects list.","detail":null}
+{"schema":"solwyn.error.v1","code":"authentication_required","message":"User login is required to list projects.","hint":"Run solwyn login, then retry projects list.","detail":null}

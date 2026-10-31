@@ -15,6 +15,7 @@ from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -204,11 +205,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token=JWT_ACCESS,
-        refresh_token=JWT_REFRESH,
-    )
+def _jwt(**_: object) -> auth.LoginCredential:
+    return login_credential(JWT_ACCESS)
 
 
 def _response(**overrides: object) -> dict[str, object]:
@@ -228,7 +226,7 @@ def test_budget_set_partial_limit_preserves_every_untouched_configuration(
 ) -> None:
     credential = _jwt()
     project_id = "team/alpha beta"
-    monkeypatch.setattr(budget_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json=_response(project_id=project_id)),
         httpx.Response(
@@ -326,7 +324,7 @@ def test_budget_set_no_changes_is_usage_error_before_auth_or_network(
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda: pytest.fail("must not resolve auth"),
+        lambda **_: pytest.fail("must not resolve auth"),
     )
 
     result = runner.invoke(
@@ -347,8 +345,8 @@ def test_budget_set_no_changes_is_usage_error_before_auth_or_network(
 @pytest.mark.parametrize(
     ("source", "expected_hint"),
     [
-        ("environment", "Unset SOLWYN_API_KEY"),
-        ("keyring", "solwyn logout"),
+        ("environment", "Run solwyn login, then retry budget set."),
+        ("keyring", "Run solwyn login, then retry budget set."),
     ],
 )
 def test_budget_set_refuses_each_project_key_source_without_requests(
@@ -357,7 +355,7 @@ def test_budget_set_refuses_each_project_key_source_without_requests(
     expected_hint: str,
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
-    monkeypatch.setattr(budget_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: credential)
 
     result = runner.invoke(
         app,
@@ -385,7 +383,7 @@ def test_budget_set_requires_login_and_project_before_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(runtime, "load_config", lambda: Config(default_project=None))
-    monkeypatch.setattr(budget_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: None)
 
     missing_project = runner.invoke(
         app,

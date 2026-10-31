@@ -8,6 +8,7 @@ import pytest
 
 COMMANDS_DIR = Path("src/solwyn_cli/commands")
 _LOCAL_DATA_CALLS = {
+    ("keys.py", "env_key", "typer.echo(line)"),
     (
         "agent_context.py",
         "agent_context",

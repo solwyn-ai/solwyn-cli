@@ -22,7 +22,7 @@ from solwyn_cli._vendor.wire import (
     SnoozeRequest,
     _BudgetRule,
 )
-from solwyn_cli.auth import AuthError, JwtCredential, resolve_credential
+from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.budget import (
@@ -59,7 +59,7 @@ def _help(
 ) -> str:
     return help_contract(
         endpoint=endpoint,
-        auth="JWT owner/admin" if write else "key or JWT",
+        auth="login owner/admin" if write else "key or login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema=schema,
         guidance=(_RULE_NOTICE, _KEY_NOTICE),
@@ -138,11 +138,11 @@ def _client(
     context: typer.Context, *, write: bool
 ) -> Iterator[tuple[SolwynClient, str]]:
     credential = required_credential(context, resolve=resolve_credential)
-    if write and not isinstance(credential, JwtCredential):
+    if write and not isinstance(credential, LoginCredential):
         exit_with_error(
             context,
             OutputError(
-                code="jwt_required",
+                code="login_required",
                 message="Budget rule mutations require a user login with owner/admin permissions.",
                 hint="Run solwyn login.",
             ),
@@ -197,9 +197,9 @@ def request_budget_rules(
     *, client: SolwynClient, project_id: str, with_last_fired: bool = False
 ) -> BudgetRulesData:
     if with_last_fired:
-        from solwyn_cli.commands._alert_reads import require_alert_jwt
+        from solwyn_cli.commands._alert_reads import require_alert_login
 
-        require_alert_jwt(client)
+        require_alert_login(client)
     status = request_budget_status(client=client, project_id=project_id)
     data = BudgetRulesData(project_id=project_id, rules=status.thresholds)
     if not with_last_fired:
@@ -329,7 +329,7 @@ def list_rules(
         bool,
         typer.Option(
             "--with-last-fired",
-            help="JWT only: include latest firing within Core’s 30d retention window.",
+            help="Login only: include latest firing within Core’s 30d retention window.",
         ),
     ] = False,
 ) -> None:

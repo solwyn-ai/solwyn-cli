@@ -16,6 +16,7 @@ from solwyn_cli import config as config_module
 from solwyn_cli.commands import doctor as doctor_module
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
+from login_fixtures import expired_login_entries, login_credential, login_entries
 
 
 runner = CliRunner()
@@ -72,15 +73,11 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             "x-solwyn-core-ref": CORE_REF,
         },
     )
+    stored = login_entries()
     monkeypatch.setattr(
         doctor_module.auth_module,
         "_get_password",
-        lambda entry: (
-            True,
-            "stored"
-            if entry in {auth.ACCESS_TOKEN_ENTRY, auth.REFRESH_TOKEN_ENTRY}
-            else None,
-        ),
+        lambda entry: (True, stored.get(entry)),
     )
     yield
 
@@ -104,17 +101,15 @@ def _ready_response(*, redis_status: str = "ok") -> httpx.Response:
     )
 
 
-def test_doctor_jwt_json_reports_all_checks_and_redis_degraded_is_non_gating(
+def test_doctor_login_json_reports_all_checks_and_redis_degraded_is_non_gating(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('default_project = "proj_alpha"\n', encoding="utf-8")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    credential = auth.JwtCredential(
-        access_token="access-secret", refresh_token="refresh-secret"
-    )
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    credential = login_credential("access-secret")
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         _ready_response(redis_status="degraded"),
         httpx.Response(200, json={"user_id": "user_123"}),
@@ -124,7 +119,7 @@ def test_doctor_jwt_json_reports_all_checks_and_redis_degraded_is_non_gating(
 
     assert result.exit_code == 0
     assert result.stderr == ""
-    assert_matches_golden(result.stdout, GOLDEN_DIR / "doctor-jwt.json")
+    assert_matches_golden(result.stdout, GOLDEN_DIR / "doctor-login.json")
     client = FakeClient.instances[0]
     assert client.credential is credential
     assert client.requests == [
@@ -147,7 +142,7 @@ def test_doctor_key_table_keeps_503_readiness_body_informative(
     config_path.write_text('default_project = "proj_alpha"\n', encoding="utf-8")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(
             503,
@@ -185,7 +180,7 @@ def test_doctor_key_budget_503_is_reported_as_backend_unavailable(
     config_path.write_text('default_project = "proj_alpha"\n', encoding="utf-8")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         _ready_response(),
         ApiError(
@@ -217,7 +212,7 @@ def test_doctor_key_without_default_project_skips_auth_http_and_fails_diagnostic
     config_path = tmp_path / "config.toml"
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [_ready_response()]
 
     result = runner.invoke(app, ["--json", "doctor"])
@@ -238,7 +233,7 @@ def test_doctor_reports_malformed_config_instead_of_failing_in_root_callback(
     config_path = tmp_path / "config.toml"
     config_path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: None)
     FakeClient.responses = [_ready_response()]
 
     result = runner.invoke(app, ["--json", "doctor"])
@@ -262,10 +257,8 @@ def test_doctor_malformed_config_never_sends_stored_credential_to_fallback_url(
     config_path = tmp_path / "config.toml"
     config_path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    credential = auth.JwtCredential(
-        access_token="access-secret", refresh_token="refresh-secret"
-    )
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    credential = login_credential("access-secret")
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [_ready_response()]
 
     result = runner.invoke(
@@ -280,7 +273,7 @@ def test_doctor_malformed_config_never_sends_stored_credential_to_fallback_url(
     assert payload["config"]["status"] == "error"
     assert payload["authenticated_probe"] == {
         "status": "skipped",
-        "credential_type": "jwt",
+        "credential_type": "login",
         "endpoint": None,
         "detail": (
             "Authenticated probe skipped because the API endpoint could not be "
@@ -315,10 +308,8 @@ def test_doctor_malformed_config_uses_validated_override_for_authenticated_probe
     config_path = tmp_path / "config.toml"
     config_path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    credential = auth.JwtCredential(
-        access_token="access-secret", refresh_token="refresh-secret"
-    )
-    monkeypatch.setattr(doctor_module, "resolve_credential", lambda: credential)
+    credential = login_credential("access-secret")
+    monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         _ready_response(),
         httpx.Response(200, json={"user_id": "user_123"}),
@@ -355,19 +346,57 @@ def test_snapshot_diagnostic_marks_old_or_unpinned_snapshot_degraded() -> None:
     assert result.core_ref is None
 
 
-def test_keychain_diagnostic_rejects_an_incomplete_jwt_pair(
+def test_keychain_diagnostic_rejects_an_incomplete_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         doctor_module.auth_module,
         "_get_password",
-        lambda entry: (True, "stored" if entry == auth.ACCESS_TOKEN_ENTRY else None),
+        lambda entry: (
+            True,
+            "stored" if entry == auth.CLI_CREDENTIAL_ENTRY else None,
+        ),
     )
 
     result = doctor_module._keychain_diagnostic()
 
     assert result.status == "degraded"
-    assert result.detail == "Keychain contains an incomplete JWT credential."
+    assert result.detail == "Keychain contains an incomplete login. Run solwyn login."
+
+
+@pytest.mark.parametrize(
+    "entries,detail",
+    [
+        (
+            {
+                auth.CLI_CREDENTIAL_ENTRY: "stored",
+                auth.CLI_CREDENTIAL_META_ENTRY: "{}",
+            },
+            "Keychain contains an unreadable login. Run solwyn login.",
+        ),
+        (expired_login_entries(), "The stored login expired on "),
+    ],
+)
+def test_keychain_diagnostic_reports_unusable_logins(
+    monkeypatch: pytest.MonkeyPatch, entries: dict[str, str], detail: str
+) -> None:
+    monkeypatch.setattr(
+        doctor_module.auth_module,
+        "_get_password",
+        lambda entry: (True, entries.get(entry)),
+    )
+
+    result = doctor_module._keychain_diagnostic()
+
+    assert result.status == "degraded"
+    assert result.detail.startswith(detail)
+
+
+def test_keychain_diagnostic_accepts_a_stored_login() -> None:
+    result = doctor_module._keychain_diagnostic()
+
+    assert result.status == "ok"
+    assert result.detail == "Keychain available; stored credential found."
 
 
 @pytest.mark.parametrize("name", ["redis", "stripe_catalog", "stripe_portal"])
@@ -381,9 +410,7 @@ def test_doctor_labels_degraded_advisory_checks_non_gating(
     monkeypatch.setattr(
         doctor_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token="test-access", refresh_token="test-refresh"
-        ),
+        lambda **_: login_credential("test-access"),
     )
     FakeClient.responses = [
         httpx.Response(

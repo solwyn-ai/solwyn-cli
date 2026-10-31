@@ -16,49 +16,49 @@ runner = CliRunner()
 HELP_CONTRACTS = {
     ("plan", "list"): {
         "endpoint": "GET /api/v1/billing/catalog",
-        "auth": "JWT or project key with user context",
+        "auth": "login or project key with user context",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.plan.catalog.v1",
     },
     ("account", "phone"): {
         "endpoint": "GET /api/v1/account/phone",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.account.phone.v1",
     },
     ("account", "phone", "show"): {
         "endpoint": "GET /api/v1/account/phone",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.account.phone.v1",
     },
     ("budget", "uncounted"): {
         "endpoint": "GET /api/v1/projects/{project_id}/budget/uncounted",
-        "auth": "key or JWT",
+        "auth": "key or login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.uncounted.v1",
     },
     ("alerts", "activity"): {
         "endpoint": "GET /api/v1/account/alerts/activity",
-        "auth": "JWT; any account member",
+        "auth": "login; any account member",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.alerts.activity.v1",
     },
     ("alerts", "pending"): {
         "endpoint": "GET /api/v1/account/alerts/open-deliveries",
-        "auth": "JWT; any account member",
+        "auth": "login; any account member",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.alerts.pending.v1",
     },
     ("account", "recover"): {
         "endpoint": "POST /api/v1/accounts/me/personal",
-        "auth": "JWT; active membership not required",
+        "auth": "login; active membership not required",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.account.recover.v1",
     },
     ("attest",): {
         "endpoint": "GET /api/v1/projects/{project}/spend-control-attestation or GET /api/v1/account/spend-control-attestation",
-        "auth": "project: key or JWT; account: JWT",
+        "auth": "project: key or login; account: login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "stream (SpendControlAttestation JSON or section,field,value CSV)",
     },
@@ -94,67 +94,67 @@ HELP_CONTRACTS = {
     },
     ("alerts",): {
         "endpoint": "GET /api/v1/projects/{project_id}/alert-events or /api/v1/account/alert-events",
-        "auth": "key or JWT; account requires JWT",
+        "auth": "key or login; account requires login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.v1",
     },
     ("alerts", "list"): {
         "endpoint": "GET /api/v1/projects/{project_id}/alert-events or /api/v1/account/alert-events",
-        "auth": "key or JWT; account requires JWT",
+        "auth": "key or login; account requires login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.v1",
     },
     ("alerts", "show"): {
         "endpoint": "GET /api/v1/projects/{project_id}/alert-events or /api/v1/account/alert-events (cursor walk; local event ID match)",
-        "auth": "key or JWT; account requires JWT",
+        "auth": "key or login; account requires login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.v1",
     },
     ("alerts", "export"): {
         "endpoint": "GET /api/v1/projects/{project_id}/alert-events/export or /api/v1/account/alert-events/export",
-        "auth": "key or JWT; account requires JWT",
+        "auth": "key or login; account requires login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "stream (CSV or NDJSON)",
     },
     ("alerts", "account"): {
         "endpoint": "/api/v1/account/alerts",
-        "auth": "JWT; mutations require owner",
+        "auth": "login; mutations require owner",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
     ("alerts", "account", "show"): {
         "endpoint": "GET /api/v1/account/alerts",
-        "auth": "JWT; any account member",
+        "auth": "login; any account member",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
     ("alerts", "account", "set"): {
         "endpoint": "PUT /api/v1/account/alerts",
-        "auth": "JWT owner",
+        "auth": "login owner",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
     ("alerts", "account", "delete"): {
         "endpoint": "DELETE /api/v1/account/alerts",
-        "auth": "JWT owner",
+        "auth": "login owner",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
     ("alerts", "account", "snooze"): {
         "endpoint": "POST /api/v1/account/alerts/snooze",
-        "auth": "JWT owner",
+        "auth": "login owner",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
     ("alerts", "account", "unsnooze"): {
         "endpoint": "POST /api/v1/account/alerts/unsnooze",
-        "auth": "JWT owner",
+        "auth": "login owner",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
     ("alerts", "account", "preview"): {
         "endpoint": "POST /api/v1/account/alerts/preview",
-        "auth": "JWT; any account member",
+        "auth": "login; any account member",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.alerts.account.v1",
     },
@@ -178,31 +178,31 @@ HELP_CONTRACTS = {
     },
     ("budget", "rules"): {
         "endpoint": "GET /api/v1/projects/{project_id}/budget",
-        "auth": "key or JWT",
+        "auth": "key or login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rules.v1",
     },
     ("budget", "rules", "list"): {
         "endpoint": "GET /api/v1/projects/{project_id}/budget",
-        "auth": "key or JWT",
+        "auth": "key or login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rules.v1",
     },
     ("budget", "rule"): {
         "endpoint": "composite budget rule router",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "threshold"): {
         "endpoint": "composite budget threshold router",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "rule", "add"): {
         "endpoint": "GET then PUT /api/v1/projects/{project_id}/budget",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rules.v1",
     },
@@ -211,58 +211,58 @@ HELP_CONTRACTS = {
         "/api/v1/projects/{project_id}/budget/restore-defaults; "
         "GET "
         "/api/v1/projects/{project_id}/budget",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rules.v1",
     },
     ("budget", "rule", "preview"): {
         "endpoint": "POST /api/v1/projects/{project_id}/alerts/preview",
-        "auth": "key or JWT",
+        "auth": "key or login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_preview.v1",
     },
     ("budget", "rule", "remove"): {
         "endpoint": "DELETE /api/v1/projects/{project_id}/budget/rule/{rule_key}",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "rule", "pause"): {
         "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/pause",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "rule", "resume"): {
         "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/resume",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "rule", "snooze"): {
         "endpoint": "POST /api/v1/projects/{project_id}/budget/rule/{rule_key}/snooze",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "rule", "unsnooze"): {
         "endpoint": "POST "
         "/api/v1/projects/{project_id}/budget/rule/{rule_key}/unsnooze",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "threshold", "snooze"): {
         "endpoint": "POST "
         "/api/v1/projects/{project_id}/budget/threshold/{percent}/snooze",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
     ("budget", "threshold", "unsnooze"): {
         "endpoint": "POST "
         "/api/v1/projects/{project_id}/budget/threshold/{percent}/unsnooze",
-        "auth": "JWT owner/admin",
+        "auth": "login owner/admin",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget.rule_action.v1",
     },
@@ -280,21 +280,21 @@ HELP_CONTRACTS = {
     },
     ("account", "alert-email", "show"): {
         "endpoint": "GET /api/v1/account/alert-email",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API or delivery "
         "failure; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.account.alert-email.v1",
     },
     ("account", "alert-email", "set"): {
         "endpoint": "PUT /api/v1/account/alert-email",
-        "auth": "JWT; owner for mutations",
+        "auth": "login; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery "
         "failure; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.account.alert-email.v1",
     },
     ("account", "alert-email", "clear"): {
         "endpoint": "DELETE /api/v1/account/alert-email",
-        "auth": "JWT; owner for mutations",
+        "auth": "login; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery "
         "failure; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.account.alert-email.v1",
@@ -307,42 +307,42 @@ HELP_CONTRACTS = {
     },
     ("channels", "list"): {
         "endpoint": "GET /api/v1/account/notification-channels",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.list.v1",
     },
     ("channels", "show"): {
         "endpoint": "GET /api/v1/account/notification-channels/{channel_id}",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.v1",
     },
     ("channels", "create"): {
         "endpoint": "POST /api/v1/account/notification-channels",
-        "auth": "JWT; owner for mutations",
+        "auth": "login; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.v1",
     },
     ("channels", "update"): {
         "endpoint": "GET then PUT /api/v1/account/notification-channels/{channel_id}",
-        "auth": "JWT; owner for mutations",
+        "auth": "login; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.v1",
     },
     ("channels", "test"): {
         "endpoint": "POST /api/v1/account/notification-channels/{channel_id}/test",
-        "auth": "JWT; owner for mutations",
+        "auth": "login; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.channels.test.v1",
     },
     ("channels", "delete"): {
         "endpoint": "DELETE /api/v1/account/notification-channels/{channel_id}",
-        "auth": "JWT; owner for mutations",
+        "auth": "login; owner for mutations",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.channels.delete.v1",
@@ -369,7 +369,7 @@ HELP_CONTRACTS = {
     },
     ("notifications", "test"): {
         "endpoint": "POST /api/v1/projects/{project}/notifications/test-{channel}",
-        "auth": "any; Slack/PagerDuty require JWT or full-scope key; email requires JWT",
+        "auth": "any; Slack/PagerDuty require a login or full-scope key; email requires a login",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.test.v1",
@@ -388,7 +388,7 @@ HELP_CONTRACTS = {
     },
     ("audit",): {
         "endpoint": "GET /api/v1/account/audit-events",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.audit.v1",
     },
@@ -412,7 +412,7 @@ HELP_CONTRACTS = {
     },
     ("budget", "set"): {
         "endpoint": "GET then PUT /api/v1/projects/{project}/budget",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.budget-set.v1",
     },
@@ -452,7 +452,7 @@ HELP_CONTRACTS = {
             "GET /api/v1/projects/{project}/costs or, with --account, "
             "GET /api/v1/account/costs"
         ),
-        "auth": "project key or JWT; --account requires JWT",
+        "auth": "project key or login; --account requires login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.costs.v1 or solwyn.account_costs.v1",
     },
@@ -464,51 +464,96 @@ HELP_CONTRACTS = {
     },
     ("doctor",): {
         "endpoint": "GET /health/ready plus one credential-specific authenticated probe",
-        "auth": "optional; JWT or project key enables the authenticated probe",
+        "auth": "optional; a login or project key enables the authenticated probe",
         "exits": "0 all checks pass; 1 diagnostic failure; 2 usage",
         "schema": "solwyn.doctor.v1; with --mcp: solwyn.doctor.mcp.v1",
     },
     ("init",): {
         "endpoint": "composite onboarding workflow",
-        "auth": "any or interactive bootstrap",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "auth": "any, or a browser login when none is stored",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found; 6 approval or login pending",
         "schema": "solwyn.init.v1",
     },
     ("keys",): {
         "endpoint": "composite router for project-key subcommands",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 2 usage",
         "schema": "varies by subcommand",
     },
     ("keys", "revoke"): {
         "endpoint": "DELETE /api/v1/projects/{project}/key/{key_id}",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.keys-revoke.v1 (CLI output after bodyless 204)",
     },
     ("keys", "rotate"): {
         "endpoint": "POST /api/v1/projects/{project}/key/rotate",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.keys-rotate.v1",
     },
     ("keys", "show"): {
         "endpoint": "GET /api/v1/projects/{project}/key",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.keys-show.v1",
     },
     ("login",): {
-        "endpoint": "POST /api/v1/auth/login or local keychain write with --with-key",
+        "endpoint": (
+            "POST /oauth/device_authorization and POST /oauth/token, or local "
+            "keychain write with --with-key"
+        ),
         "auth": "none",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth or credential storage",
-        "schema": "solwyn.login.v1",
+        "exits": (
+            "0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or "
+            "credential storage; 6 still waiting for browser approval"
+        ),
+        "schema": "solwyn.login.v2",
     },
     ("logout",): {
-        "endpoint": "local keychain clear",
+        "endpoint": "POST /oauth/revoke (best effort) and local keychain clear",
         "auth": "local (none)",
         "exits": "0 success; 2 usage; 3 credential storage",
         "schema": "solwyn.logout.v1",
+    },
+    ("credentials",): {
+        "endpoint": "composite router for CLI login subcommands",
+        "auth": "login",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("credentials", "list"): {
+        "endpoint": "GET /api/v1/cli/credentials",
+        "auth": "login",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
+        "schema": "solwyn.credentials.list.v1",
+    },
+    ("credentials", "revoke"): {
+        "endpoint": "GET /api/v1/cli/credentials; DELETE /api/v1/cli/credentials/{id}",
+        "auth": "login",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
+        "schema": "solwyn.credentials.revoke.v1",
+    },
+    ("approvals",): {
+        "endpoint": "composite router for approval subcommands",
+        "auth": "login",
+        "exits": "0 success; 2 usage",
+        "schema": "varies by subcommand",
+    },
+    ("approvals", "status"): {
+        "endpoint": "GET /api/v1/cli/approvals/{approval_id}",
+        "auth": "login (only your own approvals)",
+        "exits": (
+            "0 shown; 1 generic/API; 2 usage; 3 auth; 5 not found; "
+            "6 denied, expired, or still pending after --wait"
+        ),
+        "schema": "solwyn.approval.v1",
+    },
+    ("keys", "env"): {
+        "endpoint": "local keychain read",
+        "auth": "local (stored project key)",
+        "exits": "0 success; 2 usage; 3 no stored project key",
+        "schema": "solwyn.keys-env.v1",
     },
     ("mcp-config",): {
         "endpoint": "none (offline)",
@@ -524,7 +569,7 @@ HELP_CONTRACTS = {
     },
     ("plan",): {
         "endpoint": "GET /api/v1/billing/status",
-        "auth": "JWT or project key with account context",
+        "auth": "login or project key with account context",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.plan.v1",
     },
@@ -536,19 +581,19 @@ HELP_CONTRACTS = {
     },
     ("projects", "create"): {
         "endpoint": "POST /api/v1/projects",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.projects-create.v1",
     },
     ("projects", "delete"): {
         "endpoint": "DELETE /api/v1/projects/{id}",
-        "auth": "JWT (owner or admin)",
+        "auth": "login (owner or admin)",
         "exits": "0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.projects-delete.v1 (CLI output after bodyless 204)",
     },
     ("projects", "list"): {
         "endpoint": "GET /api/v1/projects",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.projects-list.v1",
     },
@@ -596,13 +641,13 @@ HELP_CONTRACTS = {
     },
     ("runs", "stop"): {
         "endpoint": "optional GET /api/v1/projects/{project}/agent-runs then POST /api/v1/projects/{project}/agent-runs/{run_id}/stop",
-        "auth": "JWT + budget.write",
+        "auth": "login + budget.write",
         "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.runs.stop.v1",
     },
     ("projects", "rename"): {
         "endpoint": "PUT /api/v1/projects/{id}",
-        "auth": "JWT (owner or admin)",
+        "auth": "login (owner or admin)",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.projects-rename.v1",
     },
@@ -610,7 +655,7 @@ HELP_CONTRACTS = {
         "endpoint": (
             "GET /api/v1/projects/{project}/budget and GET "
             "/api/v1/projects/{project}/providers; optionally GET forecast "
-            "and provider failovers; JWT also GET /api/v1/overview"
+            "and provider failovers; login also GET /api/v1/overview"
         ),
         "auth": "any",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
@@ -618,7 +663,7 @@ HELP_CONTRACTS = {
     },
     ("overview",): {
         "endpoint": "GET /api/v1/overview",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 3 auth",
         "schema": "solwyn.overview.v1",
     },
@@ -633,31 +678,31 @@ HELP_CONTRACTS = {
     },
     ("webhooks",): {
         "endpoint": "composite router for webhook target subcommands",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 2 usage",
         "schema": "varies by subcommand",
     },
     ("webhooks", "create"): {
         "endpoint": "POST /api/v1/projects/{project}/webhooks",
-        "auth": "owner/admin JWT (project.write)",
+        "auth": "owner/admin login (project.write)",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-create.v1",
     },
     ("webhooks", "delete"): {
         "endpoint": "DELETE /api/v1/projects/{project}/webhooks/{webhook_id}",
-        "auth": "owner/admin JWT (project.write)",
+        "auth": "owner/admin login (project.write)",
         "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-delete.v1 (CLI output after bodyless 204)",
     },
     ("webhooks", "list"): {
         "endpoint": "GET /api/v1/projects/{project}/webhooks",
-        "auth": "JWT",
+        "auth": "login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-list.v1",
     },
     ("webhooks", "rotate"): {
         "endpoint": "POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate",
-        "auth": "owner/admin JWT (project.write)",
+        "auth": "owner/admin login (project.write)",
         "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         "schema": "solwyn.webhooks-rotate.v1",
     },
@@ -688,7 +733,7 @@ HELP_CONTRACTS = {
     },
     ("tags", "retire"): {
         "endpoint": "DELETE /api/v1/account/tags",
-        "auth": "JWT admin/owner",
+        "auth": "login admin/owner",
         "exits": "0 retired; 1 API; 2 usage or confirmation; 3 auth; 5 never registered",
         "schema": "solwyn.tags.v1",
     },
@@ -701,43 +746,43 @@ HELP_CONTRACTS.update(
     {
         ("plan", "cancel"): {
             "endpoint": "GET /api/v1/billing/status then POST /api/v1/billing/cancel",
-            "auth": "owner JWT (billing.manage)",
+            "auth": "owner login (billing.manage)",
             "exits": _BILLING_EXITS,
             "schema": "solwyn.plan.cancel.v1",
         },
         ("plan", "resume"): {
             "endpoint": "GET /api/v1/billing/status then DELETE /api/v1/billing/cancel",
-            "auth": "owner JWT (billing.manage)",
+            "auth": "owner login (billing.manage)",
             "exits": _BILLING_EXITS,
             "schema": "solwyn.plan.resume.v1",
         },
         ("plan", "change"): {
             "endpoint": "POST /api/v1/billing/plan-preview then POST /api/v1/billing/plan-change; --discard uses GET status then DELETE /api/v1/billing/plan-change",
-            "auth": "JWT for preview; owner JWT (billing.manage) for writes",
+            "auth": "login for preview; owner login (billing.manage) for writes",
             "exits": _BILLING_EXITS,
             "schema": "solwyn.plan.change.v1; solwyn.plan.discard.v1",
         },
         ("plan", "upgrade"): {
             "endpoint": "POST /api/v1/billing/checkout",
-            "auth": "owner JWT (billing.manage)",
+            "auth": "owner login (billing.manage)",
             "exits": _BILLING_EXITS,
             "schema": "solwyn.plan.upgrade.v1",
         },
         ("plan", "portal"): {
             "endpoint": "POST /api/v1/billing/portal",
-            "auth": "owner JWT (billing.manage)",
+            "auth": "owner login (billing.manage)",
             "exits": _BILLING_EXITS,
             "schema": "solwyn.plan.portal.v1",
         },
         ("plan", "pending"): {
             "endpoint": "composite router for pending plan intent",
-            "auth": "owner JWT (billing.manage)",
+            "auth": "owner login (billing.manage)",
             "exits": "0 success; 2 usage",
             "schema": "varies by subcommand",
         },
         ("plan", "pending", "dismiss"): {
             "endpoint": "GET /api/v1/billing/status then DELETE /api/v1/billing/plan-intent",
-            "auth": "owner JWT (billing.manage)",
+            "auth": "owner login (billing.manage)",
             "exits": _BILLING_EXITS,
             "schema": "solwyn.plan.pending.dismiss.v1",
         },
@@ -746,7 +791,7 @@ HELP_CONTRACTS.update(
 
 
 _INIT_REMOTE_OPERATIONS = (
-    "conditional POST /api/v1/auth/login",
+    "conditional browser login (POST /oauth/device_authorization, POST /oauth/token)",
     "GET /api/v1/projects",
     "optional POST /api/v1/projects",
     "final GET /api/v1/projects/{project}/budget",
@@ -790,73 +835,73 @@ HELP_CONTRACTS.update(
     {
         ("team",): {
             "endpoint": "/api/v1/accounts/me",
-            "auth": "JWT; account role enforced by Core",
+            "auth": "login; account role enforced by Core",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "varies by command",
         },
         ("team", "members"): {
             "endpoint": "/api/v1/accounts/me/members",
-            "auth": "JWT; account role enforced by Core",
+            "auth": "login; account role enforced by Core",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.members.v1",
         },
         ("team", "invites"): {
             "endpoint": "/api/v1/accounts/me/invitations",
-            "auth": "JWT; account role enforced by Core",
+            "auth": "login; account role enforced by Core",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.invites.v1",
         },
         ("team", "members", "list"): {
             "endpoint": "GET /api/v1/accounts/me/members",
-            "auth": "JWT; any account member",
+            "auth": "login; any account member",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.members.v1",
         },
         ("team", "members", "set-role"): {
             "endpoint": "PATCH /api/v1/accounts/me/members/{user_id}",
-            "auth": "owner JWT",
+            "auth": "owner login",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.member.v1",
         },
         ("team", "members", "remove"): {
             "endpoint": "DELETE /api/v1/accounts/me/members/{user_id}",
-            "auth": "JWT; owner/admin for allowed targets, or self",
+            "auth": "login; owner/admin for allowed targets, or self",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.remove.v1",
         },
         ("team", "leave"): {
             "endpoint": "DELETE /api/v1/accounts/me/members/{user_id}",
-            "auth": "JWT; your own membership",
+            "auth": "login; your own membership",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.remove.v1",
         },
         ("team", "invites", "list"): {
             "endpoint": "GET /api/v1/accounts/me/invitations",
-            "auth": "owner/admin JWT",
+            "auth": "owner/admin login",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.invites.v1",
         },
         ("team", "invites", "send"): {
             "endpoint": "POST /api/v1/accounts/me/invitations",
-            "auth": "owner/admin JWT",
+            "auth": "owner/admin login",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.invitation.v1",
         },
         ("team", "invites", "resend"): {
             "endpoint": "POST /api/v1/accounts/me/invitations/{invitation_id}/resend",
-            "auth": "owner/admin JWT",
+            "auth": "owner/admin login",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.invitation-action.v1",
         },
         ("team", "invites", "revoke"): {
             "endpoint": "DELETE /api/v1/accounts/me/invitations/{invitation_id}",
-            "auth": "owner/admin JWT",
+            "auth": "owner/admin login",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "solwyn.team.invitation-action.v1",
         },
         ("invite",): {
             "endpoint": "/api/v1/invitations/{token}",
-            "auth": "public preview; optional JWT acceptance",
+            "auth": "public preview",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
             "schema": "varies by command",
         },
@@ -867,14 +912,14 @@ HELP_CONTRACTS.update(
             "schema": "solwyn.invite.show.v1",
         },
         ("invite", "accept"): {
-            "endpoint": "GET /api/v1/invitations/{token}; POST /api/v1/invitations/{token}/accept",
-            "auth": "selected JWT; --new-user uses explicit interactive invitation-only credentials",
+            "endpoint": "none (retired)",
+            "auth": "none",
             "exits": "0 success; 1 generic/API or conflict; 2 usage or confirmation; 3 auth; 5 not found",
-            "schema": "solwyn.invite.accept.v1",
+            "schema": "solwyn.error.v1",
         },
         ("account", "rename"): {
             "endpoint": "PATCH /api/v1/accounts/me",
-            "auth": "owner JWT",
+            "auth": "owner login",
             "exits": _TEAM_EXITS,
             "schema": "solwyn.account.rename.v1",
         },
@@ -993,11 +1038,9 @@ def test_auth_and_key_help_is_secret_safe() -> None:
         for path in (("keys",), ("keys", "rotate"), ("keys", "revoke"))
     )
 
-    assert (
-        "Keys and passwords are never accepted as command-line arguments or echoed"
-        in login_help
-    )
-    assert "Read project keys only from a hidden prompt or stdin" in login_help
+    assert "Keys are never accepted as command-line arguments or echoed" in login_help
+    assert "The CLI never opens a browser" in login_help
+    assert "--wait 0 starts and returns" in login_help
     assert "never reveals existing key material" in keys_help
     assert "replacement key is shown exactly once" in keys_help
 

@@ -45,7 +45,7 @@ def paging(request, monkeypatch):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda: ProjectKeyCredential(
+        lambda **_: ProjectKeyCredential(
             api_key="sk_proj_" + "a4" * 32, source="environment"
         ),
     )

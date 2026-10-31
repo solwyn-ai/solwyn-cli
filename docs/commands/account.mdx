@@ -7,13 +7,13 @@ solwyn account phone show
 solwyn --json account phone show
 ```
 
-JWT `whoami` shows email verification along with user/account identity, role,
+With a Solwyn login, `whoami` shows email verification along with user/account identity, role,
 seats and projects (`solwyn.whoami.v1`). Its strict identity parser adopts
 `email_verified`, first name and marketing email subscription state. Project keys
 return local authentication and selected-project context without inventing a user
 or verified email, and never reveal raw key material. MCP provides `get_whoami`.
 
-`account phone show` (`solwyn.account.phone.v1`) requires JWT and reads the current
+`account phone show` (`solwyn.account.phone.v1`) requires a Solwyn login and reads the current
 user's state: none, pending, verified or verified_with_pending_change; verified
 and pending numbers, verification/resend timestamps, and SMS consent/disclosure
 state. Verified phone and SMS consent are prerequisites for SMS notifications.
@@ -28,7 +28,8 @@ solwyn account rename "New account name"
 solwyn --json account rename "New account name" --yes
 ```
 
-Rename requires owner JWT. It reads the current account and displays its ID,
+Rename requires the owner's Solwyn login and a one-time browser approval
+(see [approvals](approvals.mdx)). It reads the current account and displays its ID,
 old/new names and invitation-email effects before confirmation or `--yes`.
 Non-TTY use without `--yes` exits 2 before reading credentials or HTTP.
 The PATCH sends only `display_name`; `alert_email_override` remains untouched.
@@ -49,11 +50,10 @@ solwyn account recover
 solwyn --json account recover
 ```
 
-`account recover` requires JWT but does not require an active membership. It
-idempotently creates a personal account after membership removal, or returns
+`account recover` requires a Solwyn login but does not require an active
+membership. It idempotently creates a personal account after membership removal, or returns
 the existing account when one is active. The POST goes to
 `/api/v1/accounts/me/personal`; `solwyn.account.recover.v1` returns `account_id`.
-The command stays CLI-only. A project key masking login must be unselected;
-there is no credential fallback. Exit codes are 0 success, 1 API/invalid response,
-2 usage and 3 auth. Core maps a missing user to 401, so there is no not-found
+The command stays CLI-only. There is no project-key fallback. Exit codes are 0
+success, 1 API/invalid response, 2 usage and 3 auth. Core maps a missing user to 401, so there is no not-found
 exit for this route.

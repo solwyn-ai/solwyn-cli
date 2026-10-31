@@ -15,7 +15,7 @@ solwyn attest --account --range 90d --format json > account-attestation.json
 Use `--account` for an account-wide artifact. Account attestations require user
 login with `solwyn login`; a project key cannot read account-wide evidence.
 Project artifacts requested with a project key have actor user IDs redacted by
-the server. A JWT project export can include the account-only evidence and actor
+the server. A project export with a Solwyn login can include the account-only evidence and actor
 identity that the caller is allowed to see.
 
 `--range` accepts `7d`, `30d`, `90d`, or `365d` and defaults to `30d`. Paired,

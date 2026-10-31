@@ -26,7 +26,7 @@ from solwyn_cli.commands._billing import (
     PlanPreviewResponse,
     PortalResponse,
     fetch_plan_preview,
-    require_billing_jwt,
+    require_billing_login,
     require_empty_204,
 )
 from solwyn_cli.commands._entitlement import (
@@ -46,7 +46,7 @@ from solwyn_cli.runtime import command_context, output_engine
 
 PLAN_HELP = help_contract(
     endpoint="GET /api/v1/billing/status",
-    auth="JWT or project key with account context",
+    auth="login or project key with account context",
     exits="0 success; 1 generic/API; 2 usage; 3 auth",
     schema="solwyn.plan.v1",
 )
@@ -249,7 +249,7 @@ def plan(context: typer.Context) -> None:
     "list",
     epilog=help_contract(
         endpoint="GET /api/v1/billing/catalog",
-        auth="JWT or project key with user context",
+        auth="login or project key with user context",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.plan.catalog.v1",
     ),
@@ -365,7 +365,7 @@ def _billing_client(context: typer.Context):
         with SolwynClient(
             api_url=command_context(context).api_url, credential=credential
         ) as client:
-            require_billing_jwt(client)
+            require_billing_login(client)
             yield client
     except ApiError as error:
         exit_with_error(context, error)
@@ -375,7 +375,7 @@ def _billing_client(context: typer.Context):
             OutputError(
                 code="authentication_failed",
                 message=str(error),
-                hint="Run solwyn login; unset a selected project key to use JWT.",
+                hint="Run solwyn login. If SOLWYN_AUTH=project_key is set, unset it.",
             ),
             semantic=ErrorSemantic.AUTH,
         )
@@ -391,7 +391,7 @@ def _billing_client(context: typer.Context):
 
 
 def _billing_help(
-    endpoint: str, schema: str, *, auth: str = "owner JWT (billing.manage)"
+    endpoint: str, schema: str, *, auth: str = "owner login (billing.manage)"
 ) -> str:
     return help_contract(
         endpoint=endpoint,
@@ -519,7 +519,7 @@ def _preview_effect(preview: PlanPreviewResponse) -> str:
     epilog=_billing_help(
         "POST /api/v1/billing/plan-preview then POST /api/v1/billing/plan-change; --discard uses GET status then DELETE /api/v1/billing/plan-change",
         "solwyn.plan.change.v1; solwyn.plan.discard.v1",
-        auth="JWT for preview; owner JWT (billing.manage) for writes",
+        auth="login for preview; owner login (billing.manage) for writes",
     ),
 )
 def change(
@@ -543,7 +543,7 @@ def change(
         bool,
         typer.Option(
             "--dry-run",
-            help="Read the actual estimate without submitting a change; JWT at any role.",
+            help="Read the actual estimate without submitting a change; login at any role.",
         ),
     ] = False,
     yes: Annotated[
@@ -724,7 +724,7 @@ pending_app = typer.Typer(
     help="Manage the captured paid-signup plan intent.",
     epilog=help_contract(
         endpoint="composite router for pending plan intent",
-        auth="owner JWT (billing.manage)",
+        auth="owner login (billing.manage)",
         exits="0 success; 2 usage",
         schema="varies by subcommand",
     ),

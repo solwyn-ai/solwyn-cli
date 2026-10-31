@@ -21,7 +21,7 @@ from pydantic import (
 
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     resolve_credential,
 )
@@ -644,14 +644,10 @@ def show_run(
     )
 
 
-def _jwt_credential(context: typer.Context) -> JwtCredential:
+def _login_credential(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ProjectKeyCredential):
-        hint = (
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry runs stop."
-            if credential.source == "environment"
-            else "Run solwyn logout, then solwyn login, and retry runs stop."
-        )
+        hint = "Run solwyn login, then retry runs stop."
         exit_with_error(
             context,
             OutputError(
@@ -671,7 +667,7 @@ def _jwt_credential(context: typer.Context) -> JwtCredential:
             "optional GET /api/v1/projects/{project}/agent-runs then "
             "POST /api/v1/projects/{project}/agent-runs/{run_id}/stop"
         ),
-        auth="JWT + budget.write",
+        auth="login + budget.write",
         exits="0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
         schema="solwyn.runs.stop.v1",
         guidance=(
@@ -699,7 +695,7 @@ def stop_run(
         "in-flight requests finish."
     )
     check_confirmation(context, yes=yes, effect=effect)
-    credential = _jwt_credential(context)
+    credential = _login_credential(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             storage_run_id = resolve_agent_run_id(

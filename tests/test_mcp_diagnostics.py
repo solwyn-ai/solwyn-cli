@@ -16,9 +16,23 @@ from golden.harness import assert_matches_golden
 from solwyn_cli._mcp_doctor_ipc import HelperResult
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.main import app
+from login_fixtures import LOGIN_TOKEN, login_entries
 
 KEY = "sk_proj_" + "a1" * 32
 runner = CliRunner()
+
+
+def _store(values, *, fail_on=()):
+    """Fake keychain reads; entries in fail_on must never be read."""
+
+    def get(entry):
+        if entry in fail_on:
+            pytest.fail(f"keychain read of {entry}")
+        return True, values.get(entry)
+
+    return get
+
+
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
@@ -161,9 +175,7 @@ def test_actual_key_identity_is_separate_from_wrong_selected_project(
 ):
     requests, responses, launches = probes
     monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-    monkeypatch.setattr(
-        auth, "_get_password", lambda *a: pytest.fail("keychain fallback")
-    )
+    monkeypatch.setattr(auth, "_get_password", _store({}, fail_on={auth.API_KEY_ENTRY}))
     responses.extend(
         [
             httpx.Response(
@@ -203,10 +215,10 @@ def test_actual_key_identity_is_separate_from_wrong_selected_project(
     assert len(launches) == 1 and launches[0].api_key.get_secret_value() == KEY
     assert KEY not in result.output and "PRIVATE_REMOTE_CANARY" not in result.output
     tools = {t["name"]: t for t in data["tools"]}
-    assert tools["list_projects"]["credential_requirement"] == "jwt"
+    assert tools["list_projects"]["credential_requirement"] == "login"
     assert tools["list_alert_events"]["credential_requirement"] == "either"
     assert "account" in tools["list_alert_events"]["detail"].lower()
-    assert "JWT" in tools["list_alert_events"]["detail"]
+    assert "Solwyn login" in tools["list_alert_events"]["detail"]
 
 
 @pytest.mark.parametrize(
@@ -217,7 +229,7 @@ def test_invalid_environment_presence_never_falls_back(
 ):
     requests, _, launches = probes
     monkeypatch.setenv("SOLWYN_API_KEY", value)
-    monkeypatch.setattr(auth, "_get_password", lambda *a: pytest.fail("keychain read"))
+    monkeypatch.setattr(auth, "_get_password", _store({}, fail_on={auth.API_KEY_ENTRY}))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
     assert result.exit_code == 1
@@ -233,25 +245,26 @@ def test_invalid_environment_presence_never_falls_back(
 
 
 @pytest.mark.parametrize(
-    "available,access,refresh,want",
+    "available,token,meta,want",
     [
         (False, None, None, "unavailable"),
         (True, None, None, "missing"),
-        (True, "PRIVATE_ACCESS", None, "incomplete"),
-        (True, "", "PRIVATE_REFRESH", "incomplete"),
+        (True, "PRIVATE_TOKEN", None, "incomplete"),
+        (True, "", "PRIVATE_META", "incomplete"),
     ],
 )
 def test_credential_store_availability_is_safe(
-    monkeypatch, probes, available, access, refresh, want
+    monkeypatch, probes, available, token, meta, want
 ):
     monkeypatch.setattr(
         auth,
         "_get_password",
         lambda entry: (
             available,
-            {auth.ACCESS_TOKEN_ENTRY: access, auth.REFRESH_TOKEN_ENTRY: refresh}.get(
-                entry
-            ),
+            {
+                auth.CLI_CREDENTIAL_ENTRY: token,
+                auth.CLI_CREDENTIAL_META_ENTRY: meta,
+            }.get(entry),
         ),
     )
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
@@ -263,18 +276,16 @@ def test_credential_store_availability_is_safe(
 
 
 @pytest.mark.parametrize("status,want", [(200, "ok"), (401, "failed")])
-def test_jwt_is_captured_once_never_refreshed_and_mcp_read_is_skipped(
+def test_login_is_captured_once_and_mcp_read_is_skipped(
     monkeypatch, probes, status, want
 ):
     requests, responses, launches = probes
     entries = []
+    stored_login = login_entries(LOGIN_TOKEN)
 
     def stored(entry):
         entries.append(entry)
-        return True, {
-            auth.ACCESS_TOKEN_ENTRY: "PRIVATE_ACCESS",
-            auth.REFRESH_TOKEN_ENTRY: "PRIVATE_REFRESH",
-        }.get(entry)
+        return True, stored_login.get(entry)
 
     monkeypatch.setattr(auth, "_get_password", stored)
     responses.append(
@@ -288,20 +299,24 @@ def test_jwt_is_captured_once_never_refreshed_and_mcp_read_is_skipped(
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
     assert entries == [
-        auth.API_KEY_ENTRY,
-        auth.ACCESS_TOKEN_ENTRY,
-        auth.REFRESH_TOKEN_ENTRY,
+        auth.CLI_CREDENTIAL_ENTRY,
+        auth.CLI_CREDENTIAL_META_ENTRY,
     ]
+    assert data["credential"] == {
+        "status": "available",
+        "kind": "login",
+        "source": "keyring",
+    }
     assert data["http_read"]["status"] == want
     assert data["key_context"]["scope"] is None
     assert data["mcp_read"]["status"] == "skipped"
-    assert "JWT" in data["mcp_read"]["detail"]
+    assert "login" in data["mcp_read"]["detail"]
     assert launches[0].api_key is None
     assert (
         len(requests) == 1
-        and requests[0].headers["authorization"] == "Bearer PRIVATE_ACCESS"
+        and requests[0].headers["authorization"] == "Bearer " + LOGIN_TOKEN
     )
-    assert "PRIVATE_" not in result.output
+    assert "PRIVATE_" not in result.output and LOGIN_TOKEN not in result.output
 
 
 @pytest.mark.parametrize(
@@ -357,7 +372,7 @@ def test_old_or_malformed_identity_never_infers_scope_from_successful_read(
 
 
 @pytest.mark.parametrize("stage", ["construct", "enter", "exit"])
-@pytest.mark.parametrize("kind", ["project_key", "jwt"])
+@pytest.mark.parametrize("kind", ["project_key", "login"])
 def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
     monkeypatch, probes, caplog, stage, kind
 ):
@@ -365,26 +380,16 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
     if kind == "project_key":
         monkeypatch.setenv("SOLWYN_API_KEY", KEY)
         monkeypatch.setattr(
-            auth, "_get_password", lambda *args: pytest.fail("keychain fallback")
+            auth, "_get_password", _store({}, fail_on={auth.API_KEY_ENTRY})
         )
     else:
-        monkeypatch.setattr(
-            auth,
-            "_get_password",
-            lambda entry: (
-                True,
-                {
-                    auth.ACCESS_TOKEN_ENTRY: "PRIVATE_ACCESS",
-                    auth.REFRESH_TOKEN_ENTRY: "PRIVATE_REFRESH",
-                }.get(entry),
-            ),
-        )
+        monkeypatch.setattr(auth, "_get_password", _store(login_entries(LOGIN_TOKEN)))
 
     def respond(request):
         requests.append(request)
         assert request.method == "GET"
         assert request.headers["authorization"] == "Bearer " + (
-            KEY if kind == "project_key" else "PRIVATE_ACCESS"
+            KEY if kind == "project_key" else LOGIN_TOKEN
         )
         return httpx.Response(
             200,
@@ -418,7 +423,7 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
     assert data["status"] == "degraded"
     assert data["credential"]["status"] == "available"
     assert data["http_read"]["status"] == "failed"
-    if kind == "jwt":
+    if kind == "login":
         assert data["key_context"]["status"] == "skipped"
         assert data["key_context"]["project_id"] is None
     elif stage == "exit":
@@ -436,6 +441,7 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
         assert not requests
     for output in (result.stdout, result.stderr, caplog.text):
         assert "PRIVATE_" not in output and KEY not in output
+        assert LOGIN_TOKEN not in output
     assert result.stderr == ""
 
 
@@ -465,19 +471,9 @@ def test_config_error_never_sends_key_to_fallback_api(monkeypatch, tmp_path, pro
     assert "PRIVATE-" not in result.output
 
 
-def test_jwt_discovery_only_is_overall_degraded(monkeypatch, probes):
+def test_login_discovery_only_is_overall_degraded(monkeypatch, probes):
     """A skipped authenticated MCP read must never advertise all diagnostics passed."""
-    monkeypatch.setattr(
-        auth,
-        "_get_password",
-        lambda entry: (
-            True,
-            {
-                auth.ACCESS_TOKEN_ENTRY: "ACCESS",
-                auth.REFRESH_TOKEN_ENTRY: "REFRESH",
-            }.get(entry),
-        ),
-    )
+    monkeypatch.setattr(auth, "_get_password", _store(login_entries(LOGIN_TOKEN)))
     probes[1].append(httpx.Response(200, json={"user_id": "user_alpha"}))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     assert result.exit_code == 1

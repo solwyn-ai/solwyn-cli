@@ -91,6 +91,36 @@
           "name": "no_color",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--approval-wait"
+          ],
+          "default": null,
+          "help": "Seconds to wait for a browser approval before exiting 6. Defaults to 600 with a terminal, else 90.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "approval_wait",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--approval"
+          ],
+          "default": null,
+          "help": "Approval ID to attach to this invocation's first change request.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "approval",
+          "required": false,
+          "type": "text"
         }
       ],
       "path": [],
@@ -936,6 +966,62 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "approvals",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "approvals"
+      ],
+      "summary": "Inspect browser approvals requested by this CLI login."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.approval.v1",
+      "name": "status",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "approval_id"
+          ],
+          "default": null,
+          "help": "Approval ID.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "approval_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--wait"
+          ],
+          "default": 0,
+          "help": "Seconds to wait for a decision. 0 shows it now.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "wait",
+          "required": false,
+          "type": "integer range"
+        }
+      ],
+      "path": [
+        "approvals",
+        "status"
+      ],
+      "summary": "Show an approval and optionally wait for its decision."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": null,
       "name": "attest",
@@ -946,7 +1032,7 @@
             "--account"
           ],
           "default": false,
-          "help": "Export account-wide evidence (requires JWT).",
+          "help": "Export account-wide evidence (requires a Solwyn login).",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -2717,7 +2803,7 @@
             "--with-last-fired"
           ],
           "default": false,
-          "help": "JWT only: include latest firing within Core\u2019s 30d retention window.",
+          "help": "Login only: include latest firing within Core\u2019s 30d retention window.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -3410,7 +3496,7 @@
             "--account"
           ],
           "default": false,
-          "help": "Show the JWT-authenticated account rollup across projects.",
+          "help": "Show the account rollup across projects (requires a Solwyn login).",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -4636,6 +4722,73 @@
     },
     {
       "hidden": false,
+      "is_group": true,
+      "json_schema": null,
+      "name": "credentials",
+      "output_kind": "varies-by-subcommand",
+      "params": [],
+      "path": [
+        "credentials"
+      ],
+      "summary": "List and revoke CLI logins."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.credentials.list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "credentials",
+        "list"
+      ],
+      "summary": "List your active CLI logins."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.credentials.revoke.v1",
+      "name": "revoke",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "credential_id"
+          ],
+          "default": null,
+          "help": "CLI login ID, or a unique prefix of 8 or more characters.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "credential_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--current"
+          ],
+          "default": false,
+          "help": "Revoke the login in use.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "current",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "credentials",
+        "revoke"
+      ],
+      "summary": "Revoke one of your CLI logins. Revocation is immediate."
+    },
+    {
+      "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.doctor.v1",
       "json_schemas": [
@@ -4760,49 +4913,20 @@
       "path": [
         "invite"
       ],
-      "summary": "Preview or accept an invitation privately."
+      "summary": "Preview an invitation privately."
     },
     {
       "hidden": false,
       "is_group": false,
-      "json_schema": "solwyn.invite.accept.v1",
+      "json_schema": "solwyn.error.v1",
       "name": "accept",
       "output_kind": "json-envelope",
-      "params": [
-        {
-          "cli_names": [
-            "--yes"
-          ],
-          "default": false,
-          "help": "Acknowledge joining the displayed account without confirming.",
-          "hidden": false,
-          "is_flag": true,
-          "kind": "option",
-          "multiple": false,
-          "name": "yes",
-          "required": false,
-          "type": "boolean"
-        },
-        {
-          "cli_names": [
-            "--new-user"
-          ],
-          "default": false,
-          "help": "Explicit invitation-only user creation with interactive email, display name, and hidden password; requires no selected credentials.",
-          "hidden": false,
-          "is_flag": true,
-          "kind": "option",
-          "multiple": false,
-          "name": "new_user",
-          "required": false,
-          "type": "boolean"
-        }
-      ],
+      "params": [],
       "path": [
         "invite",
         "accept"
       ],
-      "summary": "Join the invited account and securely store its returned JWT pair."
+      "summary": "Retired. Accept invitations from the emailed link, then run solwyn login."
     },
     {
       "hidden": false,
@@ -4827,7 +4951,20 @@
       "path": [
         "keys"
       ],
-      "summary": "Recover from leaked or expired project keys."
+      "summary": "Recover from leaked or expired project keys, and hand a key to an SDK."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-env.v1",
+      "name": "env",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "keys",
+        "env"
+      ],
+      "summary": "Print an export line for the stored project key."
     },
     {
       "hidden": false,
@@ -4947,7 +5084,7 @@
     {
       "hidden": false,
       "is_group": false,
-      "json_schema": "solwyn.login.v1",
+      "json_schema": "solwyn.login.v2",
       "name": "login",
       "output_kind": "json-envelope",
       "params": [
@@ -4964,12 +5101,70 @@
           "name": "with_key",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--scope"
+          ],
+          "default": "read,contain",
+          "help": "Scopes to request: read, or read,contain.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--label"
+          ],
+          "default": null,
+          "help": "Name for this login in the dashboard. Defaults to the short hostname.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "label",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--wait"
+          ],
+          "default": null,
+          "help": "Seconds to wait for browser approval. 0 starts and returns.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "max": null,
+          "min": 0,
+          "multiple": false,
+          "name": "wait",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "cli_names": [
+            "--continue"
+          ],
+          "default": false,
+          "help": "Resume waiting for the login started earlier.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "resume",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
         "login"
       ],
-      "summary": "Authenticate with Solwyn."
+      "summary": "Log in through the browser, or store a project key with --with-key."
     },
     {
       "hidden": false,
@@ -4981,7 +5176,7 @@
       "path": [
         "logout"
       ],
-      "summary": "Clear all stored Solwyn credentials."
+      "summary": "Revoke the stored login and clear all stored Solwyn credentials."
     },
     {
       "hidden": false,
@@ -5401,7 +5596,7 @@
             "--dry-run"
           ],
           "default": false,
-          "help": "Read the actual estimate without submitting a change; JWT at any role.",
+          "help": "Read the actual estimate without submitting a change; login at any role.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -7479,6 +7674,11 @@
       "code": 5,
       "meaning": "The requested resource does not exist (includes HTTP 404), such as a missing project or an expired or already-consumed reservation.",
       "name": "NOT_FOUND"
+    },
+    {
+      "code": 6,
+      "meaning": "The change was not applied because a browser approval is required, pending, denied, expired or no longer matches the request; or a browser login is still waiting for approval.",
+      "name": "APPROVAL_REQUIRED"
     }
   ],
   "json_schemas": [
@@ -7649,6 +7849,22 @@
         "window"
       ],
       "schema": "solwyn.alerts.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "action",
+        "changes",
+        "created_at",
+        "expires_at",
+        "id",
+        "reasons",
+        "schema",
+        "status",
+        "title"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.approval.v1",
       "universal_error_envelope": false
     },
     {
@@ -7975,6 +8191,28 @@
     },
     {
       "keys": [
+        "credentials",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.credentials.list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "cleared_local_login",
+        "current",
+        "id",
+        "label",
+        "revoked",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.credentials.revoke.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "authority_note",
         "cli_version",
         "config",
@@ -8056,18 +8294,6 @@
     },
     {
       "keys": [
-        "accepted",
-        "account_name",
-        "auth_type",
-        "role",
-        "schema"
-      ],
-      "optional_keys": [],
-      "schema": "solwyn.invite.accept.v1",
-      "universal_error_envelope": false
-    },
-    {
-      "keys": [
         "account_name",
         "expires_at",
         "inviter_email",
@@ -8076,6 +8302,16 @@
       ],
       "optional_keys": [],
       "schema": "solwyn.invite.show.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "export",
+        "name",
+        "schema"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.keys-env.v1",
       "universal_error_envelope": false
     },
     {
@@ -8120,16 +8356,25 @@
     },
     {
       "keys": [
+        "account_id",
+        "account_name",
         "auth_type",
-        "schema"
+        "credential_id",
+        "email",
+        "expires_at",
+        "label",
+        "role",
+        "schema",
+        "scope"
       ],
       "optional_keys": [],
-      "schema": "solwyn.login.v1",
+      "schema": "solwyn.login.v2",
       "universal_error_envelope": false
     },
     {
       "keys": [
         "cleared",
+        "revoked",
         "schema"
       ],
       "optional_keys": [],
@@ -8638,6 +8883,7 @@
         "auth_source",
         "auth_type",
         "configured_project",
+        "credential",
         "hint",
         "projects",
         "schema",

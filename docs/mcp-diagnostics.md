@@ -36,8 +36,9 @@ The result distinguishes:
 - `selected_project` and `project_source`: the CLI, environment, or configuration
   selector used for reads, or `none` when absent.
 - `credential`: captured kind and source, with separate statuses for available,
-  empty, invalid, missing, incomplete, and unavailable credentials. Even an empty
-  or invalid `SOLWYN_API_KEY` prevents fallback to stored login.
+  empty, invalid, missing, incomplete, and unavailable credentials. A stored
+  login is chosen before `SOLWYN_API_KEY`. Without one, an empty or invalid
+  `SOLWYN_API_KEY` prevents fallback to the stored project key.
 - `key_context`: the supplied key's actual project and `full` or `read_only`
   scope, obtained with `GET /api/v1/auth/key`. This is independent of selected
   project. A wrong or missing selector does not hide a known key identity.
@@ -45,7 +46,7 @@ The result distinguishes:
   24 lowercase hex characters). Malformed remote identity yields a fixed failed
   check with unknown project and scope.
 - `http_read`: a separate selected-project budget GET, or an account GET for
-  a captured JWT with no project selected. Requests never refresh JWT tokens.
+  a captured login with no project selected. Requests never refresh credentials.
 - `mcp`: discovery status, identity and version match against this CLI
   installation, negotiated protocol, observed known tools, unexpected-tool
   count, and comparison with the actual local profile catalog. Remote free text,
@@ -53,13 +54,14 @@ The result distinguishes:
 - `mcp_read`: the result of one read-only `budget_status` call using the captured
   project key. No budget check, confirmation, recording or provider call occurs.
 - `tools`: discovered flags and credential constraints from the actual catalog.
-  Account alert history requires JWT; project alert history accepts project keys.
+  Account alert history requires a Solwyn login; project alert history accepts
+  project keys.
 
-JWT diagnostics use the captured JWT only for the parent HTTP check. The child
-has no supported captured-JWT environment interface, so its authenticated MCP
+Login diagnostics use the captured login only for the parent HTTP check. The child
+has no supported environment interface for a captured login, so its authenticated MCP
 read is explicitly **skipped**. Discovery does not validate credentials. The
 result remains `degraded` with exit 1 when an authenticated MCP read was skipped,
-including JWT-only diagnostics. Exit 0 means discovery, context and the selected
+including login-only diagnostics. Exit 0 means discovery, context and the selected
 key read all passed; exit 2 means usage error.
 
 A 404 from the identity route means `unsupported`: deploy the Core version that

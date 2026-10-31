@@ -6,7 +6,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from solwyn_cli.auth import JwtCredential, JwtRequiredError
+from solwyn_cli.auth import LoginCredential, LoginRequiredError
 from solwyn_cli.client import SolwynClient
 
 PaidTier = Literal["production", "team", "scale"]
@@ -74,19 +74,17 @@ class PortalResponse(_BillingModel):
     portal_url: str
 
 
-def require_billing_jwt(client: SolwynClient) -> None:
+def require_billing_login(client: SolwynClient) -> None:
     """Respect credential selection; never bypass a selected project key."""
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError(
-            "Billing requires JWT. Run solwyn login; a selected project key takes precedence."
-        )
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError("Billing requires a Solwyn login. Run solwyn login.")
 
 
 def fetch_plan_preview(
     *, client: SolwynClient, tier: PaidTier, interval: BillingInterval
 ) -> PlanPreviewResponse:
     """Read Stripe's estimate without changing the subscription or billing."""
-    require_billing_jwt(client)
+    require_billing_login(client)
     request = PlanPreviewRequest(target_tier=tier, target_billing_interval=interval)
     data = PlanPreviewResponse.model_validate(
         client.request(

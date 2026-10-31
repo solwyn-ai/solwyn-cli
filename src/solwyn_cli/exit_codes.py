@@ -15,6 +15,7 @@ class ExitCode(IntEnum):
     AUTH_ERROR = 3
     BUDGET_DENIED = 4
     NOT_FOUND = 5
+    APPROVAL_REQUIRED = 6
 
 
 class ErrorSemantic(StrEnum):
@@ -25,6 +26,7 @@ class ErrorSemantic(StrEnum):
     AUTH = "auth"
     BUDGET_DENIED = "budget_denied"
     NOT_FOUND = "not_found"
+    APPROVAL_REQUIRED = "approval_required"
 
 
 _SEMANTIC_EXIT_CODES = {
@@ -33,7 +35,22 @@ _SEMANTIC_EXIT_CODES = {
     ErrorSemantic.AUTH: ExitCode.AUTH_ERROR,
     ErrorSemantic.BUDGET_DENIED: ExitCode.BUDGET_DENIED,
     ErrorSemantic.NOT_FOUND: ExitCode.NOT_FOUND,
+    ErrorSemantic.APPROVAL_REQUIRED: ExitCode.APPROVAL_REQUIRED,
 }
+
+# The change was not applied because a browser approval is required, pending,
+# denied, expired or no longer matches the request.
+APPROVAL_ERROR_CODES = frozenset(
+    {
+        "approval_required",
+        "approval_pending",
+        "approval_denied",
+        "approval_expired",
+        "approval_invalid",
+        "approval_limit_reached",
+        "login_pending",
+    }
+)
 
 
 def exit_code_for_error(
@@ -42,6 +59,8 @@ def exit_code_for_error(
     semantic: ErrorSemantic | None = None,
 ) -> ExitCode:
     """Map typed failures without interfering with Click's native usage handling."""
+    if getattr(error, "code", None) in APPROVAL_ERROR_CODES:
+        return ExitCode.APPROVAL_REQUIRED
     if semantic is not None:
         return _SEMANTIC_EXIT_CODES[semantic]
     if error is None:

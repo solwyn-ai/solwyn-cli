@@ -22,7 +22,9 @@ from rich.text import Text
 from solwyn_cli.errors import ApiError
 
 
-_COMMAND_SCHEMA = re.compile(r"^solwyn\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\.v1$")
+_COMMAND_SCHEMA = re.compile(
+    r"^solwyn\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\.v[1-9][0-9]*$"
+)
 _JSON_ADAPTER = TypeAdapter(Any)
 
 
@@ -79,6 +81,7 @@ class OneTimeSecretPanel(BaseModel):
 
     title: str
     value: SecretStr
+    footer: SecretStr | None = None
 
 
 def _parse_format(value: str | OutputFormat, *, source: str) -> OutputFormat:
@@ -240,6 +243,12 @@ class OutputEngine:
                     expand=False,
                 )
             )
+            if one_time_secret.footer is not None:
+                # Never wrap: the footer is a shell line meant to be copied.
+                console.print(
+                    Text(_terminal_safe(one_time_secret.footer.get_secret_value())),
+                    soft_wrap=True,
+                )
 
     def write_error(self, error: ApiError | OutputError) -> None:
         """Write a stable machine envelope or a detail-free human error."""

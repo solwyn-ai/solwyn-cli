@@ -9,7 +9,7 @@ also has these limits:
 | --- | --- |
 | Admission batch | 1–32 checks in one POST; all checks validate before authentication or HTTP. |
 | Fetched pages | 10, counting empty/filtered pages and an entitlement fallback. |
-| HTTP response bodies | 1 MiB in aggregate across every status, retry and refresh, streamed before JSON parsing. |
+| HTTP response bodies | 1 MiB in aggregate across every status and retry, streamed before JSON parsing. |
 | Encoded HTTP request body | 4 MiB per request; an oversized body is rejected before sending, never shortened. |
 | Complete MCP result | 2 MiB, including text, structured content, UTF-8/JSON escaping and reserved SDK metadata space. |
 | Continuation cursor | 4,096 characters; an oversized cursor is rejected. |
@@ -24,9 +24,7 @@ Cancellation and EOF stop subsequent requests, retries, pages and recording.
 An already admitted HTTP request may still be effective. The async HTTP owner
 allows up to 250 ms for bounded, shielded stream/pool cleanup. A worker blocked in
 an operating-system/keychain call cannot be safely killed by Python: it may finish
-local work after cancellation and can delay process exit. If JWT refresh already
-returned a new token pair, refresh-then-access persistence finishes before the
-next HTTP attempt is blocked. A host's eventual process termination is a separate
+local work after cancellation and can delay process exit. A host's eventual process termination is a separate
 policy; neither cancellation nor termination rolls back a reservation or ingest.
 
 A bounded read error can retain complete earlier pages in `data` plus the exact

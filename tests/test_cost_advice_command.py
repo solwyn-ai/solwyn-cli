@@ -172,7 +172,7 @@ def fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for module in (cost_analysis, cost_pricing):
         monkeypatch.setattr(module, "SolwynClient", FakeClient, raising=False)
         monkeypatch.setattr(
-            module, "resolve_credential", lambda: credential, raising=False
+            module, "resolve_credential", lambda **_: credential, raising=False
         )
     yield
 

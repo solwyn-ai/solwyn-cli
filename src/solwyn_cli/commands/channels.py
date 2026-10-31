@@ -82,7 +82,7 @@ def channel_table(data: NotificationChannelResponse) -> TableData:
 
 
 @app.command(
-    "list", epilog=command_help("GET " + BASE, "solwyn.channels.list.v1", auth="JWT")
+    "list", epilog=command_help("GET " + BASE, "solwyn.channels.list.v1", auth="login")
 )
 def list_channels(context: typer.Context) -> None:
     """List account channels with masked credentials."""
@@ -97,7 +97,7 @@ def list_channels(context: typer.Context) -> None:
 @app.command(
     "show",
     epilog=command_help(
-        "GET " + BASE + "/{channel_id}", "solwyn.channels.v1", auth="JWT"
+        "GET " + BASE + "/{channel_id}", "solwyn.channels.v1", auth="login"
     ),
 )
 def show(context: typer.Context, channel_id: Annotated[str, typer.Argument()]) -> None:
@@ -328,7 +328,7 @@ def test_channel(
     epilog=help_contract(
         endpoint="DELETE " + BASE + "/{channel_id}",
         schema="solwyn.channels.delete.v1",
-        auth="JWT; owner for mutations",
+        auth="login; owner for mutations",
         exits=EXITS.replace("2 usage;", "2 usage or confirmation;"),
         guidance=(
             "Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.",

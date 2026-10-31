@@ -160,7 +160,7 @@ def test_team_read_native_deadline_begins_after_http_start(
 
     monkeypatch.setattr(operation, "operation_scope", scope)
     monkeypatch.setattr(operation, "DEADLINE_SECONDS", 0.25)
-    monkeypatch.setattr(auth, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(auth, "resolve_credential", lambda **_: JWT)
 
     async def exercise():
         async with Client(server.create_server(), cache=None) as client:

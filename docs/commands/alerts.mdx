@@ -10,7 +10,7 @@ solwyn alerts show EVENT_ID --range 90d
 solwyn alerts list --account --from 2026-09-01T00:00:00Z --to 2026-09-05T00:00:00Z
 ```
 
-History defaults to 30 days. Presets are `7d`, `30d`, and `90d`. Custom windows require both timezone-aware bounds with `--to` later than `--from`; these replace the preset. Longer custom windows may require an upgrade. Core clamps retained history and the CLI reports `window.retention_clamped` on stderr. Project history accepts a project key or JWT; account history requires JWT and reads account-scope events.
+History defaults to 30 days. Presets are `7d`, `30d`, and `90d`. Custom windows require both timezone-aware bounds with `--to` later than `--from`; these replace the preset. Longer custom windows may require an upgrade. Core clamps retained history and the CLI reports `window.retention_clamped` on stderr. Project history accepts a project key or a Solwyn login; account history requires a login and reads account-scope events.
 
 Core supplies at most 25 events per page and has no `limit` parameter. `--all` walks continuation cursors; otherwise JSON preserves `next_cursor` and table mode prints continuation guidance on stderr. `--scope` matches the rule scope in event metadata, such as `tag`, rather than selecting account versus project history. Scope and rule-type filters allow at most 32 characters and no NUL. `--failed-only` filters the returned page locally to `partial` and `failed` delivery rollups; combine it with `--all` to search all pages. An empty filtered page can still have a continuation cursor.
 
@@ -36,9 +36,9 @@ solwyn alerts account preview --channel CHANNEL_ONE
 solwyn alerts account delete
 ```
 
-Account configuration uses `solwyn.alerts.account.v1`. Any account member with JWT can show or preview routing. Mutations require the owner, and creating or updating the spend alert requires Production or above (`account_spend_alert`). This is an alert threshold; it does not establish a spend enforcement cap. Spend must be a finite positive USD amount. Repeated `--channel` flags replace the referenced channels. Omitting channels or the enabled toggle preserves existing settings; creation defaults to enabled with no explicit channel refs. Preview is an ungated, side-effect-free POST for an unsaved draft. Snooze takes an absolute timezone-aware timestamp, with relative `+Nm`, `+Nh`, or `+Nd` converted locally. Delete succeeds even if configuration is already absent; show/snooze/unsnooze return exit 5 when absent.
+Account configuration uses `solwyn.alerts.account.v1`. Any account member with a Solwyn login can show or preview routing. Mutations require the owner and a one-time browser approval (see [approvals](approvals.mdx)), and creating or updating the spend alert requires Production or above (`account_spend_alert`). This is an alert threshold; it does not establish a spend enforcement cap. Spend must be a finite positive USD amount. Repeated `--channel` flags replace the referenced channels. Omitting channels or the enabled toggle preserves existing settings; creation defaults to enabled with no explicit channel refs. Preview is an ungated, side-effect-free POST for an unsaved draft. Snooze takes an absolute timezone-aware timestamp, with relative `+Nm`, `+Nh`, or `+Nd` converted locally. Delete succeeds even if configuration is already absent; show/snooze/unsnooze return exit 5 when absent.
 
-A definite 401 rejection may refresh JWT once; a definite 429 rejection uses the client's bounded rate-limit retry. Mutations are never replayed after 503 or transport failures. If a mutation's outcome is uncertain, inspect `alerts account show` before deciding whether to retry. Role failures exit 3 and point to `whoami`; key authentication failures point to login. Upgrade errors preserve Core's message, allowed values when present, and safe dashboard path. No checkout URL is opened.
+A 401 rejection is an authentication failure (exit 3) and is never replayed; a definite 429 rejection uses the client's bounded rate-limit retry. Mutations are never replayed after 503 or transport failures. If a mutation's outcome is uncertain, inspect `alerts account show` before deciding whether to retry. Role failures exit 3 and point to `whoami`; key authentication failures point to login. Upgrade errors preserve Core's message, allowed values when present, and safe dashboard path. No checkout URL is opened.
 
 The MCP surface includes `list_alert_events`, with project/account selection, window and rule filters, cursor/all-pages options, and local failed-only filtering. It exposes the same typed history and receipt fields. Account configuration mutation tools are not registered.
 
@@ -52,7 +52,7 @@ solwyn budget rules list --with-last-fired
 solwyn alerts account show --with-last-fired
 ```
 
-Activity is the JWT-only feed across **all projects plus account scope**, unlike
+Activity is the login-only feed across **all projects plus account scope**, unlike
 `alerts list --account`. It supports range 7d/30d/90d (default 30d), event type
 fired/snoozed/unsnoozed/paused/resumed, cursor and all-pages options. Pending reads
 operationally open deliveries without a retention window, with full receipt legs,
@@ -61,7 +61,7 @@ prints data first then exits 1 with `open_alert_deliveries` and local retry guid
 when the listed data contains open deliveries. Use `--all` for a complete health
 check. These outputs use `solwyn.alerts.activity.v1` and `solwyn.alerts.pending.v1`.
 
-Last firing is opt-in and requires JWT, including project rules. Selectors come
+Last firing is opt-in and requires a Solwyn login, including project rules. Selectors come
 from the fetched rules, are chunked at 100, and match thresholds by percent so
 budget-limit edits preserve history. Budget output maps rule keys to firing events
 or null; account output includes last firing and latest lifecycle event, merging

@@ -18,7 +18,7 @@ class ToolDeclaration(BaseModel):
     input_model: type[BaseModel]
     output_model: type[BaseModel]
     definition: Tool
-    credential_requirement: Literal["jwt", "project_key", "either"]
+    credential_requirement: Literal["login", "project_key", "either"]
     credential_note: str
 
     @classmethod
@@ -31,7 +31,7 @@ class ToolDeclaration(BaseModel):
         description: str,
         parameters: dict[str, str],
         read_only: bool,
-        credential_requirement: Literal["jwt", "project_key", "either"],
+        credential_requirement: Literal["login", "project_key", "either"],
         credential_note: str,
     ) -> "ToolDeclaration":
         hints = get_type_hints(fn, include_extras=True)

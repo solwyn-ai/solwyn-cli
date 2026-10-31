@@ -12,6 +12,7 @@ from solwyn_cli.commands import _notifications_common as common
 from solwyn_cli.main import app
 
 from test_notifications_commands import ALERT_EMAIL, CHANNEL, CONFIG
+from login_fixtures import login_credential
 
 runner = CliRunner()
 SMS_RESULT = {
@@ -30,16 +31,8 @@ def transport_api(monkeypatch: pytest.MonkeyPatch) -> tuple:
     monkeypatch.setattr(
         common,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token="synthetic-access-old", refresh_token="synthetic-refresh-old"
-        ),
+        lambda **_: login_credential("synthetic-access-old"),
     )
-
-    def save_tokens(access_token: str, refresh_token: str) -> auth.JwtCredential:
-        saved_tokens.append((access_token, refresh_token))
-        return auth.JwtCredential(
-            access_token=access_token, refresh_token=refresh_token
-        )
 
     def handle(request: httpx.Request) -> httpx.Response:
         calls.append(request)
@@ -53,7 +46,6 @@ def transport_api(monkeypatch: pytest.MonkeyPatch) -> tuple:
             sleeper=sleeps.append,
         )
 
-    monkeypatch.setattr(auth, "store_jwt_pair", save_tokens)
     monkeypatch.setattr(common, "SolwynClient", client)
     return responses, calls, sleeps, saved_tokens
 
@@ -153,34 +145,17 @@ def test_mutation_exhausted_429_stops_after_one_retry(transport_api):
         (["notifications", "set", "--no-sms"], 200, CONFIG),
     ],
 )
-def test_notification_routes_keep_one_jwt_refresh(transport_api, args, status, payload):
+def test_notification_routes_never_replay_after_401(
+    transport_api, args, status, payload
+):
     responses, calls, sleeps, saved_tokens = transport_api
-    responses.extend(
-        [
-            httpx.Response(401, json={"detail": "Invalid token"}),
-            httpx.Response(
-                200,
-                json={
-                    "access_token": "synthetic-access-new",
-                    "refresh_token": "synthetic-refresh-new",
-                    "token_type": "bearer",
-                },
-            ),
-            httpx.Response(status, **({} if status == 204 else {"json": payload})),
-        ]
-    )
+    responses.append(httpx.Response(401, json={"detail": "Invalid token"}))
     result = invoke(args)
-    assert result.exit_code == 0, result.output
-    assert len(calls) == 3
-    assert calls[1].url.path == "/api/v1/auth/refresh"
+    assert result.exit_code == 3
+    assert len(calls) == 1
     assert calls[0].headers["Authorization"] == "Bearer synthetic-access-old"
-    assert calls[2].headers["Authorization"] == "Bearer synthetic-access-new"
-    assert calls[0].method == calls[2].method
-    assert calls[0].content == calls[2].content
-    assert saved_tokens == [("synthetic-access-new", "synthetic-refresh-new")]
     assert sleeps == []
     assert "synthetic-access" not in result.output
-    assert "synthetic-refresh" not in result.output
 
 
 def test_unsupported_clear_config_not_advertised_or_accepted(transport_api):
@@ -268,29 +243,6 @@ def test_sms_help_and_output_describe_eligibility_only(transport_api):
     assert result.exit_code == 0
     assert json.loads(result.stdout)["message"] == SMS_RESULT["message"]
     assert len(calls) == 1
-
-
-def test_rejected_refreshed_jwt_stops_after_one_refresh(transport_api):
-    responses, calls, sleeps, saved_tokens = transport_api
-    responses.extend(
-        [
-            httpx.Response(401, json={"detail": "Invalid token"}),
-            httpx.Response(
-                200,
-                json={
-                    "access_token": "synthetic-access-new",
-                    "refresh_token": "synthetic-refresh-new",
-                    "token_type": "bearer",
-                },
-            ),
-            httpx.Response(401, json={"detail": "Invalid token"}),
-        ]
-    )
-    result = invoke(["channels", "delete", "--yes", "ch_one"])
-    assert result.exit_code == 3
-    assert [call.method for call in calls] == ["DELETE", "POST", "DELETE"]
-    assert len(saved_tokens) == 1
-    assert sleeps == []
 
 
 def test_mutation_503_is_not_replayed(transport_api):

@@ -1,16 +1,31 @@
-"""Credential resolution, keychain safety, and refresh retry tests."""
+"""Credential resolution by command class, and keychain safety."""
 
-from collections.abc import Iterator
-from typing import Any
+import json
+from datetime import UTC, datetime, timedelta
 
-import httpx
 import pytest
 from keyring.errors import NoKeyringError, PasswordDeleteError
 
+from login_fixtures import (
+    LOGIN_TOKEN,
+    expired_login_entries,
+    login_entries,
+    login_meta,
+)
 from solwyn_cli import auth
 
 
 VALID_KEY = "sk_proj_" + "a1" * 32
+ENV_KEY = "sk_proj_" + "e1" * 32
+DEVICE_CODE = "solwyn_dc_" + "0f" * 32
+ALL_ENTRIES = [
+    auth.API_KEY_ENTRY,
+    auth.CLI_CREDENTIAL_ENTRY,
+    auth.CLI_CREDENTIAL_META_ENTRY,
+    auth.PENDING_DEVICE_ENTRY,
+    "access_token",
+    "refresh_token",
+]
 
 
 @pytest.fixture
@@ -35,30 +50,189 @@ def keychain(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     return values
 
 
-def test_environment_key_wins_without_touching_keyring(
-    monkeypatch: pytest.MonkeyPatch,
+def _kind(credential: auth.ResolvedCredential | None) -> str | None:
+    if credential is None:
+        return None
+    if isinstance(credential, auth.LoginCredential):
+        return "login"
+    return f"key:{credential.source}"
+
+
+# (stored login, environment key, stored key) -> resolved credential
+_USER_ORDER = [
+    ((True, True, True), "login"),
+    ((True, False, True), "login"),
+    ((True, True, False), "login"),
+    ((True, False, False), "login"),
+    ((False, True, True), "key:environment"),
+    ((False, False, True), "key:keyring"),
+    ((False, True, False), "key:environment"),
+    ((False, False, False), None),
+]
+
+
+def _setup(
+    keychain: dict[str, str], login: bool, env_key: bool, stored_key: bool
+) -> dict[str, str]:
+    if login:
+        keychain.update(login_entries())
+    if stored_key:
+        keychain[auth.API_KEY_ENTRY] = VALID_KEY
+    return {"SOLWYN_API_KEY": ENV_KEY} if env_key else {}
+
+
+@pytest.mark.parametrize(("present", "expected"), _USER_ORDER)
+def test_user_class_prefers_login_then_environment_key_then_stored_key(
+    keychain: dict[str, str], present: tuple[bool, bool, bool], expected: str | None
 ) -> None:
-    def fail_if_called(*args: object) -> None:
-        pytest.fail("environment credential resolution touched keyring")
+    environ = _setup(keychain, *present)
 
-    monkeypatch.setattr(auth.keyring, "get_password", fail_if_called)
-
-    credential = auth.resolve_credential({"SOLWYN_API_KEY": VALID_KEY})
-
-    assert isinstance(credential, auth.ProjectKeyCredential)
-    assert credential.source == "environment"
-    assert credential.bearer_value() == VALID_KEY
+    assert _kind(auth.resolve_credential(environ)) == expected
 
 
-def test_invalid_environment_key_fails_without_falling_through(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("present", "expected"),
+    [
+        ((True, True, True), "key:environment"),
+        ((True, False, True), "key:keyring"),
+        ((True, True, False), "key:environment"),
+        ((True, False, False), None),
+        ((False, False, False), None),
+    ],
+)
+def test_metering_class_never_uses_the_login(
+    keychain: dict[str, str], present: tuple[bool, bool, bool], expected: str | None
+) -> None:
+    environ = _setup(keychain, *present)
+    environ["SOLWYN_AUTH"] = "login"
+
+    assert _kind(auth.resolve_credential(environ, purpose="metering")) == expected
+
+
+def test_metering_never_reads_the_login_entries(
+    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keychain.update(login_entries())
+    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+    reads: list[str] = []
+
+    def get_password(service: str, name: str) -> str | None:
+        reads.append(name)
+        return keychain.get(name)
+
+    monkeypatch.setattr(auth.keyring, "get_password", get_password)
+
+    auth.resolve_credential({}, purpose="metering")
+
+    assert reads == [auth.API_KEY_ENTRY]
+
+
+@pytest.mark.parametrize(
+    ("present", "expected"),
+    [
+        ((True, True, True), "key:environment"),
+        ((True, False, True), "key:keyring"),
+        ((True, False, False), None),
+    ],
+)
+def test_solwyn_auth_project_key_skips_the_login(
+    keychain: dict[str, str], present: tuple[bool, bool, bool], expected: str | None
+) -> None:
+    environ = _setup(keychain, *present)
+    environ["SOLWYN_AUTH"] = "project_key"
+
+    assert _kind(auth.resolve_credential(environ)) == expected
+
+
+@pytest.mark.parametrize(
+    ("present", "expected"),
+    [
+        ((True, True, True), "login"),
+        ((False, True, True), None),
+        ((False, False, True), None),
+    ],
+)
+def test_solwyn_auth_login_requires_the_login_without_fallback(
+    keychain: dict[str, str], present: tuple[bool, bool, bool], expected: str | None
+) -> None:
+    environ = _setup(keychain, *present)
+    environ["SOLWYN_AUTH"] = "login"
+
+    assert _kind(auth.resolve_credential(environ)) == expected
+
+
+@pytest.mark.parametrize("value", ["jwt", "LOGIN", "key", " login"])
+def test_unknown_solwyn_auth_is_rejected(keychain: dict[str, str], value: str) -> None:
+    with pytest.raises(ValueError):
+        auth.auth_selection({"SOLWYN_AUTH": value})
+    with pytest.raises(auth.AuthError):
+        auth.resolve_credential({"SOLWYN_AUTH": value})
+
+
+def test_empty_solwyn_auth_means_default_order(keychain: dict[str, str]) -> None:
+    keychain.update(login_entries())
+
+    assert auth.auth_selection({"SOLWYN_AUTH": ""}) is None
+    assert _kind(auth.resolve_credential({"SOLWYN_AUTH": ""})) == "login"
+
+
+def test_expired_local_login_counts_as_absent(keychain: dict[str, str]) -> None:
+    keychain.update(expired_login_entries())
+    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+
+    assert _kind(auth.resolve_credential({})) == "key:keyring"
+    assert auth.expired_login_date() is not None
+    assert auth.stored_login() is None
+    assert auth.stored_login(include_expired=True) is not None
+
+
+def test_unexpired_login_reports_no_expiry(keychain: dict[str, str]) -> None:
+    keychain.update(login_entries())
+
+    assert auth.expired_login_date() is None
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        {auth.CLI_CREDENTIAL_ENTRY: LOGIN_TOKEN},
+        {auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json()},
+        {
+            auth.CLI_CREDENTIAL_ENTRY: "solwyn_cli_short",
+            auth.CLI_CREDENTIAL_META_ENTRY: login_meta().model_dump_json(),
+        },
+        {auth.CLI_CREDENTIAL_ENTRY: LOGIN_TOKEN, auth.CLI_CREDENTIAL_META_ENTRY: "{"},
+    ],
+)
+def test_incomplete_or_corrupt_login_is_not_a_credential(
+    keychain: dict[str, str], entries: dict[str, str]
+) -> None:
+    keychain.update(entries)
+
+    assert auth.resolve_credential({}) is None
+
+
+def test_legacy_jwt_entries_are_never_read(
+    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keychain.update(access_token="legacy-access", refresh_token="legacy-refresh")
+    reads: list[str] = []
+
+    def get_password(service: str, name: str) -> str | None:
+        reads.append(name)
+        return keychain.get(name)
+
+    monkeypatch.setattr(auth.keyring, "get_password", get_password)
+
+    assert auth.resolve_credential({}) is None
+    assert "access_token" not in reads
+    assert "refresh_token" not in reads
+
+
+def test_invalid_environment_key_fails_without_echoing_it(
+    keychain: dict[str, str],
 ) -> None:
     invalid_key = "not-a-project-key"
-
-    def fail_if_called(*args: object) -> None:
-        pytest.fail("invalid environment credential touched keyring")
-
-    monkeypatch.setattr(auth.keyring, "get_password", fail_if_called)
 
     with pytest.raises(auth.AuthError) as exc_info:
         auth.resolve_credential({"SOLWYN_API_KEY": invalid_key})
@@ -68,100 +242,14 @@ def test_invalid_environment_key_fails_without_falling_through(
     assert invalid_key not in repr(exc_info.value)
 
 
-def test_keychain_api_key_wins_over_complete_jwt_pair(
-    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    keychain.update(
-        api_key=VALID_KEY,
-        access_token="access-secret",
-        refresh_token="refresh-secret",
-    )
-    reads: list[str] = []
+def test_login_masks_an_invalid_environment_key(keychain: dict[str, str]) -> None:
+    keychain.update(login_entries())
 
-    def get_password(service: str, name: str) -> str | None:
-        assert service == auth.KEYRING_SERVICE
-        reads.append(name)
-        return keychain.get(name)
-
-    monkeypatch.setattr(auth.keyring, "get_password", get_password)
-
-    credential = auth.resolve_credential({})
-
-    assert isinstance(credential, auth.ProjectKeyCredential)
-    assert credential.source == "keyring"
-    assert credential.bearer_value() == VALID_KEY
-    assert reads == [auth.API_KEY_ENTRY]
-
-
-def test_complete_keychain_jwt_pair_is_resolved(
-    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    keychain.update(access_token="access-secret", refresh_token="refresh-secret")
-    reads: list[str] = []
-
-    def get_password(service: str, name: str) -> str | None:
-        reads.append(name)
-        return keychain.get(name)
-
-    monkeypatch.setattr(auth.keyring, "get_password", get_password)
-
-    credential = auth.resolve_credential({})
-
-    assert isinstance(credential, auth.JwtCredential)
-    assert credential.bearer_value() == "access-secret"
-    assert credential.refresh_value() == "refresh-secret"
-    assert reads == [
-        auth.API_KEY_ENTRY,
-        auth.ACCESS_TOKEN_ENTRY,
-        auth.REFRESH_TOKEN_ENTRY,
-    ]
-
-
-@pytest.mark.parametrize(
-    ("entries", "expected"),
-    [
-        ({}, None),
-        ({"access_token": "access-secret"}, None),
-        ({"refresh_token": "refresh-secret"}, None),
-        ({"access_token": "", "refresh_token": "refresh-secret"}, None),
-        ({"access_token": "access-secret", "refresh_token": ""}, None),
-    ],
-)
-def test_partial_or_absent_keychain_jwt_pair_is_not_a_credential(
-    entries: dict[str, str], expected: None, keychain: dict[str, str]
-) -> None:
-    keychain.update(entries)
-
-    assert auth.resolve_credential({}) is expected
-
-
-def test_invalid_stored_api_key_fails_without_reading_jwt(
-    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    invalid_key = "stored-invalid-secret"
-    keychain.update(
-        api_key=invalid_key,
-        access_token="access-secret",
-        refresh_token="refresh-secret",
-    )
-    reads: list[str] = []
-
-    def get_password(service: str, name: str) -> str | None:
-        reads.append(name)
-        return keychain.get(name)
-
-    monkeypatch.setattr(auth.keyring, "get_password", get_password)
-
-    with pytest.raises(auth.AuthError) as exc_info:
-        auth.resolve_credential({})
-
-    assert exc_info.value.exit_code == 3
-    assert invalid_key not in str(exc_info.value)
-    assert reads == [auth.API_KEY_ENTRY]
+    assert _kind(auth.resolve_credential({"SOLWYN_API_KEY": "broken"})) == "login"
 
 
 @pytest.mark.parametrize("backend_error", [NoKeyringError(), RuntimeError("down")])
-def test_unavailable_keyring_is_a_safe_no_credential_outcome(
+def test_unavailable_keyring_falls_through_to_the_environment_key(
     backend_error: Exception, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fail_get(service: str, name: str) -> str | None:
@@ -170,6 +258,9 @@ def test_unavailable_keyring_is_a_safe_no_credential_outcome(
     monkeypatch.setattr(auth.keyring, "get_password", fail_get)
 
     assert auth.resolve_credential({}) is None
+    assert _kind(auth.resolve_credential({"SOLWYN_API_KEY": ENV_KEY})) == (
+        "key:environment"
+    )
 
 
 def test_store_project_key_validates_and_writes_only_to_keyring(
@@ -193,38 +284,71 @@ def test_store_project_key_rejects_invalid_secret_without_echoing_it(
     assert keychain == {}
 
 
-def test_store_and_rotate_jwt_pair(keychain: dict[str, str]) -> None:
-    auth.store_jwt_pair("access-one", "refresh-one")
-    rotated = auth.store_jwt_pair("access-two", "refresh-two")
-
-    assert keychain == {
-        auth.ACCESS_TOKEN_ENTRY: "access-two",
-        auth.REFRESH_TOKEN_ENTRY: "refresh-two",
-    }
-    assert rotated.bearer_value() == "access-two"
-    assert rotated.refresh_value() == "refresh-two"
-
-
-def test_jwt_rotation_writes_refresh_before_access(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    writes: list[str] = []
-
-    def set_password(service: str, name: str, value: str) -> None:
-        writes.append(name)
-
-    monkeypatch.setattr(auth.keyring, "set_password", set_password)
-
-    auth.store_jwt_pair("new-access", "new-refresh")
-
-    assert writes == [auth.REFRESH_TOKEN_ENTRY, auth.ACCESS_TOKEN_ENTRY]
-
-
-def test_clear_credentials_deletes_all_entries(
+def test_store_login_writes_metadata_first_and_drops_legacy_and_pending(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     keychain.update(
+        access_token="legacy",
+        refresh_token="legacy",
+        pending_device="{}",
         api_key=VALID_KEY,
+    )
+    writes: list[str] = []
+    original = auth.keyring.set_password
+
+    def set_password(service: str, name: str, value: str) -> None:
+        writes.append(name)
+        original(service, name, value)
+
+    monkeypatch.setattr(auth.keyring, "set_password", set_password)
+
+    stored = auth.store_login(LOGIN_TOKEN, login_meta())
+
+    assert writes == [auth.CLI_CREDENTIAL_META_ENTRY, auth.CLI_CREDENTIAL_ENTRY]
+    assert stored.bearer_value() == LOGIN_TOKEN
+    assert set(keychain) == {
+        auth.API_KEY_ENTRY,
+        auth.CLI_CREDENTIAL_ENTRY,
+        auth.CLI_CREDENTIAL_META_ENTRY,
+    }
+    assert json.loads(keychain[auth.CLI_CREDENTIAL_META_ENTRY])["label"] == "dev-laptop"
+
+
+def test_store_login_rejects_a_malformed_token(keychain: dict[str, str]) -> None:
+    with pytest.raises(auth.CredentialStorageError) as exc_info:
+        auth.store_login("solwyn_cli_not-hex", login_meta())
+
+    assert "not-hex" not in str(exc_info.value)
+    assert keychain == {}
+
+
+def test_pending_device_round_trips_and_clears(keychain: dict[str, str]) -> None:
+    pending = auth.PendingDevice(
+        device_code=DEVICE_CODE,
+        user_code="BCDF-GHJK",
+        verification_uri="https://app.solwyn.ai/device",
+        verification_uri_complete="https://app.solwyn.ai/device?user_code=BCDF-GHJK",
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+        interval=5,
+    )
+
+    auth.store_pending_device(pending)
+    loaded = auth.load_pending_device()
+    auth.clear_pending_device()
+
+    assert loaded is not None
+    assert loaded.device_code.get_secret_value() == DEVICE_CODE
+    assert DEVICE_CODE not in repr(loaded)
+    assert auth.load_pending_device() is None
+
+
+def test_clear_credentials_deletes_every_supported_and_legacy_entry(
+    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keychain.update(login_entries())
+    keychain.update(
+        api_key=VALID_KEY,
+        pending_device="{}",
         access_token="access-secret",
         refresh_token="refresh-secret",
     )
@@ -240,25 +364,16 @@ def test_clear_credentials_deletes_all_entries(
     auth.clear_credentials()
 
     assert keychain == {}
-    assert deletes == [
-        auth.API_KEY_ENTRY,
-        auth.ACCESS_TOKEN_ENTRY,
-        auth.REFRESH_TOKEN_ENTRY,
-    ]
+    assert deletes == ALL_ENTRIES
 
 
 def test_clear_credentials_confirms_password_delete_error_means_absent(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    keychain.update(
-        access_token="access-secret",
-        refresh_token="refresh-secret",
-    )
-    deletes: list[str] = []
+    keychain.update(login_entries())
 
     def delete_password(service: str, name: str) -> None:
-        deletes.append(name)
-        if name == auth.API_KEY_ENTRY:
+        if name not in keychain:
             raise PasswordDeleteError("entry was absent")
         keychain.pop(name)
 
@@ -267,28 +382,20 @@ def test_clear_credentials_confirms_password_delete_error_means_absent(
     auth.clear_credentials()
 
     assert keychain == {}
-    assert deletes == [
-        auth.API_KEY_ENTRY,
-        auth.ACCESS_TOKEN_ENTRY,
-        auth.REFRESH_TOKEN_ENTRY,
-    ]
 
 
 def test_clear_credentials_reports_retained_entry_after_trying_all_entries(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    keychain.update(
-        api_key=VALID_KEY,
-        access_token="access-secret",
-        refresh_token="refresh-secret",
-    )
+    keychain.update(login_entries())
+    keychain[auth.API_KEY_ENTRY] = VALID_KEY
     deletes: list[str] = []
 
     def delete_password(service: str, name: str) -> None:
         deletes.append(name)
         if name == auth.API_KEY_ENTRY:
             raise PasswordDeleteError("backend refused deletion")
-        keychain.pop(name)
+        keychain.pop(name, None)
 
     monkeypatch.setattr(auth.keyring, "delete_password", delete_password)
 
@@ -298,11 +405,16 @@ def test_clear_credentials_reports_retained_entry_after_trying_all_entries(
     assert exc_info.value.exit_code == 3
     assert VALID_KEY not in str(exc_info.value)
     assert keychain == {auth.API_KEY_ENTRY: VALID_KEY}
-    assert deletes == [
-        auth.API_KEY_ENTRY,
-        auth.ACCESS_TOKEN_ENTRY,
-        auth.REFRESH_TOKEN_ENTRY,
-    ]
+    assert deletes == ALL_ENTRIES
+
+
+def test_clear_login_keeps_the_project_key(keychain: dict[str, str]) -> None:
+    keychain.update(login_entries())
+    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+
+    auth.clear_login()
+
+    assert keychain == {auth.API_KEY_ENTRY: VALID_KEY}
 
 
 @pytest.mark.parametrize("operation", ["set_password", "delete_password"])
@@ -321,270 +433,33 @@ def test_keychain_write_failures_are_safe_exit_three_errors(
 
     with pytest.raises(auth.AuthError) as exc_info:
         if operation == "set_password":
-            auth.store_project_key(VALID_KEY)
+            auth.store_login(LOGIN_TOKEN, login_meta())
         else:
             auth.clear_credentials()
 
     assert exc_info.value.exit_code == 3
     assert "down" not in str(exc_info.value)
+    assert LOGIN_TOKEN not in str(exc_info.value)
 
 
-def test_jwt_access_write_failure_retains_new_refresh_without_leaking_tokens(
-    keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    old_access = "old-access-secret"
-    old_refresh = "old-refresh-secret"
-    new_access = "new-access-secret"
-    new_refresh = "new-refresh-secret"
-    keychain.update(access_token=old_access, refresh_token=old_refresh)
+def test_secret_models_are_redacted() -> None:
+    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
+    login = auth.LoginCredential(token=LOGIN_TOKEN, meta=login_meta())
 
-    def set_password(service: str, name: str, value: str) -> None:
-        if name == auth.ACCESS_TOKEN_ENTRY:
-            raise RuntimeError(f"backend rejected {new_access}")
-        keychain[name] = value
-
-    monkeypatch.setattr(auth.keyring, "set_password", set_password)
-
-    with pytest.raises(auth.CredentialStorageError) as exc_info:
-        auth.store_jwt_pair(new_access, new_refresh)
-
-    rendered = f"{exc_info.value!s} {exc_info.value!r}"
-    assert old_access not in rendered
-    assert old_refresh not in rendered
-    assert new_access not in rendered
-    assert new_refresh not in rendered
-    assert keychain == {
-        auth.ACCESS_TOKEN_ENTRY: old_access,
-        auth.REFRESH_TOKEN_ENTRY: new_refresh,
-    }
+    assert VALID_KEY not in repr(key)
+    assert LOGIN_TOKEN not in repr(login)
+    assert LOGIN_TOKEN not in str(login.model_dump())
 
 
-def test_secret_models_and_validation_errors_are_redacted() -> None:
-    api_key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-    jwt = auth.JwtCredential(
-        access_token="access-secret", refresh_token="refresh-secret"
-    )
+def test_login_model_enforces_the_token_format_without_echoing_it() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        auth.LoginCredential(token="secret-session-jwt", meta=login_meta())
 
-    for rendered in (repr(api_key), str(api_key), repr(jwt), str(jwt)):
-        assert VALID_KEY not in rendered
-        assert "access-secret" not in rendered
-        assert "refresh-secret" not in rendered
-
-    with pytest.raises(Exception) as exc_info:
-        auth.JwtCredential(access_token="access-secret", refresh_token="")
-
-    assert "access-secret" not in str(exc_info.value)
+    assert "secret-session-jwt" not in str(exc_info.value)
 
 
 def test_project_key_model_enforces_format_without_echoing_secret() -> None:
-    invalid_key = "direct-invalid-secret"
+    with pytest.raises(ValueError) as exc_info:
+        auth.ProjectKeyCredential(api_key="sk_proj_short", source="keyring")
 
-    with pytest.raises(Exception) as exc_info:
-        auth.ProjectKeyCredential(api_key=invalid_key, source="environment")
-
-    assert invalid_key not in str(exc_info.value)
-
-
-def test_refresh_request_repr_is_redacted_while_model_dump_is_raw() -> None:
-    refresh_secret = "refresh-secret"
-
-    request = auth._RefreshRequest(refresh_token=refresh_secret)
-
-    assert refresh_secret not in repr(request)
-    assert refresh_secret not in str(request)
-    assert request.model_dump() == {"refresh_token": refresh_secret}
-
-
-def _response(status_code: int, payload: Any | None = None) -> httpx.Response:
-    return httpx.Response(
-        status_code,
-        json=payload,
-        request=httpx.Request("GET", "https://api.solwyn.ai/resource"),
-    )
-
-
-@pytest.fixture
-def jwt_credential() -> auth.JwtCredential:
-    return auth.JwtCredential(access_token="old-access", refresh_token="old-refresh")
-
-
-@pytest.fixture
-def refresh_calls() -> list[httpx.Request]:
-    return []
-
-
-@pytest.fixture
-def refresh_client(refresh_calls: list[httpx.Request]) -> Iterator[httpx.Client]:
-    def handle(request: httpx.Request) -> httpx.Response:
-        refresh_calls.append(request)
-        return httpx.Response(
-            200,
-            json={
-                "access_token": "new-access",
-                "refresh_token": "new-refresh",
-                "token_type": "bearer",
-                "future_response_field": "accepted",
-            },
-        )
-
-    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
-        yield client
-
-
-def test_jwt_401_refreshes_rotates_and_retries_exactly_once(
-    jwt_credential: auth.JwtCredential,
-    refresh_client: httpx.Client,
-    refresh_calls: list[httpx.Request],
-    keychain: dict[str, str],
-) -> None:
-    attempts: list[auth.JwtCredential] = []
-
-    def request(credential: auth.ResolvedCredential) -> httpx.Response:
-        assert isinstance(credential, auth.JwtCredential)
-        attempts.append(credential)
-        return _response(401 if len(attempts) == 1 else 200)
-
-    response = auth.request_with_refresh_retry(
-        client=refresh_client,
-        api_url="https://api.solwyn.ai/",
-        credential=jwt_credential,
-        request=request,
-    )
-
-    assert response.status_code == 200
-    assert len(attempts) == 2
-    assert attempts[0].bearer_value() == "old-access"
-    assert attempts[1].bearer_value() == "new-access"
-    assert len(refresh_calls) == 1
-    assert refresh_calls[0].url == httpx.URL(
-        "https://api.solwyn.ai/api/v1/auth/refresh"
-    )
-    assert refresh_calls[0].method == "POST"
-    assert refresh_calls[0].read() == b'{"refresh_token":"old-refresh"}'
-    assert keychain == {
-        auth.ACCESS_TOKEN_ENTRY: "new-access",
-        auth.REFRESH_TOKEN_ENTRY: "new-refresh",
-    }
-
-
-def test_second_401_exits_three_without_a_refresh_loop(
-    jwt_credential: auth.JwtCredential,
-    refresh_client: httpx.Client,
-    refresh_calls: list[httpx.Request],
-    keychain: dict[str, str],
-) -> None:
-    attempts = 0
-
-    def request(credential: auth.ResolvedCredential) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
-        return _response(401)
-
-    with pytest.raises(auth.AuthError) as exc_info:
-        auth.request_with_refresh_retry(
-            client=refresh_client,
-            api_url="https://api.solwyn.ai",
-            credential=jwt_credential,
-            request=request,
-        )
-
-    assert exc_info.value.exit_code == 3
-    assert attempts == 2
-    assert len(refresh_calls) == 1
-
-
-def test_api_key_401_never_refreshes(
-    refresh_client: httpx.Client, refresh_calls: list[httpx.Request]
-) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-    attempts = 0
-
-    def request(resolved: auth.ResolvedCredential) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
-        return _response(401)
-
-    with pytest.raises(auth.AuthError) as exc_info:
-        auth.request_with_refresh_retry(
-            client=refresh_client,
-            api_url="https://api.solwyn.ai",
-            credential=credential,
-            request=request,
-        )
-
-    assert exc_info.value.exit_code == 3
-    assert attempts == 1
-    assert refresh_calls == []
-
-
-@pytest.mark.parametrize(
-    ("status_code", "payload"),
-    [
-        (500, {"detail": "refresh-secret-must-not-leak"}),
-        (200, {"access_token": "new-access"}),
-        (200, {"access_token": "", "refresh_token": "new-refresh"}),
-        (200, ["not", "a", "token", "response"]),
-    ],
-)
-def test_failed_or_malformed_refresh_exits_three_without_retrying(
-    status_code: int,
-    payload: Any,
-    jwt_credential: auth.JwtCredential,
-) -> None:
-    refresh_requests: list[httpx.Request] = []
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        refresh_requests.append(request)
-        return httpx.Response(status_code, json=payload)
-
-    attempts = 0
-
-    def request(credential: auth.ResolvedCredential) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
-        return _response(401)
-
-    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
-        with pytest.raises(auth.AuthError) as exc_info:
-            auth.request_with_refresh_retry(
-                client=client,
-                api_url="https://api.solwyn.ai",
-                credential=jwt_credential,
-                request=request,
-            )
-
-    assert exc_info.value.exit_code == 3
-    assert "refresh-secret-must-not-leak" not in str(exc_info.value)
-    assert attempts == 1
-    assert len(refresh_requests) == 1
-
-
-def test_refresh_store_failure_exits_three_without_retrying(
-    jwt_credential: auth.JwtCredential,
-    refresh_client: httpx.Client,
-    refresh_calls: list[httpx.Request],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    attempts = 0
-
-    def request(credential: auth.ResolvedCredential) -> httpx.Response:
-        nonlocal attempts
-        attempts += 1
-        return _response(401)
-
-    def fail_store(*args: object) -> None:
-        raise NoKeyringError()
-
-    monkeypatch.setattr(auth.keyring, "set_password", fail_store)
-
-    with pytest.raises(auth.AuthError) as exc_info:
-        auth.request_with_refresh_retry(
-            client=refresh_client,
-            api_url="https://api.solwyn.ai",
-            credential=jwt_credential,
-            request=request,
-        )
-
-    assert exc_info.value.exit_code == 3
-    assert attempts == 1
-    assert len(refresh_calls) == 1
+    assert "sk_proj_short" not in str(exc_info.value)

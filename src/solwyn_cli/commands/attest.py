@@ -176,7 +176,7 @@ ATTEST_HELP = help_contract(
         "GET /api/v1/projects/{project}/spend-control-attestation or "
         "GET /api/v1/account/spend-control-attestation"
     ),
-    auth="project: key or JWT; account: JWT",
+    auth="project: key or login; account: login",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
     schema="stream (SpendControlAttestation JSON or section,field,value CSV)",
 )
@@ -186,7 +186,9 @@ def attest(
     context: typer.Context,
     account: Annotated[
         bool,
-        typer.Option("--account", help="Export account-wide evidence (requires JWT)."),
+        typer.Option(
+            "--account", help="Export account-wide evidence (requires a Solwyn login)."
+        ),
     ] = False,
     time_range: Annotated[
         AttestationPresetRange,
@@ -240,11 +242,7 @@ def attest(
 
     credential = required_credential(context, resolve=resolve_credential)
     if account and isinstance(credential, ProjectKeyCredential):
-        hint = (
-            "Unset SOLWYN_API_KEY, run solwyn login, then retry attest --account."
-            if credential.source == "environment"
-            else "Run solwyn logout, then solwyn login, and retry attest --account."
-        )
+        hint = "Run solwyn login, then retry attest --account."
         exit_with_error(
             context,
             OutputError(

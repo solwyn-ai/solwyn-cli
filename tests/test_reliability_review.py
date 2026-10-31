@@ -195,7 +195,7 @@ def test_record_cli_retains_all_ids_and_completed_progress(
             return httpx.Response(202, json={"ingested": 1000})
         return busy_response(BUSY if known_rejection else "Proxy unavailable")
 
-    monkeypatch.setattr(record, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(record, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(
         record,
         "SolwynClient",

@@ -14,12 +14,12 @@ from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli import artifacts as agent_artifacts
 from solwyn_cli import config as config_module
-from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.commands import init as init_module
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.commands import projects as projects_module
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -108,15 +108,12 @@ def isolated_init(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     yield repository
 
 
-def _key() -> auth.ProjectKeyCredential:
+def _key(**_: object) -> auth.ProjectKeyCredential:
     return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+def _jwt(**_: object) -> auth.LoginCredential:
+    return login_credential(ACCESS_TOKEN)
 
 
 def _invoke(*arguments: str) -> Any:
@@ -228,20 +225,35 @@ def test_init_agents_reports_retained_backup_for_manual_recovery(
     assert "Traceback" not in result.stderr
 
 
-def test_non_tty_without_credentials_exits_auth_with_api_key_guidance(
+INIT_CONTINUE = "solwyn login --continue, then run solwyn init again"
+
+
+def test_non_tty_without_credentials_runs_the_browser_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(init_module, "resolve_credential", lambda: None)
+    logins: list[dict[str, object]] = []
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(
+        init_module,
+        "device_login",
+        lambda context, **kwargs: logins.append(kwargs) or _jwt(),
+    )
+    monkeypatch.setattr(
+        init_module.typer,
+        "prompt",
+        lambda *args, **kwargs: pytest.fail("non-TTY init must not prompt"),
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=[PROJECT]),
+        httpx.Response(200, json=BUDGET),
+    ]
 
     result = _invoke()
 
-    assert result.exit_code == 3
-    assert result.stdout == ""
-    error = json.loads(result.stderr)
-    assert error["code"] == "interactive_auth_required"
-    assert "SOLWYN_API_KEY" in error["hint"]
-    assert FakeClient.instances == []
+    assert result.exit_code == 0, result.stderr
+    assert logins == [{"continue_command": INIT_CONTINUE}]
+    assert json.loads(result.stdout)["project_id"] == "proj_alpha"
 
 
 def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
@@ -254,7 +266,7 @@ def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
         prompt_calls.append((label, bool(kwargs.get("hide_input", False))))
         return next(values)
 
-    monkeypatch.setattr(init_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(init_module.typer, "prompt", prompt)
     stored: list[str] = []
@@ -276,41 +288,32 @@ def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
 
     assert result.exit_code == 0, result.stderr
     assert prompt_calls == [
-        ("Authentication method (key/login)", False),
+        ("Authentication method (login/key)", False),
         ("Project key", True),
     ]
     assert stored == [VALID_KEY]
     assert VALID_KEY not in result.stdout + result.stderr + repr(result.exception)
 
 
-def test_tty_can_login_with_hidden_password_and_stored_jwt(
+def test_tty_login_is_the_default_choice_and_runs_the_device_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    prompt_calls: list[tuple[str, bool]] = []
-    values = iter(["login", "person@example.com", "password-value"])
+    prompt_calls: list[tuple[str, object]] = []
+    logins: list[dict[str, object]] = []
 
-    def prompt(label: str, **kwargs: object) -> str:
-        prompt_calls.append((label, bool(kwargs.get("hide_input", False))))
-        return next(values)
+    def prompt(label: str, **kwargs: object) -> object:
+        prompt_calls.append((label, kwargs.get("default")))
+        return kwargs["default"]
 
-    monkeypatch.setattr(init_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(init_module.typer, "prompt", prompt)
-    stored: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        login_module,
-        "store_jwt_pair",
-        lambda access, refresh: stored.append((access, refresh)) or _jwt(),
+        init_module,
+        "device_login",
+        lambda context, **kwargs: logins.append(kwargs) or _jwt(),
     )
     FakeClient.responses = [
-        httpx.Response(
-            200,
-            json={
-                "access_token": ACCESS_TOKEN,
-                "refresh_token": REFRESH_TOKEN,
-                "token_type": "bearer",
-            },
-        ),
         httpx.Response(200, json=[PROJECT]),
         httpx.Response(200, json=BUDGET),
     ]
@@ -318,38 +321,35 @@ def test_tty_can_login_with_hidden_password_and_stored_jwt(
     result = _invoke()
 
     assert result.exit_code == 0, result.stderr
-    assert prompt_calls == [
-        ("Authentication method (key/login)", False),
-        ("Email", False),
-        ("Password", True),
-    ]
-    assert stored == [(ACCESS_TOKEN, REFRESH_TOKEN)]
+    assert prompt_calls == [("Authentication method (login/key)", "login")]
+    assert logins == [{"continue_command": INIT_CONTINUE}]
     requests = [
         request for client in FakeClient.instances for request in client.requests
     ]
-    assert requests[0][0:2] == ("POST", "/api/v1/auth/login")
+    assert [request[0:2] for request in requests] == [
+        ("GET", "/api/v1/projects"),
+        ("GET", "/api/v1/projects/proj_alpha/budget"),
+    ]
     rendered = result.stdout + result.stderr + repr(result.exception)
-    for secret in ("password-value", ACCESS_TOKEN, REFRESH_TOKEN):
-        assert secret not in rendered
+    assert ACCESS_TOKEN not in rendered
 
 
 def test_init_composes_shared_login_project_and_budget_services(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, object]] = []
-    prompt_values = iter(["login", "person@example.com", "password-value"])
+    prompt_values = iter(["login"])
     credential = _jwt()
 
-    monkeypatch.setattr(init_module, "resolve_credential", lambda: None)
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: None)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(
         init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
     )
     monkeypatch.setattr(
         init_module,
-        "authenticate_with_password",
-        lambda **kwargs: calls.append(("login", kwargs)) or credential,
-        raising=False,
+        "device_login",
+        lambda context, **kwargs: calls.append(("login", kwargs)) or credential,
     )
     monkeypatch.setattr(
         init_module,
@@ -374,11 +374,7 @@ def test_init_composes_shared_login_project_and_budget_services(
 
     assert result.exit_code == 0, result.stderr
     assert [name for name, _payload in calls] == ["login", "projects", "budget"]
-    assert calls[0][1] == {
-        "api_url": "https://api.solwyn.ai",
-        "email": "person@example.com",
-        "password": "password-value",
-    }
+    assert calls[0][1] == {"continue_command": INIT_CONTINUE}
     assert len(FakeClient.instances) == 1
     assert FakeClient.instances[0].requests == []
 
@@ -835,7 +831,7 @@ def test_jwt_single_project_is_selected_and_validated_before_final_get(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = _jwt()
-    monkeypatch.setattr(init_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(init_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json=[PROJECT]),
         httpx.Response(200, json=BUDGET),
@@ -850,73 +846,6 @@ def test_jwt_single_project_is_selected_and_validated_before_final_get(
     ] == [
         ("GET", "/api/v1/projects", {}),
         ("GET", "/api/v1/projects/proj_alpha/budget", {}),
-    ]
-
-
-def test_jwt_refresh_from_project_list_is_reused_for_final_budget_get(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    old_credential = _jwt()
-    rotated = auth.JwtCredential(
-        access_token="rotated-access-token",
-        refresh_token="rotated-refresh-token",
-    )
-    events: list[tuple[str, str | None]] = []
-    refresh_count = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal refresh_count
-        authorization = request.headers.get("Authorization")
-        events.append((f"{request.method} {request.url.path}", authorization))
-        if request.url.path == "/api/v1/projects":
-            if authorization == f"Bearer {ACCESS_TOKEN}":
-                return httpx.Response(401, json={"detail": "expired"})
-            assert authorization == "Bearer rotated-access-token"
-            return httpx.Response(200, json=[PROJECT])
-        if request.url.path == "/api/v1/auth/refresh":
-            refresh_count += 1
-            if refresh_count > 1:
-                return httpx.Response(401, json={"detail": "stale refresh"})
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "rotated-access-token",
-                    "refresh_token": "rotated-refresh-token",
-                    "token_type": "bearer",
-                },
-            )
-        if request.url.path == "/api/v1/projects/proj_alpha/budget":
-            if authorization != "Bearer rotated-access-token":
-                return httpx.Response(401, json={"detail": "expired"})
-            return httpx.Response(200, json=BUDGET)
-        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
-
-    transport = httpx.MockTransport(handler)
-
-    def client_factory(*, api_url: str, credential: object = None) -> RealSolwynClient:
-        return RealSolwynClient(
-            api_url=api_url,
-            credential=credential,
-            transport=transport,
-        )
-
-    monkeypatch.setattr(init_module, "resolve_credential", lambda: old_credential)
-    monkeypatch.setattr(init_module, "SolwynClient", client_factory)
-    monkeypatch.setattr(budget_module, "SolwynClient", client_factory)
-    monkeypatch.setattr(auth, "store_jwt_pair", lambda *_args: rotated)
-
-    result = _invoke()
-
-    assert result.exit_code == 0, result.stderr
-    assert refresh_count == 1
-    assert events == [
-        ("GET /api/v1/projects", f"Bearer {ACCESS_TOKEN}"),
-        ("POST /api/v1/auth/refresh", None),
-        ("GET /api/v1/projects", "Bearer rotated-access-token"),
-        (
-            "GET /api/v1/projects/proj_alpha/budget",
-            "Bearer rotated-access-token",
-        ),
     ]
 
 
@@ -1043,7 +972,6 @@ def test_tty_no_projects_creates_and_stores_key_without_displaying_secret(
     project_requests = FakeClient.instances[0].requests
     assert project_requests[0] == ("GET", "/api/v1/projects", {})
     assert project_requests[1][0:2] == ("POST", "/api/v1/projects")
-    assert project_requests[1][2]["retry_auth"] is False
     assert project_requests[1][2]["retry_rate_limit"] is False
 
 

@@ -13,7 +13,7 @@ from solwyn_cli import auth as auth_module
 from solwyn_cli import config as config_module
 from solwyn_cli.auth import (
     AuthError,
-    JwtCredential,
+    LoginCredential,
     ProjectKeyCredential,
     ResolvedCredential,
     resolve_credential,
@@ -29,7 +29,7 @@ from solwyn_cli.runtime import command_context, output_engine
 
 DOCTOR_HELP = help_contract(
     endpoint="GET /health/ready plus one credential-specific authenticated probe",
-    auth="optional; JWT or project key enables the authenticated probe",
+    auth="optional; a login or project key enables the authenticated probe",
     exits="0 all checks pass; 1 diagnostic failure; 2 usage",
     schema="solwyn.doctor.v1; with --mcp: solwyn.doctor.mcp.v1",
     guidance=(
@@ -91,7 +91,7 @@ class _AuthenticatedProbe(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["ok", "degraded", "skipped"]
-    credential_type: Literal["jwt", "project_key"] | None
+    credential_type: Literal["login", "project_key"] | None
     endpoint: str | None
     detail: str
 
@@ -159,8 +159,8 @@ def _config_diagnostic() -> _Diagnostic:
 def _keychain_diagnostic() -> _Diagnostic:
     entries = (
         auth_module.API_KEY_ENTRY,
-        auth_module.ACCESS_TOKEN_ENTRY,
-        auth_module.REFRESH_TOKEN_ENTRY,
+        auth_module.CLI_CREDENTIAL_ENTRY,
+        auth_module.CLI_CREDENTIAL_META_ENTRY,
     )
     results = [auth_module._get_password(entry) for entry in entries]
     if not all(available for available, _value in results):
@@ -169,14 +169,27 @@ def _keychain_diagnostic() -> _Diagnostic:
             detail="Keychain is unavailable.",
         )
     project_key = results[0][1]
-    access_token = results[1][1]
-    refresh_token = results[2][1]
-    if (access_token is None) != (refresh_token is None):
+    login_token = results[1][1]
+    login_meta = results[2][1]
+    if (login_token is None) != (login_meta is None):
         return _Diagnostic(
             status="degraded",
-            detail="Keychain contains an incomplete JWT credential.",
+            detail="Keychain contains an incomplete login. Run solwyn login.",
         )
-    stored = project_key is not None or access_token is not None
+    if (
+        login_token is not None
+        and auth_module.stored_login(include_expired=True) is None
+    ):
+        return _Diagnostic(
+            status="degraded",
+            detail="Keychain contains an unreadable login. Run solwyn login.",
+        )
+    if expired_on := auth_module.expired_login_date():
+        return _Diagnostic(
+            status="degraded",
+            detail=f"The stored login expired on {expired_on.date().isoformat()}. Run solwyn login.",
+        )
+    stored = project_key is not None or login_token is not None
     return _Diagnostic(
         status="ok",
         detail=(
@@ -250,9 +263,9 @@ def _authenticated_probe(
     endpoint_available: bool,
 ) -> _AuthenticatedProbe:
     if not endpoint_available:
-        credential_type: Literal["jwt", "project_key"] | None = None
-        if isinstance(credential, JwtCredential):
-            credential_type = "jwt"
+        credential_type: Literal["login", "project_key"] | None = None
+        if isinstance(credential, LoginCredential):
+            credential_type = "login"
         elif isinstance(credential, ProjectKeyCredential):
             credential_type = "project_key"
         return _AuthenticatedProbe(
@@ -286,9 +299,9 @@ def _authenticated_probe(
             detail="A default project is required to test the project key.",
         )
 
-    credential_type: Literal["jwt", "project_key"]
-    if isinstance(credential, JwtCredential):
-        credential_type = "jwt"
+    credential_type: Literal["login", "project_key"]
+    if isinstance(credential, LoginCredential):
+        credential_type = "login"
         endpoint = "/api/v1/account/me"
     else:
         credential_type = "project_key"
@@ -296,9 +309,9 @@ def _authenticated_probe(
 
     try:
         response = client.request("GET", endpoint)
-        if credential_type == "jwt":
+        if credential_type == "login":
             _MeProbeResponse.model_validate(response.json())
-            detail = "JWT credential accepted."
+            detail = "Login accepted."
         else:
             budget = _BudgetProbeResponse.model_validate(response.json())
             if budget.project_id != project_id:

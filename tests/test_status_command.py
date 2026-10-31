@@ -16,6 +16,7 @@ from solwyn_cli.commands import status as status_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -179,7 +180,7 @@ def test_status_supports_project_key_with_two_read_only_gets(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue_status_responses()
 
@@ -212,12 +213,9 @@ def test_status_jwt_adds_one_account_savings_summary(
     monkeypatch: pytest.MonkeyPatch,
     output_format: str,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
@@ -249,7 +247,7 @@ def test_status_non_tty_table_and_no_color_match_golden(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue_status_responses()
 
@@ -269,7 +267,7 @@ def test_status_honors_environment_json_format(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     _queue_status_responses()
 
@@ -288,7 +286,7 @@ def test_status_optional_forecast_and_failover_shortcuts_add_reads_and_rows(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
@@ -327,10 +325,7 @@ def test_status_optional_sections_are_schema_bearing_json(
     monkeypatch.setattr(
         status_module,
         "resolve_credential",
-        lambda: auth.JwtCredential(
-            access_token=ACCESS_TOKEN,
-            refresh_token=REFRESH_TOKEN,
-        ),
+        lambda **_: login_credential(ACCESS_TOKEN),
         raising=False,
     )
     FakeClient.responses = [
@@ -368,7 +363,7 @@ def test_status_project_precedence_is_flag_environment_then_config(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     monkeypatch.setattr(
         runtime,
@@ -400,7 +395,7 @@ def test_status_missing_project_is_safe_usage_error_without_api_calls(
     monkeypatch.setattr(
         status_module,
         "resolve_credential",
-        lambda: resolution_calls.append(None),
+        lambda **_: resolution_calls.append(None),
         raising=False,
     )
 
@@ -426,7 +421,7 @@ def test_status_missing_credentials_is_auth_error_without_api_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: None, raising=False
+        status_module, "resolve_credential", lambda **_: None, raising=False
     )
 
     result = runner.invoke(app, ["--json", "-p", "proj_alpha", "status"])
@@ -444,7 +439,7 @@ def test_status_preserves_structured_api_errors(
 ) -> None:
     credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [
         ApiError(
@@ -467,12 +462,9 @@ def test_status_preserves_structured_api_errors(
 def test_status_rejects_invalid_response_without_leaking_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+    credential = login_credential(ACCESS_TOKEN)
     monkeypatch.setattr(
-        status_module, "resolve_credential", lambda: credential, raising=False
+        status_module, "resolve_credential", lambda **_: credential, raising=False
     )
     invalid_budget = dict(BUDGET_RESPONSE)
     invalid_budget.pop("remaining_budget")

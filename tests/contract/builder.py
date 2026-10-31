@@ -65,9 +65,14 @@ EXIT_CODE_MEANINGS: dict[ExitCode, str] = {
         "The requested resource does not exist (includes HTTP 404), such as a "
         "missing project or an expired or already-consumed reservation."
     ),
+    ExitCode.APPROVAL_REQUIRED: (
+        "The change was not applied because a browser approval is required, "
+        "pending, denied, expired or no longer matches the request; or a "
+        "browser login is still waiting for approval."
+    ),
 }
 
-_SCHEMA_TOKEN = re.compile(r"solwyn\.[a-z0-9._-]+\.v1")
+_SCHEMA_TOKEN = re.compile(r"solwyn\.[a-z0-9._-]+\.v[1-9][0-9]*")
 _JSON_SCHEMA_LINE = re.compile(r"JSON schema:\s*(.+)")
 
 
@@ -169,7 +174,7 @@ def _command_entries() -> list[dict[str, Any]]:
 
 
 def declared_schema_tokens() -> set[str]:
-    """Every ``solwyn.*.v1`` schema the live CLI declares it emits."""
+    """Every versioned ``solwyn.*`` schema the live CLI declares it emits."""
     tokens: set[str] = set()
     for _, command in _walk(get_command(app)):
         tokens.update(_schema_tokens(_declared_schema_line(command)))

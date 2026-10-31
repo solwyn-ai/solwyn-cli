@@ -13,11 +13,10 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import plan
 from solwyn_cli.main import app
 from test_plan_command import BILLING_STATUS
+from login_fixtures import login_credential
 
 runner = CliRunner()
-JWT = auth.JwtCredential(
-    access_token="synthetic-access", refresh_token="synthetic-refresh"
-)
+JWT = login_credential("synthetic-access")
 TARGET = {"target_tier": "scale", "target_billing_interval": "year"}
 PREVIEW = {
     **TARGET,
@@ -66,7 +65,7 @@ def billing(monkeypatch):
             raise response
         return response
 
-    monkeypatch.setattr(plan, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(plan, "resolve_credential", lambda **_: JWT)
     monkeypatch.setattr(plan, "_is_interactive", lambda: False, raising=False)
     monkeypatch.setattr(
         plan,
@@ -346,7 +345,7 @@ def test_selected_key_is_masked_and_never_falls_back_to_jwt(billing, monkeypatch
     monkeypatch.setattr(
         plan,
         "resolve_credential",
-        lambda: auth.ProjectKeyCredential(api_key=key, source="environment"),
+        lambda **_: auth.ProjectKeyCredential(api_key=key, source="environment"),
     )
     result = invoke(*args, "--yes")
     assert result.exit_code == 3
@@ -358,7 +357,7 @@ def test_selected_key_is_masked_and_never_falls_back_to_jwt(billing, monkeypatch
 def test_help_never_resolves_credentials_or_calls_api(billing, monkeypatch, args):
     _, calls = billing
     monkeypatch.setattr(
-        plan, "resolve_credential", lambda: pytest.fail("help resolved auth")
+        plan, "resolve_credential", lambda **_: pytest.fail("help resolved auth")
     )
     command = list(args[:2] if args[0] == "pending" else args[:1])
     assert invoke(*command, "--help").exit_code == 0

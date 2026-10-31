@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from solwyn_cli import _mcp_operation as operation
-from solwyn_cli.auth import JwtRequiredError, JwtCredential
+from solwyn_cli.auth import LoginRequiredError, LoginCredential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
     AccountAlertResponse,
@@ -57,10 +57,10 @@ class AccountAlertWithLatestResponse(AccountAlertResponse):
     latest_window: AlertEventWindow | None
 
 
-def require_alert_jwt(client: SolwynClient) -> None:
-    if not isinstance(client.current_credential, JwtCredential):
-        raise JwtRequiredError(
-            "Account alert reads and latest firing require JWT. Run solwyn login."
+def require_alert_login(client: SolwynClient) -> None:
+    if not isinstance(client.current_credential, LoginCredential):
+        raise LoginRequiredError(
+            "Account alert reads and latest firing require a Solwyn login. Run solwyn login."
         )
 
 
@@ -91,7 +91,7 @@ def request_account_alert_page(
     all_pages: bool = False,
 ) -> AlertEventListResponse | AlertOpenResponse:
     params = {} if pending else activity_params(time_range, event_type)
-    require_alert_jwt(client)
+    require_alert_login(client)
     path = "/api/v1/account/alerts/" + ("open-deliveries" if pending else "activity")
     model = AlertOpenResponse if pending else AlertEventListResponse
     seen: set[str] = set()
@@ -136,7 +136,7 @@ def _matches(event: AlertEventEntry, rule: AlertRuleLookup) -> bool:
 def request_latest_events(
     *, client: SolwynClient, rules: list[AlertRuleLookup], account_id: str | None = None
 ) -> tuple[list[RuleLatest], AlertEventWindow | None]:
-    require_alert_jwt(client)
+    require_alert_login(client)
     results = []
     window = None
     for offset in range(0, len(rules), 100):
@@ -184,7 +184,7 @@ def request_latest_events(
 def request_account_alert(
     *, client: SolwynClient, with_last_fired: bool = False
 ) -> AccountAlertResponse | AccountAlertWithLatestResponse:
-    require_alert_jwt(client)
+    require_alert_login(client)
     data = AccountAlertResponse.model_validate(
         client.request("GET", "/api/v1/account/alerts").json()
     )

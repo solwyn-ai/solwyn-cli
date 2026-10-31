@@ -14,6 +14,7 @@ from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import audit as audit_module
 from solwyn_cli.main import app
+from login_fixtures import login_credential
 
 
 runner = CliRunner()
@@ -85,11 +86,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _jwt() -> auth.JwtCredential:
-    return auth.JwtCredential(
-        access_token=ACCESS_TOKEN,
-        refresh_token=REFRESH_TOKEN,
-    )
+def _jwt(**_: object) -> auth.LoginCredential:
+    return login_credential(ACCESS_TOKEN)
 
 
 def _key(source: str) -> auth.ProjectKeyCredential:
@@ -121,7 +119,7 @@ def test_audit_sends_exact_filters_and_matches_golden(
 ) -> None:
     credential = _jwt()
     monkeypatch.setattr(
-        audit_module, "resolve_credential", lambda: credential, raising=False
+        audit_module, "resolve_credential", lambda **_: credential, raising=False
     )
     FakeClient.responses = [httpx.Response(200, json=AUDIT_RESPONSE)]
     options = ["--json"] if output_format == "json" else ["--no-color"]
@@ -294,7 +292,7 @@ def test_audit_rejects_project_keys_before_network(
     source: str,
 ) -> None:
     monkeypatch.setattr(
-        audit_module, "resolve_credential", lambda: _key(source), raising=False
+        audit_module, "resolve_credential", lambda **_: _key(source), raising=False
     )
 
     result = runner.invoke(app, ["--json", "audit"])
@@ -320,7 +318,7 @@ def test_audit_validates_query_before_auth(
     monkeypatch.setattr(
         audit_module,
         "resolve_credential",
-        lambda: pytest.fail("must validate before auth"),
+        lambda **_: pytest.fail("must validate before auth"),
         raising=False,
     )
 

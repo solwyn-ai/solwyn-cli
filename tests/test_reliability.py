@@ -13,17 +13,16 @@ from typer.testing import CliRunner
 from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands import account, login
+from solwyn_cli.commands import account
 from solwyn_cli.commands._record import build_event, record_best_effort
 from solwyn_cli.commands._cost_advice_models import SimulationCaveats
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
 from test_mcp_conformance import _call_tool, _install_http
+from login_fixtures import login_credential
 
 KEY = auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment")
-JWT = auth.JwtCredential(
-    access_token="synthetic-access", refresh_token="synthetic-refresh"
-)
+JWT = login_credential("synthetic-access")
 BUSY = "Budget admission is busy; retry shortly"
 NOW = datetime(2026, 10, 14, tzinfo=UTC)
 
@@ -180,61 +179,6 @@ def test_membership_revoked_does_not_refresh_or_suggest_relogin():
     assert "solwyn account recover" in failure.value.hint
 
 
-@pytest.mark.parametrize("succeed", [True, False])
-def test_login_retries_capacity_once_and_uses_generic_exit(monkeypatch, succeed):
-    requests, waits, stored = [], [], []
-
-    def handler(request):
-        requests.append(request)
-        if succeed and len(requests) == 2:
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "synthetic-access",
-                    "refresh_token": "synthetic-refresh",
-                },
-            )
-        return httpx.Response(
-            503,
-            headers={"Retry-After": "100"},
-            json={
-                "detail": {
-                    "code": "auth_capacity_exceeded",
-                    "message": "Authentication is busy.",
-                }
-            },
-        )
-
-    monkeypatch.setattr(
-        login,
-        "SolwynClient",
-        lambda **kwargs: SolwynClient(
-            **kwargs, transport=httpx.MockTransport(handler), sleeper=waits.append
-        ),
-    )
-    monkeypatch.setattr(login, "_stdin_is_tty", lambda: True)
-    monkeypatch.setattr(
-        login.typer,
-        "prompt",
-        lambda label, **kwargs: (
-            "person@example.com" if label == "Email" else "synthetic-password"
-        ),
-    )
-    monkeypatch.setattr(login, "store_jwt_pair", lambda *pair: stored.append(pair))
-    result = CliRunner().invoke(app, ["--json", "login"])
-    assert result.exit_code == (0 if succeed else 1), result.exception
-    assert len(requests) == 2
-    assert waits == [10.0]
-    assert len(stored) == int(succeed)
-    assert requests[0].content == requests[1].content
-    assert "authorization" not in requests[0].headers
-    if not succeed:
-        error = json.loads(result.stderr)
-        assert error["code"] == "auth_capacity_exceeded"
-        assert "retry" in error["hint"].lower()
-    assert "synthetic-password" not in result.stdout + result.stderr
-
-
 @pytest.mark.parametrize(
     "payload,exit_code",
     [
@@ -252,7 +196,7 @@ def test_account_recover_posts_jwt_and_parses_fail_closed(
         requests.append(request)
         return httpx.Response(200, json=payload)
 
-    monkeypatch.setattr(account, "resolve_credential", lambda: JWT)
+    monkeypatch.setattr(account, "resolve_credential", lambda **_: JWT)
     monkeypatch.setattr(
         account,
         "SolwynClient",
@@ -274,13 +218,13 @@ def test_account_recover_posts_jwt_and_parses_fail_closed(
 
 
 def test_account_recover_rejects_project_key_before_request(monkeypatch):
-    monkeypatch.setattr(account, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(account, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(
         account, "SolwynClient", lambda **kwargs: pytest.fail("no request")
     )
     result = CliRunner().invoke(app, ["--json", "account", "recover"])
     assert result.exit_code == 3
-    assert "Unset SOLWYN_API_KEY" in json.loads(result.stderr)["hint"]
+    assert "Run solwyn login" in json.loads(result.stderr)["hint"]
 
 
 def test_simulation_fallback_matches_core_pricing():
@@ -341,7 +285,7 @@ def test_mcp_recording_preserves_transport_uncertainty(monkeypatch, status, reco
             raise httpx.ReadError("private")
 
         @contextmanager
-        def client_factory(_options):
+        def client_factory(_options, **_kwargs):
             with SolwynClient(
                 api_url="https://example.test",
                 credential=KEY,
@@ -402,96 +346,10 @@ def test_mcp_batch_shedding_does_not_erase_ambiguous_journal_state(
     assert len(requests) == 1
 
 
-def test_membership_revocation_after_refresh_keeps_recovery_hint(monkeypatch):
-    responses = [
-        httpx.Response(401, json={"detail": "expired"}),
-        httpx.Response(
-            200,
-            json={
-                "access_token": "synthetic-new",
-                "refresh_token": "synthetic-refresh-new",
-            },
-        ),
-        httpx.Response(401, json={"detail": "account_membership_revoked"}),
-    ]
-    requests = []
-
-    def handler(request):
-        requests.append(request)
-        return responses.pop(0)
-
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access, refresh: auth.JwtCredential(
-            access_token=access, refresh_token=refresh
-        ),
-    )
-    with SolwynClient(
-        api_url="https://example.test",
-        credential=JWT,
-        transport=httpx.MockTransport(handler),
-    ) as client:
-        with pytest.raises(ApiError) as failure:
-            client.request("GET", "/api/v1/account/me")
-    assert failure.value.code == "account_membership_revoked"
-    assert "solwyn account recover" in failure.value.hint
-    assert len(requests) == 3
-
-
-def test_account_recovery_refreshes_expired_jwt_without_membership_read(monkeypatch):
-    responses = [
-        httpx.Response(401, json={"detail": "expired"}),
-        httpx.Response(
-            200,
-            json={
-                "access_token": "synthetic-new",
-                "refresh_token": "synthetic-refresh-new",
-            },
-        ),
-        httpx.Response(200, json={"account_id": "recovered"}),
-    ]
-    requests = []
-
-    def handler(request):
-        requests.append(request)
-        return responses.pop(0)
-
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access, refresh: auth.JwtCredential(
-            access_token=access, refresh_token=refresh
-        ),
-    )
-    monkeypatch.setattr(account, "resolve_credential", lambda: JWT)
-    monkeypatch.setattr(
-        account,
-        "SolwynClient",
-        lambda **kwargs: SolwynClient(**kwargs, transport=httpx.MockTransport(handler)),
-    )
-    result = CliRunner().invoke(app, ["--json", "account", "recover"])
-    assert result.exit_code == 0, result.exception
-    assert [request.url.path for request in requests] == [
-        "/api/v1/accounts/me/personal",
-        "/api/v1/auth/refresh",
-        "/api/v1/accounts/me/personal",
-    ]
-    assert requests[-1].headers["authorization"] == "Bearer synthetic-new"
-
-
-def test_get_busy_retry_budget_survives_jwt_refresh(monkeypatch):
+def test_get_busy_retry_then_401_stops_without_replay():
     responses = [
         httpx.Response(503, headers={"Retry-After": "0"}),
         httpx.Response(401),
-        httpx.Response(
-            200,
-            json={
-                "access_token": "synthetic-new",
-                "refresh_token": "synthetic-refresh-new",
-            },
-        ),
-        httpx.Response(503, headers={"Retry-After": "0"}),
     ]
     requests, waits = [], []
 
@@ -499,22 +357,15 @@ def test_get_busy_retry_budget_survives_jwt_refresh(monkeypatch):
         requests.append(request)
         return responses.pop(0)
 
-    monkeypatch.setattr(
-        auth,
-        "store_jwt_pair",
-        lambda access, refresh: auth.JwtCredential(
-            access_token=access, refresh_token=refresh
-        ),
-    )
     with SolwynClient(
         api_url="https://example.test",
         credential=JWT,
         transport=httpx.MockTransport(handler),
         sleeper=waits.append,
     ) as client:
-        with pytest.raises(ApiError):
+        with pytest.raises(auth.AuthError):
             client.request("GET", "/api/v1/overview")
-    assert len(requests) == 4
+    assert len(requests) == 2
     assert waits == [0.0]
 
 
@@ -627,7 +478,7 @@ def test_oversized_export_and_simulation_stay_usage_errors_without_partial_outpu
 
     for module in (costs, cost_pricing):
         monkeypatch.setattr(module, "SolwynClient", factory)
-        monkeypatch.setattr(module, "resolve_credential", lambda: KEY)
+        monkeypatch.setattr(module, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(costs, "get_capabilities", lambda **kwargs: None)
     result = CliRunner().invoke(app, ["--json", "--project", "p", *command])
     assert result.exit_code == 2, result.exception
@@ -653,7 +504,7 @@ def test_record_cli_busy_is_known_unaccepted_and_preserves_identity(monkeypatch)
             **kwargs, transport=httpx.MockTransport(handler), sleeper=lambda _: None
         ),
     )
-    monkeypatch.setattr(record, "resolve_credential", lambda: KEY)
+    monkeypatch.setattr(record, "resolve_credential", lambda **_: KEY)
     result = CliRunner().invoke(
         app,
         [

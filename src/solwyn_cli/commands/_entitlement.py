@@ -94,7 +94,7 @@ class SubscriptionStatusResponse(_Response):
 
 
 def fetch_billing_status(*, client: SolwynClient) -> SubscriptionStatusResponse:
-    """Read billing status once for this client (key or JWT); errors propagate."""
+    """Read billing status once for this client (key or login); errors propagate."""
     cached = getattr(client, "_billing_status", None)
     if isinstance(cached, SubscriptionStatusResponse):
         return cached

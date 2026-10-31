@@ -2,8 +2,9 @@
 title: Webhooks
 ---
 
-Manage selected-project targets with JWT. Listing is a read; create, rotate and
-delete require owner/admin `project.write`. Core requires public HTTPS targets.
+Manage selected-project targets with a Solwyn login. Listing is a read; create,
+rotate and delete require owner/admin `project.write` and a one-time browser
+approval (see [approvals](approvals.mdx)). Core requires public HTTPS targets.
 A signing secret is shown once on create or rotate; rotate if it is lost.
 
 ```sh
@@ -38,7 +39,7 @@ Usage: solwyn webhooks [OPTIONS] COMMAND [ARGS]...
 
 ```text
 Endpoint: composite router for webhook target subcommands
-Auth: JWT
+Auth: login
 Exit codes: 0 success; 2 usage
 JSON schema: varies by subcommand
 A signing secret is shown exactly once on create or rotate.
@@ -63,7 +64,7 @@ Usage: solwyn webhooks create [OPTIONS]
 
 ```text
 Endpoint: POST /api/v1/projects/{project}/webhooks
-Auth: owner/admin JWT (project.write)
+Auth: owner/admin login (project.write)
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
 JSON schema: solwyn.webhooks-create.v1
 The signing secret is shown exactly once; store it securely.
@@ -87,7 +88,7 @@ Usage: solwyn webhooks delete [OPTIONS] WEBHOOK_ID
 
 ```text
 Endpoint: DELETE /api/v1/projects/{project}/webhooks/{webhook_id}
-Auth: owner/admin JWT (project.write)
+Auth: owner/admin login (project.write)
 Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
 JSON schema: solwyn.webhooks-delete.v1 (CLI output after bodyless 204)
 Deactivates the webhook target and returns no API body.
@@ -104,7 +105,7 @@ Usage: solwyn webhooks list [OPTIONS]
 
 ```text
 Endpoint: GET /api/v1/projects/{project}/webhooks
-Auth: JWT
+Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
 JSON schema: solwyn.webhooks-list.v1
 Lists secret_prefix only; it never returns a signing secret.
@@ -126,7 +127,7 @@ Usage: solwyn webhooks rotate [OPTIONS] WEBHOOK_ID
 
 ```text
 Endpoint: POST /api/v1/projects/{project}/webhooks/{webhook_id}/rotate
-Auth: owner/admin JWT (project.write)
+Auth: owner/admin login (project.write)
 Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found
 JSON schema: solwyn.webhooks-rotate.v1
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.

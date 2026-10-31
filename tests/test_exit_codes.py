@@ -28,6 +28,7 @@ def test_exit_code_table_is_frozen_and_complete() -> None:
         "AUTH_ERROR": 3,
         "BUDGET_DENIED": 4,
         "NOT_FOUND": 5,
+        "APPROVAL_REQUIRED": 6,
     }
 
 
@@ -64,3 +65,31 @@ def test_typed_errors_map_to_the_frozen_exit_contract(
 )
 def test_entitlement_402_never_infers_budget_denial(code: str) -> None:
     assert exit_code_for_error(_api_error(402, code)) is ExitCode.GENERIC_ERROR
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "approval_required",
+        "approval_pending",
+        "approval_denied",
+        "approval_expired",
+        "approval_invalid",
+        "approval_limit_reached",
+        "login_pending",
+    ],
+)
+@pytest.mark.parametrize("semantic", [None, ErrorSemantic.AUTH])
+def test_approval_outcomes_exit_six_even_with_an_auth_semantic(
+    code: str, semantic: ErrorSemantic | None
+) -> None:
+    assert exit_code_for_error(_api_error(403, code), semantic=semantic) is (
+        ExitCode.APPROVAL_REQUIRED
+    )
+
+
+def test_approval_semantic_maps_to_six() -> None:
+    assert (
+        exit_code_for_error(RuntimeError("x"), semantic=ErrorSemantic.APPROVAL_REQUIRED)
+        is ExitCode.APPROVAL_REQUIRED
+    )
