@@ -5204,7 +5204,7 @@
       "path": [
         "logout"
       ],
-      "summary": "Revoke the stored login and clear this API's stored Solwyn credentials."
+      "summary": "Revoke every stored login and clear this API's stored Solwyn credentials.\n\nLogout is the one exception to store isolation: whatever store is\nselected, it looks in both the credentials file and the keychain."
     },
     {
       "hidden": false,
@@ -8417,7 +8417,7 @@
     {
       "keys": [
         "cleared",
-        "legacy_entries_cleared",
+        "logins_found",
         "revoked",
         "schema",
         "stores"

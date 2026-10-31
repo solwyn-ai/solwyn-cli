@@ -158,6 +158,11 @@ class DictStore:
     def has_origin(self, origin: str) -> bool:
         return bool(self.values)
 
+    def section(self, origin: str) -> dict[str, str]:
+        for entry in self.values:
+            self._check_read(entry)
+        return dict(self.values)
+
     def get(self, origin: str, entry: str) -> str | None:
         self._check_read(entry)
         return self.values.get(entry)

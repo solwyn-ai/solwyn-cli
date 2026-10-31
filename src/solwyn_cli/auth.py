@@ -7,7 +7,8 @@ then ``credential_store`` in config, then ``auto``:
   a keychain write fails; the file on every Linux. An existing file entry wins
   on read, and every write deletes the stale copy in the other store.
 - ``keyring``: the OS keychain or a loud failure, never a fallback.
-- ``file``: the file only; the keyring is never touched.
+- ``file``: the file only; the keyring is never touched, except by logout,
+  which always looks in and clears both stores.
 
 Everything stored is keyed by API origin (see ``credential_store``), so a login
 made against one API is never sent to another.
@@ -37,6 +38,7 @@ from solwyn_cli import credential_store
 from solwyn_cli._vendor.validation import validate_project_key_format
 from solwyn_cli.credential_store import (
     STORE_ENV,
+    KeyringAbsentError,
     STORE_MODES,
     FileStore,
     InsecureFileError,
@@ -53,15 +55,18 @@ CLI_CREDENTIAL_META_ENTRY = "cli_credential_meta"
 PENDING_DEVICE_ENTRY = "pending_device"
 LOGIN_ENTRIES = (CLI_CREDENTIAL_ENTRY, CLI_CREDENTIAL_META_ENTRY)
 ALL_ENTRIES = (API_KEY_ENTRY, *LOGIN_ENTRIES, PENDING_DEVICE_ENTRY)
-# Entries 0.3 and earlier wrote to the keyring without an origin. Never read
-# as credentials; login and logout delete them, and Linux points at them once.
+# CLI 0.3.0 wrote these keyring entries (service "solwyn-cli", no origin): a
+# session pair and a project key. They are never used to authenticate; a
+# terminal user is told about them once, and login and logout delete them.
+LEGACY_LOGIN_ENTRIES = ("access_token", "refresh_token")
+LEGACY_KEY_ENTRY = "api_key"
+# Everything without an origin, including 0.4 pre-release names.
 LEGACY_ENTRIES = (
-    API_KEY_ENTRY,
+    *LEGACY_LOGIN_ENTRIES,
+    LEGACY_KEY_ENTRY,
     CLI_CREDENTIAL_ENTRY,
     CLI_CREDENTIAL_META_ENTRY,
     PENDING_DEVICE_ENTRY,
-    "access_token",
-    "refresh_token",
 )
 AUTH_EXIT_CODE = 3
 AUTH_SELECTION_ENV = "SOLWYN_AUTH"
@@ -414,6 +419,15 @@ def last_write() -> Written | None:
     return _LAST_WRITE.get()
 
 
+def _keyring_section(keyring_store: KeyringStore, origin: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for entry in ALL_ENTRIES:
+        value = keyring_store.get(origin, entry)
+        if value is not None:
+            values[entry] = value
+    return values
+
+
 def _write(
     values: Mapping[str, str],
     *,
@@ -421,33 +435,61 @@ def _write(
     mode: StoreMode,
     clear_first: tuple[str, ...] = (),
 ) -> Written:
-    """Write entries to one store and delete the stale copy in the other."""
+    """Write entries for one origin, keeping the whole origin in one store.
+
+    An origin lives in exactly one store. A keychain write carries the
+    origin's other file entries into the keychain and then removes the origin
+    from the file; a fallback write to the file carries what it can read from
+    the keychain and then deletes the origin's keychain entries. Nothing is
+    dropped, and a stale key in one store can never shadow a login in the other.
+    """
     names = (*clear_first, *values)
-    if primary_kind(mode) == "keyring":
-        keyring_store = _keyring_store()
+    if primary_kind(mode) != "keyring":
+        # file mode never touches the keyring, and Linux auto never writes it.
+        return _write_file(values, origin=origin, names=names, fell_back=False)
+    keyring_store = _keyring_store()
+    file = _file_store()
+    try:
+        carried = {
+            entry: value
+            for entry, value in file.section(origin).items()
+            if entry not in names
+        }
+    except (InsecureFileError, StoreUnavailableError) as error:
+        raise _file_error(error) from None
+    try:
+        # Drop the old token first: metadata without a token reads as no
+        # login, so a failed write never pairs old and new halves.
+        keyring_store.delete(origin, clear_first)
+        keyring_store.set_many(origin, {**carried, **values})
+    except StoreUnavailableError as error:
+        if mode == "keyring":
+            raise _keyring_error(error) from None
+        # auto: fall back to the file, carrying what the keychain still answers.
         try:
-            # Drop the old token first: metadata without a token reads as no
-            # login, so a failed write never pairs old and new halves.
-            keyring_store.delete(origin, clear_first)
-            keyring_store.set_many(origin, values)
-        except StoreUnavailableError as error:
-            if mode == "keyring":
-                raise _keyring_error(error) from None
-            # auto: fall back to the file, then drop any keyring leftovers.
-            written = _write_file(values, origin=origin, names=names, fell_back=True)
-            try:
-                keyring_store.delete(origin, names)
-            except StoreUnavailableError:
-                pass
-            return written
+            from_keyring = {
+                entry: value
+                for entry, value in _keyring_section(keyring_store, origin).items()
+                if entry not in names and entry not in carried
+            }
+        except StoreUnavailableError:
+            from_keyring = {}
+        written = _write_file(
+            {**from_keyring, **values}, origin=origin, names=names, fell_back=True
+        )
         try:
-            _file_store().delete(origin, names)
-        except (InsecureFileError, StoreUnavailableError, CredentialStorageError):
-            pass  # The keyring copy wins next time only if this succeeds; best effort.
-        written = Written("keyring", keyring_store.describe())
-        _LAST_WRITE.set(written)
+            keyring_store.delete(origin, ALL_ENTRIES)
+        except StoreUnavailableError:
+            pass  # The file holds the origin now and is read first.
         return written
-    return _write_file(values, origin=origin, names=names, fell_back=False)
+    try:
+        file.delete(origin, ALL_ENTRIES)
+    except (InsecureFileError, StoreUnavailableError) as error:
+        # The file would still be read first and hide this write: say so.
+        raise _file_error(error) from None
+    written = Written("keyring", keyring_store.describe())
+    _LAST_WRITE.set(written)
+    return written
 
 
 def _write_file(
@@ -464,13 +506,24 @@ def _write_file(
     return written
 
 
+ClearStatus: TypeAlias = Literal["cleared", "absent", "unreachable"]
+
+
 @dataclass(frozen=True)
 class Cleared:
-    """What one store reported when entries were deleted."""
+    """What one store reported when entries were deleted.
+
+    ``absent``: no keyring exists here, so nothing can be stored in it.
+    ``unreachable``: the keyring exists but did not answer; entries were kept.
+    """
 
     kind: StoreKind
     location: str
-    cleared: bool
+    status: ClearStatus = "cleared"
+
+    @property
+    def cleared(self) -> bool:
+        return self.status != "unreachable"
 
 
 def _keyring_in_use(mode: StoreMode) -> bool:
@@ -483,18 +536,18 @@ def _delete(entries: tuple[str, ...], *, origin: str, mode: StoreMode) -> list[C
     file = _file_store()
     try:
         file.delete(origin, entries)
-        results.append(Cleared("file", file.describe(), True))
+        results.append(Cleared("file", file.describe()))
     except (InsecureFileError, StoreUnavailableError) as error:
         raise _file_error(error) from None
     if _keyring_in_use(mode):
         keyring_store = _keyring_store()
         try:
             keyring_store.delete(origin, entries)
-            results.append(Cleared("keyring", keyring_store.describe(), True))
+            results.append(Cleared("keyring", keyring_store.describe()))
         except StoreUnavailableError as error:
             if mode == "keyring":
                 raise _keyring_error(error) from None
-            results.append(Cleared("keyring", keyring_store.describe(), False))
+            results.append(Cleared("keyring", keyring_store.describe(), "unreachable"))
     return results
 
 
@@ -732,9 +785,79 @@ def clear_pending_device(api_url: str | None = None) -> None:
         pass
 
 
+def _login_from(
+    values: Mapping[str, str | None], kind: StoreKind, location: str
+) -> LoginCredential | None:
+    token = values.get(CLI_CREDENTIAL_ENTRY)
+    raw_meta = values.get(CLI_CREDENTIAL_META_ENTRY)
+    if token is None or raw_meta is None:
+        return None
+    try:
+        return LoginCredential(
+            token=token,
+            meta=LoginMetadata.model_validate_json(raw_meta),
+            source=kind,
+            location=location,
+        )
+    except ValidationError:
+        return None
+
+
+def logins_in_every_store(api_url: str | None = None) -> list[LoginCredential]:
+    """Return the logins stored for this API in the file and in the keychain.
+
+    The one exception to store isolation: logout looks in both stores whatever
+    SOLWYN_CREDENTIAL_STORE or --store says, so no login is left behind live.
+    """
+    origin = current_origin(api_url)
+    logins: list[LoginCredential] = []
+    file = _file_store()
+    try:
+        login = _login_from(file.section(origin), "file", file.describe())
+    except (InsecureFileError, StoreUnavailableError) as error:
+        raise _file_error(error) from None
+    if login is not None:
+        logins.append(login)
+    keyring_store = _keyring_store()
+    try:
+        login = _login_from(
+            _keyring_section(keyring_store, origin), "keyring", keyring_store.describe()
+        )
+    except StoreUnavailableError:
+        login = None  # Reported by clear_credentials.
+    if login is not None and all(
+        login.bearer_value() != found.bearer_value() for found in logins
+    ):
+        logins.append(login)
+    return logins
+
+
 def clear_credentials(api_url: str | None = None) -> list[Cleared]:
-    """Remove every stored credential for this API from each store in use."""
-    return _delete(ALL_ENTRIES, origin=current_origin(api_url), mode=store_mode())
+    """Remove this API's credentials from both stores, and 0.3 keyring entries.
+
+    Like logins_in_every_store, this ignores the selected store: logout clears
+    the file and the keychain. A keychain that does not exist here is
+    ``absent``; one that exists but does not answer is ``unreachable``, and its
+    entries are retained.
+    """
+    origin = current_origin(api_url)
+    file = _file_store()
+    try:
+        file.delete(origin, ALL_ENTRIES)
+    except (InsecureFileError, StoreUnavailableError) as error:
+        raise _file_error(error) from None
+    results = [Cleared("file", file.describe())]
+    keyring_store = _keyring_store()
+    try:
+        keyring_store.delete(origin, ALL_ENTRIES)
+        for entry in LEGACY_ENTRIES:
+            keyring_store.delete_raw(entry)
+        results.append(Cleared("keyring", keyring_store.describe()))
+    except KeyringAbsentError:
+        results.append(Cleared("keyring", keyring_store.describe(), "absent"))
+    except StoreUnavailableError:
+        results.append(Cleared("keyring", keyring_store.describe(), "unreachable"))
+    return results
 
 
 def stored_entry_status(
@@ -777,7 +900,7 @@ def _legacy_keyring_allowed(mode: StoreMode) -> bool:
 
 
 def delete_legacy_entries(mode: StoreMode | None = None) -> bool:
-    """Delete 0.x keyring entries, best effort; return whether any were tried."""
+    """Delete 0.3 keyring entries after a login, best effort; return success."""
     selected = store_mode() if mode is None else mode
     if not _legacy_keyring_allowed(selected):
         return False
@@ -791,26 +914,34 @@ def delete_legacy_entries(mode: StoreMode | None = None) -> bool:
 
 
 LEGACY_LOGIN_NOTICE = (
-    "Your login from an earlier version is in the system keyring, which this CLI "
-    "no longer reads on Linux. Run solwyn login again, or set "
-    "SOLWYN_CREDENTIAL_STORE=keyring."
+    "Your login from Solwyn CLI 0.3 is still in the system keyring, but it no "
+    "longer works. Run solwyn login again."
+)
+LEGACY_KEY_NOTICE = (
+    "A project key saved by Solwyn CLI 0.3 is in the system keyring and is no "
+    "longer read. Run solwyn login --with-key again, or set SOLWYN_API_KEY."
 )
 
 
 def legacy_login_notice() -> str | None:
-    """On Linux in auto mode at a terminal, point at a 0.x keyring login."""
+    """At a terminal, point at 0.3 keyring entries; never authenticate with them.
+
+    Only presence is checked. file mode never probes the keyring, and nothing
+    is probed without a terminal (MCP servers, CI).
+    """
     try:
         mode = store_mode()
     except AuthError:
         return None
-    if (
-        mode != "auto"
-        or credential_store.platform_name() != "linux"
-        or not _interactive()
-    ):
+    if mode == "file" or not _interactive():
         return None
+    keyring_store = _keyring_store()
     try:
-        found = _keyring_store().get_raw(CLI_CREDENTIAL_ENTRY)
+        login = any(keyring_store.get_raw(entry) for entry in LEGACY_LOGIN_ENTRIES)
+        key = bool(keyring_store.get_raw(LEGACY_KEY_ENTRY))
     except StoreUnavailableError:
         return None
-    return LEGACY_LOGIN_NOTICE if found else None
+    notices = [LEGACY_LOGIN_NOTICE] if login else []
+    if key:
+        notices.append(LEGACY_KEY_NOTICE)
+    return " ".join(notices) or None

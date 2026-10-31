@@ -15,8 +15,11 @@ never sent to production. Two stores share one entry vocabulary:
 This module never prints. Callers turn its results into messages.
 """
 
+import errno
 import json
 import os
+import secrets
+import stat
 import sys
 import threading
 from collections.abc import Callable, Iterable, Mapping
@@ -47,15 +50,38 @@ class StoreUnavailableError(Exception):
     """The store cannot be used here; the message is fixed and secret-free."""
 
 
-class InsecureFileError(Exception):
-    """The credentials file is readable or owned by someone else."""
+class KeyringAbsentError(StoreUnavailableError):
+    """No keyring backend exists here (no D-Bus session, or only a placeholder).
 
-    def __init__(self, path: Path, reason: Literal["mode", "owner"]) -> None:
+    Nothing can have been stored in it from this session. A keyring that exists
+    but is locked, denies access or does not answer raises the base class.
+    """
+
+
+InsecureReason: TypeAlias = Literal[
+    "mode", "owner", "symlink", "not_file", "directory_owner"
+]
+
+
+class InsecureFileError(Exception):
+    """The credentials file or its directory is not private to this user."""
+
+    def __init__(self, path: Path, reason: InsecureReason) -> None:
         self.path = path
+        self.reason = reason
         super().__init__(
-            f"{path} is readable by other users. Run chmod 600 {path}."
-            if reason == "mode"
-            else f"{path} is owned by another user. Remove it and run solwyn login."
+            {
+                "mode": f"{path} is readable by other users. Run chmod 600 {path}.",
+                "owner": f"{path} is owned by another user. Remove it and run "
+                "solwyn login.",
+                "symlink": f"{path} is a symbolic link. Replace it with a regular "
+                "file, or remove it and run solwyn login.",
+                "not_file": f"{path} is not a regular file. Remove it and run "
+                "solwyn login.",
+                "directory_owner": f"The credentials directory {path} is owned by "
+                "another user. Set SOLWYN_CREDENTIALS_FILE to a path in a "
+                "directory you own.",
+            }[reason]
         )
 
 
@@ -107,28 +133,73 @@ class FileStore:
     def describe(self) -> str:
         return str(self.path)
 
-    def _check_private(self) -> None:
-        if os.name == "nt":
-            return  # The profile ACL protects %LOCALAPPDATA%.
-        status = self.path.stat()
-        if status.st_uid != os.getuid():
-            raise InsecureFileError(self.path, "owner")
-        if status.st_mode & 0o077:
-            raise InsecureFileError(self.path, "mode")
+    # POSIX only. On Windows the file lives in %LOCALAPPDATA%, protected by the
+    # profile ACL; os.getuid, O_NOFOLLOW and POSIX modes do not apply there, so
+    # these checks are skipped and the ACL is relied on, as other CLIs do.
 
-    def _load(self) -> dict[str, Any]:
+    def _check_directory(self, *, create: bool) -> bool:
+        """Require a private directory; return whether it exists.
+
+        A missing directory is created 0700 when ``create``. An existing one
+        must be owned by this user; group or world bits are removed.
+        """
+        directory = self.path.parent
+        if not directory.exists():
+            if not create:
+                return False
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name == "nt":
+            return True
+        status = os.stat(directory)
+        if status.st_uid != os.getuid():
+            raise InsecureFileError(directory, "directory_owner")
+        if stat.S_IMODE(status.st_mode) & 0o077:
+            os.chmod(directory, 0o700)
+        return True
+
+    def _read_bytes(self) -> bytes | None:
+        """Read the file through one descriptor that is checked before reading."""
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        if os.name != "nt":
+            flags |= os.O_NOFOLLOW | os.O_CLOEXEC
         try:
-            self._check_private()
-            raw = self.path.read_text(encoding="utf-8")
+            descriptor = os.open(self.path, flags)
         except FileNotFoundError:
-            return {"version": FILE_VERSION, "origins": {}}
+            return None
+        except OSError as error:
+            if error.errno == errno.ELOOP:
+                raise InsecureFileError(self.path, "symlink") from None
+            raise
+        with os.fdopen(descriptor, "rb") as handle:
+            if os.name != "nt":
+                # The checks and the read use the same descriptor, so the file
+                # cannot be swapped between them.
+                status = os.fstat(handle.fileno())
+                if not stat.S_ISREG(status.st_mode):
+                    raise InsecureFileError(self.path, "not_file")
+                if status.st_uid != os.getuid():
+                    raise InsecureFileError(self.path, "owner")
+                if stat.S_IMODE(status.st_mode) & 0o077:
+                    raise InsecureFileError(self.path, "mode")
+            return handle.read()
+
+    def _load(self, *, create_directory: bool = False) -> dict[str, Any]:
+        empty: dict[str, Any] = {"version": FILE_VERSION, "origins": {}}
+        try:
+            if not self._check_directory(create=create_directory):
+                return empty
+            raw = self._read_bytes()
+        except InsecureFileError:
+            raise
         except OSError:
             raise StoreUnavailableError(
                 f"Could not read the credentials file at {self.path}."
             ) from None
+        if raw is None:
+            return empty
         try:
-            document = json.loads(raw)
-        except ValueError:
+            document = json.loads(raw.decode("utf-8"))
+        except ValueError:  # Includes UnicodeDecodeError.
             document = None
         if (
             not isinstance(document, dict)
@@ -136,7 +207,7 @@ class FileStore:
             or not isinstance(document.get("origins"), dict)
         ):
             # Unreadable content never yields a credential; a write replaces it.
-            return {"version": FILE_VERSION, "origins": {}}
+            return empty
         return document
 
     def has_origin(self, origin: str) -> bool:
@@ -175,9 +246,18 @@ class FileStore:
         if self.path.exists():
             self._update(change)
 
+    def section(self, origin: str) -> dict[str, str]:
+        """Return every entry stored for one origin, as strings."""
+        values: dict[str, str] = {}
+        for entry in self._load()["origins"].get(origin, {}) or {}:
+            value = self.get(origin, entry)
+            if value is not None:
+                values[entry] = value
+        return values
+
     def _update(self, change: Callable[[dict[str, Any]], None]) -> None:
         try:
-            self._ensure_directory()
+            self._check_directory(create=True)
             with _config_lock(self.path):
                 document = self._load()
                 change(document["origins"])
@@ -192,23 +272,15 @@ class FileStore:
                 f"Could not write the credentials file at {self.path}."
             ) from None
 
-    def _ensure_directory(self) -> None:
-        directory = self.path.parent
-        if not directory.exists():
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if os.name != "nt":
-                os.chmod(directory, 0o700)
-
     def _write(self, document: Mapping[str, Any]) -> None:
         content = json.dumps(document, indent=2, sort_keys=True).encode("utf-8")
-        temporary = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
-        temporary.unlink(missing_ok=True)
-        # O_EXCL with 0600 from the start: no window where the file is readable.
-        descriptor = os.open(
-            temporary,
-            os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
-            0o600,
-        )
+        temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
+        # A new 0600 file in the same directory (O_EXCL, never a symlink), then
+        # fsync and an atomic rename: never a readable or partial file.
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+        if os.name != "nt":
+            flags |= os.O_NOFOLLOW | os.O_CLOEXEC
+        descriptor = os.open(temporary, flags, 0o600)
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(content)
@@ -267,9 +339,7 @@ def _platform_backend() -> Any:
         except Exception:  # noqa: BLE001 - any failure means "not here".
             continue
         return candidate()
-    raise StoreUnavailableError(
-        "The system keyring is not available (no D-Bus session)."
-    )
+    raise KeyringAbsentError("The system keyring is not available (no D-Bus session).")
 
 
 # Injectable for tests: a function returning a keyring backend.
@@ -301,7 +371,7 @@ class KeyringStore:
             backend = _with_timeout(backend_factory)
             module = type(backend).__module__
             if module.startswith(_REFUSED_MODULES):
-                raise StoreUnavailableError("The system keyring is not available.")
+                raise KeyringAbsentError("The system keyring is not available.")
             self._backend = backend
         return self._backend
 

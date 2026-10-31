@@ -336,8 +336,8 @@ def test_file_mode_never_touches_the_keyring(
     auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
     auth.store_project_key(VALID_KEY, api_url=PROD)
     assert auth.resolve_credential({}, api_url=PROD) is not None
-    auth.clear_credentials(api_url=PROD)
     assert auth.delete_legacy_entries() is False
+    # Logout is the one exception: it looks in both stores (see the logout tests).
 
 
 def test_linux_auto_never_touches_the_keyring_for_credentials(
@@ -349,7 +349,6 @@ def test_linux_auto_never_touches_the_keyring_for_credentials(
 
     auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
     assert auth.resolve_credential({}, api_url=PROD) is not None
-    auth.clear_credentials(api_url=PROD)
     assert auth.delete_legacy_entries() is False
     assert auth.legacy_login_notice() is None
 
@@ -732,83 +731,3 @@ def test_solwyn_token_has_no_local_metadata() -> None:
     assert found.meta is None
     assert found.location == "SOLWYN_TOKEN"
     assert ENV_TOKEN not in repr(found)
-
-
-# --- Migration from 0.3 and earlier -----------------------------------------
-
-
-def test_linux_points_an_interactive_user_at_an_old_keyring_login(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any
-) -> None:
-    _platform(monkeypatch, "linux")
-    monkeypatch.setattr(auth, "_interactive", lambda: True)
-    memory_keyring.values[("solwyn-cli", "cli_credential")] = LOGIN_TOKEN
-
-    result = runner.invoke(app, ["--json", "projects", "list"])
-
-    assert result.exit_code == 3
-    assert auth.LEGACY_LOGIN_NOTICE in result.stderr
-    assert LOGIN_TOKEN not in result.stderr
-
-
-def test_the_old_keyring_is_never_probed_without_a_terminal(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _platform(monkeypatch, "linux")
-    monkeypatch.setattr(auth, "_interactive", lambda: False)
-    _no_keyring(monkeypatch)
-
-    result = runner.invoke(app, ["--json", "projects", "list"])
-
-    assert result.exit_code == 3
-    assert auth.LEGACY_LOGIN_NOTICE not in result.stderr
-
-
-@pytest.mark.parametrize(
-    ("family", "interactive", "cleared"),
-    [
-        ("macos", False, True),
-        ("windows", False, True),
-        ("linux", True, True),
-        ("linux", False, False),
-    ],
-)
-def test_login_and_logout_delete_old_keyring_entries(
-    monkeypatch: pytest.MonkeyPatch,
-    memory_keyring: Any,
-    family: str,
-    interactive: bool,
-    cleared: bool,
-) -> None:
-    _platform(monkeypatch, family)
-    monkeypatch.setattr(auth, "_interactive", lambda: interactive)
-    for entry in auth.LEGACY_ENTRIES:
-        memory_keyring.values[("solwyn-cli", entry)] = "old"
-
-    login = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
-    assert login.exit_code == 0, login.stderr
-    remaining = {user for _, user in memory_keyring.values if "/" not in user}
-    assert (remaining == set()) is cleared
-
-    for entry in auth.LEGACY_ENTRIES:
-        memory_keyring.values[("solwyn-cli", entry)] = "old"
-    logout = runner.invoke(app, ["--json", "logout"])
-    assert logout.exit_code == 0, logout.stderr
-    assert json.loads(logout.stdout)["legacy_entries_cleared"] is cleared
-
-
-def test_logout_reports_what_it_cleared_from_each_store(
-    monkeypatch: pytest.MonkeyPatch, memory_keyring: Any, credentials_file: Path
-) -> None:
-    _platform(monkeypatch, "macos")
-    auth.store_project_key(VALID_KEY, api_url=PROD)
-
-    result = runner.invoke(app, ["--json", "logout"])
-
-    assert result.exit_code == 0, result.stderr
-    stores = json.loads(result.stdout)["stores"]
-    assert stores == [
-        {"store": "file", "location": str(credentials_file), "cleared": True},
-        {"store": "keyring", "location": "the macOS Keychain", "cleared": True},
-    ]
-    assert not any(user.startswith(PROD) for _, user in memory_keyring.values)

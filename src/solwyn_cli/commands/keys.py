@@ -450,6 +450,15 @@ def env_key(context: typer.Context) -> None:
     """Print an export line for the stored project key."""
     try:
         stored = auth.stored_project_key()
+    except auth.CredentialStorageError as error:
+        # A refused or unreadable store is not "no key": say what to fix.
+        exit_with_error(
+            context,
+            OutputError(
+                code="credential_storage_failed", message=str(error), hint=error.hint
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
     except AuthError:
         stored = None
     if stored is None:

@@ -42,7 +42,7 @@ code too. A denied login exits 3 with `login_denied`.
 Login polls at the interval the server asks for and adds 5 seconds whenever the
 server answers `slow_down`. It stores the credential and its metadata (label,
 scopes, expiry, account, email, role) in the credential store described below,
-and says where. Only the user code is printed; the device code and the
+and says where. In this default flow only the user code is printed; the device code and the
 credential never are.
 
 `--with-key` reads a project key from a hidden prompt or stdin and stores it in
@@ -93,13 +93,24 @@ with `SOLWYN_CREDENTIAL_STORE` is a usage error.
   the platform keyring directly: plaintext `keyrings.alt` backends are refused,
   and global keyring settings (`PYTHON_KEYRING_BACKEND`, `keyringrc.cfg`) are
   ignored. Each keychain call times out after 5 seconds.
-- `file`: the credentials file only. The keyring is never touched.
+- `file`: the credentials file only. The keyring is never touched, except by
+  `solwyn logout` (below).
 
-On Linux, a 0.3 login in the system keyring is not read. At a terminal, a command
-that finds no credential says so once; run `solwyn login` again or set
-`SOLWYN_CREDENTIAL_STORE=keyring`. Login and logout delete the old keyring
-entries where the keyring is in use (macOS, Windows, `keyring` mode, or a Linux
-terminal). Rerun `solwyn login --with-key` for a project key stored by 0.3.
+Each API URL lives in exactly one store. When a write lands in the keychain, any
+of that API's entries in the file (a login or a project key) move into the
+keychain with it and leave the file; a write that falls back to the file
+carries what the keychain still answers and deletes that API's keychain
+entries. A stale key in one store can therefore never shadow a login in the
+other.
+
+CLI 0.3.0 stored a session login (`access_token` and `refresh_token`) and a
+project key (`api_key`) in the system keyring under the service `solwyn-cli`.
+0.4.0 never reads or sends them. At a terminal, when a command finds no
+credential, it checks whether they are still there and says so once: run
+`solwyn login` again for the login, and `solwyn login --with-key` again (or set
+`SOLWYN_API_KEY`) for the key. Nothing is checked in `file` mode or without a
+terminal. `solwyn login` deletes them where the keyring is in use, and
+`solwyn logout` always deletes them.
 
 ## Logins in CI and cloud agents: `SOLWYN_TOKEN`
 
@@ -135,12 +146,20 @@ missing-credential error names the store and path it looked in. An empty or
 invalid `SOLWYN_API_KEY` still stops fallback to the stored key when the key is
 next in line. `whoami` shows where its credential came from (`Stored in`).
 
-`solwyn logout` revokes the stored login on the server (one attempt, 5 seconds)
-and then clears this API's stored credentials from every store in use, reporting
-each. If the revoke fails it says so and still exits 0; revoke the login in the
+`solwyn logout` is the one exception to store isolation. Whatever
+`SOLWYN_CREDENTIAL_STORE` or `--store` says, it looks for this API's login in
+both the credentials file and the keychain, revokes every login it finds on the
+server (one attempt each, 5 seconds), then deletes this API's entries and the
+0.3.0 entries from both stores. It reports each store as `cleared`,
+`absent` (no keyring exists on this machine, for example headless Linux) or
+`unreachable` (the keyring exists but is locked or did not answer). `cleared`
+is true only when nothing remains. If a store was unreachable, logout exits 3
+with `logout_incomplete`, names the store whose entries were kept, and carries
+the same report in `detail`; unlock it and run `solwyn logout` again. If a
+revoke fails, logout says so, still clears, and exits 0; revoke the login in the
 dashboard under Settings, CLI logins. Logout does not revoke project keys or a
-`SOLWYN_TOKEN` login. See [CLI logins](credentials.mdx) to list and revoke logins
-from the CLI.
+`SOLWYN_TOKEN` login. See [CLI logins](credentials.mdx) to list and revoke
+logins from the CLI.
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
@@ -179,7 +198,7 @@ Stores in the OS keychain on macOS and Windows and in a private 0600 credentials
 
 ## `solwyn logout`
 
-Revoke the stored login and clear this API's stored Solwyn credentials.
+Revoke every stored login and clear this API's stored Solwyn credentials.
 
 ```console
 Usage: solwyn logout [OPTIONS]

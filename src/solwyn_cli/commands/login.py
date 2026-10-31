@@ -183,18 +183,21 @@ def _print_unstored_token(
 ) -> None:
     """Write the --no-store token once: the deliberate, unredacted output."""
     if command_context(context).output_format.value == "json":
-        document = {
-            "schema": "solwyn.login.token.v1",
-            "token": token,
-            "credential_id": meta.id,
-            "label": meta.label,
-            "scope": meta.scopes,
-            "expires_at": _iso(meta.expires_at),
-            "account_id": meta.account_id,
-            "account_name": meta.account_name,
-            "email": meta.email,
-            "role": meta.role,
-        }
+        # Metadata is redacted like any other output; only the newly issued
+        # token is exempt, because printing it is the point of --no-store.
+        metadata = redact_secrets(
+            {
+                "credential_id": meta.id,
+                "label": meta.label,
+                "scope": meta.scopes,
+                "expires_at": _iso(meta.expires_at),
+                "account_id": meta.account_id,
+                "account_name": meta.account_name,
+                "email": meta.email,
+                "role": meta.role,
+            }
+        )
+        document = {"schema": "solwyn.login.token.v1", "token": token, **metadata}
         line = json.dumps(document, separators=(",", ":"))
     else:
         line = token
@@ -689,20 +692,29 @@ def login(
     _login_success(context, credential)
 
 
+_STATUS_TEXT = {"cleared": "cleared", "absent": "not present", "unreachable": "kept"}
+
+
 def logout(context: typer.Context) -> None:
-    """Revoke the stored login and clear this API's stored Solwyn credentials."""
+    """Revoke every stored login and clear this API's stored Solwyn credentials.
+
+    Logout is the one exception to store isolation: whatever store is
+    selected, it looks in both the credentials file and the keychain.
+    """
     try:
-        stored = auth.stored_login(include_expired=True)
+        logins = auth.logins_in_every_store()
     except CredentialStorageError as error:
         _fail(context, "credential_storage_failed", str(error), error.hint)
     revoked: bool | None = None
-    if stored is not None:
-        revoked = revoke_token(command_context(context).api_url, stored.bearer_value())
+    if logins:
+        api_url = command_context(context).api_url
+        # Every login found is revoked, not just the first.
+        results = [revoke_token(api_url, login.bearer_value()) for login in logins]
+        revoked = all(results)
     try:
         cleared = clear_credentials()
     except CredentialStorageError as error:
         _fail(context, "credential_storage_failed", str(error), error.hint)
-    legacy = auth.delete_legacy_entries()
     if revoked is False:
         _note(REVOKE_FAILED_NOTE)
     if auth.TOKEN_ENV in os.environ:
@@ -710,26 +722,39 @@ def logout(context: typer.Context) -> None:
             "SOLWYN_TOKEN is set in this environment. Logout does not revoke it; "
             "use solwyn credentials revoke."
         )
-    stores = [
-        {"store": item.kind, "location": item.location, "cleared": item.cleared}
-        for item in cleared
-    ]
+    data = {
+        "cleared": all(item.cleared for item in cleared),
+        "revoked": revoked,
+        "logins_found": len(logins),
+        "stores": [
+            {
+                "store": item.kind,
+                "location": item.location,
+                "status": item.status,
+                "cleared": item.cleared,
+            }
+            for item in cleared
+        ],
+    }
+    retained = [item for item in cleared if not item.cleared]
+    if retained:
+        places = ", ".join(item.location for item in retained)
+        _fail(
+            context,
+            "logout_incomplete",
+            f"Could not reach {places}; credentials stored there were kept.",
+            "Unlock it and run solwyn logout again.",
+            detail={"schema": "solwyn.logout.v1", **data},
+            semantic=ErrorSemantic.AUTH,
+        )
     output_engine(context).write_success(
         schema="solwyn.logout.v1",
-        data={
-            "cleared": all(item.cleared for item in cleared),
-            "revoked": revoked,
-            "stores": stores,
-            "legacy_entries_cleared": legacy,
-        },
+        data=data,
         table=TableData(
             columns=("Credentials", "Status"),
             rows=(
                 *(
-                    (
-                        f"{item.kind} ({item.location})",
-                        "cleared" if item.cleared else "not cleared",
-                    )
+                    (f"{item.kind} ({item.location})", _STATUS_TEXT[item.status])
                     for item in cleared
                 ),
                 *(

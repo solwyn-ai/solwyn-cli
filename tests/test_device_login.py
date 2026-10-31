@@ -530,10 +530,21 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
         "schema": "solwyn.logout.v1",
         "cleared": True,
         "revoked": True,
+        "logins_found": 1,
         "stores": [
-            {"store": "file", "location": "/test/credentials.json", "cleared": True}
+            {
+                "store": "file",
+                "location": "/test/credentials.json",
+                "status": "cleared",
+                "cleared": True,
+            },
+            {
+                "store": "keyring",
+                "location": auth.credential_store.keyring_name(),
+                "status": "cleared",
+                "cleared": True,
+            },
         ],
-        "legacy_entries_cleared": False,
     }
     assert result.stderr == ""
     assert keychain == {}
@@ -850,3 +861,39 @@ def test_no_store_timeout_keeps_nothing_to_resume(
     error = json.loads(result.stderr.splitlines()[-1])
     assert error["code"] == "login_not_approved"
     assert keychain == {}
+
+
+@pytest.mark.parametrize("output", ["human", "json"])
+def test_no_store_redacts_secrets_embedded_in_metadata(
+    keychain: dict[str, str],
+    clock: FakeClock,
+    server: Callable[..., OAuthServer],
+    output: str,
+) -> None:
+    other_token = "solwyn_cli_" + "7b" * 32
+    device_code = "solwyn_dc_" + "6c" * 32
+    poisoned = {
+        **TOKEN,
+        "solwyn_credential": {
+            **TOKEN["solwyn_credential"],
+            "account_name": f"Acme {other_token}",
+            "label": f"ci {device_code}",
+            "email": f"x{other_token}@example.com",
+        },
+    }
+    server(httpx.Response(200, json=poisoned))
+    flags = ["--json"] if output == "json" else []
+
+    result = runner.invoke(app, [*flags, "login", "--no-store"])
+
+    assert result.exit_code == 0, result.stderr
+    rendered = result.stdout + result.stderr
+    # Only the newly issued token is exempt from redaction, and only once.
+    assert rendered.count(ISSUED_TOKEN) == 1
+    assert other_token not in rendered
+    assert device_code not in rendered
+    if output == "json":
+        document = json.loads(result.stdout)
+        assert document["token"] == ISSUED_TOKEN
+        assert document["account_name"] == "Acme [REDACTED]"
+        assert document["label"] == "ci [REDACTED]"
