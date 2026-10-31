@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 import httpx
 import typer
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from solwyn_cli.auth import (
     AuthError,
@@ -78,18 +78,6 @@ class InviteRequest(TeamModel):
 
 class AccountUpdateRequest(TeamModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
-
-
-class AcceptInvitationRequest(TeamModel):
-    email: str | None = None
-    password: SecretStr | None = Field(default=None, min_length=8, max_length=128)
-    display_name: str | None = Field(default=None, min_length=1, max_length=120)
-
-
-class InvitationTokenResponse(TeamModel):
-    access_token: SecretStr = Field(min_length=1)
-    refresh_token: SecretStr = Field(min_length=1)
-    token_type: Literal["bearer"] = "bearer"
 
 
 class TeamMembersData(TeamModel):

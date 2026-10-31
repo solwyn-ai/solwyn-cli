@@ -12472,6 +12472,27 @@
               "title": "Is Model Fallback",
               "type": "boolean"
             },
+            "is_provider_fallback": {
+              "title": "Is Provider Fallback",
+              "type": "boolean"
+            },
+            "failover_reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "circuit_open",
+                    "primary_error",
+                    "model_fallback",
+                    "cost_routed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Failover Reason"
+            },
             "latency_ms": {
               "title": "Latency Ms",
               "type": "number"
@@ -12479,6 +12500,54 @@
             "sdk_instance_id": {
               "title": "Sdk Instance Id",
               "type": "string"
+            },
+            "trace_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Id"
+            },
+            "span_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Span Id"
+            },
+            "trace_sampled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Sampled"
+            },
+            "trace_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trace Url"
             },
             "created_at": {
               "title": "Created At",
@@ -12500,6 +12569,8 @@
             "estimated_cost",
             "status",
             "is_model_fallback",
+            "is_provider_fallback",
+            "failover_reason",
             "latency_ms",
             "sdk_instance_id",
             "created_at"

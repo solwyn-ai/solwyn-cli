@@ -114,7 +114,6 @@ issue closure was performed during this verification.
 | [#398 — One event-filter registry](https://github.com/solwyn-ai/core/issues/398) | Pending | `NotificationConfigUpdate.enabled_event_types` remains `set[str]`; `WebhookCreateRequest.events` remains a comma-separated `str`. No shared validation registry is used by these request models. |
 | [#400 — Health build identity and token lifetime](https://github.com/solwyn-ai/core/issues/400) | Pending | `HealthResponse` contains only `status` and `service`; `TokenResponse` contains access/refresh tokens and token type, without `expires_in`. |
 | [#401 — Untracked-surface retention metadata](https://github.com/solwyn-ai/core/issues/401) | Pending | `UntrackedSurfaceResponse` has no clamp/window fields. The CLI's wrapper estimates the effective window from billing retention when available and reports unknown otherwise. |
-| [#402 — Cost-event provider fallback attribution](https://github.com/solwyn-ai/core/issues/402) | Pending | `CostEventResponse` has `is_model_fallback`, but no provider-fallback or failover-reason field. Filtering support does not imply those fields are returned. |
 | [#403 — Private scheduled content-drift monitor](https://github.com/solwyn-ai/core/issues/403) | Pending; Core/private infra | No corresponding workflow under Core `.github/workflows`; the mechanism above is a proposal. Public CLI age/content guards remain unchanged. |
 
 ### Resolved in Core
@@ -128,6 +127,12 @@ quota, but reports the included-request cap once exceeded. `current_requests`
 is a quota signal, **not a usage figure** above the cap. `total_requests` is a
 separate analytics figure over its retention-clamped window. Sharing the gate's
 resolver does not make the two figures interchangeable.
+
+[#402: Cost-event provider fallback attribution](https://github.com/solwyn-ai/core/issues/402)
+is resolved. At Core `f8f993aa`, `CostEventResponse` always returns
+`is_provider_fallback` and `failover_reason`, and returns `trace_id`, `span_id`,
+`trace_sampled` and `trace_url` when known. The CLI's cost-event model and the
+MCP `list_cost_events` output carry all six.
 
 ## Reliability audit at Core `4925784d` (2026-10-14)
 
