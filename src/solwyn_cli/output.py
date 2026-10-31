@@ -273,7 +273,8 @@ class OutputEngine:
         if error.hint is not None:
             hint = Text("Hint: ", style="bold yellow")
             hint.append(Text(_terminal_safe(error.hint)))
-            console.print(hint)
+            # Hints can carry a command to copy; never insert line breaks.
+            console.print(hint, soft_wrap=True)
 
 
 def write_byte_stream(*, chunks: Iterable[bytes], output: BinaryIO) -> None:

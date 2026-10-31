@@ -15,8 +15,6 @@ from solwyn_cli.main import app
 from test_plan_command import BILLING_STATUS
 from login_fixtures import (
     APPROVAL_ID,
-    approval_body,
-    approval_required,
     fake_keychain,
     login_credential,
 )
@@ -472,36 +470,3 @@ def test_approval_option_attaches_to_the_plan_change_not_the_preview(recorded):
         ("/api/v1/billing/plan-preview", None),
         ("/api/v1/billing/plan-change", APPROVAL_ID),
     ]
-
-
-def test_upgrade_retry_with_approval_resends_the_same_generated_body(recorded):
-    queue, sent = recorded
-    arguments = ["plan", "upgrade", "--tier", "team", "--interval", "year"]
-    arguments += ["--yes", "--no-browser"]
-    queue.extend(
-        [approval_required(), httpx.Response(200, json=approval_body("pending"))]
-    )
-
-    waited = runner.invoke(app, ["--json", "--approval-wait", "0", *arguments])
-
-    assert waited.exit_code == 6, waited.output
-    assert json.loads(waited.stderr.splitlines()[-1])["code"] == "approval_pending"
-    first = sent[0]
-    queue.append(
-        httpx.Response(
-            200, json={"checkout_url": "https://checkout.stripe.com/c/pay/synthetic"}
-        )
-    )
-
-    retried = runner.invoke(app, ["--json", "--approval", APPROVAL_ID, *arguments])
-
-    assert retried.exit_code == 0, retried.output
-    retry = sent[-1]
-    assert retry.headers["Solwyn-Approval"] == APPROVAL_ID
-    assert retry.method == first.method
-    assert retry.url.raw_path == first.url.raw_path
-    assert retry.content == first.content
-    assert (
-        json.loads(retry.content)["client_request_id"]
-        == json.loads(first.content)["client_request_id"]
-    )

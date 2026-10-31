@@ -6,13 +6,14 @@ import json
 import sys
 import unicodedata
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 import webbrowser
 from typing import Annotated, Literal
 
 import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from solwyn_cli.approvals import pin_retry_value
 from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._billing import (
@@ -672,6 +673,14 @@ def upgrade(
     yes: Annotated[
         bool, typer.Option("--yes", help="Confirm creating the paid checkout session.")
     ] = False,
+    client_request_id: Annotated[
+        UUID | None,
+        typer.Option(
+            "--client-request-id",
+            hidden=True,
+            help="Repeat a checkout request ID; printed in approval retry commands.",
+        ),
+    ] = None,
 ) -> None:
     """Create a hosted paid checkout URL; always print it, open only with a terminal."""
     effect = f"Create a paid checkout session for {tier} / {interval}; older open checkout sessions may be replaced. Payment and subscription start are completed in hosted checkout."
@@ -679,8 +688,11 @@ def upgrade(
     with _billing_client(context) as client:
         _effects(context, effect)
         _confirm(context, yes=yes)
+        request_id = str(client_request_id or uuid4())
+        # An approval retry must repeat the request ID to rebuild the same body.
+        pin_retry_value("client_request_id", request_id)
         request = CheckoutRequest(
-            tier=tier, billing_interval=interval, client_request_id=str(uuid4())
+            tier=tier, billing_interval=interval, client_request_id=request_id
         )
         data = CheckoutResponse.model_validate(
             client.request(

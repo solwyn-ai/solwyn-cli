@@ -32,7 +32,7 @@ Every outcome other than success exits 6, and nothing else is sent:
 
 | Error code | Meaning |
 | --- | --- |
-| `approval_pending` | The wait ended first. After approving, run the same command again with `--approval ID`. |
+| `approval_pending` | The wait ended first. The error prints the exact command to run after approving (also in `detail.retry_command` and `detail.retry_argv`). |
 | `approval_denied` | You denied the change in the browser. |
 | `approval_expired` | The approval expired. Run the command again to request a new one. |
 | `approval_invalid` | The attached approval was not usable. `mismatch` means the request changed since it was approved, for example because the state a command reads changed. Run the command again. |
@@ -40,11 +40,29 @@ Every outcome other than success exits 6, and nothing else is sent:
 
 The global `--approval ID` option attaches an approval to the first change
 request of that invocation. Read-only requests such as `plan change`'s estimate
-are skipped, so the approval reaches the change itself. When a wait ends first,
-the CLI keeps that exact request (method, URL and body, including generated
-values such as checkout request IDs and relative snooze times) in the OS
-keychain. Running the same command with `--approval ID` re-sends those bytes, so
-the approval still matches; a different command builds its own request.
+are skipped, so the approval reaches the change itself.
+
+When the wait ends first, the error names the exact command to re-run, for
+example:
+
+```console
+$ solwyn --approval-wait 0 plan upgrade --tier team --interval year --yes
+...
+Hint: After approving, run: solwyn --approval 0b7d2c4e-0000-4000-8000-000000000003 plan upgrade --tier team --interval year --yes --client-request-id 6f1c2a90-0000-4000-8000-000000000001
+```
+
+That command repeats only what you typed, plus every value the CLI generated
+for the request, pinned as an explicit flag: `plan upgrade`'s
+`--client-request-id`, and an absolute `--until` time for a relative snooze such
+as `--until +2h`. Re-running it rebuilds the same request bytes, so the approval
+matches. The CLI stores nothing: no request body, secret or prepared request is
+written to the keychain or to disk. If you change any argument, the request
+differs, the server answers `approval_invalid` with reason `mismatch`, and you
+run the command again to request a new approval. Secrets never appear in the
+command. When the original run read one (`--secret-stdin`, `--config-stdin` or
+`SOLWYN_CHANNEL_SECRET`), the hint says to supply it the same way again; `init`
+asks you to enter the same project name and budget again.
+
 Approvals are single use and expire 5 minutes after you approve them. If the change then fails on the server (a validation error,
 for example), the approval is spent; the error says so, and you run the command
 again for a new one. MCP tools never wait: a tool that needs an approval returns

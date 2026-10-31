@@ -14,6 +14,7 @@ from solwyn_cli._vendor.notification_wire import (
     NotificationChannelCreate,
     NotificationChannelUpdate,
 )
+from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.commands._notifications_common import (
     ChannelDeleted,
     ChannelList,
@@ -127,6 +128,7 @@ def config_input(
             "--config-stdin cannot be combined with other configuration options.",
         )
     if config_stdin:
+        add_retry_note("Pipe the same --config-stdin JSON again.")
         try:
             config = json.loads(sys.stdin.read())
         except (ValueError, TypeError):

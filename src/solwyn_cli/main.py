@@ -177,7 +177,6 @@ def main(
                     default_wait_seconds() if approval_wait is None else approval_wait
                 ),
                 approval_id=approval,
-                remember=True,
             )
         )
     )

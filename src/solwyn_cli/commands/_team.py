@@ -22,6 +22,7 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.commands.whoami import _AccountSelf, _Identity
 from solwyn_cli.errors import (
     APPROVAL_INVALID_MESSAGES,
+    APPROVAL_USED_HINT,
     MEMBERSHIP_RECOVERY_HINT,
     ApiError,
     approval_url_from,
@@ -213,11 +214,20 @@ _APPROVAL_DETAIL_KEYS = ("approval_id", "approval_url", "expires_at", "reason")
 def safe_approval_error(error: ApiError) -> OutputError:
     """Keep an approval outcome's code, continuation and exit 6, nothing else."""
     detail = error.detail if isinstance(error.detail, dict) else {}
-    kept = {
+    kept: dict[str, object] = {
         key: detail[key]
         for key in _APPROVAL_DETAIL_KEYS
         if isinstance(detail.get(key), str) and len(detail[key]) <= 2048
     }
+    retry_argv = detail.get("retry_argv")
+    if (
+        isinstance(detail.get("retry_command"), str)
+        and isinstance(retry_argv, list)
+        and all(isinstance(item, str) for item in retry_argv)
+    ):
+        # Built locally from the user's own arguments; never from the server.
+        kept["retry_command"] = detail["retry_command"]
+        kept["retry_argv"] = retry_argv
     if "approval_url" in kept and approval_url_from(kept) is None:
         del kept["approval_url"]
     reason = kept.get("reason")
@@ -278,6 +288,8 @@ def safe_api_error(
         and code != "auth_capacity_exceeded"
     ):
         hint = ACCEPT_UNKNOWN_HINT if accepting else UNKNOWN_HINT
+    if error.approval_spent:
+        hint = f"{hint} {APPROVAL_USED_HINT}" if hint else APPROVAL_USED_HINT
     fail(
         context,
         code or ("rate_limited" if error.status_code == 429 else "team_request_failed"),

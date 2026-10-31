@@ -5822,6 +5822,20 @@
           "name": "yes",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--client-request-id"
+          ],
+          "default": null,
+          "help": "Repeat a checkout request ID; printed in approval retry commands.",
+          "hidden": true,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "client_request_id",
+          "required": false,
+          "type": "uuid"
         }
       ],
       "path": [

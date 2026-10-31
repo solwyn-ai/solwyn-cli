@@ -23,6 +23,7 @@ from solwyn_cli._vendor.notification_wire import (
     TelegramConfig,
     Severity,
 )
+from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.auth import AuthError, ProjectKeyCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
@@ -165,6 +166,13 @@ def secret_input(context: typer.Context, *, stdin: bool, required: bool) -> str 
     if required and value is None:
         usage(
             context, "Supply a secret through --secret-stdin or SOLWYN_CHANNEL_SECRET."
+        )
+    if value is not None:
+        # Retry commands never carry secrets; the user supplies them again.
+        add_retry_note(
+            "Supply the channel secret again the same way ("
+            + ("pipe it to --secret-stdin" if stdin else "set SOLWYN_CHANNEL_SECRET")
+            + ")."
         )
     return value
 

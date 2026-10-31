@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from solwyn_cli._vendor.wire import ProjectCreateRequest
 from solwyn_cli.artifacts import ArtifactRecoveryError, write_agent_artifacts
+from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.auth import (
     AuthError,
     auth_selection,
@@ -218,6 +219,7 @@ def _create_project(
 ) -> tuple[str, ResolvedCredential | None]:
     name = typer.prompt("Project name", err=True).strip()
     budget = typer.prompt("Initial monthly budget", type=float, default=100.0, err=True)
+    add_retry_note("Enter the same project name and budget again.")
     if not name or not math.isfinite(budget) or budget <= 0:
         exit_with_error(
             context,

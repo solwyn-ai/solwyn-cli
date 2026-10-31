@@ -20,10 +20,9 @@ from solwyn_cli.approvals import (
     APPROVAL_POLL_SECONDS,
     ApprovalSettings,
     current_settings,
-    forget_change,
     may_need_approval,
-    recall_change,
-    remember_change,
+    retry_argv,
+    retry_command,
 )
 from solwyn_cli.auth import (
     AuthError,
@@ -112,21 +111,49 @@ def _terminal_safe(value: object) -> str:
     )
 
 
-def _approval_reason(response: httpx.Response) -> str | None:
-    error = error_from_response(response)
-    if error.code != "approval_invalid" or not isinstance(error.detail, dict):
-        return None
-    reason = error.detail.get("reason")
-    return reason if isinstance(reason, str) else None
-
-
 def _mark_approval_spent(error: ApiError) -> None:
     """Say the approval was used when the change failed after the gate."""
     if error.code.startswith("approval_") or error.status_code in (None, 401, 429):
         return
+    error.approval_spent = True
     error.hint = (
         f"{error.hint} {APPROVAL_USED_HINT}" if error.hint else APPROVAL_USED_HINT
     )
+
+
+def _pending_error(
+    approval_id: str,
+    *,
+    approval_url: str | None,
+    expires_at: str,
+    notes: list[str],
+) -> ApiError:
+    """Name the exact command that re-sends this change once it is approved."""
+    argv = retry_argv(approval_id)
+    if argv is None:
+        error = approval_error(
+            "approval_pending",
+            f"Still waiting for approval {approval_id}. After approving, run the "
+            f"same command again with --approval {approval_id}.",
+            hint=None,
+            approval_id=approval_id,
+            approval_url=approval_url,
+            expires_at=expires_at,
+        )
+    else:
+        command = retry_command(argv)
+        error = approval_error(
+            "approval_pending",
+            f"Still waiting for approval {approval_id}.",
+            hint=" ".join([f"After approving, run: {command}", *notes]),
+            approval_id=approval_id,
+            approval_url=approval_url,
+            expires_at=expires_at,
+        )
+        if isinstance(error.detail, dict):
+            error.detail["retry_command"] = command
+            error.detail["retry_argv"] = argv
+    return error
 
 
 def approval_path(approval_id: str) -> str:
@@ -478,9 +505,6 @@ class SolwynClient:
         prepared = self._client.build_request(
             method, relative_path, headers=request_headers, **kwargs
         )
-        if attached is not None and settings is not None and settings.remember:
-            # Re-send the exact change this approval was bound to, if kept.
-            prepared = recall_change(attached, prepared) or prepared
         approval_spent = attached is not None
 
         try:
@@ -492,9 +516,6 @@ class SolwynClient:
                 stream=_stream,
             )
             self._check_authentication(response, evidence)
-            if attached is not None and settings is not None and settings.remember:
-                if _approval_reason(response) != "pending":
-                    forget_change(attached)
             if (
                 is_change
                 and settings is not None
@@ -591,20 +612,11 @@ class SolwynClient:
         status = self._wait_for_decision(view, settings.wait_seconds)
         expires_at = view.expires_at.isoformat().replace("+00:00", "Z")
         if status == "pending":
-            if settings.remember:
-                remember_change(approval_id, prepared)
-            raise approval_error(
-                "approval_pending",
-                f"Still waiting for approval {approval_id}. After approving, run "
-                f"the same command again with --approval {approval_id}.",
-                hint=(
-                    f"Approve the change in the browser: {approval_url}"
-                    if approval_url is not None
-                    else None
-                ),
-                approval_id=approval_id,
+            raise _pending_error(
+                approval_id,
                 approval_url=approval_url,
                 expires_at=expires_at,
+                notes=settings.notes,
             )
         if status == "denied":
             raise approval_error(

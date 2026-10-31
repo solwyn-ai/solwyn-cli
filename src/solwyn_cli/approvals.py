@@ -1,17 +1,19 @@
 """Per-invocation settings for the browser approval hand-off."""
 
-import base64
 import re
+import shlex
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
 
-import httpx
-from pydantic import BaseModel, ConfigDict, ValidationError
-
-from solwyn_cli import auth
+try:
+    from typer._click.globals import get_current_context
+except ImportError:  # Typer releases before the bundled Click boundary.
+    from click import get_current_context
 
 APPROVAL_HEADER = "Solwyn-Approval"
 APPROVAL_POLL_SECONDS = 3.0
@@ -31,7 +33,6 @@ _NO_APPROVAL_ROUTE = re.compile(
     r"|cli/credentials(/[^/]+)?"
     r")"
 )
-_PREPARED_PREFIX = "approval_request:"
 
 
 def may_need_approval(method: str, path: str) -> bool:
@@ -43,67 +44,6 @@ def may_need_approval(method: str, path: str) -> bool:
         and route.startswith("api/v1/")
         and not _NO_APPROVAL_ROUTE.fullmatch(route)
     )
-
-
-class _PreparedChange(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    method: str
-    path: str
-    raw_path: str
-    content_type: str | None
-    body: str
-
-
-def remember_change(approval_id: str, request: httpx.Request) -> None:
-    """Keep the exact request an approval was bound to, so a retry re-sends it.
-
-    Bodies can hold secrets and generated values (request IDs, relative times),
-    so they go to the keychain. Best effort: without it a retry rebuilds.
-    """
-    prepared = _PreparedChange(
-        method=request.method,
-        path=request.url.path,
-        raw_path=request.url.raw_path.decode("latin-1"),
-        content_type=request.headers.get("Content-Type"),
-        body=base64.b64encode(request.read()).decode("ascii"),
-    )
-    try:
-        auth._set_password(_PREPARED_PREFIX + approval_id, prepared.model_dump_json())
-    except auth.CredentialStorageError:
-        pass
-
-
-def recall_change(approval_id: str, request: httpx.Request) -> httpx.Request | None:
-    """Return the remembered request for this approval if it is the same change."""
-    available, raw = auth._get_password(_PREPARED_PREFIX + approval_id)
-    if not available or raw is None:
-        return None
-    try:
-        prepared = _PreparedChange.model_validate_json(raw)
-        body = base64.b64decode(prepared.body, validate=True)
-    except (ValidationError, ValueError):
-        return None
-    if prepared.method != request.method or prepared.path != request.url.path:
-        return None
-    headers = request.headers.copy()
-    if prepared.content_type is None:
-        headers.pop("Content-Type", None)
-    else:
-        headers["Content-Type"] = prepared.content_type
-    headers.pop("Content-Length", None)
-    return httpx.Request(
-        request.method,
-        request.url.copy_with(raw_path=prepared.raw_path.encode("latin-1")),
-        headers=headers,
-        content=body,
-        extensions=request.extensions,
-    )
-
-
-def forget_change(approval_id: str) -> None:
-    """Drop a remembered request. Best effort."""
-    auth._delete_password(_PREPARED_PREFIX + approval_id)
 
 
 def default_wait_seconds() -> int:
@@ -129,8 +69,10 @@ class ApprovalSettings:
     approval_id: str | None = None
     write: Callable[[str], None] = field(default=_write_stderr)
     approval_used: bool = False
-    # Keep a timed-out change in the keychain for a later --approval retry.
-    remember: bool = False
+    # Generated values a re-run must repeat, keyed by parameter name, and notes
+    # for inputs the CLI never repeats itself (secrets read from stdin).
+    pins: dict[str, str] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
 
     def take_approval_id(self) -> str | None:
         """Return the --approval ID once, for the first non-GET request."""
@@ -164,3 +106,92 @@ def approval_settings(settings: ApprovalSettings | None) -> Iterator[None]:
         yield
     finally:
         _SETTINGS.reset(token)
+
+
+def pin_retry_value(name: str, value: str) -> None:
+    """Make the printed retry command repeat a value this run generated."""
+    settings = current_settings()
+    if settings is not None:
+        settings.pins[name] = value
+
+
+def add_retry_note(note: str) -> None:
+    """Tell the user how to supply an input the retry command cannot carry."""
+    settings = current_settings()
+    if settings is not None and note not in settings.notes:
+        settings.notes.append(note)
+
+
+def _option_text(value: object) -> str:
+    if isinstance(value, Enum):
+        return str(value.value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _render_params(
+    context: object, pins: Mapping[str, str], skip: set[str]
+) -> list[str]:
+    options: list[str] = []
+    arguments: list[str] = []
+    for param in context.command.params:  # type: ignore[attr-defined]
+        name = param.name
+        if name in skip:
+            continue
+        if name in pins:
+            value: object = pins[name]
+        else:
+            source = context.get_parameter_source(name)  # type: ignore[attr-defined]
+            if source is None or source.name != "COMMANDLINE":
+                continue
+            value = context.params.get(name)  # type: ignore[attr-defined]
+        if getattr(param, "param_type_name", "") != "option":
+            values = value if isinstance(value, (list, tuple)) else [value]
+            arguments += [_option_text(item) for item in values]
+            continue
+        flag = max(
+            (opt for opt in param.opts if opt.startswith("--")),
+            key=len,
+            default=param.opts[0],
+        )
+        if getattr(param, "is_flag", False):
+            if value:
+                options.append(flag)
+            elif param.secondary_opts:
+                options.append(param.secondary_opts[0])
+            continue
+        values = value if param.multiple else [value]
+        for item in values or ():
+            options += [flag, _option_text(item)]
+    return options + arguments
+
+
+def retry_argv(approval_id: str) -> list[str] | None:
+    """Rebuild this invocation as an exact re-run that carries the approval.
+
+    Only values the user typed, plus pinned generated values, are repeated, so
+    the re-run rebuilds byte-identical requests. Nothing is stored.
+    """
+    settings = current_settings()
+    try:
+        context = get_current_context()
+    except RuntimeError:
+        return None
+    chain = []
+    while context is not None:
+        chain.append(context)
+        context = context.parent
+    chain.reverse()
+    pins = settings.pins if settings is not None else {}
+    argv = ["solwyn", "--approval", approval_id]
+    argv += _render_params(chain[0], {}, {"approval", "approval_wait", "version"})
+    for context in chain[1:]:
+        argv.append(context.info_name)
+        argv += _render_params(context, pins, set())
+    return argv
+
+
+def retry_command(argv: list[str]) -> str:
+    """Return the POSIX shell form of a retry command."""
+    return shlex.join(argv)

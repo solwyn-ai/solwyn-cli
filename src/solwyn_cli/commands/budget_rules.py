@@ -22,6 +22,7 @@ from solwyn_cli._vendor.wire import (
     SnoozeRequest,
     _BudgetRule,
 )
+from solwyn_cli.approvals import pin_retry_value
 from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
@@ -32,7 +33,7 @@ from solwyn_cli.commands.budget import (
     request_budget_status,
     request_budget_update,
 )
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import APPROVAL_USED_HINT, ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
@@ -173,7 +174,8 @@ def _client(
                 code=error.code,
                 message=error.message,
                 hint="Unknown notification channel IDs: "
-                + ", ".join(str(i) for i in ids),
+                + ", ".join(str(i) for i in ids)
+                + (f" {APPROVAL_USED_HINT}" if error.approval_spent else ""),
                 detail=error.detail,
             )
         exit_with_error(context, error)
@@ -537,7 +539,10 @@ def parse_until(value: str) -> datetime:
     duration = re.fullmatch(r"\+(\d+)([mhd])", value)
     if duration:
         seconds = int(duration[1]) * {"m": 60, "h": 3600, "d": 86400}[duration[2]]
-        return datetime.now(UTC) + timedelta(seconds=seconds)
+        until = datetime.now(UTC) + timedelta(seconds=seconds)
+        # An approval retry must repeat the absolute time, not the duration.
+        pin_retry_value("until", until.isoformat())
+        return until
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("Snooze time must include a timezone.")

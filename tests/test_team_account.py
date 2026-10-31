@@ -5,7 +5,7 @@ import json
 import httpx
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import APPROVAL_USED_HINT, ApiError
 from solwyn_cli.commands import _team, invite
 
 import pytest
@@ -937,6 +937,50 @@ def test_rename_pending_approval_keeps_the_continuation_and_exits_six(
     assert result.exit_code == 6, result.output
     error = json.loads(result.stderr.splitlines()[-1])
     assert error["code"] == "approval_pending"
-    assert f"--approval {APPROVAL_ID}" in error["message"]
+    assert error["detail"]["retry_argv"][:3] == ["solwyn", "--approval", APPROVAL_ID]
+    assert error["detail"]["retry_command"] in error["hint"]
     assert error["detail"]["approval_id"] == APPROVAL_ID
     assert error["detail"]["approval_url"] == APPROVAL_URL
+
+
+# Review round 2, item 6: a spent approval stays visible through the adapter.
+
+
+def test_rename_handler_failure_after_explicit_approval_says_it_was_spent(
+    mock_team, monkeypatch
+):
+    fake_keychain(monkeypatch)
+    mock_team[0].extend(
+        [
+            ok(ACCOUNT),
+            httpx.Response(
+                422, json={"detail": {"code": "validation_error", "message": "Bad."}}
+            ),
+        ]
+    )
+    result = _rename("--approval", APPROVAL_ID)
+    assert result.exit_code == 1, result.output
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "team_request_failed"
+    assert error["hint"].endswith(APPROVAL_USED_HINT)
+
+
+def test_rename_handler_failure_after_automatic_approval_says_it_was_spent(
+    mock_team, monkeypatch
+):
+    fake_keychain(monkeypatch)
+    mock_team[0].extend(
+        [
+            ok(ACCOUNT),
+            approval_required(),
+            ok(approval_body("approved")),
+            httpx.Response(
+                422, json={"detail": {"code": "validation_error", "message": "Bad."}}
+            ),
+        ]
+    )
+    result = _rename()
+    assert result.exit_code == 1, result.output
+    assert mock_team[1][-1].headers["Solwyn-Approval"] == APPROVAL_ID
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["hint"].endswith(APPROVAL_USED_HINT)

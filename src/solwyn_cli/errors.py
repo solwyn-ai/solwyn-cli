@@ -182,6 +182,8 @@ class ApiError(RuntimeError):
         self.retry_after = retry_after
         # Whole-call evidence supplied by the client, never a public error field.
         self.ingest_outcome_uncertain = ingest_outcome_uncertain
+        # Set when the change failed after the gate consumed its approval.
+        self.approval_spent = False
 
 
 def _safe_cta_path(value: object) -> str | None:
