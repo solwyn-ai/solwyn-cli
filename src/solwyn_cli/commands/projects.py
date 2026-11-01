@@ -424,7 +424,7 @@ def create_project(
         one_time_secret=OneTimeSecretPanel(
             title="One-time project key",
             value=created.key,
-            footer=export_line(raw_key),
+            footer=export_line(raw_key, command_context(context).api_url),
         ),
     )
 

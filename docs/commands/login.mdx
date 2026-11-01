@@ -160,8 +160,12 @@ project key (`api_key`) in the system keyring under the service `solwyn-cli`.
 credential, it checks whether they are still there and says so once: run
 `solwyn login` again for the login, and `solwyn login --with-key` again (or set
 `SOLWYN_API_KEY`) for the key. Nothing is checked in `file` mode or without a
-terminal. `solwyn login` deletes them where the keyring is in use, and
-`solwyn logout` always deletes them.
+terminal. Only `solwyn logout` deletes them: a 0.3 project key is not tied to
+an API URL and was shown only once, so no other command removes it. After a
+login where the keychain is the store in use, `solwyn login` says when one is
+still stored: "A credential saved by Solwyn CLI 0.3 is still stored in <the
+keychain>. Run solwyn logout to clear it (this also logs you out of this
+API)."
 
 ## Logins in CI and cloud agents: `SOLWYN_TOKEN`
 
@@ -221,8 +225,9 @@ both the credentials file and the keychain without changing anything, revokes
 every login it can read on the server (one attempt each, 5 seconds), and only
 then deletes this API's entries and the 0.3.0 entries from both stores, all
 while holding the credential lock. If it is stopped before the delete, every
-token it had not yet revoked is still stored. It reports each store with a
-`status`:
+token it had not yet revoked is still stored. Each store's `legacy_cleared`
+lists the 0.3 entries it found and deleted (the table shows a "Solwyn CLI 0.3
+credentials" row). It reports each store with a `status`:
 
 - `cleared`: nothing of this API is left there.
 - `unavailable` ("not checked" in the table): no keyring backend is usable from

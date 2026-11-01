@@ -290,6 +290,7 @@ CLASSIFIED_NOT_RESPONSES = {
     "solwyn_cli.commands.budget_rules:BudgetRulesData": _CLI_OUTPUT,
     "solwyn_cli.commands.credentials:_RevokeData": _CLI_OUTPUT,
     "solwyn_cli.commands.doctor:_AuthenticatedProbe": _CLI_OUTPUT,
+    "solwyn_cli.commands.doctor:_ApiUrl": _CLI_OUTPUT,
     "solwyn_cli.commands.doctor:_Diagnostic": _CLI_OUTPUT,
     "solwyn_cli.commands.doctor:_DoctorData": _CLI_OUTPUT,
     "solwyn_cli.commands.doctor:_ReadinessCheckDiagnostic": _CLI_OUTPUT,

@@ -18,13 +18,27 @@ solwyn --project proj_example keys revoke --key-id key_example --yes
 solwyn keys env
 ```
 
-`keys env` reads the project key stored for this API and prints one line to
-stdout, nothing to stderr, so `eval "$(solwyn keys env)"` exports it for the
+`keys env` reads the project key stored for this API and prints export lines
+to stdout, nothing to stderr, so `eval "$(solwyn keys env)"` exports it for the
 SDK in the current shell:
 
 ```text
 export SOLWYN_API_KEY=sk_proj_0123...cdef
 ```
+
+A key works only against the API that issued it. When the effective API URL
+(from `--api-url`, `SOLWYN_API_URL` or config) is not the default
+`https://api.solwyn.ai`, `keys env` also exports it, so the key is never sent
+to production from a shell that lacks `SOLWYN_API_URL`:
+
+```text
+export SOLWYN_API_KEY=sk_proj_0123...cdef
+export SOLWYN_API_URL=https://api.staging.example.test
+```
+
+With `--json`, `export` holds the same lines and `api_url` holds the exported
+URL, or `null` on the default API. The one-time key footer of `projects create`
+follows the same rule.
 
 It exits 3 with `authentication_required` when no key is stored; it never reads
 `SOLWYN_API_KEY`. The CLI never writes `.env` or any other file containing the
@@ -57,7 +71,7 @@ Metadata help never reveals existing key material.
 
 ## `solwyn keys env`
 
-Print an export line for the stored project key.
+Print export lines for the stored project key and its API URL.
 
 ```console
 Usage: solwyn keys env [OPTIONS]
@@ -68,7 +82,8 @@ Endpoint: local credential store read
 Auth: local (stored project key)
 Exit codes: 0 success; 2 usage; 3 no stored project key
 JSON schema: solwyn.keys-env.v1
-Prints one export line to stdout and nothing to stderr, so eval "$(solwyn keys env)" works.
+Prints export lines to stdout and nothing to stderr, so eval "$(solwyn keys env)" works.
+Exports SOLWYN_API_URL too when the API URL is not the default.
 Never writes .env or any other file.
 ```
 

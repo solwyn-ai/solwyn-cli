@@ -321,7 +321,7 @@ def test_file_mode_never_touches_the_keyring(
     auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
     auth.store_project_key(VALID_KEY, api_url=PROD)
     assert auth.resolve_credential({}, api_url=PROD) is not None
-    assert auth.delete_legacy_entries() is False
+    assert auth.legacy_entries_note() is None
     # Logout is the one exception: it looks in both stores (see the logout tests).
 
 
@@ -334,7 +334,7 @@ def test_linux_auto_never_touches_the_keyring_for_credentials(
 
     auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
     assert auth.resolve_credential({}, api_url=PROD) is not None
-    assert auth.delete_legacy_entries() is False
+    assert auth.legacy_entries_note() is None
     assert auth.legacy_login_notice() is None
 
 

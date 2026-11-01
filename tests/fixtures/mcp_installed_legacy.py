@@ -76,7 +76,7 @@ async def main() -> None:
                 hello = await client.initialize()
                 assert hello.protocolVersion == "2025-11-25"
                 assert hello.serverInfo.name == "solwyn"
-                assert hello.serverInfo.version == "0.4.0"
+                assert hello.serverInfo.version == "0.4.1"
                 catalog = await client.list_tools()
                 assert len(catalog.tools) == len(READ_TOOL_NAMES)
                 assert {tool.name for tool in catalog.tools} == READ_TOOL_NAMES

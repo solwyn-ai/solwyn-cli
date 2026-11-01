@@ -1,5 +1,6 @@
 Check                                                                     Status
 Overall — One or more diagnostics need attention.                       degraded
+API URL: https://api.solwyn.ai (default)                                    info
 Config — Configuration loaded.                                                ok
 Credentials: Stored credential found in file (/test/credentials.json).        ok
 Readiness — HTTP 503; service solwyn-api                                degraded

@@ -10,5 +10,5 @@ from solwyn_cli.main import app
 
 def test_package_exposes_versioned_typer_app() -> None:
     """The packaged CLI foundation is importable by CI."""
-    assert __version__ == version("solwyn-cli") == "0.4.0"
+    assert __version__ == version("solwyn-cli") == "0.4.1"
     assert isinstance(app, Typer)

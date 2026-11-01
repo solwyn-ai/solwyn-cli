@@ -8,8 +8,45 @@ from typing import Literal
 import typer
 from pydantic import BaseModel, ConfigDict
 
-from solwyn_cli.config import Config, ConfigLoadError, load_config
+from solwyn_cli.config import DEFAULT_API_URL, Config, ConfigLoadError, load_config
 from solwyn_cli.output import OutputEngine, OutputFormat, resolve_output_format
+
+
+ApiUrlSource = Literal["cli", "environment", "config", "default", "fallback"]
+
+# How each source is named to people (doctor, config list).
+API_URL_SOURCE_LABELS: dict[str, str] = {
+    "cli": "from --api-url",
+    "environment": "from SOLWYN_API_URL",
+    "config": "from config",
+    "default": "default",
+    "fallback": "default; config could not be loaded",
+}
+
+
+def resolve_api_url(
+    *,
+    flag: str | None,
+    environ: Mapping[str, str],
+    config: Config,
+    config_load_failed: bool = False,
+) -> tuple[str, ApiUrlSource]:
+    """Return the effective API URL and its source: flag, environment, config.
+
+    ``default`` means nothing chose a URL (or config holds the default one);
+    ``fallback`` means config could not be loaded, so the default applies.
+    """
+    environment_api_url = environ.get("SOLWYN_API_URL")
+    if flag:
+        url, source = flag, "cli"
+    elif environment_api_url:
+        url, source = environment_api_url, "environment"
+    elif config_load_failed:
+        url, source = config.api_url, "fallback"
+    else:
+        url = config.api_url
+        source = "default" if url == DEFAULT_API_URL else "config"
+    return Config(api_url=url).api_url, source  # type: ignore[return-value]
 
 
 class CommandContext(BaseModel):
@@ -18,7 +55,7 @@ class CommandContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     api_url: str
-    api_url_source: Literal["cli", "environment", "config", "fallback"] = "config"
+    api_url_source: ApiUrlSource = "config"
     config_load_failed: bool = False
     project: str | None
     project_source: Literal["cli", "environment", "config", "none"] = "none"
@@ -47,17 +84,12 @@ def resolve_command_context(
             raise
         config_load_failed = True
         config = Config()
-    environment_api_url = environment.get("SOLWYN_API_URL")
-    if api_url:
-        resolved_api_url = api_url
-        api_url_source: Literal["cli", "environment", "config", "fallback"] = "cli"
-    elif environment_api_url:
-        resolved_api_url = environment_api_url
-        api_url_source = "environment"
-    else:
-        resolved_api_url = config.api_url
-        api_url_source = "fallback" if config_load_failed else "config"
-    validated_url = Config(api_url=resolved_api_url).api_url
+    validated_url, api_url_source = resolve_api_url(
+        flag=api_url,
+        environ=environment,
+        config=config,
+        config_load_failed=config_load_failed,
+    )
     return CommandContext(
         api_url=validated_url,
         api_url_source=api_url_source,

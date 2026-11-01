@@ -1,5 +1,6 @@
 """Commands for inspecting and updating local non-secret configuration."""
 
+import os
 from contextlib import nullcontext
 from typing import Annotated
 
@@ -17,6 +18,7 @@ from solwyn_cli.config import (
 )
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import _terminal_safe
+from solwyn_cli.runtime import API_URL_SOURCE_LABELS, resolve_api_url
 
 
 app = typer.Typer(
@@ -120,9 +122,19 @@ def set_config_value(
         schema="none (plain text key/value list)",
     ),
 )
-def list_config_values() -> None:
-    """Print every allowlisted configuration value in deterministic order."""
+def list_config_values(context: typer.Context) -> None:
+    """Print every allowlisted value; api_url shows the effective URL and source."""
     config = _load_config_for_command()
+    try:
+        api_url, source = resolve_api_url(
+            flag=context.find_root().params.get("api_url"),
+            environ=os.environ,
+            config=config,
+        )
+    except ValidationError:
+        raise typer.BadParameter("Invalid API URL.", param_hint="api-url") from None
     for key in sorted(CONFIG_KEYS):
         value = getattr(config, key)
+        if key == "api_url":
+            value = f"{api_url} ({API_URL_SOURCE_LABELS[source]})"
         typer.echo(f"{key}={'' if value is None else value}")

@@ -28,6 +28,7 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.config import DEFAULT_API_URL
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -428,9 +429,16 @@ def revoke_key(
     )
 
 
-def export_line(project_key: str) -> str:
-    """Return the shell line that hands a project key to the SDK."""
-    return f"export SOLWYN_API_KEY={shlex.quote(project_key)}"
+def export_line(project_key: str, api_url: str) -> str:
+    """Return the shell lines that hand a project key to the SDK.
+
+    A key belongs to one API. Off the default API the URL is exported too, so
+    the key is never sent to production from a shell without SOLWYN_API_URL.
+    """
+    line = f"export SOLWYN_API_KEY={shlex.quote(project_key)}"
+    if api_url == DEFAULT_API_URL:
+        return line
+    return f"{line}\nexport SOLWYN_API_URL={shlex.quote(api_url)}"
 
 
 @app.command(
@@ -441,13 +449,14 @@ def export_line(project_key: str) -> str:
         exits="0 success; 2 usage; 3 no stored project key",
         schema="solwyn.keys-env.v1",
         guidance=(
-            'Prints one export line to stdout and nothing to stderr, so eval "$(solwyn keys env)" works.',
+            'Prints export lines to stdout and nothing to stderr, so eval "$(solwyn keys env)" works.',
+            "Exports SOLWYN_API_URL too when the API URL is not the default.",
             "Never writes .env or any other file.",
         ),
     ),
 )
 def env_key(context: typer.Context) -> None:
-    """Print an export line for the stored project key."""
+    """Print export lines for the stored project key and its API URL."""
     try:
         stored = auth.stored_project_key()
     except auth.CredentialStorageError as error:
@@ -471,11 +480,16 @@ def env_key(context: typer.Context) -> None:
             ),
             semantic=ErrorSemantic.AUTH,
         )
-    line = export_line(stored.bearer_value())
+    api_url = command_context(context).api_url
+    line = export_line(stored.bearer_value(), api_url)
     if command_context(context).output_format.value == "json":
         output_engine(context).write_success(
             schema="solwyn.keys-env.v1",
-            data={"name": "SOLWYN_API_KEY", "export": line},
+            data={
+                "name": "SOLWYN_API_KEY",
+                "export": line,
+                "api_url": None if api_url == DEFAULT_API_URL else api_url,
+            },
         )
         return
     typer.echo(line)
