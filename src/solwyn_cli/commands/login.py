@@ -753,6 +753,9 @@ def logout(context: typer.Context) -> None:
         _note(REVOKE_FAILED_NOTE)
     if any(item.status == "unavailable" for item in report.stores):
         _note(UNCHECKED_KEYRING_NOTE)
+    for item in report.stores:
+        if item.legacy_kept:
+            _note(auth.legacy_kept_note(item.location, item.legacy_kept))
     if auth.TOKEN_ENV in os.environ:
         _note(
             "SOLWYN_TOKEN is set in this environment. Logout does not revoke it; "
@@ -771,6 +774,7 @@ def logout(context: typer.Context) -> None:
                 "cleared": item.cleared,
                 "kept": list(item.kept),
                 "legacy_cleared": list(item.legacy_cleared),
+                "legacy_kept": list(item.legacy_kept),
             }
             for item in report.stores
         ],
@@ -804,6 +808,14 @@ def logout(context: typer.Context) -> None:
                     )
                     for item in report.stores
                     if item.legacy_cleared
+                ),
+                *(
+                    (
+                        f"Solwyn CLI 0.3 credentials ({item.location})",
+                        f"kept ({', '.join(item.legacy_kept)})",
+                    )
+                    for item in report.stores
+                    if item.legacy_kept
                 ),
                 *(
                     (("login", "revoked" if report.revoked else "not revoked"),)

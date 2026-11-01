@@ -613,6 +613,9 @@ class Cleared:
     kept: tuple[str, ...] = ()
     # 0.3 (and earlier) keyring entries this logout found and deleted.
     legacy_cleared: tuple[str, ...] = ()
+    # 0.3 entries it could not delete. They never fail logout: another app
+    # (an older Python) may own the item, so only the user can remove it.
+    legacy_kept: tuple[str, ...] = ()
 
     @property
     def cleared(self) -> bool:
@@ -1000,6 +1003,7 @@ def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
             failed = True
             kept.append(entry)
     legacy: list[str] = []
+    legacy_kept: list[str] = []
     for entry in LEGACY_ENTRIES:
         try:
             present = keyring_store.get_raw(entry) is not None
@@ -1008,14 +1012,54 @@ def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
         try:
             keyring_store.delete_raw(entry)
         except StoreUnavailableError:
-            failed = True
+            # Not this API's credential, so not a failed logout: an item an
+            # older binary created may need a confirmation macOS cannot show
+            # here. Reported as kept, with how to remove it.
+            legacy_kept.append(entry)
         else:
             if present:
                 legacy.append(entry)
     status: Literal["cleared", "unreachable", "unread"] = (
         "unreachable" if failed else "unread" if kept else "cleared"
     )
-    return Cleared("keyring", scan.location, status, tuple(kept), tuple(legacy))
+    if failed:
+        # This API's own entries failed too: the keychain as a whole needs
+        # fixing, and logout fails for that. Listing every 0.3 name it could
+        # not reach (most never existed) would only add noise.
+        legacy_kept = []
+    return Cleared(
+        "keyring",
+        scan.location,
+        status,
+        tuple(kept),
+        tuple(legacy),
+        tuple(legacy_kept),
+    )
+
+
+def legacy_kept_note(location: str, entries: tuple[str, ...]) -> str:
+    """Say how to remove 0.3 keyring items logout could not delete."""
+    family = credential_store.platform_name()
+    if family == "macos":
+        how = (
+            "Delete the solwyn-cli item in Keychain Access, or run solwyn logout "
+            "again from Terminal on this Mac's desktop, where macOS can ask for "
+            "permission."
+        )
+    elif family == "windows":
+        how = (
+            "Delete the solwyn-cli entries in Credential Manager, or run solwyn "
+            "logout again from a desktop session."
+        )
+    else:
+        how = (
+            "Delete the solwyn-cli items in your keyring manager (for example "
+            "Passwords and Keys), or run solwyn logout again from a desktop session."
+        )
+    return (
+        "Logout could not delete a credential saved by Solwyn CLI 0.3 "
+        f"({', '.join(entries)}) from {location}. {how}"
+    )
 
 
 def logout_everywhere(

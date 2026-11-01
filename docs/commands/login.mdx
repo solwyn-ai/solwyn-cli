@@ -226,8 +226,16 @@ every login it can read on the server (one attempt each, 5 seconds), and only
 then deletes this API's entries and the 0.3.0 entries from both stores, all
 while holding the credential lock. If it is stopped before the delete, every
 token it had not yet revoked is still stored. Each store's `legacy_cleared`
-lists the 0.3 entries it found and deleted (the table shows a "Solwyn CLI 0.3
-credentials" row). It reports each store with a `status`:
+lists the 0.3 entries it found and deleted, and `legacy_kept` the ones it could
+not delete (the table shows a "Solwyn CLI 0.3 credentials" row). A 0.3 entry
+that cannot be deleted never fails logout: on macOS the item may belong to the
+older Python that created it, and deleting it needs a confirmation that macOS
+cannot show over SSH or to an agent. Logout says so on stderr, with how to
+remove it: delete the `solwyn-cli` item in Keychain Access (macOS) or Credential
+Manager (Windows), or run `solwyn logout` again from a desktop session, where
+the system can ask. If this API's own entries could not be deleted either, the
+store is `unreachable` and its 0.3 entries are not listed. It reports each store
+with a `status`, which covers this API's entries only:
 
 - `cleared`: nothing of this API is left there.
 - `unavailable` ("not checked" in the table): no keyring backend is usable from

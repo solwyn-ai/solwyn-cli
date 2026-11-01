@@ -1,1 +1,1 @@
-{"schema":"solwyn.logout.v1","cleared":true,"revoked":null,"logins_found":0,"stores":[{"store":"file","location":"/test/credentials.json","status":"cleared","cleared":true,"kept":[],"legacy_cleared":[]}]}
+{"schema":"solwyn.logout.v1","cleared":true,"revoked":null,"logins_found":0,"stores":[{"store":"file","location":"/test/credentials.json","status":"cleared","cleared":true,"kept":[],"legacy_cleared":[],"legacy_kept":[]}]}

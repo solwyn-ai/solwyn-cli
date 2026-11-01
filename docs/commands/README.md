@@ -1,6 +1,6 @@
 # Command reference
 
-These references describe solwyn-cli 0.4.1. Earlier releases lack some of these commands,
+These references describe solwyn-cli 0.4.2. Earlier releases lack some of these commands,
 and 0.3.0 and older log in with a terminal password. Use installed `--help` and MCP
 discovery for an installed version's exact surface.
 Global selection/output flags precede commands. Core authorizes every request.

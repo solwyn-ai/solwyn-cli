@@ -184,9 +184,15 @@ def _fsync_parent_directory(path: Path) -> None:
 
 
 def save_config(config: Config, *, omit_default_api_url: bool = False) -> None:
-    """Atomically persist only modeled, non-null settings."""
+    """Atomically persist only modeled, non-null settings that were set.
+
+    Defaults are never written: only keys read from the file or set by this
+    call (``model_fields_set``) are saved, so a default stays a default.
+    """
     path = get_config_path()
-    values = config.model_dump(include=CONFIG_KEYS, exclude_none=True)
+    values = config.model_dump(
+        include=CONFIG_KEYS, exclude_none=True, exclude_unset=True
+    )
     if omit_default_api_url and config.api_url == Config().api_url:
         values.pop("api_url", None)
     if values.get("credential_store") == "auto":
@@ -245,8 +251,9 @@ def update_config_values(
     path = get_config_path()
     with _config_lock(path):
         current = load_config()
+        # Only saved keys plus the new ones, so no default is materialized.
         updated = Config.model_validate(
-            {**current.model_dump(include=CONFIG_KEYS), **values}
+            {**current.model_dump(include=CONFIG_KEYS, exclude_unset=True), **values}
         )
         save_config(updated, omit_default_api_url=omit_default_api_url)
     return updated
