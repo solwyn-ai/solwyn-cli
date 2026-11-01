@@ -409,7 +409,7 @@ def test_pending_store_failure_stops_before_polling(
 ) -> None:
     fake = server()
 
-    def fail(pending: auth.PendingDevice) -> None:
+    def fail(pending: auth.PendingDevice, **kwargs: object) -> None:
         raise auth.CredentialStorageError("Could not update credentials.")
 
     monkeypatch.setattr(auth, "store_pending_device", fail)

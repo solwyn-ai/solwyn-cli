@@ -268,6 +268,7 @@ def _start(
     scope: str,
     label: str,
     persist: bool = True,
+    store: StoreMode | None = None,
 ) -> PendingDevice:
     try:
         authorization = start_device_authorization(
@@ -298,7 +299,7 @@ def _start(
     )
     if persist:
         try:
-            auth.store_pending_device(pending)
+            auth.store_pending_device(pending, expect_mode=store)
         except CredentialStorageError as error:
             _fail(context, "credential_storage_failed", str(error), error.hint)
     return pending
@@ -347,6 +348,7 @@ def _poll(
     wait_seconds: float,
     poll_first: bool,
     continue_command: str | None,
+    store: StoreMode | None = None,
 ) -> TokenResponse:
     """Poll the token endpoint at the server's interval until a result or the wait ends."""
     started = now()
@@ -375,7 +377,7 @@ def _poll(
                 pending = pending.model_copy(update={"interval": interval})
                 if continue_command is not None:
                     try:
-                        auth.store_pending_device(pending)
+                        auth.store_pending_device(pending, expect_mode=store)
                     except CredentialStorageError as storage_error:
                         # A timed-out keyring write may still land: stop now
                         # rather than keep the lock through the browser wait.
@@ -423,6 +425,7 @@ def _device_token(
     wait_seconds: float | None,
     resume: bool,
     continue_command: str | None,
+    store: StoreMode | None = None,
 ) -> tuple[str, LoginMetadata]:
     """Run the device flow; return the issued token and its metadata."""
     wait = default_wait_seconds() if wait_seconds is None else wait_seconds
@@ -450,6 +453,7 @@ def _device_token(
                 scope=scope,
                 label=default_label() if label is None else _sanitize_label(label),
                 persist=continue_command is not None,
+                store=store,
             )
         _print_instructions(pending, waiting=wait > 0 or resume)
         token = _poll(
@@ -459,6 +463,7 @@ def _device_token(
             wait_seconds=wait,
             poll_first=resume,
             continue_command=continue_command,
+            store=store,
         )
     issued = token.solwyn_credential
     meta = LoginMetadata(
@@ -484,7 +489,16 @@ def device_login(
     continue_command: str = "solwyn login --continue",
     store: StoreMode | None = None,
 ) -> LoginCredential:
-    """Run the device flow and store the resulting CLI login."""
+    """Run the device flow and store the resulting CLI login.
+
+    The store is resolved once, here, and pinned: the pending code and the
+    final login go to that store, and if the selector changes during the
+    browser wait the final write fails and the issued login is revoked.
+    """
+    try:
+        pinned = store or auth.store_mode()
+    except CredentialStorageError as error:
+        _fail(context, "credential_storage_failed", str(error), error.hint)
     token, meta = _device_token(
         context,
         scope=scope,
@@ -492,9 +506,10 @@ def device_login(
         wait_seconds=wait_seconds,
         resume=resume,
         continue_command=continue_command,
+        store=pinned,
     )
     try:
-        credential = auth.store_login(token, meta, mode=store)
+        credential = auth.store_login(token, meta, expect_mode=pinned)
     except Exception as error:  # noqa: BLE001 - never leave an issued login live.
         # The server issued a credential we cannot keep; do not leave it live.
         revoked = revoke_token(command_context(context).api_url, token)
@@ -505,7 +520,7 @@ def device_login(
             str(error) if storage else "The new login could not be stored.",
             (error.hint if storage else None) if revoked else UNSTORED_LOGIN_HINT,
         )
-    auth.delete_legacy_entries(store)
+    auth.delete_legacy_entries(pinned)
     if note := credential_saved_note(credential):
         _note(note)
     return credential

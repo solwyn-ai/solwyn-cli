@@ -64,25 +64,30 @@ each API keeps its own login and key.
 | Linux (desktop, headless, WSL, containers, CI) | The credentials file. |
 
 The credentials file is `credentials.json` in the user data directory:
-`~/.local/share/solwyn/` on Linux (`$XDG_DATA_HOME/solwyn/` when set),
+`~/.local/share/solwyn/` on Linux (`$XDG_DATA_HOME/solwyn/` when set to an
+absolute path; a relative `XDG_*_HOME` is ignored, as the XDG spec requires),
 `~/Library/Application Support/solwyn/` on macOS, and `%LOCALAPPDATA%\solwyn\` on
 Windows. `SOLWYN_CREDENTIALS_FILE` (an absolute path) overrides it. On Linux and
 macOS the directory is `0700` and the file `0600`, written atomically. The CLI
 refuses to read a file that other users can read, or that another user owns, and
-says how to fix it (`chmod 600 <path>`). It also refuses a file that is not a
-valid Solwyn credentials document, naming the file; every login, pending login
+says how to fix it (`chmod 600 <path>`). It refuses anything that is not a
+regular file (a FIFO or device is refused without waiting on it), and a file
+that is not a valid Solwyn credentials document, naming the file; every login, pending login
 and project key in it must be complete. A stored login that is not valid, in
 the file or the keychain, is an error, never skipped in favor of a stored
 project key.
 
 Every read and change of stored credentials holds one per-user lock,
 `credentials.lock` in the user state directory (`~/.local/state/solwyn/` on
-Linux, `$XDG_STATE_HOME/solwyn/` when set), whatever `SOLWYN_CREDENTIALS_FILE`
-says. Reads share it; changes hold it alone, so two `solwyn` processes never
+Linux, `$XDG_STATE_HOME/solwyn/` when set to an absolute path), whatever
+`SOLWYN_CREDENTIALS_FILE` says. Reads share it; changes hold it alone, so two `solwyn` processes never
 interleave. A command that waits more than 10 seconds for it fails with a
 storage error. If a keychain write does not finish within 5 seconds, the
 command fails and the process exits still holding the lock, so the unfinished
-write can never land after another process has moved on.
+write can never land after another process has moved on. The keychain may have
+kept the value before it stopped answering, so that error does not say nothing
+was stored: it says the write may or may not have been stored and to run
+`solwyn logout`. A browser login it was storing is revoked.
 
 The file is plaintext protected only by those permissions. Anything running as
 your user can read it, including backup tools and an AI agent's file-reading
@@ -112,9 +117,17 @@ that store; nothing is copied between stores. A `--store` that conflicts with
 
 Every command reads and writes exactly one store: `SOLWYN_CREDENTIAL_STORE`,
 else `credential_store` in config, else `auto`. Pending logins (`--wait 0`) live
-there too, so `solwyn login --continue` always finds them.
+there too, so `solwyn login --continue` always finds them. `solwyn config set
+credential_store` changes the selector under the credential lock, like
+`--store`. A browser login resolves its store once, when it starts. If the
+selector changes before the login is stored (for example from another terminal
+during the browser wait), the command exits 3 with `credential_storage_failed`
+("The credential store changed from <old> to <new> while this login was in
+progress. Nothing was stored."), and the new login is revoked.
 
-A failed keychain write never falls back to the file, in any mode. The command
+A failed keychain write never falls back to the file, in any mode. A write
+counts only once the keychain returns the new value on a read (some backends,
+such as KWallet, report success for a write they did not keep). The command
 exits 3 with `credential_storage_failed`, names the keychain and why, and
 stores nothing:
 
@@ -212,15 +225,17 @@ token it had not yet revoked is still stored. It reports each store with a
   Logout still exits 0 and says so on stderr: "No system keyring is reachable
   from this session, so it was not checked. If you used --store keyring in a
   desktop session, run solwyn logout there too."
-- `unreachable`: the keyring did not work: locked, denied, refused a delete (a
-  delete is only trusted once a read finds the entry gone), no session bus in
-  this process for a resolved Secret Service, or no answer within 5 seconds.
-  When the keyring is the store in use (`keyring`, or `auto` on macOS and
-  Windows), no usable backend is also `unreachable`, and every other command
-  fails with `credential_storage_failed` too. Its entries were kept.
-- `unread`: an entry exists but could not be read (for example a login entry
-  the keychain will not return, or a malformed credentials file). It is never
-  deleted or revoked; `kept` names it.
+- `unreachable`: a delete failed. Every delete is checked by reading the entry
+  again, so this includes a delete the store refused, one that did not answer
+  within 5 seconds, and one that returned while the entry is still there. Also
+  `unreachable`: no usable keyring backend while the keyring is the store in
+  use (`keyring`, or `auto` on macOS and Windows); every other command then
+  fails with `credential_storage_failed` too. What was not deleted was kept.
+- `unread`: an entry could not be read, so it is never deleted or revoked;
+  `kept` names it. In the keychain this covers a locked or denied read, no
+  session bus in this process for a resolved Secret Service, no answer within 5
+  seconds, and a login entry that is not valid; for the file, a malformed or
+  unreadable credentials file.
 
 `cleared` covers only the stores that were checked: it is true when every
 store except an `unavailable` one is `cleared`, and an `unavailable` store's own

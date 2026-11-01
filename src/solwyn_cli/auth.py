@@ -51,8 +51,9 @@ from solwyn_cli.credential_store import (
     STORE_MODES,
     FileStore,
     InsecureFileError,
-    NoKeyringBackendError,
     KeyringStore,
+    KeyringTimeoutError,
+    NoKeyringBackendError,
     MalformedFileError,
     StoreKind,
     StoreMode,
@@ -452,26 +453,52 @@ def _complete(entry: str, value: str) -> bool:
 
 
 def _keyring_write_error(error: StoreUnavailableError) -> KeyringUnavailableError:
-    """A keychain write failed: name the keychain and why; nothing was stored."""
+    """A keychain write failed: name the keychain and why.
+
+    "Nothing was stored" is said only when that is known. A call that timed
+    out may have committed before it stopped answering, so its outcome is
+    unknown and the message says so and points at logout.
+    """
     hint = _keyring_hint()
     if credential_store.stranded():
         hint = f"{credential_store.STRANDED_MESSAGE} {hint}"
+    name = credential_store.keyring_name()
+    if isinstance(error, KeyringTimeoutError):
+        return KeyringUnavailableError(
+            f"Could not confirm the write to {name}: {error} It may or may not "
+            "have been stored. Run solwyn logout to clear this API's stored "
+            "credentials.",
+            hint,
+        )
     return KeyringUnavailableError(
-        f"Could not write to {credential_store.keyring_name()}: {error} Nothing "
-        "was stored.",
-        hint,
+        f"Could not write to {name}: {error} Nothing was stored.", hint
     )
 
 
 def _store(
-    values: Mapping[str, str], *, origin: str, mode: StoreMode | None
+    values: Mapping[str, str],
+    *,
+    origin: str,
+    mode: StoreMode | None,
+    expect_mode: StoreMode | None = None,
 ) -> Written:
     """Write entries to the one store in use. Never deletes, never falls back.
 
     The effective mode is resolved inside the lock, so a concurrent mode change
-    cannot split this write from the reads that follow it.
+    cannot split this write from the reads that follow it. ``expect_mode`` is
+    a store pinned when a command started: if the selector has changed since,
+    nothing is written.
     """
     with _locked():
+        if expect_mode is not None:
+            current = store_mode()
+            if current != expect_mode:
+                raise CredentialStorageError(
+                    f"The credential store changed from {expect_mode} to {current} "
+                    "while this login was in progress. Nothing was stored.",
+                    "Run solwyn login again.",
+                )
+            mode = expect_mode
         if mode is None:
             mode = store_mode()
         if primary_kind(mode) == "file":
@@ -494,6 +521,11 @@ def _store(
         written = Written("keyring", keyring_store.describe())
         _LAST_WRITE.set(written)
         return written
+
+
+def credential_selector_lock() -> Any:
+    """The exclusive credential lock, for changing the store selector."""
+    return _locked()
 
 
 def _locked(*, shared: bool = False) -> Any:
@@ -786,6 +818,7 @@ def store_login(
     *,
     mode: StoreMode | None = None,
     api_url: str | None = None,
+    expect_mode: StoreMode | None = None,
 ) -> LoginCredential:
     """Store a CLI login as one entry, then forget the pending device login."""
     try:
@@ -798,6 +831,7 @@ def store_login(
             {LOGIN_ENTRY: _login_document(credential.bearer_value(), meta)},
             origin=origin,
             mode=mode,
+            expect_mode=expect_mode,
         )
         _forget(PENDING_DEVICE_ENTRY, origin=origin, kind=written.kind)
     _LAST_WRITE.set(written)
@@ -839,12 +873,18 @@ def clear_login(api_url: str | None = None) -> list[Cleared]:
         return [Cleared("keyring", keyring_store.describe())]
 
 
-def store_pending_device(pending: PendingDevice, *, api_url: str | None = None) -> None:
+def store_pending_device(
+    pending: PendingDevice,
+    *,
+    api_url: str | None = None,
+    expect_mode: StoreMode | None = None,
+) -> None:
     """Keep an in-progress device login in the store in use, for --continue."""
     _store(
         {PENDING_DEVICE_ENTRY: pending.model_dump_json()},
         origin=current_origin(api_url),
         mode=None,
+        expect_mode=expect_mode,
     )
 
 
@@ -1028,14 +1068,15 @@ def _legacy_keyring_allowed(mode: StoreMode) -> bool:
 
 def delete_legacy_entries(mode: StoreMode | None = None) -> bool:
     """Delete 0.3 keyring entries after a login, best effort; return success."""
-    selected = store_mode() if mode is None else mode
-    if not _legacy_keyring_allowed(selected):
-        return False
-    keyring_store = _keyring_store()
     try:
-        for entry in LEGACY_ENTRIES:
-            keyring_store.delete_raw(entry)
-    except StoreUnavailableError:
+        with _locked():
+            selected = store_mode() if mode is None else mode
+            if not _legacy_keyring_allowed(selected):
+                return False
+            keyring_store = _keyring_store()
+            for entry in LEGACY_ENTRIES:
+                keyring_store.delete_raw(entry)
+    except (StoreUnavailableError, CredentialStorageError):
         return False
     return True
 
@@ -1056,17 +1097,16 @@ def legacy_login_notice() -> str | None:
     Only presence is checked. file mode never probes the keyring, and nothing
     is probed without a terminal (MCP servers, CI).
     """
-    try:
-        mode = store_mode()
-    except AuthError:
+    if not _interactive():
         return None
-    if mode == "file" or not _interactive():
-        return None
-    keyring_store = _keyring_store()
     try:
-        login = any(keyring_store.get_raw(entry) for entry in LEGACY_LOGIN_ENTRIES)
-        key = bool(keyring_store.get_raw(LEGACY_KEY_ENTRY))
-    except StoreUnavailableError:
+        with _locked(shared=True):
+            if store_mode() == "file":
+                return None
+            keyring_store = _keyring_store()
+            login = any(keyring_store.get_raw(entry) for entry in LEGACY_LOGIN_ENTRIES)
+            key = bool(keyring_store.get_raw(LEGACY_KEY_ENTRY))
+    except (StoreUnavailableError, AuthError):
         return None
     notices = [LEGACY_LOGIN_NOTICE] if login else []
     if key:

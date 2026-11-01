@@ -45,7 +45,7 @@ from urllib.parse import urlsplit
 
 from platformdirs import user_data_dir, user_state_dir
 
-from solwyn_cli.config import _fsync_parent_directory
+from solwyn_cli.config import _fsync_parent_directory, user_directory
 
 if os.name == "nt":
     import msvcrt
@@ -179,9 +179,10 @@ def credentials_path() -> Path:
             raise StoreUnavailableError(f"{FILE_ENV} must be an absolute path.")
         return path
     # Non-roaming on Windows (%LOCALAPPDATA%); XDG_DATA_HOME on Linux.
-    return Path(user_data_dir("solwyn", appauthor=False, roaming=False)) / (
-        "credentials.json"
-    )
+    return user_directory(
+        "XDG_DATA_HOME",
+        lambda: user_data_dir("solwyn", appauthor=False, roaming=False),
+    ) / ("credentials.json")
 
 
 # POSIX only. On Windows the file lives in %LOCALAPPDATA%, protected by the
@@ -234,7 +235,10 @@ def lock_directory() -> Path:
     Never derived from SOLWYN_CREDENTIALS_FILE: every process touching this
     user's keychain, config or credentials file must meet on the same lock.
     """
-    return Path(user_state_dir("solwyn", appauthor=False, roaming=False))
+    return user_directory(
+        "XDG_STATE_HOME",
+        lambda: user_state_dir("solwyn", appauthor=False, roaming=False),
+    )
 
 
 def lock_path() -> Path:
@@ -433,7 +437,9 @@ class FileStore:
         """Read the file through one descriptor that is checked before reading."""
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
         if os.name != "nt":
-            flags |= os.O_NOFOLLOW | os.O_CLOEXEC
+            # O_NONBLOCK: a FIFO or device must not block the open (and the
+            # lock) before fstat can refuse it.
+            flags |= os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
         try:
             descriptor = os.open(self.path, flags)
         except FileNotFoundError:
@@ -654,15 +660,16 @@ _TOKEN_LIKE = re.compile(r"[A-Za-z0-9_\-+/=.]{24,}")
 def backend_reason(error: BaseException) -> str:
     """A short, safe reason from a keyring backend error.
 
-    The exception class and the first line of its message, with anything
-    token-like (24 or more key characters) replaced and control characters
-    dropped, capped at 160 characters. Never a secret.
+    The exception class and the first line of its message, capped at 160
+    characters. Nonprintable and zero-width characters are dropped first, so
+    they cannot split a secret past the redactor; then anything token-like (24
+    or more key characters) in the final string is replaced. Never a secret.
     """
     lines = str(error).strip().splitlines()
-    message = _TOKEN_LIKE.sub("[redacted]", lines[0] if lines else "")
-    message = "".join(ch for ch in message if ch.isprintable())[:160].rstrip(" .")
+    message = "".join(ch for ch in (lines[0] if lines else "") if ch.isprintable())
+    message = _TOKEN_LIKE.sub("[redacted]", message)[:160].rstrip(" .")
     name = type(error).__name__
-    return f"{name}: {message}" if message else name
+    return _TOKEN_LIKE.sub("[redacted]", f"{name}: {message}" if message else name)
 
 
 class KeyringStore:
@@ -707,32 +714,39 @@ class KeyringStore:
         )
 
     def set_raw(self, username: str, value: str) -> None:
+        """Write one entry, then read it back: a returned call is not proof.
+
+        KWallet's backend ignores writePassword's failure code, so the value is
+        only trusted once a read returns it. Callers hold the exclusive lock.
+        """
         self._call(
             lambda backend: backend.set_password(KEYRING_SERVICE, username, value),
             may_write=True,
         )
+        if self.get_raw(username) != value:
+            raise StoreUnavailableError(
+                "The system keyring did not keep the new value."
+            )
 
     def delete_raw(self, username: str) -> None:
-        """Delete one entry; absent counts only if a read then finds nothing.
+        """Delete one entry; it is gone only once a read then finds nothing.
 
-        PasswordDeleteError also means denied or cancelled (macOS, KWallet), so
-        it is not proof of absence.
+        Neither outcome of the call is proof: PasswordDeleteError also means
+        denied or cancelled (macOS, KWallet), KWallet ignores removeEntry's
+        failure code, and Secret Service deletes only the first matching item.
         """
         from keyring.errors import PasswordDeleteError
 
-        def delete(backend: Any) -> bool:
+        def delete(backend: Any) -> None:
             try:
                 backend.delete_password(KEYRING_SERVICE, username)
             except PasswordDeleteError:
-                return False
-            return True
+                pass
 
-        if (
-            not self._call(delete, may_write=True)
-            and self.get_raw(username) is not None
-        ):
+        self._call(delete, may_write=True)
+        if self.get_raw(username) is not None:
             raise StoreUnavailableError(
-                "The system keyring refused to delete a Solwyn entry."
+                "The system keyring did not delete a Solwyn entry."
             )
 
     def get(self, origin: str, entry: str) -> str | None:
