@@ -136,6 +136,12 @@ Could not write to the macOS Keychain: <reason> Nothing was stored.
 Hint: Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file.
 ```
 
+If the write returned but the read that checks it failed (a locked or denied
+keychain, for example), the value may be stored. That error starts with "Could
+not confirm the write to", says "The new value could not be read back" and that
+it may or may not have been stored, and tells you to run `solwyn logout`. It
+never says nothing was stored.
+
 This covers a browser login (the new login is revoked on the server, since
 nothing kept it), a pending login (`--wait 0`, no code is shown) and
 `--with-key`. Stores are never copied or merged: credentials in the store not in
@@ -236,6 +242,9 @@ token it had not yet revoked is still stored. It reports each store with a
   session bus in this process for a resolved Secret Service, no answer within 5
   seconds, and a login entry that is not valid; for the file, a malformed or
   unreadable credentials file.
+
+When one store has both, `unreachable` wins over `unread`: a keychain that
+refuses every read and every delete reports `unreachable`.
 
 `cleared` covers only the stores that were checked: it is true when every
 store except an `unavailable` one is `cleared`, and an `unavailable` store's own

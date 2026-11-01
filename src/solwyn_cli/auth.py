@@ -53,6 +53,7 @@ from solwyn_cli.credential_store import (
     InsecureFileError,
     KeyringStore,
     KeyringTimeoutError,
+    WriteUnconfirmedError,
     NoKeyringBackendError,
     MalformedFileError,
     StoreKind,
@@ -456,14 +457,15 @@ def _keyring_write_error(error: StoreUnavailableError) -> KeyringUnavailableErro
     """A keychain write failed: name the keychain and why.
 
     "Nothing was stored" is said only when that is known. A call that timed
-    out may have committed before it stopped answering, so its outcome is
-    unknown and the message says so and points at logout.
+    out may have committed before it stopped answering, and a write whose
+    read-back failed may have committed too, so their outcome is unknown and
+    the message says so and points at logout.
     """
     hint = _keyring_hint()
     if credential_store.stranded():
         hint = f"{credential_store.STRANDED_MESSAGE} {hint}"
     name = credential_store.keyring_name()
-    if isinstance(error, KeyringTimeoutError):
+    if isinstance(error, (KeyringTimeoutError, WriteUnconfirmedError)):
         return KeyringUnavailableError(
             f"Could not confirm the write to {name}: {error} It may or may not "
             "have been stored. Run solwyn logout to clear this API's stored "

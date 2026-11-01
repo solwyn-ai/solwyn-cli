@@ -103,6 +103,13 @@ class KeyringTimeoutError(StoreUnavailableError):
     """A keyring call did not finish within KEYRING_TIMEOUT_SECONDS."""
 
 
+class WriteUnconfirmedError(StoreUnavailableError):
+    """A keyring write returned, but the read that checks it failed.
+
+    The value may be stored, so nobody may say "nothing was stored".
+    """
+
+
 STRANDED_MESSAGE = (
     "A system keyring call did not finish, so this process stopped changing "
     "stored credentials. Run the command again."
@@ -723,7 +730,13 @@ class KeyringStore:
             lambda backend: backend.set_password(KEYRING_SERVICE, username, value),
             may_write=True,
         )
-        if self.get_raw(username) != value:
+        try:
+            kept = self.get_raw(username)
+        except StoreUnavailableError as error:
+            raise WriteUnconfirmedError(
+                f"{error} The new value could not be read back."
+            ) from None
+        if kept != value:
             raise StoreUnavailableError(
                 "The system keyring did not keep the new value."
             )

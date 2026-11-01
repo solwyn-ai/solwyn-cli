@@ -8,7 +8,6 @@ KWallet backend over a fault-injected service interface; the OS is simulated by
 pinning the platform family.
 """
 
-import fcntl
 import json
 import os
 import subprocess
@@ -28,6 +27,9 @@ from solwyn_cli.main import app
 
 runner = CliRunner()
 PROD = "https://api.solwyn.ai"
+if os.name != "nt":  # Windows has no fcntl; its tests skip below.
+    import fcntl
+
 KEY = "sk_proj_" + "a1" * 32
 NEW = "solwyn_cli_" + "2b" * 32
 SERVICE = "solwyn-cli"
@@ -407,6 +409,47 @@ def test_a_timed_out_write_says_the_outcome_is_unknown(
     assert "It may or may not have been stored." in error["message"]
     assert "Run solwyn logout" in error["message"]
     assert "Nothing was stored" not in result.stderr
+    assert revoked == ([NEW] if kind == "login" else [])
+    assert KEY not in result.stdout + result.stderr
+
+
+class KeychainDenied(Exception):
+    """What the macOS backend raises for a denied or locked keychain."""
+
+
+@pytest.mark.parametrize("kind", ["key", "login"])
+def test_a_write_whose_read_back_fails_says_the_outcome_is_unknown(
+    env: Any, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    backend, revoked, _ = env
+    real_set = backend.set_password
+
+    def set_then_deny_reads(service: str, username: str, value: str) -> None:
+        real_set(service, username, value)
+
+        def denied(*args: Any) -> None:
+            raise KeychainDenied("User interaction is not allowed.")
+
+        monkeypatch.setattr(backend, "get_password", denied)
+
+    monkeypatch.setattr(backend, "set_password", set_then_deny_reads)
+    _issue(monkeypatch)
+
+    result = (
+        runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+        if kind == "key"
+        else runner.invoke(app, ["--json", "login"])
+    )
+
+    assert result.exit_code == 3, result.stderr
+    error = json.loads(result.stderr)
+    assert error["code"] == "credential_storage_failed"
+    assert error["message"].startswith("Could not confirm the write to the macOS ")
+    assert "could not be read back" in error["message"]
+    assert "It may or may not have been stored." in error["message"]
+    assert "Run solwyn logout" in error["message"]
+    assert "Nothing was stored" not in result.stderr
+    assert backend.entries  # The write did land: the old wording would lie.
     assert revoked == ([NEW] if kind == "login" else [])
     assert KEY not in result.stdout + result.stderr
 
