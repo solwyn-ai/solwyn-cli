@@ -128,22 +128,25 @@ progress. Nothing was stored."), and the new login is revoked.
 A failed keychain write never falls back to the file, in any mode. A write
 counts only once the keychain returns the new value on a read (some backends,
 such as KWallet, report success for a write they did not keep). The command
-exits 3 with `credential_storage_failed`, names the keychain and why, and
-stores nothing:
+exits 3 with `credential_storage_failed` and names the keychain and why. When
+a read shows the new value is not there, it says nothing was stored:
 
 ```text
 Could not write to the macOS Keychain: <reason> Nothing was stored.
 Hint: Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file.
 ```
 
-If the write returned but the read that checks it failed (a locked or denied
-keychain, for example), the value may be stored. That error starts with "Could
-not confirm the write to", says "The new value could not be read back" and that
-it may or may not have been stored, and tells you to run `solwyn logout`. It
-never says nothing was stored.
+If the read that checks the write failed (a keychain that is locked or denies
+reads as well as writes, for example, or a Secret Service session that dropped
+mid-write), the value may be stored, whether or not the write call itself
+reported an error. That error starts with "Could not confirm the write to",
+says "The new value could not be read back" and that it may or may not have
+been stored, and tells you to run `solwyn logout`. It never says nothing was
+stored. A write call that reported an error while a read then returns the new
+value counts as stored.
 
 This covers a browser login (the new login is revoked on the server, since
-nothing kept it), a pending login (`--wait 0`, no code is shown) and
+its storage was not confirmed), a pending login (`--wait 0`, no code is shown) and
 `--with-key`. Stores are never copied or merged: credentials in the store not in
 use are never read, and only logout deletes. `whoami` and `doctor` say when the
 credentials file still holds credentials for this API while the keychain is in

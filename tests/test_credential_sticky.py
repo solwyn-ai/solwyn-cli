@@ -42,6 +42,7 @@ class Backend:
     def __init__(self, entries: Any = None) -> None:
         self.entries = {} if entries is None else entries
         self.locked = False
+        self.refuse_writes = False  # Writes refused, reads still answer.
         self.fail_set: set[str] = set()
         self.fail_get: set[str] = set()
 
@@ -51,7 +52,7 @@ class Backend:
         return self.entries.get((service, username))
 
     def set_password(self, service: str, username: str, value: str) -> None:
-        if self.locked or username in self.fail_set:
+        if self.locked or self.refuse_writes or username in self.fail_set:
             raise RuntimeError("keychain locked")
         self.entries[(service, username)] = value
 
@@ -149,7 +150,7 @@ def test_a_failed_keychain_write_fails_and_stores_nothing(
     name: str,
 ) -> None:
     _platform(monkeypatch, family)
-    backend.locked = True
+    backend.refuse_writes = True  # A read then proves the value is absent.
 
     result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
 
@@ -164,12 +165,31 @@ def test_a_failed_keychain_write_fails_and_stores_nothing(
     assert not backend.entries
     assert KEY not in result.stdout + result.stderr
     # Nothing sticks: with the keychain healthy again, logins use it.
-    backend.locked = False
+    backend.refuse_writes = False
     _device(monkeypatch)
     login = runner.invoke(app, ["--json", "login"])
     assert login.exit_code == 0, login.stderr
     assert json.loads(login.stdout)["store"] == "keyring"
     assert not credentials_file.exists()
+
+
+def test_a_wholly_locked_keychain_cannot_confirm_a_refused_write(
+    monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
+) -> None:
+    backend.locked = True  # Writes and the read that checks them both fail.
+
+    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["code"] == "credential_storage_failed"
+    assert error["message"].startswith("Could not confirm the write to the macOS ")
+    assert "It may or may not have been stored." in error["message"]
+    assert "Run solwyn logout" in error["message"]
+    assert "Nothing was stored" not in result.stderr
+    assert error["hint"] == HINT
+    assert not credentials_file.exists()
+    assert KEY not in result.stdout + result.stderr
 
 
 def test_a_browser_login_that_cannot_reach_the_keychain_is_revoked(
@@ -186,7 +206,9 @@ def test_a_browser_login_that_cannot_reach_the_keychain_is_revoked(
     assert result.exit_code == 3
     error = json.loads(result.stderr)
     assert error["code"] == "credential_storage_failed"
-    assert error["message"].startswith("Could not write to the macOS Keychain: ")
+    # Reads are refused too, so nothing can prove the write did not land.
+    assert error["message"].startswith("Could not confirm the write to the macOS ")
+    assert "It may or may not have been stored." in error["message"]
     assert error["hint"] == HINT
     assert revoked == [NEW]  # Issued server-side, kept nowhere: revoked.
     assert not credentials_file.exists()
@@ -208,7 +230,7 @@ def test_a_pending_login_that_cannot_reach_the_keychain_stores_nothing(
     assert result.exit_code == 3
     error = json.loads(result.stderr)
     assert error["code"] == "credential_storage_failed"
-    assert error["message"].startswith("Could not write to the macOS Keychain: ")
+    assert error["message"].startswith("Could not confirm the write to the macOS ")
     assert error["hint"] == HINT
     assert "BCDF-GHJK" not in result.stdout + result.stderr  # No instructions.
     assert not credentials_file.exists()

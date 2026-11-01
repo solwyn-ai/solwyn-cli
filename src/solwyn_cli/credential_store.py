@@ -724,12 +724,28 @@ class KeyringStore:
         """Write one entry, then read it back: a returned call is not proof.
 
         KWallet's backend ignores writePassword's failure code, so the value is
-        only trusted once a read returns it. Callers hold the exclusive lock.
+        only trusted once a read returns it. A setter that raised is not proof
+        either way: Secret Service stores the item and then reads its label, so
+        it can fail after the value landed. Only a read that does not return
+        the new value proves nothing was stored. Callers hold the exclusive lock.
         """
-        self._call(
-            lambda backend: backend.set_password(KEYRING_SERVICE, username, value),
-            may_write=True,
-        )
+        try:
+            self._call(
+                lambda backend: backend.set_password(KEYRING_SERVICE, username, value),
+                may_write=True,
+            )
+        except (KeyringTimeoutError, NoKeyringBackendError):
+            raise
+        except StoreUnavailableError as error:
+            try:
+                kept = self.get_raw(username)
+            except StoreUnavailableError:
+                raise WriteUnconfirmedError(
+                    f"{error} The new value could not be read back."
+                ) from None
+            if kept != value:
+                raise error from None
+            return
         try:
             kept = self.get_raw(username)
         except StoreUnavailableError as error:

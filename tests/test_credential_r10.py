@@ -454,6 +454,125 @@ def test_a_write_whose_read_back_fails_says_the_outcome_is_unknown(
     assert KEY not in result.stdout + result.stderr
 
 
+class SessionDropped(Exception):
+    """What SecretStorage raises when the session bus drops mid-call."""
+
+
+def _commit_then_raise(
+    monkeypatch: pytest.MonkeyPatch, backend: Backend, *, reads_fail: bool
+) -> None:
+    """Secret Service: CreateItem stores, then the setter's own label read fails."""
+    real_set = backend.set_password
+
+    def committed(service: str, username: str, value: str) -> None:
+        real_set(service, username, value)
+        if reads_fail:
+
+            def gone(*args: Any) -> None:
+                raise SessionDropped("org.freedesktop.DBus.Error.NoReply")
+
+            monkeypatch.setattr(backend, "get_password", gone)
+        raise SessionDropped("org.freedesktop.DBus.Error.NoReply")
+
+    monkeypatch.setattr(backend, "set_password", committed)
+
+
+def _login_args(kind: str) -> list[str]:
+    return {
+        "key": ["--json", "login", "--with-key"],
+        "login": ["--json", "login"],
+        "pending": ["--json", "login", "--wait", "0"],
+    }[kind]
+
+
+@pytest.mark.parametrize("kind", ["key", "login"])
+def test_a_setter_that_fails_after_committing_is_unconfirmed(
+    env: Any, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    backend, revoked, _ = env
+    _commit_then_raise(monkeypatch, backend, reads_fail=True)
+    _issue(monkeypatch)
+
+    result = runner.invoke(app, _login_args(kind), input=KEY)
+
+    assert result.exit_code == 3, result.stderr
+    error = json.loads(result.stderr)
+    assert error["code"] == "credential_storage_failed"
+    assert error["message"].startswith("Could not confirm the write to the macOS ")
+    assert "It may or may not have been stored." in error["message"]
+    assert "Run solwyn logout" in error["message"]
+    assert "Nothing was stored" not in result.stderr
+    assert backend.entries  # The value landed before the setter raised.
+    assert revoked == ([NEW] if kind == "login" else [])
+    assert KEY not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("kind", ["key", "login"])
+def test_a_setter_that_fails_after_committing_counts_once_read_back(
+    env: Any, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    backend, revoked, _ = env
+    _commit_then_raise(monkeypatch, backend, reads_fail=False)
+    _issue(monkeypatch)
+
+    result = runner.invoke(app, _login_args(kind), input=KEY)
+
+    assert result.exit_code == 0, result.stderr
+    assert revoked == []
+    assert backend.entries
+
+
+def test_a_pending_code_whose_setter_failed_after_committing_is_unconfirmed(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from solwyn_cli import oauth
+
+    backend, _, _ = env
+    _commit_then_raise(monkeypatch, backend, reads_fail=True)
+    authorization = {
+        "device_code": "solwyn_dc_" + "4d" * 32,
+        "user_code": "BCDF-GHJK",
+        "verification_uri": "https://app.solwyn.ai/device",
+        "verification_uri_complete": "https://app.solwyn.ai/device?user_code=BCDF-GHJK",
+        "expires_in": 600,
+        "interval": 5,
+    }
+    monkeypatch.setattr(
+        login_module,
+        "start_device_authorization",
+        lambda client, **kwargs: oauth.DeviceAuthorization.model_validate(
+            authorization
+        ),
+    )
+
+    result = runner.invoke(app, _login_args("pending"))
+
+    assert result.exit_code == 3, result.stderr
+    message = json.loads(result.stderr.strip().splitlines()[-1])["message"]
+    assert "It may or may not have been stored." in message
+    assert "Nothing was stored" not in result.stderr
+    assert "BCDF-GHJK" not in result.stdout  # No code shown for a failed write.
+    assert backend.entries
+
+
+def test_a_setter_that_fails_before_committing_still_stored_nothing(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend, _, _ = env
+
+    def refused(*args: Any) -> None:
+        raise SessionDropped("org.freedesktop.Secret.Error.IsLocked")
+
+    monkeypatch.setattr(backend, "set_password", refused)
+
+    result = runner.invoke(app, _login_args("key"), input=KEY)
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr)
+    assert error["message"].endswith("Nothing was stored.")
+    assert backend.entries == {}
+
+
 # --- 7. A relative XDG root is ignored --------------------------------------
 
 
