@@ -538,6 +538,7 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
                 "cleared": True,
                 "kept": [],
                 "legacy_cleared": [],
+                "legacy_kept": [],
             },
             {
                 "store": "keyring",
@@ -546,6 +547,7 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
                 "cleared": True,
                 "kept": [],
                 "legacy_cleared": [],
+                "legacy_kept": [],
             },
         ],
     }

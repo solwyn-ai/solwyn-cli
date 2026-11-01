@@ -15,7 +15,9 @@ solwyn config get default_project
 ```
 
 Explicit global flags override environment settings, which override configured
-defaults. Changing a read selector never changes the identity of a project key.
+defaults. `config set` writes only the key it sets and keeps the keys already
+saved; it never writes a default into `config.toml`. Setting
+`credential_store` to `auto` removes the key, since `auto` is the default. Changing a read selector never changes the identity of a project key.
 
 `config list` shows the effective API URL and where it came from, not only the
 saved value: `--api-url`, `SOLWYN_API_URL`, config, or the default
