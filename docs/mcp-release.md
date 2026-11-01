@@ -2,10 +2,10 @@
 
 The Registry entry is [`server.json`](../server.json) at the repository root, named
 `ai.solwyn/solwyn`. It is not published yet. The published 0.3.0 package predates
-the README ownership marker, so the next CLI release must ship before the Registry
-publish. Neither local validation nor MCP discovery proves Registry publication,
-ownership, safety certification or availability of checkout-only features in a
-published wheel.
+the README ownership marker. 0.4.0 is the first release that carries it, so 0.4.0
+must be live on PyPI before the Registry publish. Neither local validation nor MCP
+discovery proves Registry publication, ownership, safety certification or
+availability of checkout-only features in a published wheel.
 
 ## Validate locally
 
@@ -34,7 +34,7 @@ resolution remains separate; this is not a claim of byte-identical wheel builds.
 Inspect the final distribution before uploading; for the current version:
 
 ```sh
-uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.3.0-py3-none-any.whl
+uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.4.0-py3-none-any.whl
 ```
 
 Protected checks keep their existing names: `Quality`, `Tests (Python 3.11)`,
@@ -62,9 +62,16 @@ releasing. The kit neither runs providers nor supplies production rollout proof.
    `server.json` and docs together. Validate the exact final wheel and both
    entrypoints from outside the checkout. Distinguish a prepared checkout from
    the published distribution; update install guidance only after the new release is verified.
+   Write the release notes in `docs/releases/<version>.md`.
 4. Only in an authorized release session, publish the reviewed package artifact,
    verify the published wheel's metadata/content and clean-install behavior,
-   then publish the matching Registry entry as described below.
+   then publish the matching Registry entry as described below. Pushing an
+   annotated `vX.Y.Z` tag on the merged release commit runs
+   `.github/workflows/publish.yml`, which checks that the tag matches the package
+   version, tests the built wheel and uploads it to PyPI by trusted publishing
+   (the `pypi` environment accepts only `v*.*.*` tags). Then create the GitHub
+   release from the same tag with `gh release create vX.Y.Z --verify-tag
+   --notes-file docs/releases/X.Y.Z.md`.
 
 ## Publish to the MCP Registry
 
@@ -127,7 +134,7 @@ alias lets `uvx solwyn-cli` invoke it. `--project` is a required non-secret name
 argument before `mcp`; `--profile guardrails` follows it, matching the default
 `solwyn mcp` surface. The optional
 secret `SOLWYN_API_KEY` has no value/default; omission uses the same OS account's
-keychain. There is no hosted transport or public repository URL invented for
+credential store. There is no hosted transport or public repository URL invented for
 the private checkout.
 
 The Registry verifies PyPI ownership by finding `mcp-name: <server name>` in the

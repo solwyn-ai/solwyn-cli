@@ -146,7 +146,7 @@ def test_piped_project_key_is_validated_stored_and_matches_json_golden(
     monkeypatch.setattr(
         login_module,
         "store_project_key",
-        lambda value: (
+        lambda value, **_: (
             stored.append(value)
             or auth.ProjectKeyCredential(api_key=value, source="keyring")
         ),
@@ -179,7 +179,7 @@ def test_tty_project_key_prompt_is_hidden(
     monkeypatch.setattr(
         login_module,
         "store_project_key",
-        lambda value: auth.ProjectKeyCredential(api_key=value, source="keyring"),
+        lambda value, **_: auth.ProjectKeyCredential(api_key=value, source="keyring"),
     )
 
     result = runner.invoke(app, ["login", "--with-key"])
@@ -211,7 +211,7 @@ def test_invalid_piped_key_fails_without_echoing_secret(
 def test_project_key_storage_failure_is_structured_exit_three_without_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_store(value: str) -> None:
+    def fail_store(value: str, **_: object) -> None:
         assert value == VALID_KEY
         raise auth.CredentialStorageError(
             "Could not update credentials in the operating-system keychain."
@@ -238,8 +238,16 @@ def test_logout_clears_all_credentials_and_matches_both_format_goldens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[None] = []
-    monkeypatch.setattr(auth, "stored_login", lambda **_: None)
-    monkeypatch.setattr(login_module, "clear_credentials", lambda: calls.append(None))
+    monkeypatch.setattr(
+        auth,
+        "logout_everywhere",
+        lambda revoke: (
+            calls.append(None)
+            or auth.LogoutReport(
+                0, None, [auth.Cleared("file", "/test/credentials.json")]
+            )
+        ),
+    )
 
     json_result = runner.invoke(app, ["--json", "logout"])
     table_result = runner.invoke(app, ["logout"])
@@ -260,13 +268,12 @@ def test_logout_clear_failure_is_structured_exit_three_without_secrets(
         ACCESS_TOKEN,
     )
 
-    def fail_clear() -> None:
+    def fail_clear(revoke: object) -> None:
         raise auth.CredentialStorageError(
             "Could not clear credentials from the operating-system keychain."
         )
 
-    monkeypatch.setattr(auth, "stored_login", lambda **_: None)
-    monkeypatch.setattr(login_module, "clear_credentials", fail_clear)
+    monkeypatch.setattr(auth, "logout_everywhere", fail_clear)
 
     result = runner.invoke(app, ["--json", "logout"])
 
@@ -283,7 +290,10 @@ def test_logout_clear_failure_is_structured_exit_three_without_secrets(
 def test_whoami_project_key_uses_configured_project_without_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    # Resolved the real way, so the golden shows what the CLI prints.
+    credential = auth.resolve_credential(
+        {"SOLWYN_API_KEY": VALID_KEY}, purpose="metering"
+    )
     monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
     monkeypatch.setattr(whoami_module, "SolwynClient", FakeClient)
 
@@ -468,7 +478,10 @@ def test_auth_command_goldens_never_contain_synthetic_secrets() -> None:
 def test_whoami_table_and_no_color_match_golden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    # Resolved the real way, so the golden shows what the CLI prints.
+    credential = auth.resolve_credential(
+        {"SOLWYN_API_KEY": VALID_KEY}, purpose="metering"
+    )
     monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
 
     result = runner.invoke(app, ["--no-color", "-p", "proj_alpha", "whoami"])

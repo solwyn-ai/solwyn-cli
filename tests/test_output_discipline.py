@@ -9,6 +9,8 @@ import pytest
 COMMANDS_DIR = Path("src/solwyn_cli/commands")
 _LOCAL_DATA_CALLS = {
     ("keys.py", "env_key", "typer.echo(line)"),
+    # login --no-store prints the new token once, on purpose, for SOLWYN_TOKEN.
+    ("login.py", "_print_unstored_token", "typer.echo(line)"),
     (
         "agent_context.py",
         "agent_context",

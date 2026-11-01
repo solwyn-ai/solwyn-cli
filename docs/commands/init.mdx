@@ -22,9 +22,11 @@ email verification happen on that browser page.
 
 Init then lists and selects projects and can create one. Creating a project with
 a Solwyn login needs one browser approval (see [approvals](approvals.mdx)), and
-shows a one-time project key that init stores in the keychain. It writes local
-configuration and scans imports, then verifies the budget with a read. Keychain
-access requires the same OS account. The help contract below lists every
+shows a one-time project key that init stores in the credential store (the
+keychain on macOS and Windows, the credentials file on Linux; see
+[login](login.mdx)). It writes local configuration and scans imports, then
+verifies the budget with a read. Stored credentials are readable only by the
+same OS account. The help contract below lists every
 conditional remote and local operation.
 
 Global `--project`, `--api-url` and output flags precede the command.

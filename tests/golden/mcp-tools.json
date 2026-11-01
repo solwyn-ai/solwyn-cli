@@ -16589,10 +16589,22 @@
             "source": {
               "enum": [
                 "keyring",
+                "file",
                 "environment"
               ],
               "title": "Source",
               "type": "string"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location"
             },
             "label": {
               "anyOf": [
@@ -16635,6 +16647,7 @@
           "required": [
             "kind",
             "source",
+            "location",
             "label",
             "scope",
             "expires_at"
@@ -16785,6 +16798,7 @@
             "auth_source": {
               "enum": [
                 "keyring",
+                "file",
                 "environment"
               ],
               "title": "Auth Source",

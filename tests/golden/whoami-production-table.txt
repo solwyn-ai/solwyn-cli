@@ -1,7 +1,8 @@
 Field                                                              Value
 Credential      CLI login dev-laptop (read, contain), expires 2099-01-01
 Authentication                                                     login
-Source                                                           keyring
+Source                                                              file
+Stored in                                  file (/test/credentials.json)
 User                                                      Person Example
 Email                                                 person@example.com
 Email verified                                                       yes

@@ -14,7 +14,12 @@ import pytest
 from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
-from login_fixtures import LOGIN_TOKEN, expired_login_entries, login_entries
+from login_fixtures import (
+    fake_keychain,
+    LOGIN_TOKEN,
+    expired_login_entries,
+    login_entries,
+)
 from solwyn_cli import approvals, auth, oauth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
@@ -68,20 +73,7 @@ class FakeClock:
 
 @pytest.fixture
 def keychain(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
-    values: dict[str, str] = {}
-    monkeypatch.setattr(
-        auth.keyring, "get_password", lambda service, name: values.get(name)
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: values.__setitem__(name, value),
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "delete_password",
-        lambda service, name: values.pop(name, None),
-    )
+    values = fake_keychain(monkeypatch)
     return values
 
 
@@ -136,7 +128,6 @@ def server(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[..., OAuthServe
 def test_login_polls_with_interval_and_slow_down_then_stores_the_credential(
     keychain: dict[str, str], clock: FakeClock, server: Callable[..., OAuthServer]
 ) -> None:
-    keychain.update(access_token="legacy-access", refresh_token="legacy-refresh")
     fake = server(
         _oauth_error("authorization_pending"),
         _oauth_error("slow_down"),
@@ -166,6 +157,8 @@ def test_login_polls_with_interval_and_slow_down_then_stores_the_credential(
     assert payload == {
         "schema": "solwyn.login.v2",
         "auth_type": "login",
+        "store": "file",
+        "location": "/test/credentials.json",
         "credential_id": "6c1f2a90-0000-4000-8000-000000000001",
         "label": "dev-laptop",
         "scope": ["read", "contain"],
@@ -175,11 +168,10 @@ def test_login_polls_with_interval_and_slow_down_then_stores_the_credential(
         "email": "ada@example.com",
         "role": "owner",
     }
-    assert keychain[auth.CLI_CREDENTIAL_ENTRY] == ISSUED_TOKEN
-    assert (
-        json.loads(keychain[auth.CLI_CREDENTIAL_META_ENTRY])["account_name"] == "Acme"
-    )
-    assert set(keychain) == {auth.CLI_CREDENTIAL_ENTRY, auth.CLI_CREDENTIAL_META_ENTRY}
+    login = json.loads(keychain[auth.LOGIN_ENTRY])
+    assert login["token"] == ISSUED_TOKEN
+    assert login["meta"]["account_name"] == "Acme"
+    assert set(keychain) == {auth.LOGIN_ENTRY}
     assert "https://app.solwyn.ai/device" in result.stderr
     assert USER_CODE in result.stderr
     assert "Waiting for approval... (Ctrl-C to stop)" in result.stderr
@@ -329,7 +321,7 @@ def test_continue_polls_the_stored_code_at_once_and_finishes(
     assert fake.forms("/oauth/token")[0]["device_code"] == [DEVICE_CODE]
     assert clock.sleeps == []
     assert auth.PENDING_DEVICE_ENTRY not in keychain
-    assert keychain[auth.CLI_CREDENTIAL_ENTRY] == ISSUED_TOKEN
+    assert json.loads(keychain[auth.LOGIN_ENTRY])["token"] == ISSUED_TOKEN
 
 
 def test_continue_without_a_pending_login_exits_three(
@@ -390,7 +382,9 @@ def test_keychain_failure_after_issue_revokes_and_exits_three(
         login_module, "revoke_token", lambda api_url, token: revoked.append(token)
     )
 
-    def store_login(token: str, meta: auth.LoginMetadata) -> auth.LoginCredential:
+    def store_login(
+        token: str, meta: auth.LoginMetadata, **_: object
+    ) -> auth.LoginCredential:
         raise auth.CredentialStorageError(
             "Could not update credentials in the operating-system keychain."
         )
@@ -415,7 +409,7 @@ def test_pending_store_failure_stops_before_polling(
 ) -> None:
     fake = server()
 
-    def fail(pending: auth.PendingDevice) -> None:
+    def fail(pending: auth.PendingDevice, **kwargs: object) -> None:
         raise auth.CredentialStorageError("Could not update credentials.")
 
     monkeypatch.setattr(auth, "store_pending_device", fail)
@@ -446,7 +440,7 @@ def test_invalid_token_answers_are_not_stored(
 
     assert result.exit_code == 3
     assert json.loads(result.stderr.splitlines()[-1])["code"] == "invalid_auth_response"
-    assert auth.CLI_CREDENTIAL_ENTRY not in keychain
+    assert auth.LOGIN_ENTRY not in keychain
 
 
 @pytest.mark.parametrize(
@@ -525,7 +519,7 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     keychain.update(login_entries())
-    keychain.update(api_key=VALID_KEY, access_token="legacy")
+    keychain.update(api_key=VALID_KEY)
     requests = _revocation(monkeypatch, lambda request: httpx.Response(200))
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -535,6 +529,23 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
         "schema": "solwyn.logout.v1",
         "cleared": True,
         "revoked": True,
+        "logins_found": 1,
+        "stores": [
+            {
+                "store": "file",
+                "location": "/test/credentials.json",
+                "status": "cleared",
+                "cleared": True,
+                "kept": [],
+            },
+            {
+                "store": "keyring",
+                "location": auth.credential_store.keyring_name(),
+                "status": "cleared",
+                "cleared": True,
+                "kept": [],
+            },
+        ],
     }
     assert result.stderr == ""
     assert keychain == {}
@@ -720,7 +731,9 @@ def test_metering_with_only_a_login_names_the_project_key(
     assert result.exit_code == 3
     error = json.loads(result.stderr)
     assert error["code"] == "authentication_required"
-    assert error["hint"] == auth.METERING_KEY_HINT
+    assert error["hint"] == (
+        auth.METERING_KEY_HINT + " Looked in: file, /test/credentials.json."
+    )
 
 
 def test_invite_accept_is_retired(keychain: dict[str, str]) -> None:
@@ -744,7 +757,9 @@ def test_failed_cleanup_revoke_tells_the_user_to_revoke_in_the_dashboard(
     server(httpx.Response(200, json=TOKEN))
     requests = _revocation(monkeypatch, lambda request: httpx.Response(503))
 
-    def store_login(token: str, meta: auth.LoginMetadata) -> auth.LoginCredential:
+    def store_login(
+        token: str, meta: auth.LoginMetadata, **_: object
+    ) -> auth.LoginCredential:
         raise auth.CredentialStorageError(
             "Could not update credentials in the operating-system keychain."
         )
@@ -784,3 +799,103 @@ def test_slow_down_keeps_adding_five_seconds_past_sixty(
 
     assert result.exit_code == 0, result.stderr
     assert clock.sleeps == [60, 65]
+
+
+# --- --no-store: SOLWYN_TOKEN for CI and cloud agents -----------------------
+
+
+@pytest.mark.parametrize("output", ["human", "json"])
+def test_no_store_prints_the_token_once_and_stores_nothing(
+    keychain: dict[str, str],
+    clock: FakeClock,
+    server: Callable[..., OAuthServer],
+    memory_keyring: Any,
+    output: str,
+) -> None:
+    server(_oauth_error("authorization_pending"), httpx.Response(200, json=TOKEN))
+    flags = ["--json"] if output == "json" else []
+
+    result = runner.invoke(
+        app, [*flags, "login", "--no-store", "--label", "ci", "--scope", "read"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    # Nothing stored anywhere: no login, no pending device, no keyring entry.
+    assert keychain == {}
+    assert memory_keyring.values == {}
+    # The token appears exactly once, in the deliberate stdout output.
+    assert ISSUED_TOKEN not in result.stderr
+    assert result.stdout.count(ISSUED_TOKEN) == 1
+    if output == "json":
+        assert_matches_golden(result.stdout, GOLDEN_DIR / "login-token.json")
+        document = json.loads(result.stdout)
+        assert document["schema"] == "solwyn.login.token.v1"
+        assert document["token"] == ISSUED_TOKEN
+        assert document["credential_id"] == TOKEN["solwyn_credential"]["id"]
+    else:
+        assert result.stdout == ISSUED_TOKEN + "\n"
+    assert "Nothing was stored" in result.stderr
+    assert "SOLWYN_TOKEN" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [["--with-key"], ["--continue"], ["--store", "file"], ["--wait", "0"]],
+)
+def test_no_store_rejects_options_that_store_or_resume(
+    keychain: dict[str, str], extra: list[str]
+) -> None:
+    result = runner.invoke(app, ["--json", "login", "--no-store", *extra])
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["code"] == "invalid_login_options"
+    assert keychain == {}
+
+
+def test_no_store_timeout_keeps_nothing_to_resume(
+    keychain: dict[str, str], clock: FakeClock, server: Callable[..., OAuthServer]
+) -> None:
+    server(*[_oauth_error("authorization_pending") for _ in range(10)])
+
+    result = runner.invoke(app, ["--json", "login", "--no-store", "--wait", "6"])
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "login_not_approved"
+    assert keychain == {}
+
+
+@pytest.mark.parametrize("output", ["human", "json"])
+def test_no_store_redacts_secrets_embedded_in_metadata(
+    keychain: dict[str, str],
+    clock: FakeClock,
+    server: Callable[..., OAuthServer],
+    output: str,
+) -> None:
+    other_token = "solwyn_cli_" + "7b" * 32
+    device_code = "solwyn_dc_" + "6c" * 32
+    poisoned = {
+        **TOKEN,
+        "solwyn_credential": {
+            **TOKEN["solwyn_credential"],
+            "account_name": f"Acme {other_token}",
+            "label": f"ci {device_code}",
+            "email": f"x{other_token}@example.com",
+        },
+    }
+    server(httpx.Response(200, json=poisoned))
+    flags = ["--json"] if output == "json" else []
+
+    result = runner.invoke(app, [*flags, "login", "--no-store"])
+
+    assert result.exit_code == 0, result.stderr
+    rendered = result.stdout + result.stderr
+    # Only the newly issued token is exempt from redaction, and only once.
+    assert rendered.count(ISSUED_TOKEN) == 1
+    assert other_token not in rendered
+    assert device_code not in rendered
+    if output == "json":
+        document = json.loads(result.stdout)
+        assert document["token"] == ISSUED_TOKEN
+        assert document["account_name"] == "Acme [REDACTED]"
+        assert document["label"] == "ci [REDACTED]"

@@ -38,7 +38,7 @@ class CredentialCheck(BaseModel):
         "available", "missing", "unavailable", "incomplete", "invalid", "empty"
     ]
     kind: Literal["project_key", "login"] | None = None
-    source: Literal["environment", "keyring"] | None = None
+    source: Literal["environment", "keyring", "file"] | None = None
 
 
 class KeyContext(Check):
@@ -90,13 +90,18 @@ class _AccountResponse(BaseModel):
 
 def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
     """Resolve once; availability reads after absence never select another identity."""
-    source: Literal["environment", "keyring"] = (
-        "environment" if "SOLWYN_API_KEY" in os.environ else "keyring"
-    )
     try:
         credential = auth.resolve_credential()
+    except auth.MalformedCredentialFileError:
+        # Present but not a valid credential: never silently skipped.
+        return None, CredentialCheck(status="incomplete", source=_stored_kind())
+    except auth.CredentialStorageError:
+        return None, CredentialCheck(status="unavailable", source=_stored_kind())
     except AuthError:
-        status = (
+        source: Literal["environment", "keyring", "file"] = (
+            "environment" if "SOLWYN_API_KEY" in os.environ else _stored_kind()
+        )
+        status: Literal["empty", "invalid"] = (
             "empty"
             if source == "environment" and os.environ["SOLWYN_API_KEY"] == ""
             else "invalid"
@@ -108,23 +113,20 @@ def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
         )
     if isinstance(credential, LoginCredential):
         return credential, CredentialCheck(
-            status="available", kind="login", source="keyring"
+            status="available", kind="login", source=credential.source
         )
-    entries = [
-        auth._get_password(entry)
-        for entry in (
-            auth.API_KEY_ENTRY,
-            auth.CLI_CREDENTIAL_ENTRY,
-            auth.CLI_CREDENTIAL_META_ENTRY,
-        )
-    ]
-    if not all(available for available, _ in entries):
-        status = "unavailable"
-    elif any(value is not None for _, value in entries):
-        status = "incomplete"
-    else:
-        status = "missing"
-    return None, CredentialCheck(status=status, source="keyring")
+    status_now = auth.stored_entry_status()
+    return None, CredentialCheck(
+        status="incomplete" if status_now in ("found", "incomplete") else status_now,
+        source=_stored_kind(),
+    )
+
+
+def _stored_kind() -> Literal["keyring", "file"]:
+    try:
+        return auth.where_stored().kind
+    except AuthError:
+        return "file"
 
 
 def key_context(client: SolwynClient, credential: ResolvedCredential) -> KeyContext:

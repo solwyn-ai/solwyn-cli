@@ -5085,6 +5085,10 @@
       "hidden": false,
       "is_group": false,
       "json_schema": "solwyn.login.v2",
+      "json_schemas": [
+        "solwyn.login.v2",
+        "solwyn.login.token.v1"
+      ],
       "name": "login",
       "output_kind": "json-envelope",
       "params": [
@@ -5159,6 +5163,34 @@
           "name": "resume",
           "required": false,
           "type": "boolean"
+        },
+        {
+          "cli_names": [
+            "--store"
+          ],
+          "default": null,
+          "help": "Where to store credentials: auto, keyring or file. Saved to config; nothing is copied between stores.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "store",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--no-store"
+          ],
+          "default": false,
+          "help": "Print the new login token once for SOLWYN_TOKEN; store nothing.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_store",
+          "required": false,
+          "type": "boolean"
         }
       ],
       "path": [
@@ -5176,7 +5208,7 @@
       "path": [
         "logout"
       ],
-      "summary": "Revoke the stored login and clear all stored Solwyn credentials."
+      "summary": "Revoke every stored login and clear this API's stored Solwyn credentials.\n\nLogout is the one exception to store isolation: whatever store is\nselected, it looks in both the credentials file and the keychain."
     },
     {
       "hidden": false,
@@ -5959,7 +5991,7 @@
             "--store-key"
           ],
           "default": false,
-          "help": "Store the new key in the OS keychain.",
+          "help": "Store the new key in the credential store.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -8250,7 +8282,7 @@
       "keys": [
         "authenticated_probe",
         "config",
-        "keychain",
+        "credential_store",
         "readiness",
         "schema",
         "snapshot",
@@ -8371,14 +8403,33 @@
       "keys": [
         "account_id",
         "account_name",
-        "auth_type",
         "credential_id",
         "email",
         "expires_at",
         "label",
         "role",
         "schema",
-        "scope"
+        "scope",
+        "token"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.login.token.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "account_id",
+        "account_name",
+        "auth_type",
+        "credential_id",
+        "email",
+        "expires_at",
+        "label",
+        "location",
+        "role",
+        "schema",
+        "scope",
+        "store"
       ],
       "optional_keys": [],
       "schema": "solwyn.login.v2",
@@ -8387,8 +8438,10 @@
     {
       "keys": [
         "cleared",
+        "logins_found",
         "revoked",
-        "schema"
+        "schema",
+        "stores"
       ],
       "optional_keys": [],
       "schema": "solwyn.logout.v1",
@@ -8398,6 +8451,7 @@
       "keys": [
         "args",
         "command",
+        "env_vars",
         "schema"
       ],
       "optional_keys": [],

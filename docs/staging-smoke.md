@@ -17,7 +17,7 @@ Both commands default to `https://api-staging.solwyn.ai`. The account must be ab
 to create projects and update budgets, with Production or higher access to
 paginated cost events. An existing `SOLWYN_API_KEY` is ignored: every invocation
 creates its own project and obtains a fresh write-scoped key. Existing projects,
-CLI configuration, and OS keychain credentials are not modified.
+CLI configuration, and stored credentials are not modified.
 
 The shared fixture uses `SOLWYN_JWT` only for `POST /projects`, `PUT
 /projects/{id}/budget`, and `DELETE /projects/{id}`. These management operations

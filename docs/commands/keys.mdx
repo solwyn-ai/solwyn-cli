@@ -18,7 +18,7 @@ solwyn --project proj_example keys revoke --key-id key_example --yes
 solwyn keys env
 ```
 
-`keys env` reads the project key stored in the keychain and prints one line to
+`keys env` reads the project key stored for this API and prints one line to
 stdout, nothing to stderr, so `eval "$(solwyn keys env)"` exports it for the
 SDK in the current shell:
 
@@ -64,7 +64,7 @@ Usage: solwyn keys env [OPTIONS]
 ```
 
 ```text
-Endpoint: local keychain read
+Endpoint: local credential store read
 Auth: local (stored project key)
 Exit codes: 0 success; 2 usage; 3 no stored project key
 JSON schema: solwyn.keys-env.v1
@@ -114,7 +114,7 @@ Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.keys-rotate.v1
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
-The replacement key is shown exactly once; store it in the OS keychain.
+The replacement key is shown exactly once; keep it in a secret manager or solwyn login --with-key.
 ```
 
 ## `solwyn keys show`

@@ -214,3 +214,14 @@ def test_combined_conditional_commands_retain_all_output_variants() -> None:
         assert command["json_schemas"] == variants
         assert command["output_kind"] == "json-envelope"
         assert set(variants) <= schemas
+
+
+def test_login_declares_the_no_store_token_schema() -> None:
+    # login --no-store --json emits solwyn.login.token.v1; the contract must
+    # name it so docs that cite it verify against the snapshot.
+    contract = build_cli_contract()
+    login = next(entry for entry in contract["commands"] if entry["path"] == ["login"])
+    assert login["json_schemas"] == ["solwyn.login.v2", "solwyn.login.token.v1"]
+    assert "solwyn.login.token.v1" in {
+        entry["schema"] for entry in contract["json_schemas"]
+    }

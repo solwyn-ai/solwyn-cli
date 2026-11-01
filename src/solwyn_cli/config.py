@@ -1,9 +1,10 @@
 """Allowlisted, non-secret local configuration for the Solwyn CLI."""
 
 import os
+import sys
 import tempfile
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO, Iterator, Literal
@@ -35,6 +36,8 @@ class Config(BaseModel):
     api_url: str = "https://api.solwyn.ai"
     default_project: str | None = None
     format: Literal["table", "json"] = "table"
+    # Where stored credentials live; SOLWYN_CREDENTIAL_STORE overrides it.
+    credential_store: Literal["auto", "keyring", "file"] = "auto"
 
     @field_validator("api_url")
     @classmethod
@@ -66,9 +69,35 @@ class Config(BaseModel):
 CONFIG_KEYS = frozenset(Config.model_fields)
 
 
+_XDG_DEFAULTS = {
+    "XDG_CONFIG_HOME": ".config",
+    "XDG_DATA_HOME": ".local/share",
+    "XDG_STATE_HOME": ".local/state",
+}
+
+
+def user_directory(variable: str, platform_directory: Callable[[], str]) -> Path:
+    """platformdirs' per-user directory, ignoring a relative XDG root.
+
+    The XDG spec says a relative path in an XDG_*_HOME variable is invalid and
+    must be ignored. Honoring one would give each working directory its own
+    config, credentials file or credential lock. Ignored, the platform default
+    applies (~/.local/... on Linux, ~/Library/Application Support on macOS).
+    """
+    value = os.environ.get(variable, "").strip()
+    if not value or os.path.isabs(value) or sys.platform == "win32":
+        return Path(platform_directory())
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "solwyn"
+    return Path.home() / _XDG_DEFAULTS[variable] / "solwyn"
+
+
 def get_config_path() -> Path:
     """Return the platform-native path to the user's local configuration."""
-    return Path(user_config_dir("solwyn")) / "config.toml"
+    return (
+        user_directory("XDG_CONFIG_HOME", lambda: user_config_dir("solwyn"))
+        / "config.toml"
+    )
 
 
 def load_config() -> Config:
@@ -159,6 +188,8 @@ def save_config(config: Config, *, omit_default_api_url: bool = False) -> None:
     values = config.model_dump(include=CONFIG_KEYS, exclude_none=True)
     if omit_default_api_url and config.api_url == Config().api_url:
         values.pop("api_url", None)
+    if values.get("credential_store") == "auto":
+        values.pop("credential_store")  # The default; keep config minimal.
     content = tomli_w.dumps(values)
     temporary_path: Path | None = None
 

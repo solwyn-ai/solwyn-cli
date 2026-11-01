@@ -970,6 +970,35 @@ def test_tty_jwt_multiple_projects_can_be_selected(
     assert json.loads(result.stdout)["project_id"] == "proj_beta"
 
 
+@pytest.mark.parametrize(
+    "secret", ["solwyn_cli_" + "9a" * 32, "solwyn_dc_" + "4f" * 32]
+)
+def test_tty_project_prompt_redacts_tokens_in_project_ids(
+    monkeypatch: pytest.MonkeyPatch, secret: str
+) -> None:
+    prompts: list[str] = []
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(
+        init_module.typer,
+        "prompt",
+        lambda label, **kwargs: prompts.append(label) or "proj_beta",
+    )
+    FakeClient.responses = [
+        httpx.Response(
+            200,
+            json=[{**PROJECT, "id": f"id_{secret}_x"}, {**PROJECT, "id": "proj_beta"}],
+        ),
+        httpx.Response(200, json={**BUDGET, "project_id": "proj_beta"}),
+    ]
+
+    result = _invoke()
+
+    assert result.exit_code == 0, result.stderr
+    assert prompts == ["Project (id_[REDACTED]_x, proj_beta, or create)"]
+    assert secret not in result.stdout + result.stderr
+
+
 def test_tty_no_projects_creates_and_stores_key_without_displaying_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -4,8 +4,9 @@ title: Local configuration
 
 Inspect and update non-secret local configuration. These commands run offline,
 require no credentials and emit plain text, including when global `--json` is
-selected. Allowed keys are `api_url`, `default_project` and `format`; credentials belong
-in the OS keychain or explicit environment input.
+selected. Allowed keys are `api_url`, `credential_store` (`auto`, `keyring` or
+`file`; see [login](login.mdx)), `default_project` and `format`; credentials
+belong in the credential store (`solwyn login`) or explicit environment input.
 
 ```sh
 solwyn config list
@@ -84,6 +85,6 @@ Usage: solwyn config set [OPTIONS] KEY VALUE
 ```text
 Endpoint: local configuration write
 Auth: local (none)
-Exit codes: 0 success; 2 usage
+Exit codes: 0 success; 2 usage; 3 credential lock (credential_store only)
 JSON schema: none (human confirmation on stderr)
 ```

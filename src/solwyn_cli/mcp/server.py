@@ -4,6 +4,7 @@ import json
 import inspect
 import logging
 import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -17,7 +18,7 @@ from mcp.shared import jsonrpc_dispatcher as sdk_dispatcher
 from mcp.shared import direct_dispatcher as sdk_direct_dispatcher
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from solwyn_cli import __version__, auth, runtime
+from solwyn_cli import __version__, auth, credential_store, runtime
 from solwyn_cli.mcp.declarations import ToolDeclaration
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli._vendor.batch import new_operation_id, operation_expiry
@@ -45,7 +46,9 @@ from solwyn_cli.auth import (
     LoginRequiredError,
     LOGIN_REQUIRED_HINT,
     METERING_KEY_HINT,
+    CredentialStorageError,
     MeteringKeyRequiredError,
+    missing_credential_hint,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands.alerts import (
@@ -129,6 +132,7 @@ from solwyn_cli.errors import (
     SERVICE_BUSY_HINT,
     WRITE_BUSY_HINT,
     approval_url_from,
+    redact_secrets,
 )
 
 
@@ -526,9 +530,11 @@ class _ToolCatalog:
                             )
                 result = await self._call_tool(ctx, params)
                 # Serialization is CPU work too; the same deadline owns it.
-                return await operation.run_sync(
+                wire = await operation.run_sync(
                     partial(_bounded_protocol_result, result, control)
                 )
+                _exit_if_stranded()
+                return wire
         except (operation.OperationLimit, TimeoutError) as error:
             code = (
                 error.code
@@ -921,12 +927,24 @@ def tool_call_client(
         no_color=True,
     )
     operation.checkpoint()
-    credential = auth.resolve_credential(purpose=purpose)
+    reset_api_url = auth.use_api_url(command_runtime.api_url)
+    try:
+        credential = auth.resolve_credential(
+            purpose=purpose, api_url=command_runtime.api_url
+        )
+    finally:
+        reset_api_url()
     operation.checkpoint()
     if credential is None:
         if purpose == "metering":
-            raise MeteringKeyRequiredError(METERING_KEY_HINT)
-        raise AuthError("Authentication required. Configure credentials and retry.")
+            error: AuthError = MeteringKeyRequiredError(METERING_KEY_HINT)
+        else:
+            error = AuthError(
+                "Authentication required. Configure credentials and retry."
+            )
+        # Names where the lookup looked (store and path), never a secret.
+        error.hint = missing_credential_hint(purpose)
+        raise error
     with SolwynClient(
         api_url=command_runtime.api_url,
         credential=credential,
@@ -1155,8 +1173,30 @@ def _execution_outcome(result: ResultT) -> ResultT:
     return result
 
 
+def _login_required_hint() -> str:
+    # A project key resolved; say where the login was looked for.
+    lookup = auth.last_lookup()
+    if lookup is None:
+        return LOGIN_REQUIRED_HINT
+    return f"{LOGIN_REQUIRED_HINT} Looked in: {lookup.describe()}."
+
+
+def _exit_if_stranded() -> None:
+    """A timed-out keyring write may still land: leave instead of holding.
+
+    The process keeps the credential lock until it exits, so a server that
+    stayed up would block every other Solwyn process. Exit shortly after this
+    result is written; the host starts a fresh server on the next call.
+    """
+    if credential_store.stranded():
+        timer = threading.Timer(1.0, os._exit, args=(1,))
+        timer.daemon = True
+        timer.start()
+
+
 def _protocol_result(result: _ToolResult) -> types.CallToolResult:
-    payload = result.model_dump(mode="json", by_alias=True)
+    # Every tool result passes here; both representations share one redaction.
+    payload = redact_secrets(result.model_dump(mode="json", by_alias=True))
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(payload))],
         structured_content=payload,
@@ -1278,6 +1318,14 @@ def _operation_error(
             hint=_safe_remote_error_hint(error, code),
             status_code=error.status_code,
         )
+    if isinstance(error, CredentialStorageError):
+        # CLI-owned text naming the store and path; never server free text.
+        return _error(
+            result_type,
+            code="credential_storage_failed",
+            message=str(error),
+            hint=error.hint,
+        )
     if isinstance(error, AuthError):
         return _error(
             result_type,
@@ -1286,11 +1334,12 @@ def _operation_error(
             hint=(
                 INGEST_UNKNOWN_HINT
                 if error.ingest_outcome_uncertain
-                else METERING_KEY_HINT
+                else (error.hint or METERING_KEY_HINT)
                 if isinstance(error, MeteringKeyRequiredError)
-                else LOGIN_REQUIRED_HINT
+                else _login_required_hint()
                 if login_required or isinstance(error, LoginRequiredError)
-                else "Configure a project key or run solwyn login, then retry."
+                else error.hint
+                or "Configure a project key or run solwyn login, then retry."
             ),
         )
     if isinstance(error, ValueError) and str(error) == "project_required":
@@ -1930,7 +1979,7 @@ def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
                     _ProjectsResult,
                     code="authentication_required",
                     message="User login is required to list projects.",
-                    hint=LOGIN_REQUIRED_HINT,
+                    hint=_login_required_hint(),
                 )
             data = ProjectsListData(projects=fetch_projects(client=client))
         return _success(_ProjectsResult, data)
@@ -2166,7 +2215,7 @@ def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
                     _OverviewResult,
                     code="authentication_required",
                     message="User login is required to read the account overview.",
-                    hint=LOGIN_REQUIRED_HINT,
+                    hint=_login_required_hint(),
                 )
             data = fetch_overview(client=client)
         return _success(_OverviewResult, data)

@@ -40,7 +40,7 @@ from solwyn_cli.commands.costs import report_window, stream_export
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, OutputFormat, TableData
+from solwyn_cli.output import OutputError, OutputFormat, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -329,14 +329,18 @@ def _history(
         and runtime.output_format is OutputFormat.TABLE
     ):
         typer.echo(
-            "More events are available. Next cursor (pass with --cursor): "
-            + json.dumps(data.next_cursor),
+            _terminal_safe(
+                "More events are available. Next cursor (pass with --cursor): "
+                + json.dumps(data.next_cursor)
+            ),
             err=True,
         )
     if event_id is not None:
         event = data.events[0]
         typer.echo(
-            f"Event {event.id}; delivery: {event.delivery.status if event.delivery else 'unavailable'}.",
+            _terminal_safe(
+                f"Event {event.id}; delivery: {event.delivery.status if event.delivery else 'unavailable'}."
+            ),
             err=True,
         )
     output_engine(context).write_success(
@@ -632,8 +636,10 @@ def _write_account_events(context: typer.Context, data: BaseModel, schema: str) 
         and command_context(context).output_format is OutputFormat.TABLE
     ):
         typer.echo(
-            "More events are available. Next cursor (pass with --cursor): "
-            + json.dumps(data.next_cursor),
+            _terminal_safe(
+                "More events are available. Next cursor (pass with --cursor): "
+                + json.dumps(data.next_cursor)
+            ),
             err=True,
         )
     output_engine(context).write_success(

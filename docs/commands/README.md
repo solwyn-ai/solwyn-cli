@@ -1,7 +1,8 @@
 # Command reference
 
-These references describe solwyn-cli 0.3.0. Earlier releases, including 0.2.0, lack many of
-these commands; use installed `--help` and MCP discovery for an installed version's exact surface.
+These references describe solwyn-cli 0.4.0. Earlier releases lack some of these commands,
+and 0.3.0 and older log in with a terminal password. Use installed `--help` and MCP
+discovery for an installed version's exact surface.
 Global selection/output flags precede commands. Core authorizes every request.
 A Solwyn login reads, stops runs and lowers caps on its own; other changes wait
 for a browser [approval](approvals.mdx) and exit 6 when it is not given.

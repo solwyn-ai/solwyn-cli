@@ -201,7 +201,7 @@ def _select(
         schema="solwyn.credentials.revoke.v1",
         guidance=(
             "Accepts an ID or a unique prefix of at least 8 characters.",
-            "--current revokes the login in use and clears it from the keychain.",
+            "--current revokes the login in use and clears it from the credential store.",
         ),
     ),
 )
@@ -252,7 +252,20 @@ def revoke_credential(
         _auth_failed(context, error)
     except (ValidationError, ValueError, TypeError):
         _invalid_response(context)
-    is_local = target.current or target.id == credential.meta.id
+    # Clear the stored login only when it is the one revoked; a SOLWYN_TOKEN
+    # login is not stored, so revoking it leaves any stored login alone.
+    try:
+        stored = (
+            credential
+            if credential.source != "environment"
+            else auth.stored_login(include_expired=True)
+        )
+    except CredentialStorageError:
+        stored = None
+    stored_id = stored.meta.id if stored is not None and stored.meta else None
+    is_local = stored_id == target.id or (
+        target.current and credential.source != "environment"
+    )
     if is_local:
         try:
             auth.clear_login()
@@ -261,7 +274,10 @@ def revoke_credential(
                 context,
                 OutputError(
                     code="credential_storage_failed",
-                    message="The login was revoked, but the keychain could not be cleared.",
+                    message=(
+                        "The login was revoked, but the credential store could "
+                        "not be cleared."
+                    ),
                     hint=str(error),
                 ),
                 semantic=ErrorSemantic.AUTH,

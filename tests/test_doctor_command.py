@@ -16,7 +16,13 @@ from solwyn_cli import config as config_module
 from solwyn_cli.commands import doctor as doctor_module
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
-from login_fixtures import expired_login_entries, login_credential, login_entries
+from login_fixtures import (
+    DictStore,
+    install_store,
+    expired_login_entries,
+    login_credential,
+    login_entries,
+)
 
 
 runner = CliRunner()
@@ -73,12 +79,7 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             "x-solwyn-core-ref": CORE_REF,
         },
     )
-    stored = login_entries()
-    monkeypatch.setattr(
-        doctor_module.auth_module,
-        "_get_password",
-        lambda entry: (True, stored.get(entry)),
-    )
+    install_store(monkeypatch, DictStore(login_entries()))
     yield
 
 
@@ -346,57 +347,56 @@ def test_snapshot_diagnostic_marks_old_or_unpinned_snapshot_degraded() -> None:
     assert result.core_ref is None
 
 
-def test_keychain_diagnostic_rejects_an_incomplete_login(
+def test_credential_store_diagnostic_rejects_an_incomplete_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        doctor_module.auth_module,
-        "_get_password",
-        lambda entry: (
-            True,
-            "stored" if entry == auth.CLI_CREDENTIAL_ENTRY else None,
-        ),
-    )
+    install_store(monkeypatch, DictStore({auth.LOGIN_ENTRY: "stored"}))
 
-    result = doctor_module._keychain_diagnostic()
+    result = doctor_module._credential_store_diagnostic()
 
     assert result.status == "degraded"
-    assert result.detail == "Keychain contains an incomplete login. Run solwyn login."
+    assert result.detail == (
+        "file (/test/credentials.json) contains an incomplete login. Run solwyn login."
+    )
 
 
 @pytest.mark.parametrize(
     "entries,detail",
     [
         (
-            {
-                auth.CLI_CREDENTIAL_ENTRY: "stored",
-                auth.CLI_CREDENTIAL_META_ENTRY: "{}",
-            },
-            "Keychain contains an unreadable login. Run solwyn login.",
+            {auth.LOGIN_ENTRY: json.dumps({"token": "stored", "meta": {}})},
+            "file (/test/credentials.json) contains an incomplete login.",
         ),
         (expired_login_entries(), "The stored login expired on "),
     ],
 )
-def test_keychain_diagnostic_reports_unusable_logins(
+def test_credential_store_diagnostic_reports_unusable_logins(
     monkeypatch: pytest.MonkeyPatch, entries: dict[str, str], detail: str
 ) -> None:
-    monkeypatch.setattr(
-        doctor_module.auth_module,
-        "_get_password",
-        lambda entry: (True, entries.get(entry)),
-    )
+    install_store(monkeypatch, DictStore(dict(entries)))
 
-    result = doctor_module._keychain_diagnostic()
+    result = doctor_module._credential_store_diagnostic()
 
     assert result.status == "degraded"
     assert result.detail.startswith(detail)
 
 
-def test_keychain_diagnostic_accepts_a_stored_login() -> None:
-    result = doctor_module._keychain_diagnostic()
+def test_credential_store_diagnostic_accepts_a_stored_login() -> None:
+    result = doctor_module._credential_store_diagnostic()
 
     assert result.status == "ok"
-    assert result.detail == "Keychain available; stored credential found."
+    assert result.detail == "Stored credential found in file (/test/credentials.json)."
+
+
+def test_credential_store_diagnostic_reports_an_unavailable_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_store(monkeypatch, DictStore(unavailable=True))
+
+    result = doctor_module._credential_store_diagnostic()
+
+    assert result.status == "error"
+    assert "unavailable" in result.detail
 
 
 @pytest.mark.parametrize("name", ["redis", "stripe_catalog", "stripe_portal"])

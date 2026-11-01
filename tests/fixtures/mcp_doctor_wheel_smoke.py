@@ -216,7 +216,11 @@ with tempfile.TemporaryDirectory(prefix="solwyn-wheel-doctor-") as directory:
             assert REQUESTS[before:] == [
                 ("GET", f"/api/v1/projects/{PROJECT}/budget", True)
             ]
-        assert list(root.iterdir()) == []  # No credential/config files were created.
+        # No credential or config file was created. Reads take the shared
+        # credential lock, so its empty lock file is the only thing allowed.
+        created = [path for path in root.rglob("*") if path.is_file()]
+        assert [path.name for path in created] in ([], ["credentials.lock"]), created
+        assert all(path.stat().st_size == 0 for path in created)
     finally:
         api.shutdown()
         thread.join(timeout=3)

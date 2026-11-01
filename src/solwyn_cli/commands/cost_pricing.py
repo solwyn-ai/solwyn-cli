@@ -22,7 +22,7 @@ from solwyn_cli.commands.costs import report_window
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import CommandContext, command_context, output_engine
 
 
@@ -71,20 +71,24 @@ def _report_simulation_caveats(data: CostSimulationResponse) -> None:
     baseline_only = data.excluded.modality_mismatch + data.excluded.missing_breakdown
     outside_both = data.excluded.unpriced + data.excluded.local
     typer.echo(
-        "Simulation populations: "
-        f"scanned {_counted('event', data.scanned_event_count)}; "
-        "baseline uses stored actual cost for "
-        f"{_counted('priced served event', data.baseline_event_count)}; "
-        "current-rate repricing includes "
-        f"{_counted('compatible event', data.included_event_count)}.",
+        _terminal_safe(
+            "Simulation populations: "
+            f"scanned {_counted('event', data.scanned_event_count)}; "
+            "baseline uses stored actual cost for "
+            f"{_counted('priced served event', data.baseline_event_count)}; "
+            "current-rate repricing includes "
+            f"{_counted('compatible event', data.included_event_count)}."
+        ),
         err=True,
     )
     typer.echo(
-        f"{_counted('modality-mismatch/missing-breakdown event', baseline_only)} "
-        f"{'remains' if baseline_only == 1 else 'remain'} in the baseline but "
-        f"{'is' if baseline_only == 1 else 'are'} excluded from repricing; "
-        f"{_counted('unpriced/local event', outside_both)} "
-        f"{'is' if outside_both == 1 else 'are'} excluded from both costs.",
+        _terminal_safe(
+            f"{_counted('modality-mismatch/missing-breakdown event', baseline_only)} "
+            f"{'remains' if baseline_only == 1 else 'remain'} in the baseline but "
+            f"{'is' if baseline_only == 1 else 'are'} excluded from repricing; "
+            f"{_counted('unpriced/local event', outside_both)} "
+            f"{'is' if outside_both == 1 else 'are'} excluded from both costs."
+        ),
         err=True,
     )
     if data.baseline_event_count != data.included_event_count:
@@ -94,8 +98,10 @@ def _report_simulation_caveats(data: CostSimulationResponse) -> None:
             err=True,
         )
     typer.echo(
-        f"Pricing caveats: {data.caveats.pricing_version} current-rate snapshot; "
-        "tokenizer equivalence is approximate.",
+        _terminal_safe(
+            f"Pricing caveats: {data.caveats.pricing_version} current-rate snapshot; "
+            "tokenizer equivalence is approximate."
+        ),
         err=True,
     )
 

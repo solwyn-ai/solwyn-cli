@@ -12,7 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from golden.harness import assert_matches_golden
-from login_fixtures import LOGIN_TOKEN, login_entries
+from login_fixtures import fake_keychain, LOGIN_TOKEN, login_entries
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import approvals as approvals_module
@@ -57,17 +57,9 @@ LISTING = {
 @pytest.fixture
 def keychain(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     values: dict[str, str] = login_entries(id=CURRENT_ID)
-    monkeypatch.setattr(
-        auth.keyring, "get_password", lambda service, name: values.get(name)
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: values.__setitem__(name, value),
-    )
-    monkeypatch.setattr(
-        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
-    )
+    store = fake_keychain(monkeypatch)
+    store.update(values)
+    values = store
     return values
 
 
@@ -176,7 +168,7 @@ def test_revoke_by_prefix_deletes_that_login_and_keeps_the_local_one(
         ("GET", "/api/v1/cli/credentials"),
         ("DELETE", f"/api/v1/cli/credentials/{OTHER_ID}"),
     ]
-    assert auth.CLI_CREDENTIAL_ENTRY in keychain
+    assert auth.LOGIN_ENTRY in keychain
 
 
 def test_revoke_current_clears_the_keychain_login(

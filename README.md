@@ -4,7 +4,7 @@
 
 Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and recover from leaked or expired project keys — from your terminal, your scripts, or your coding agent.
 
-This README describes solwyn-cli 0.3.0. The package is distributed on PyPI as `solwyn-cli`;
+This README describes solwyn-cli 0.4.0. The package is distributed on PyPI as `solwyn-cli`;
 run `solwyn --version` to see which version you have installed, and use `solwyn --help`
 and MCP discovery to inspect its exact surface.
 
@@ -115,8 +115,9 @@ Solwyn CLI:
 - sends only your own spend events; `sdk_instance_id` is an invocation ID (the retained operation UUID for recoverable MCP batches); no telemetry;
 - never captures, logs, or transmits prompts or responses;
 - never collects, stores, or proxies provider API keys;
-- has no telemetry, update checks, or phone-home behavior; and
-- stores Solwyn credentials only in the operating system keychain, never in configuration files, command-line arguments, or output.
+- has no telemetry, update checks, or phone-home behavior;
+- stores Solwyn credentials in the operating system keychain on macOS and Windows and in a private `0600` file (`~/.local/share/solwyn/credentials.json`) on Linux, keyed by API URL, never in configuration files or command-line arguments. If a keychain write fails, the command fails and stores nothing; it never falls back to the file (`solwyn login --store file` chooses the file). See [login](docs/commands/login.mdx) for the stores, `SOLWYN_TOKEN` for CI, the tradeoffs, and how logout clears both stores; and
+- prints a secret only where that is the point of the command: `keys env` (the stored project key, as an export line), `keys rotate` and `projects create` without `--store-key` (a newly issued project key, once), `webhooks create` and `webhooks rotate` (a one-time signing secret), and `login --no-store` (a newly issued login token, once). Raw data commands (`costs export`, `alerts export`, `attest`) return the server's data byte-for-byte. Everything else redacts CLI tokens and device codes.
 
 ## Development
 

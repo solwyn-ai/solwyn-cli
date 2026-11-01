@@ -27,7 +27,7 @@ from solwyn_cli.commands._shared import exit_with_error, required_credential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, OutputFormat, TableData
+from solwyn_cli.output import OutputError, OutputFormat, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -248,7 +248,9 @@ def audit(
     if runtime.output_format is OutputFormat.TABLE and data.has_more:
         typer.echo("More audit events are available.", err=True)
         typer.echo(
-            f"Next cursor (JSON escaped): {json.dumps(data.next_cursor)}",
+            _terminal_safe(
+                f"Next cursor (JSON escaped): {json.dumps(data.next_cursor)}"
+            ),
             err=True,
         )
         typer.echo(

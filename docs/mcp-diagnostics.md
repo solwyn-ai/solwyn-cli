@@ -11,16 +11,21 @@ solwyn --json --project proj_0123456789abcdef01234567 doctor --mcp
 
 `mcp-config` is offline. It resolves this interpreter's installed `solwyn` console
 executable to an absolute path (`Scripts/solwyn.exe` on Windows), and prints the
-`solwyn.mcp-config.v1` envelope with `command` and `args`. Extract those fields
-for the configuration format your host supports. Arguments remain separate array
+`solwyn.mcp-config.v1` envelope with `command`, `args` and `env_vars`. Extract those
+fields for the configuration format your host supports. `env_vars` lists the
+names (never values) of environment variables a host should pass through:
+Solwyn's own variables and `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME`, plus
+`DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` when the Linux keyring is the
+credential store. Hosts that start servers with a minimal environment, such as
+Codex, need them (see the [quickstart](mcp-quickstart.md)). Arguments remain separate array
 entries, including paths with spaces. Global `--project` and `--api-url` precede
 `mcp`; `--profile` follows it. The default generated profile is `read`.
 
 Use `mcp-config --executable /absolute/path/to/solwyn` to select another trusted
 installed executable. A missing or non-executable explicit target is an error;
 it never falls back to another installation. The generator does not run that
-executable. Configure credentials separately in the host environment or OS
-keychain. No secret values or host-specific interpolation placeholders appear in
+executable. Configure credentials separately with `solwyn login` or in the host
+environment. No secret values or host-specific interpolation placeholders appear in
 the descriptor. `--json` follows the CLI's usual schema-bearing output convention;
 errors use stderr.
 

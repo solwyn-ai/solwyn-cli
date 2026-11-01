@@ -1,6 +1,6 @@
 # Connect a harness to Solwyn MCP
 
-This guide describes Solwyn CLI 0.3.0 (PyPI package `solwyn-cli`). It uses local stdio;
+This guide describes Solwyn CLI 0.4.0 (PyPI package `solwyn-cli`). It uses local stdio;
 there is no hosted MCP endpoint. Account/project access is a separate prerequisite.
 
 ## Install and make one read
@@ -15,21 +15,26 @@ solwyn login --with-key
 ```
 
 Alternatively, use `pipx install solwyn-cli`. The command/tool reference and
-example clients below describe 0.3.0 (33 read / 37 guardrails tools); 0.2.0 exposes
-13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.3.0 is not
+example clients below describe 0.4.0 (33 read / 37 guardrails tools); 0.2.0 exposes
+13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.4.0 is not
 yet available from your package index, build an authorized checkout:
 
 ```sh
 uv sync --locked --all-groups
 uv build --wheel
-uv tool install --force --python 3.11 dist/solwyn_cli-0.3.0-py3-none-any.whl
+uv tool install --force --python 3.11 dist/solwyn_cli-0.4.0-py3-none-any.whl
 ```
 
-The login command prompts for a project key and stores it in the OS keychain.
-Use a `read_only` key for first setup. A desktop host must run under that same OS
-account with keychain access. For CI, use the runner's secret input mechanism to
-set `SOLWYN_API_KEY` and explicitly forward that variable to the server. Keys do
-not belong in argv, repository JSON or generated descriptors.
+The login command prompts for a project key and stores it in the CLI's
+credential store: the OS keychain on macOS and Windows, and a private `0600`
+file (`~/.local/share/solwyn/credentials.json`) on Linux. See
+[login](commands/login.mdx) for the stores and their tradeoffs. Use a
+`read_only` key for first setup. A desktop host must run under the same OS
+account. For CI, use the runner's secret input mechanism to set `SOLWYN_API_KEY`
+(metering) or `SOLWYN_TOKEN` (a scoped login from
+`solwyn login --scope read --no-store`, for reads) and explicitly forward that
+variable to the server. Secrets do not belong in argv, repository JSON or
+generated descriptors.
 
 `uv tool dir --bin` shows the executable directory. Add it to PATH if necessary,
 or run its `solwyn` (`solwyn.exe` on Windows) by absolute path. The alias
@@ -53,14 +58,58 @@ configuration container. For example, the descriptor portion on POSIX is:
 ```json
 {
   "command": "/absolute/path/to/solwyn",
-  "args": ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"]
+  "args": ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"],
+  "env_vars": [
+    "SOLWYN_TOKEN", "SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL",
+    "SOLWYN_CREDENTIAL_STORE", "SOLWYN_CREDENTIALS_FILE",
+    "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"
+  ]
 }
 ```
+
+`env_vars` lists the names (never values) of parent environment variables the
+host should pass to the server: Solwyn's own variables, and `XDG_DATA_HOME`,
+`XDG_CONFIG_HOME` and `XDG_STATE_HOME` so a server finds the same credentials
+file, config and credential lock as your shell when you have moved them. When the Linux keyring is the credential store
+(`--store keyring`), it adds `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR`,
+which the keyring needs. Never write a secret's value into a host config such as
+`~/.codex/config.toml` or `.mcp.json`; those files get shared and committed.
+
+On Linux the default store is the credentials file, which needs only `HOME`, so
+a server started with a minimal environment still finds your `solwyn login`.
+Codex starts servers that way (it passes `HOME`, `PATH`, `USER` and a few
+locale variables). Copy the names into its `env_vars` key, which forwards them
+from Codex's own environment (parsed by Codex CLI 0.166.0); unset names are
+skipped:
+
+```toml
+[mcp_servers.solwyn]
+command = "/absolute/path/to/solwyn"
+args = ["--project", "proj_0123456789abcdef01234567", "mcp", "--profile", "read"]
+env_vars = ["SOLWYN_TOKEN", "SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL", "SOLWYN_CREDENTIAL_STORE", "SOLWYN_CREDENTIALS_FILE", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"]
+```
+
+Claude Code (checked with 2.1.314) starts stdio servers with its full
+environment, so it needs no change. Cursor's documentation does not say which
+environment a stdio server inherits. If a Cursor-launched server cannot find
+your login, pass the variables you use through its `env` field, for example:
+
+```json
+"env": {
+  "SOLWYN_TOKEN": "${env:SOLWYN_TOKEN}",
+  "XDG_DATA_HOME": "${env:XDG_DATA_HOME}"
+}
+```
+
+Every `authentication_required` error from the server names the store and path
+it looked in (for example `Looked in: file,
+/home/you/.local/share/solwyn/credentials.json.`), and `get_whoami` reports the
+store and path of the credential it used.
 
 Keep array entries separate, including executable paths containing spaces.
 This is a host-neutral descriptor, not a universal host config file. Solwyn does
 not edit a host configuration. No `${SECRET}` interpolation convention is
-assumed: configure the host's environment or keychain access explicitly.
+assumed: configure the host's environment or credential store explicitly.
 
 For a different trusted executable or authorized Core environment, global
 options precede the command; command options follow it:
@@ -100,7 +149,11 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 | --- | --- |
 | Missing/non-executable launch target | Use the executable from the intended installed environment; an explicit bad target never falls back. |
 | Missing project | Select the project explicitly. Doctor can still show the supplied key's identity. |
-| Locked/unavailable keychain | Unlock the same OS account's keychain, or deliberately provide the intended key in the host environment. |
+| Locked/unavailable keychain (macOS, Windows, or `--store keyring`): `credential_storage_failed` naming the keychain | Unlock the same OS account's keychain, or set `SOLWYN_CREDENTIAL_STORE=file` / run `solwyn login --store file`. A `SOLWYN_API_KEY` in the host environment is not used for non-metering tools while the keychain cannot be read; add `SOLWYN_AUTH=project_key` to use it. |
+| `credential_storage_failed`: credentials file is readable by other users | Run the `chmod 600 <path>` it names. The CLI refuses a file others can read. |
+| `authentication_required` names a different credentials file than your shell uses | The host dropped `XDG_DATA_HOME` (or `SOLWYN_CREDENTIALS_FILE`). Forward the `env_vars` names from `mcp-config`, then restart the host. |
+| Linux keyring mode: `credential_storage_failed`, the system keyring is not available | The host stripped the session bus. Forward `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` (listed by `mcp-config` in keyring mode), or switch to the default file store with `solwyn login --store file`. `doctor --mcp` passes its key in the environment, so it cannot catch this. |
+| Headless machine, CI or cloud agent | Set `SOLWYN_TOKEN` (a `solwyn login --no-store` login) for reads and `SOLWYN_API_KEY` for metering in the host environment. |
 | Read/key project mismatch | Correct the read selector or choose the intended key. Do not test identity by reserving budget. |
 | Identity endpoint unsupported/404 | Deploy the dependent Core release. Scope stays unknown on older Core. |
 | Read-only key or login cannot write | Use the appropriate authorized project key for the caller-owned workflow; changing profiles does not change scope. |
@@ -158,7 +211,7 @@ The clients inherit only the SDK's documented OS environment baseline and the
 intended `SOLWYN_API_KEY`, including empty presence to prevent identity fallback.
 They omit unrelated provider keys, Solwyn tags, Python/Node bootstrap settings,
 proxy credentials and OTel configuration. The SDK adds its OS baseline even when
-`env` is explicit; this is not a keychain sandbox. Independently instrumented
+`env` is explicit; this is not a credential-store sandbox. Independently instrumented
 external clients/hosts remain separate from Solwyn's no-telemetry policy.
 
 `--timeout` bounds client useful work (10 seconds by default, configurable from

@@ -6,7 +6,12 @@ import pytest
 from solwyn_cli import auth
 from solwyn_cli.mcp import server
 from test_mcp_conformance import _call_tool, _install_http
-from login_fixtures import OTHER_LOGIN_TOKEN, login_credential, login_entries
+from login_fixtures import (
+    fake_keychain,
+    OTHER_LOGIN_TOKEN,
+    login_credential,
+    login_entries,
+)
 
 LOGIN_MODES = [
     ("get_costs", {"account": True}),
@@ -24,18 +29,7 @@ LOGIN_MODES = [
 
 @pytest.fixture
 def keychain(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
-    values: dict[str, str] = {}
-    monkeypatch.setattr(
-        auth.keyring, "get_password", lambda service, name: values.get(name)
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: values.__setitem__(name, value),
-    )
-    monkeypatch.setattr(
-        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
-    )
+    values = fake_keychain(monkeypatch)
     return values
 
 
@@ -69,7 +63,10 @@ def test_login_mode_guidance_with_real_credential_precedence(
     assert result.is_error
     error = result.structured_content["error"]
     assert error["code"] == "authentication_required"
-    assert error["hint"] == auth.LOGIN_REQUIRED_HINT
+    # The fixed login hint, then where the stored login was looked for.
+    assert error["hint"].startswith(auth.LOGIN_REQUIRED_HINT)
+    if source != "forced_project_key":
+        assert error["hint"].endswith("Looked in: file, /test/credentials.json.")
     assert "solwyn login" in error["hint"]
     assert "Configure a project key" not in error["hint"]
     assert calls == []
@@ -79,9 +76,10 @@ def test_login_mode_guidance_with_real_credential_precedence(
 def test_project_key_capable_mode_retains_normal_auth_guidance(monkeypatch):
     calls, _, _ = _install_http(monkeypatch, responses=[], credentials=[None])
     result = anyio.run(_call_tool, "get_costs", {})
-    assert (
-        result.structured_content["error"]["hint"]
-        == "Configure a project key or run solwyn login, then retry."
+    hint = result.structured_content["error"]["hint"]
+    assert hint.startswith(
+        "Run solwyn login, or set SOLWYN_TOKEN (a login) or SOLWYN_API_KEY "
+        "(a project key) in the environment. Looked in: file, "
     )
     assert calls == []
 

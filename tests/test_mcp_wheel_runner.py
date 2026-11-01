@@ -26,7 +26,7 @@ def runner():
 def test_release_uses_the_supplied_wheel_without_rebuilding(
     runner, monkeypatch, tmp_path
 ):
-    wheel = tmp_path / "release artifacts" / "solwyn_cli-0.3.0-py3-none-any.whl"
+    wheel = tmp_path / "release artifacts" / "solwyn_cli-0.4.0-py3-none-any.whl"
     wheel.parent.mkdir()
     wheel.write_bytes(b"exact release artifact")
 

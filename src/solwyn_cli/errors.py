@@ -14,7 +14,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 RawDetail: TypeAlias = str | dict[str, Any]
 
 # Spec section 4: CLI credentials and device codes never reach any output.
-_SECRET_TOKEN = re.compile(r"\bsolwyn_(?:cli|dc)_[0-9a-f]{64}\b")
+# No word boundaries: "_" is a word character, so a token wrapped in underscores
+# or other text would slip past \b. Redacting an embedded token is the safe side.
+_SECRET_TOKEN = re.compile(r"solwyn_(?:cli|dc)_[0-9a-f]{64}")
 REDACTED = "[REDACTED]"
 
 

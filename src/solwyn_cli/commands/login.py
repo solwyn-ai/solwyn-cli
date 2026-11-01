@@ -1,5 +1,7 @@
 """Login and logout commands."""
 
+import json
+import os
 import socket
 import sys
 import time
@@ -10,7 +12,7 @@ from typing import Annotated, Literal
 import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from solwyn_cli import auth
+from solwyn_cli import auth, credential_store
 from solwyn_cli.approvals import default_wait_seconds
 from solwyn_cli.auth import (
     AuthError,
@@ -19,11 +21,15 @@ from solwyn_cli.auth import (
     LoginMetadata,
     PendingDevice,
     ProjectKeyCredential,
-    clear_credentials,
+    ResolvedCredential,
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.commands._shared import (
+    credential_saved_note,
+    exit_with_error,
+)
+from solwyn_cli.credential_store import STORE_ENV, STORE_MODES, StoreMode
 from solwyn_cli.errors import ApiError, redact_secrets
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -40,15 +46,15 @@ from solwyn_cli.runtime import command_context, output_engine
 
 LOGIN_HELP = help_contract(
     endpoint=(
-        "POST /oauth/device_authorization and POST /oauth/token, or local keychain "
-        "write with --with-key"
+        "POST /oauth/device_authorization and POST /oauth/token, or a local "
+        "credential store write with --with-key"
     ),
     auth="none",
     exits=(
         "0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or credential "
         "storage; 6 still waiting for browser approval"
     ),
-    schema="solwyn.login.v2",
+    schema="solwyn.login.v2; with --no-store --json: solwyn.login.token.v1",
     guidance=(
         "Prints a URL and a code on stderr; approve in a browser, where you can also sign up.",
         "The CLI never opens a browser, so SSH and agent sandboxes work the same way.",
@@ -56,11 +62,18 @@ LOGIN_HELP = help_contract(
         "Exit 6 is error code login_pending; its detail (solwyn.login.pending.v1) has "
         "user_code, verification_uri, verification_uri_complete and expires_at.",
         "Keys are never accepted as command-line arguments or echoed.",
+        "Stores in the OS keychain on macOS and Windows and in a private 0600 "
+        "credentials file on Linux; --store auto|keyring|file chooses and is saved "
+        "to config. SOLWYN_CREDENTIAL_STORE overrides config.",
+        "A failed keychain write stores nothing and exits 3; there is no fallback "
+        "to the file, and nothing is copied between stores.",
+        "--no-store finishes the login and prints the token once on stdout for "
+        "SOLWYN_TOKEN (CI, cloud agents); nothing is stored.",
     ),
 )
 
 LOGOUT_HELP = help_contract(
-    endpoint="POST /oauth/revoke (best effort) and local keychain clear",
+    endpoint="POST /oauth/revoke (best effort) and a local credential store clear",
     auth="local (none)",
     exits="0 success; 2 usage; 3 credential storage",
     schema="solwyn.logout.v1",
@@ -90,6 +103,12 @@ REVOKE_FAILED_NOTE = (
 sleep: Callable[[float], object] = time.sleep
 
 
+UNCHECKED_KEYRING_NOTE = (
+    "No system keyring is reachable from this session, so it was not checked. "
+    "If you used --store keyring in a desktop session, run solwyn logout there too."
+)
+
+
 def now() -> datetime:
     return datetime.now(UTC)
 
@@ -98,6 +117,8 @@ class _LoginData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     auth_type: Literal["login", "project_key"]
+    store: Literal["keyring", "file"]
+    location: str | None
     credential_id: str | None
     label: str | None
     scope: list[str] | None
@@ -131,6 +152,68 @@ def _sanitize_label(value: str) -> str:
 def authenticate_with_project_key(project_key: str) -> ProjectKeyCredential:
     """Validate and store one project key through the shared auth boundary."""
     return store_project_key(project_key)
+
+
+def _selected_store(context: typer.Context, requested: str | None) -> StoreMode | None:
+    """Validate --store and save it to config; nothing moves between stores."""
+    if requested is None:
+        return None
+    if requested not in STORE_MODES:
+        _fail(
+            context,
+            "invalid_login_options",
+            "--store must be auto, keyring or file.",
+            semantic=ErrorSemantic.USAGE,
+        )
+    environment_mode = os.environ.get(STORE_ENV, "")
+    if environment_mode and environment_mode != requested:
+        _fail(
+            context,
+            "invalid_login_options",
+            f"{STORE_ENV}={environment_mode} conflicts with --store {requested}.",
+            f"Unset {STORE_ENV}, or pass the same mode.",
+            semantic=ErrorSemantic.USAGE,
+        )
+    # Only the mode is saved (auto removes it); nothing is copied between
+    # stores. Saved first, so later reads look in the store this login writes.
+    try:
+        auth.save_store_mode(requested)  # type: ignore[arg-type]
+    except CredentialStorageError as error:
+        _fail(context, "credential_storage_failed", str(error), error.hint)
+    return requested  # type: ignore[return-value]
+
+
+def _print_unstored_token(
+    context: typer.Context, token: str, meta: LoginMetadata
+) -> None:
+    """Write the --no-store token once: the deliberate, unredacted output."""
+    if command_context(context).output_format.value == "json":
+        # Metadata is redacted like any other output; only the newly issued
+        # token is exempt, because printing it is the point of --no-store.
+        metadata = redact_secrets(
+            {
+                "credential_id": meta.id,
+                "label": meta.label,
+                "scope": meta.scopes,
+                "expires_at": _iso(meta.expires_at),
+                "account_id": meta.account_id,
+                "account_name": meta.account_name,
+                "email": meta.email,
+                "role": meta.role,
+            }
+        )
+        document = {"schema": "solwyn.login.token.v1", "token": token, **metadata}
+        line = json.dumps(document, separators=(",", ":"))
+    else:
+        line = token
+    # Bypasses the output engine on purpose: the engine redacts CLI tokens.
+    typer.echo(line)
+    _note(
+        f"Created CLI login {meta.label} ({', '.join(meta.scopes)}), expires "
+        f"{meta.expires_at.date().isoformat()}. Nothing was stored. Keep it in a "
+        "secret manager and pass it as SOLWYN_TOKEN. Revoke it with solwyn "
+        f"credentials revoke or at {CLI_LOGINS_URL}."
+    )
 
 
 def _stdin_is_tty() -> bool:
@@ -179,7 +262,13 @@ def _print_instructions(pending: PendingDevice, *, waiting: bool) -> None:
 
 
 def _start(
-    context: typer.Context, client: SolwynClient, *, scope: str, label: str
+    context: typer.Context,
+    client: SolwynClient,
+    *,
+    scope: str,
+    label: str,
+    persist: bool = True,
+    store: StoreMode | None = None,
 ) -> PendingDevice:
     try:
         authorization = start_device_authorization(
@@ -208,16 +297,25 @@ def _start(
         expires_at=now() + timedelta(seconds=authorization.expires_in),
         interval=authorization.interval,
     )
-    try:
-        auth.store_pending_device(pending)
-    except CredentialStorageError as error:
-        _fail(context, "credential_storage_failed", str(error))
+    if persist:
+        try:
+            auth.store_pending_device(pending, expect_mode=store)
+        except CredentialStorageError as error:
+            _fail(context, "credential_storage_failed", str(error), error.hint)
     return pending
 
 
 def _pending_exit(
-    context: typer.Context, pending: PendingDevice, continue_command: str
+    context: typer.Context, pending: PendingDevice, continue_command: str | None
 ) -> None:
+    if continue_command is None:
+        # --no-store keeps nothing to resume from.
+        _fail(
+            context,
+            "login_not_approved",
+            "The login was not approved within --wait; nothing was stored.",
+            "Run solwyn login --no-store again and approve it in the browser.",
+        )
     _fail(
         context,
         "login_pending",
@@ -249,7 +347,8 @@ def _poll(
     *,
     wait_seconds: float,
     poll_first: bool,
-    continue_command: str,
+    continue_command: str | None,
+    store: StoreMode | None = None,
 ) -> TokenResponse:
     """Poll the token endpoint at the server's interval until a result or the wait ends."""
     started = now()
@@ -276,10 +375,19 @@ def _poll(
                 # RFC 8628 section 3.5: every slow_down adds 5 seconds.
                 interval += 5
                 pending = pending.model_copy(update={"interval": interval})
-                try:
-                    auth.store_pending_device(pending)
-                except CredentialStorageError:
-                    pass
+                if continue_command is not None:
+                    try:
+                        auth.store_pending_device(pending, expect_mode=store)
+                    except CredentialStorageError as storage_error:
+                        # A timed-out keyring write may still land: stop now
+                        # rather than keep the lock through the browser wait.
+                        if credential_store.stranded():
+                            _fail(
+                                context,
+                                "credential_storage_failed",
+                                str(storage_error),
+                                storage_error.hint,
+                            )
                 continue
             if error.error == "access_denied":
                 auth.clear_pending_device()
@@ -309,21 +417,25 @@ def _poll(
             )
 
 
-def device_login(
+def _device_token(
     context: typer.Context,
     *,
-    scope: str = DEFAULT_SCOPE,
-    label: str | None = None,
-    wait_seconds: float | None = None,
-    resume: bool = False,
-    continue_command: str = "solwyn login --continue",
-) -> LoginCredential:
-    """Run the device flow and store the resulting CLI login in the keychain."""
+    scope: str,
+    label: str | None,
+    wait_seconds: float | None,
+    resume: bool,
+    continue_command: str | None,
+    store: StoreMode | None = None,
+) -> tuple[str, LoginMetadata]:
+    """Run the device flow; return the issued token and its metadata."""
     wait = default_wait_seconds() if wait_seconds is None else wait_seconds
     api_url = command_context(context).api_url
     with SolwynClient(api_url=api_url, credential=None) as client:
         if resume:
-            stored = auth.load_pending_device()
+            try:
+                stored = auth.load_pending_device()
+            except CredentialStorageError as error:
+                _fail(context, "credential_storage_failed", str(error), error.hint)
             if stored is None:
                 _fail(
                     context,
@@ -340,6 +452,8 @@ def device_login(
                 client,
                 scope=scope,
                 label=default_label() if label is None else _sanitize_label(label),
+                persist=continue_command is not None,
+                store=store,
             )
         _print_instructions(pending, waiting=wait > 0 or resume)
         token = _poll(
@@ -349,6 +463,7 @@ def device_login(
             wait_seconds=wait,
             poll_first=resume,
             continue_command=continue_command,
+            store=store,
         )
     issued = token.solwyn_credential
     meta = LoginMetadata(
@@ -361,23 +476,66 @@ def device_login(
         email=issued.email,
         role=issued.role,
     )
+    return token.access_token.get_secret_value(), meta
+
+
+def device_login(
+    context: typer.Context,
+    *,
+    scope: str = DEFAULT_SCOPE,
+    label: str | None = None,
+    wait_seconds: float | None = None,
+    resume: bool = False,
+    continue_command: str = "solwyn login --continue",
+    store: StoreMode | None = None,
+) -> LoginCredential:
+    """Run the device flow and store the resulting CLI login.
+
+    The store is resolved once, here, and pinned: the pending code and the
+    final login go to that store, and if the selector changes during the
+    browser wait the final write fails and the issued login is revoked.
+    """
     try:
-        return auth.store_login(token.access_token.get_secret_value(), meta)
+        pinned = store or auth.store_mode()
     except CredentialStorageError as error:
+        _fail(context, "credential_storage_failed", str(error), error.hint)
+    token, meta = _device_token(
+        context,
+        scope=scope,
+        label=label,
+        wait_seconds=wait_seconds,
+        resume=resume,
+        continue_command=continue_command,
+        store=pinned,
+    )
+    try:
+        credential = auth.store_login(token, meta, expect_mode=pinned)
+    except Exception as error:  # noqa: BLE001 - never leave an issued login live.
         # The server issued a credential we cannot keep; do not leave it live.
-        revoked = revoke_token(api_url, token.access_token.get_secret_value())
+        revoked = revoke_token(command_context(context).api_url, token)
+        storage = isinstance(error, CredentialStorageError)
         _fail(
             context,
             "credential_storage_failed",
-            str(error),
-            None if revoked else UNSTORED_LOGIN_HINT,
+            str(error) if storage else "The new login could not be stored.",
+            (error.hint if storage else None) if revoked else UNSTORED_LOGIN_HINT,
         )
+    auth.delete_legacy_entries(pinned)
+    if note := credential_saved_note(credential):
+        _note(note)
+    return credential
 
 
-def _login_data(credential: LoginCredential | None) -> _LoginData:
-    if credential is None:
+def _login_data(credential: ResolvedCredential) -> _LoginData:
+    store: Literal["keyring", "file"] = (
+        "keyring" if credential.source == "keyring" else "file"
+    )
+    location = credential.location
+    if isinstance(credential, ProjectKeyCredential) or credential.meta is None:
         return _LoginData(
             auth_type="project_key",
+            store=store,
+            location=location,
             credential_id=None,
             label=None,
             scope=None,
@@ -390,6 +548,8 @@ def _login_data(credential: LoginCredential | None) -> _LoginData:
     meta = credential.meta
     return _LoginData(
         auth_type="login",
+        store=store,
+        location=location,
         credential_id=meta.id,
         label=meta.label,
         scope=meta.scopes,
@@ -401,10 +561,17 @@ def _login_data(credential: LoginCredential | None) -> _LoginData:
     )
 
 
-def _login_success(context: typer.Context, credential: LoginCredential | None) -> None:
+def _login_success(context: typer.Context, credential: ResolvedCredential) -> None:
     data = _login_data(credential)
-    if credential is None:
-        rows: tuple[tuple[str, str], ...] = (("Authentication", "project_key"),)
+    stored_in = (
+        "Stored in",
+        f"{data.store} ({data.location})" if data.location else data.store,
+    )
+    if isinstance(credential, ProjectKeyCredential) or credential.meta is None:
+        rows: tuple[tuple[str, str], ...] = (
+            ("Authentication", "project_key"),
+            stored_in,
+        )
     else:
         meta = credential.meta
         rows = (
@@ -414,6 +581,7 @@ def _login_success(context: typer.Context, credential: LoginCredential | None) -
             ("Label", meta.label),
             ("Scope", ", ".join(meta.scopes)),
             ("Expires", meta.expires_at.date().isoformat()),
+            stored_in,
         )
         _note(
             f"Logged in as {meta.email} to account {meta.account_name} "
@@ -430,24 +598,30 @@ def _login_success(context: typer.Context, credential: LoginCredential | None) -
     )
 
 
-def _login_with_key(context: typer.Context) -> None:
+def _login_with_key(context: typer.Context, store: StoreMode | None) -> None:
     project_key = (
         typer.prompt("Project key", hide_input=True, err=True)
         if _stdin_is_tty()
         else sys.stdin.read().strip()
     )
     try:
-        authenticate_with_project_key(project_key)
-        auth.delete_legacy_entries()
+        credential = store_project_key(project_key, mode=store)
     except CredentialStorageError as error:
-        _fail(context, "credential_storage_failed", str(error))
+        _fail(context, "credential_storage_failed", str(error), error.hint)
     except AuthError:
         _fail(
             context,
             "invalid_project_key",
             "The project key is empty or malformed.",
         )
-    _login_success(context, None)
+    except Exception:  # noqa: BLE001 - a structured error, never a traceback.
+        _fail(
+            context, "credential_storage_failed", "The project key could not be stored."
+        )
+    auth.delete_legacy_entries(store)
+    if note := credential_saved_note(credential):
+        _note(note)
+    _login_success(context, credential)
 
 
 def login(
@@ -488,8 +662,32 @@ def login(
             help="Resume waiting for the login started earlier.",
         ),
     ] = False,
+    store: Annotated[
+        str | None,
+        typer.Option(
+            "--store",
+            help=(
+                "Where to store credentials: auto, keyring or file. Saved to config; "
+                "nothing is copied between stores."
+            ),
+        ),
+    ] = None,
+    no_store: Annotated[
+        bool,
+        typer.Option(
+            "--no-store",
+            help="Print the new login token once for SOLWYN_TOKEN; store nothing.",
+        ),
+    ] = False,
 ) -> None:
     """Log in through the browser, or store a project key with --with-key."""
+    if no_store and (with_key or resume or store is not None or wait == 0):
+        _fail(
+            context,
+            "invalid_login_options",
+            "--no-store cannot be combined with --with-key, --continue, --store or --wait 0.",
+            semantic=ErrorSemantic.USAGE,
+        )
     if with_key:
         if resume or label is not None or wait is not None or scope != "read,contain":
             _fail(
@@ -498,7 +696,7 @@ def login(
                 "--with-key cannot be combined with --scope, --label, --wait or --continue.",
                 semantic=ErrorSemantic.USAGE,
             )
-        _login_with_key(context)
+        _login_with_key(context, _selected_store(context, store))
         return
     requested = _SCOPES.get(scope.replace(" ", ""))
     if requested is None:
@@ -508,38 +706,97 @@ def login(
             "--scope must be read or read,contain.",
             semantic=ErrorSemantic.USAGE,
         )
+    if no_store:
+        token, meta = _device_token(
+            context,
+            scope=requested,
+            label=label,
+            wait_seconds=wait,
+            resume=False,
+            continue_command=None,
+        )
+        _print_unstored_token(context, token, meta)
+        return
     credential = device_login(
         context,
         scope=requested,
         label=label,
         wait_seconds=wait,
         resume=resume,
+        store=_selected_store(context, store),
     )
     _login_success(context, credential)
 
 
+_STATUS_TEXT = {
+    "cleared": "cleared",
+    "unavailable": "not checked",
+    "unreachable": "kept (not reachable)",
+    "unread": "kept (not readable)",
+}
+
+
 def logout(context: typer.Context) -> None:
-    """Revoke the stored login and clear all stored Solwyn credentials."""
-    stored = auth.stored_login(include_expired=True)
-    revoked: bool | None = None
-    if stored is not None:
-        revoked = revoke_token(command_context(context).api_url, stored.bearer_value())
+    """Revoke every stored login and clear this API's stored Solwyn credentials.
+
+    Logout is the one exception to store isolation: whatever store is
+    selected, it looks in both the credentials file and the keychain.
+    """
+    api_url = command_context(context).api_url
     try:
-        clear_credentials()
+        report = auth.logout_everywhere(lambda token: revoke_token(api_url, token))
     except CredentialStorageError as error:
-        _fail(context, "credential_storage_failed", str(error))
-    if revoked is False:
+        _fail(context, "credential_storage_failed", str(error), error.hint)
+    if report.revoked is False:
         _note(REVOKE_FAILED_NOTE)
+    if any(item.status == "unavailable" for item in report.stores):
+        _note(UNCHECKED_KEYRING_NOTE)
+    if auth.TOKEN_ENV in os.environ:
+        _note(
+            "SOLWYN_TOKEN is set in this environment. Logout does not revoke it; "
+            "use solwyn credentials revoke."
+        )
+    data = {
+        # Only what was checked: an unavailable keyring is reported, not claimed.
+        "cleared": all(item.cleared for item in report.stores if item.checked),
+        "revoked": report.revoked,
+        "logins_found": report.logins_found,
+        "stores": [
+            {
+                "store": item.kind,
+                "location": item.location,
+                "status": item.status,
+                "cleared": item.cleared,
+                "kept": list(item.kept),
+            }
+            for item in report.stores
+        ],
+    }
+    retained = [item for item in report.stores if item.retained]
+    if retained:
+        places = ", ".join(f"{item.location} ({item.status})" for item in retained)
+        _fail(
+            context,
+            "logout_incomplete",
+            f"Logout kept credentials it could not reach or read: {places}.",
+            "Unlock or repair that store and run solwyn logout again. Nothing that "
+            "could not be read was deleted or revoked.",
+            detail={"schema": "solwyn.logout.v1", **data},
+            semantic=ErrorSemantic.AUTH,
+        )
     output_engine(context).write_success(
         schema="solwyn.logout.v1",
-        data={"cleared": True, "revoked": revoked},
+        data=data,
         table=TableData(
             columns=("Credentials", "Status"),
             rows=(
-                ("all", "cleared"),
                 *(
-                    (("login", "revoked" if revoked else "not revoked"),)
-                    if revoked is not None
+                    (f"{item.kind} ({item.location})", _STATUS_TEXT[item.status])
+                    for item in report.stores
+                ),
+                *(
+                    (("login", "revoked" if report.revoked else "not revoked"),)
+                    if report.revoked is not None
                     else ()
                 ),
             ),

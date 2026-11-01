@@ -1,10 +1,12 @@
 """Commands for inspecting and updating local non-secret configuration."""
 
+from contextlib import nullcontext
 from typing import Annotated
 
 import typer
 from pydantic import ValidationError
 
+from solwyn_cli import auth
 from solwyn_cli.config import (
     CONFIG_KEYS,
     Config,
@@ -14,6 +16,7 @@ from solwyn_cli.config import (
     update_config_value,
 )
 from solwyn_cli.help import help_contract
+from solwyn_cli.output import _terminal_safe
 
 
 app = typer.Typer(
@@ -66,7 +69,7 @@ def get_config_value(
     epilog=help_contract(
         endpoint="local configuration write",
         auth="local (none)",
-        exits="0 success; 2 usage",
+        exits="0 success; 2 usage; 3 credential lock (credential_store only)",
         schema="none (human confirmation on stderr)",
     ),
 )
@@ -76,8 +79,23 @@ def set_config_value(
 ) -> None:
     """Validate and persist one configuration value."""
     validated_key = _validate_key(key)
+    # The store selector changes under the exclusive credential lock, like
+    # solwyn login --store, so no credential read or write straddles it.
+    lock = (
+        auth.credential_selector_lock()
+        if validated_key == "credential_store"
+        else nullcontext()
+    )
     try:
-        update_config_value(validated_key, value)
+        with lock:
+            update_config_value(validated_key, value)
+    except auth.CredentialStorageError as error:
+        # config commands run without the command context (so a broken config
+        # stays fixable): plain stderr, exit 3 like other storage errors.
+        typer.echo(_terminal_safe(f"Error: {error}"), err=True)
+        if error.hint:
+            typer.echo(_terminal_safe(f"Hint: {error.hint}"), err=True)
+        raise typer.Exit(code=3) from None
     except ValidationError:
         raise typer.BadParameter(
             f"Invalid value for {validated_key}.", param_hint="value"

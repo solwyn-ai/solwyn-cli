@@ -14,23 +14,15 @@ from solwyn_cli.main import app
 from solwyn_cli.mcp import server
 from solwyn_cli import auth
 from test_cost_advice_command import SIMULATION
-from login_fixtures import LOGIN_TOKEN, login_entries
+from login_fixtures import fake_keychain, LOGIN_TOKEN, login_entries
 
 
 @pytest.fixture
 def keychain(monkeypatch):
     values = {}
-    monkeypatch.setattr(
-        auth.keyring, "get_password", lambda service, name: values.get(name)
-    )
-    monkeypatch.setattr(
-        auth.keyring,
-        "set_password",
-        lambda service, name, value: values.__setitem__(name, value),
-    )
-    monkeypatch.setattr(
-        auth.keyring, "delete_password", lambda service, name: values.pop(name, None)
-    )
+    store = fake_keychain(monkeypatch)
+    store.update(values)
+    values = store
     return values
 
 
@@ -118,7 +110,7 @@ def test_simulation_401_is_never_replayed_with_the_stored_login(simulation):
         "/api/v1/projects/proj_alpha/costs/simulate",
     ]
     assert calls[0].headers["Authorization"] == f"Bearer {LOGIN_TOKEN}"
-    assert stored[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN
+    assert json.loads(stored[auth.LOGIN_ENTRY])["token"] == LOGIN_TOKEN
     assert delays == []
 
 
@@ -162,4 +154,4 @@ def test_simulation_503_and_transport_never_replay(simulation, failure):
     assert payload["code"] == expected_code
     assert len(calls) == 1
     assert delays == []
-    assert stored[auth.CLI_CREDENTIAL_ENTRY] == LOGIN_TOKEN
+    assert json.loads(stored[auth.LOGIN_ENTRY])["token"] == LOGIN_TOKEN

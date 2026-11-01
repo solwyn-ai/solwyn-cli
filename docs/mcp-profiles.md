@@ -9,8 +9,9 @@ Launch a fixed read surface with an installed executable:
 Replace the synthetic ID with your actual project. The [quickstart](mcp-quickstart.md)
 covers installation, generated descriptors and tested client examples.
 Global `--project` and `--api-url` options precede `mcp`. Its `--profile`
-option follows `mcp`. Credentials belong in the existing keychain workflow or
-the subprocess's `SOLWYN_API_KEY` environment, never in argv or repository JSON.
+option follows `mcp`. Credentials belong in the CLI's credential store
+(`solwyn login`) or the subprocess's `SOLWYN_TOKEN` and `SOLWYN_API_KEY`
+environment, never in argv or repository JSON.
 
 `read` exposes 33 tools. `guardrails` exposes all 37 and remains the default for
 compatibility with `solwyn mcp`. The choice stays fixed for the process lifetime.
@@ -41,10 +42,11 @@ key. `project_id` on read tools overrides launch `--project`, then
 `SOLWYN_PROJECT_ID` and `default_project`; it cannot redirect writes to another
 project. Credentials are resolved fresh for every operation, by tool class.
 Metering tools (`budget_check`, `budget_check_batch`, `budget_confirm`,
-`record_call`) use only a project key: `SOLWYN_API_KEY`, then the keychain
-project key, never the login. Every other tool uses the keychain Solwyn login,
-then `SOLWYN_API_KEY`, then the keychain project key. `SOLWYN_AUTH=project_key`
-skips the login for those tools and `SOLWYN_AUTH=login` requires it. A stored
+`record_call`) use only a project key: `SOLWYN_API_KEY`, then the stored
+project key, never a login. Every other tool uses `SOLWYN_TOKEN`, then the
+stored Solwyn login, then `SOLWYN_API_KEY`, then the stored project key.
+`SOLWYN_AUTH=project_key` skips both logins for those tools and
+`SOLWYN_AUTH=login` requires one. A stored
 key therefore never hides the login from account tools. MCP tools never wait for
 a browser approval: a tool that gets `approval_required` returns `isError=true`
 with that code and the approval URL in its hint.

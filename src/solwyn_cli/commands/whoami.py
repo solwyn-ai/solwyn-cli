@@ -13,11 +13,15 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    unused_store_note,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import OutputError, TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -69,7 +73,9 @@ class _CredentialSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["login", "project_key"]
-    source: Literal["keyring", "environment"]
+    source: Literal["keyring", "file", "environment"]
+    # The file path, the keychain's name, or the environment variable.
+    location: str | None
     label: str | None
     scope: list[str] | None
     expires_at: datetime | None
@@ -79,7 +85,7 @@ class _WhoamiData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     auth_type: Literal["login", "project_key"]
-    auth_source: Literal["keyring", "environment"]
+    auth_source: Literal["keyring", "file", "environment"]
     credential: _CredentialSummary
     configured_project: str | None
     account_id: str | None
@@ -101,6 +107,7 @@ def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiD
         credential=_CredentialSummary(
             kind="project_key",
             source=credential.source,
+            location=credential.location,
             label=None,
             scope=None,
             expires_at=None,
@@ -136,15 +143,28 @@ def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _Whoa
     if identity.account_id != account.id:
         raise ValueError("Identity account did not match.")
     meta = credential.meta
+    if meta is not None:
+        label, scope, expires_at = meta.label, meta.scopes, meta.expires_at
+    else:
+        # SOLWYN_TOKEN carries no local metadata; the API lists the current login.
+        from solwyn_cli.commands.credentials import fetch_credentials
+
+        current = [item for item in fetch_credentials(client=client) if item.current]
+        label, scope, expires_at = (
+            (current[0].label, current[0].scope.split(), current[0].expires_at)
+            if current
+            else (None, None, None)
+        )
     return _WhoamiData(
         auth_type="login",
-        auth_source="keyring",
+        auth_source=credential.source,
         credential=_CredentialSummary(
             kind="login",
-            source="keyring",
-            label=meta.label,
-            scope=meta.scopes,
-            expires_at=meta.expires_at,
+            source=credential.source,
+            location=credential.location,
+            label=label,
+            scope=scope,
+            expires_at=expires_at,
         ),
         configured_project=None,
         account_id=account.id,
@@ -181,16 +201,23 @@ def _jwt_data(context: typer.Context, credential: LoginCredential) -> _WhoamiDat
         )
 
 
+def _stored_in(credential: _CredentialSummary) -> str:
+    if credential.location is None:
+        return credential.source
+    return f"{credential.source} ({credential.location})"
+
+
 def _credential_text(credential: _CredentialSummary) -> str:
     if credential.kind == "project_key":
         return f"project key ({credential.source})"
-    scope = ", ".join(credential.scope or [])
+    scope = ", ".join(credential.scope or []) or "unknown scope"
     expires = (
         credential.expires_at.date().isoformat()
         if credential.expires_at is not None
         else "unknown"
     )
-    return f"CLI login {credential.label} ({scope}), expires {expires}"
+    label = credential.label or "(unlabeled)"
+    return f"CLI login {label} ({scope}), expires {expires}"
 
 
 def _table(data: _WhoamiData) -> TableData:
@@ -198,6 +225,7 @@ def _table(data: _WhoamiData) -> TableData:
         ("Credential", _credential_text(data.credential)),
         ("Authentication", data.auth_type),
         ("Source", data.auth_source),
+        ("Stored in", _stored_in(data.credential)),
     ]
     if data.auth_type == "project_key":
         rows.append(("Configured project", data.configured_project or "not configured"))
@@ -246,3 +274,5 @@ def whoami(context: typer.Context) -> None:
         data=data,
         table=_table(data),
     )
+    if note := unused_store_note():
+        typer.echo(_terminal_safe(note), err=True)

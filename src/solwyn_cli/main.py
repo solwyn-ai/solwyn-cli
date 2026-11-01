@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from solwyn_cli import __version__
 from solwyn_cli.approvals import ApprovalSettings, activate, default_wait_seconds
-from solwyn_cli.auth import auth_selection
+from solwyn_cli.auth import auth_selection, use_api_url
 from solwyn_cli.commands.account import app as account_app
 from solwyn_cli.commands.team import app as team_app
 from solwyn_cli.commands.invite import app as invite_app
@@ -56,6 +56,9 @@ _APPROVAL_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 app = typer.Typer(
     add_completion=False,
+    # A crash must never print local variables: they can hold a key read from
+    # a hidden prompt or a token. Errors are rendered as structured output.
+    pretty_exceptions_show_locals=False,
     invoke_without_command=True,
     no_args_is_help=True,
     epilog=help_contract(
@@ -221,3 +224,5 @@ def main(
         raise typer.BadParameter(
             "Could not load configuration.", param_hint="config"
         ) from None
+    # Stored credentials are read and written for this invocation's API only.
+    context.call_on_close(use_api_url(context.obj.api_url))

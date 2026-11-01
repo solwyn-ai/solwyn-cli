@@ -501,18 +501,20 @@ HELP_CONTRACTS = {
     },
     ("login",): {
         "endpoint": (
-            "POST /oauth/device_authorization and POST /oauth/token, or local "
-            "keychain write with --with-key"
+            "POST /oauth/device_authorization and POST /oauth/token, or a local "
+            "credential store write with --with-key"
         ),
         "auth": "none",
         "exits": (
             "0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or "
             "credential storage; 6 still waiting for browser approval"
         ),
-        "schema": "solwyn.login.v2",
+        "schema": "solwyn.login.v2; with --no-store --json: solwyn.login.token.v1",
     },
     ("logout",): {
-        "endpoint": "POST /oauth/revoke (best effort) and local keychain clear",
+        "endpoint": (
+            "POST /oauth/revoke (best effort) and a local credential store clear"
+        ),
         "auth": "local (none)",
         "exits": "0 success; 2 usage; 3 credential storage",
         "schema": "solwyn.logout.v1",
@@ -551,7 +553,7 @@ HELP_CONTRACTS = {
         "schema": "solwyn.approval.v1",
     },
     ("keys", "env"): {
-        "endpoint": "local keychain read",
+        "endpoint": "local credential store read",
         "auth": "local (stored project key)",
         "exits": "0 success; 2 usage; 3 no stored project key",
         "schema": "solwyn.keys-env.v1",

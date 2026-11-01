@@ -9,6 +9,7 @@ from uuid import uuid4
 import typer
 from pydantic import BaseModel, ConfigDict, Field
 
+from solwyn_cli.output import _terminal_safe
 from solwyn_cli._vendor.wire import CALL_ID_PATTERN, IngestMetadataEvent, TokenDetails
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
@@ -146,7 +147,10 @@ def request_ingest(
     ]
     for rejection in data.rejected:
         typer.echo(
-            f"Recording rejected ({rejection.code}). {rejection.message}", err=True
+            _terminal_safe(
+                f"Recording rejected ({rejection.code}). {rejection.message}"
+            ),
+            err=True,
         )
     legacy = any(item.reason == "legacy_key" for item in data.duplicates)
     if legacy:

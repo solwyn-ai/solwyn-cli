@@ -36,13 +36,22 @@ from solwyn_cli.auth import (
     store_project_key,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    credential_saved_note,
+    exit_with_error,
+    required_credential,
+)
 from solwyn_cli.config import ConfigLoadError, ConfigWriteError, clear_default_project
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.commands.keys import export_line
-from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
+from solwyn_cli.output import (
+    OneTimeSecretPanel,
+    OutputError,
+    TableData,
+    _terminal_safe,
+)
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -297,7 +306,7 @@ def _invalid_projects_response(context: typer.Context) -> None:
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.projects-create.v1",
         guidance=(
-            "The new project key is shown exactly once or stored directly in the OS keychain.",
+            "The new project key is shown exactly once or stored directly in the credential store (--store-key).",
         ),
     ),
 )
@@ -325,7 +334,7 @@ def create_project(
     ] = None,
     store_key: Annotated[
         bool,
-        typer.Option("--store-key", help="Store the new key in the OS keychain."),
+        typer.Option("--store-key", help="Store the new key in the credential store."),
     ] = False,
 ) -> None:
     """Create a project and capture its first API key exactly once."""
@@ -385,17 +394,20 @@ def create_project(
     raw_key = created.key.get_secret_value()
     if store_key:
         try:
-            store_project_key(raw_key)
+            stored_key = store_project_key(raw_key)
         except CredentialStorageError as error:
             exit_with_error(
                 context,
                 OutputError(
                     code="credential_storage_failed",
                     message=str(error),
-                    hint="Retry after configuring an operating-system keychain.",
+                    hint=error.hint or "Retry after fixing the credential store.",
                 ),
                 semantic=ErrorSemantic.AUTH,
             )
+        if isinstance(stored_key, ProjectKeyCredential):
+            if note := credential_saved_note(stored_key):
+                typer.echo(_terminal_safe(note), err=True)
         stored_data = _ProjectCreateStoredData.model_validate(created.model_dump())
         output_engine(context).write_success(
             schema="solwyn.projects-create.v1",
@@ -641,17 +653,29 @@ def delete_project(
                 if response.status_code != 200:
                     raise ValueError("Project lookup did not return 200")
                 project = _Project.model_validate(response.json())
+                shown = _terminal_safe(project.name)
+                # A sanitized name can equal another project's real name, so it
+                # never confirms; the ID being deleted does instead.
+                if shown == project.name:
+                    label, expected = f"project name '{shown}'", project.name
+                else:
+                    label = f"project ID '{_terminal_safe(validated_project_id)}'"
+                    expected = validated_project_id
                 confirmation = typer.prompt(
-                    f"Type the project name '{project.name}' to confirm",
+                    _terminal_safe(f"Type the {label} to confirm"),
                     err=True,
                     hide_input=True,
                 )
-                if confirmation != project.name:
+                if confirmation != expected:
                     exit_with_error(
                         context,
                         OutputError(
                             code="confirmation_failed",
-                            message="The project name did not match; nothing was deleted.",
+                            message=(
+                                "The project name did not match; nothing was deleted."
+                                if shown == project.name
+                                else "The project ID did not match; nothing was deleted."
+                            ),
                         ),
                         semantic=ErrorSemantic.USAGE,
                     )

@@ -557,6 +557,109 @@ def test_projects_delete_tty_name_mismatch_never_deletes_or_clears_config(
     assert cleared == []
 
 
+@pytest.mark.parametrize(
+    "secret", ["solwyn_cli_" + "9a" * 32, "solwyn_dc_" + "4f" * 32]
+)
+@pytest.mark.parametrize(
+    ("typed", "deleted"),
+    [
+        ("proj_alpha", True),
+        # The redacted name is never a confirmation: another project may be
+        # named exactly that.
+        ("name_[REDACTED]_suffix", False),
+        ("wrong name", False),
+    ],
+)
+def test_projects_delete_tty_redacted_name_requires_the_project_id(
+    monkeypatch: pytest.MonkeyPatch, secret: str, typed: str, deleted: bool
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: True, raising=False)
+    monkeypatch.setattr(
+        projects_module, "clear_default_project", lambda _id: False, raising=False
+    )
+    FakeClient.responses = [
+        httpx.Response(
+            200, json={**PROJECTS_RESPONSE[0], "name": f"name_{secret}_suffix"}
+        ),
+        httpx.Response(204),
+    ]
+
+    # The real prompt, so the terminal text is what a TTY would print.
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_alpha", "--yes"],
+        input=f"{typed}\n",
+    )
+
+    assert secret not in result.stdout + result.stderr
+    assert "Type the project ID 'proj_alpha' to confirm" in result.stderr
+    assert "name_[REDACTED]_suffix" not in result.stderr
+    methods = [method for method, *_ in FakeClient.instances[0].requests]
+    if deleted:
+        assert result.exit_code == 0, result.stderr
+        assert methods == ["GET", "DELETE"]
+    else:
+        assert result.exit_code == 2
+        # Hidden input leaves no newline after the prompt text.
+        assert '"code":"confirmation_failed"' in result.stderr
+        assert methods == ["GET"]
+
+
+def test_projects_delete_redaction_collision_never_deletes_the_other_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Project A is literally named "name_[REDACTED]_suffix"; B's real name
+    # redacts to the same text. Deleting B by ID while typing A's name must fail.
+    project_a_name = "name_[REDACTED]_suffix"
+    project_b = {
+        **PROJECTS_RESPONSE[1],
+        "id": "proj_beta",
+        "name": "name_solwyn_cli_" + "9a" * 32 + "_suffix",
+    }
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: True, raising=False)
+    monkeypatch.setattr(
+        projects_module, "clear_default_project", lambda _id: False, raising=False
+    )
+    FakeClient.responses = [httpx.Response(200, json=project_b), httpx.Response(204)]
+
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_beta", "--yes"],
+        input=f"{project_a_name}\n",
+    )
+
+    assert result.exit_code == 2
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj_beta", {})
+    ]
+
+
+def test_projects_delete_tty_unchanged_name_still_requires_the_exact_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(projects_module, "_stdin_is_tty", lambda: True, raising=False)
+    monkeypatch.setattr(
+        projects_module, "clear_default_project", lambda _id: False, raising=False
+    )
+    FakeClient.responses = [httpx.Response(200, json=PROJECTS_RESPONSE[0])]
+
+    # The ID is not an alternative when the name is shown unchanged.
+    result = runner.invoke(
+        app,
+        ["--json", "projects", "delete", "proj_alpha", "--yes"],
+        input="proj_alpha\n",
+    )
+
+    assert "Type the project name 'Alpha' to confirm" in result.stderr
+    assert result.exit_code == 2
+    assert FakeClient.instances[0].requests == [
+        ("GET", "/api/v1/projects/proj_alpha", {})
+    ]
+
+
 def test_projects_delete_rejects_nonempty_204_and_keeps_local_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

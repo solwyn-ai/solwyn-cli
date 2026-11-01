@@ -455,7 +455,7 @@ def test_budget_confirm_resolves_only_a_metering_key_without_request(
     assert FakeClient.instances == []
     error = json.loads(result.stderr)
     assert error["code"] == "authentication_required"
-    assert error["hint"] == auth.METERING_KEY_HINT
+    assert error["hint"].startswith(auth.METERING_KEY_HINT + " Looked in: ")
     assert "--with-key" in error["hint"]
 
 
