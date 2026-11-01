@@ -66,6 +66,7 @@ class Config(BaseModel):
         return value
 
 
+DEFAULT_API_URL = Config().api_url
 CONFIG_KEYS = frozenset(Config.model_fields)
 
 

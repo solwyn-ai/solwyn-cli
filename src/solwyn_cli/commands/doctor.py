@@ -24,7 +24,7 @@ from solwyn_cli.commands.mcp_doctor import doctor_mcp
 from solwyn_cli.errors import ApiError
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import TableData
-from solwyn_cli.runtime import command_context, output_engine
+from solwyn_cli.runtime import API_URL_SOURCE_LABELS, command_context, output_engine
 
 
 DOCTOR_HELP = help_contract(
@@ -96,10 +96,18 @@ class _SnapshotDiagnostic(BaseModel):
     core_ref: str | None
 
 
+class _ApiUrl(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    source: Literal["flag", "environment", "config", "default"]
+
+
 class _DoctorData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["ok", "degraded"]
+    api_url: _ApiUrl
     config: _Diagnostic
     credential_store: _Diagnostic
     readiness: _ReadinessDiagnostic
@@ -369,7 +377,7 @@ def _snapshot_or_degraded() -> _SnapshotDiagnostic:
         )
 
 
-def _table(data: _DoctorData) -> TableData:
+def _table(data: _DoctorData, api_url_label: str) -> TableData:
     readiness_detail = (
         f"HTTP {data.readiness.http_status}; service {data.readiness.service}"
         if data.readiness.http_status is not None and data.readiness.service is not None
@@ -385,6 +393,7 @@ def _table(data: _DoctorData) -> TableData:
             ),
             data.status,
         ),
+        (f"API URL: {data.api_url.url} ({api_url_label})", "info"),
         (
             f"Config — {data.config.detail}",
             data.config.status,
@@ -484,6 +493,12 @@ def doctor(
     )
     data = _DoctorData(
         status=status,
+        api_url=_ApiUrl(
+            url=runtime.api_url,
+            source={"cli": "flag", "fallback": "default"}.get(  # type: ignore[arg-type]
+                runtime.api_url_source, runtime.api_url_source
+            ),
+        ),
         config=config,
         credential_store=credential_store,
         readiness=readiness,
@@ -493,7 +508,7 @@ def doctor(
     output_engine(context).write_success(
         schema="solwyn.doctor.v1",
         data=data,
-        table=_table(data),
+        table=_table(data, API_URL_SOURCE_LABELS[runtime.api_url_source]),
     )
     if status == "degraded":
         raise typer.Exit(code=1)

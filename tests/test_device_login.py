@@ -537,6 +537,7 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
                 "status": "cleared",
                 "cleared": True,
                 "kept": [],
+                "legacy_cleared": [],
             },
             {
                 "store": "keyring",
@@ -544,6 +545,7 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
                 "status": "cleared",
                 "cleared": True,
                 "kept": [],
+                "legacy_cleared": [],
             },
         ],
     }
@@ -652,6 +654,7 @@ def test_keys_env_json_mode(keychain: dict[str, str]) -> None:
         "schema": "solwyn.keys-env.v1",
         "name": "SOLWYN_API_KEY",
         "export": f"export SOLWYN_API_KEY={VALID_KEY}",
+        "api_url": None,
     }
 
 

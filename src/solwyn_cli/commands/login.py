@@ -520,8 +520,9 @@ def device_login(
             str(error) if storage else "The new login could not be stored.",
             (error.hint if storage else None) if revoked else UNSTORED_LOGIN_HINT,
         )
-    auth.delete_legacy_entries(pinned)
     if note := credential_saved_note(credential):
+        _note(note)
+    if note := auth.legacy_entries_note(pinned):
         _note(note)
     return credential
 
@@ -618,8 +619,9 @@ def _login_with_key(context: typer.Context, store: StoreMode | None) -> None:
         _fail(
             context, "credential_storage_failed", "The project key could not be stored."
         )
-    auth.delete_legacy_entries(store)
     if note := credential_saved_note(credential):
+        _note(note)
+    if note := auth.legacy_entries_note(store):
         _note(note)
     _login_success(context, credential)
 
@@ -768,6 +770,7 @@ def logout(context: typer.Context) -> None:
                 "status": item.status,
                 "cleared": item.cleared,
                 "kept": list(item.kept),
+                "legacy_cleared": list(item.legacy_cleared),
             }
             for item in report.stores
         ],
@@ -793,6 +796,14 @@ def logout(context: typer.Context) -> None:
                 *(
                     (f"{item.kind} ({item.location})", _STATUS_TEXT[item.status])
                     for item in report.stores
+                ),
+                *(
+                    (
+                        f"Solwyn CLI 0.3 credentials ({item.location})",
+                        f"cleared ({', '.join(item.legacy_cleared)})",
+                    )
+                    for item in report.stores
+                    if item.legacy_cleared
                 ),
                 *(
                     (("login", "revoked" if report.revoked else "not revoked"),)

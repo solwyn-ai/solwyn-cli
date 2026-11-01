@@ -65,8 +65,9 @@ from solwyn_cli.credential_store import (
 
 ALL_ENTRIES = ENTRIES
 # CLI 0.3.0 wrote these keyring entries (service "solwyn-cli", no origin): a
-# session pair and a project key. They are never used to authenticate; a
-# terminal user is told about them once, and login and logout delete them.
+# session pair and a project key. They are never used to authenticate. A 0.3
+# key is shown once and is not tied to an API URL, so only logout deletes
+# these entries; login and a missing credential only point at them.
 LEGACY_LOGIN_ENTRIES = ("access_token", "refresh_token")
 LEGACY_KEY_ENTRY = "api_key"
 # Everything without an origin, including 0.4 pre-release names.
@@ -610,6 +611,8 @@ class Cleared:
     location: str
     status: Literal["cleared", "unavailable", "unreachable", "unread"] = "cleared"
     kept: tuple[str, ...] = ()
+    # 0.3 (and earlier) keyring entries this logout found and deleted.
+    legacy_cleared: tuple[str, ...] = ()
 
     @property
     def cleared(self) -> bool:
@@ -996,15 +999,23 @@ def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
         except StoreUnavailableError:
             failed = True
             kept.append(entry)
+    legacy: list[str] = []
     for entry in LEGACY_ENTRIES:
+        try:
+            present = keyring_store.get_raw(entry) is not None
+        except StoreUnavailableError:
+            present = True  # Unknown: try the delete, which is checked.
         try:
             keyring_store.delete_raw(entry)
         except StoreUnavailableError:
             failed = True
+        else:
+            if present:
+                legacy.append(entry)
     status: Literal["cleared", "unreachable", "unread"] = (
         "unreachable" if failed else "unread" if kept else "cleared"
     )
-    return Cleared("keyring", scan.location, status, tuple(kept))
+    return Cleared("keyring", scan.location, status, tuple(kept), tuple(legacy))
 
 
 def logout_everywhere(
@@ -1059,28 +1070,31 @@ def stored_entry_status(
 # --- Entries from 0.3 and earlier -------------------------------------------
 
 
-def _legacy_keyring_allowed(mode: StoreMode) -> bool:
-    """Delete old entries after a login only where the keyring is in use.
+def legacy_entries_note(mode: StoreMode | None = None) -> str | None:
+    """After a login, point at 0.3 keyring entries that are still stored.
 
-    Linux auto and file mode never touch the keyring on a write; logout
-    clears the 0.3 entries there instead.
+    Login never deletes them: a 0.3 project key is not tied to an API URL and
+    was shown only once. Only checked where the keyring is the store in use,
+    so file mode and Linux auto never probe it.
     """
-    return _keyring_in_use(mode)
-
-
-def delete_legacy_entries(mode: StoreMode | None = None) -> bool:
-    """Delete 0.3 keyring entries after a login, best effort; return success."""
     try:
-        with _locked():
+        with _locked(shared=True):
             selected = store_mode() if mode is None else mode
-            if not _legacy_keyring_allowed(selected):
-                return False
+            if not _keyring_in_use(selected):
+                return None
             keyring_store = _keyring_store()
-            for entry in LEGACY_ENTRIES:
-                keyring_store.delete_raw(entry)
-    except (StoreUnavailableError, CredentialStorageError):
-        return False
-    return True
+            found = any(
+                keyring_store.get_raw(entry) is not None for entry in LEGACY_ENTRIES
+            )
+    except (StoreUnavailableError, AuthError):
+        return None
+    if not found:
+        return None
+    return (
+        "A credential saved by Solwyn CLI 0.3 is still stored in "
+        f"{keyring_store.describe()}. Run solwyn logout to clear it (this also "
+        "logs you out of this API)."
+    )
 
 
 LEGACY_LOGIN_NOTICE = (

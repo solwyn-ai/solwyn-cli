@@ -3422,7 +3422,7 @@
         "config",
         "list"
       ],
-      "summary": "Print every allowlisted configuration value in deterministic order."
+      "summary": "Print every allowlisted value; api_url shows the effective URL and source."
     },
     {
       "hidden": false,
@@ -4964,7 +4964,7 @@
         "keys",
         "env"
       ],
-      "summary": "Print an export line for the stored project key."
+      "summary": "Print export lines for the stored project key and its API URL."
     },
     {
       "hidden": false,
@@ -8280,6 +8280,7 @@
     },
     {
       "keys": [
+        "api_url",
         "authenticated_probe",
         "config",
         "credential_store",
@@ -8351,6 +8352,7 @@
     },
     {
       "keys": [
+        "api_url",
         "export",
         "name",
         "schema"

@@ -17,6 +17,18 @@ solwyn config get default_project
 Explicit global flags override environment settings, which override configured
 defaults. Changing a read selector never changes the identity of a project key.
 
+`config list` shows the effective API URL and where it came from, not only the
+saved value: `--api-url`, `SOLWYN_API_URL`, config, or the default
+`https://api.solwyn.ai`. `config get api_url` still prints the saved value.
+
+```text
+api_url=https://api.staging.example.test (from SOLWYN_API_URL)
+```
+
+`solwyn doctor` reports the same thing as its first check (`API URL: <url>
+(<source>)`) and, with `--json`, as `api_url` with `url` and `source` (`flag`,
+`environment`, `config` or `default`).
+
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
 
@@ -56,7 +68,7 @@ JSON schema: none (plain text value)
 
 ## `solwyn config list`
 
-Print every allowlisted configuration value in deterministic order.
+Print every allowlisted value; api_url shows the effective URL and source.
 
 ```console
 Usage: solwyn config list [OPTIONS]

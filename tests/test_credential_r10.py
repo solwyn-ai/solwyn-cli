@@ -274,8 +274,8 @@ def _locked_now() -> bool:
 
 
 @posix_only
-@pytest.mark.parametrize("operation", ["notice", "cleanup"])
-def test_legacy_keyring_reads_and_deletes_hold_the_credential_lock(
+@pytest.mark.parametrize("operation", ["notice", "login-note"])
+def test_legacy_keyring_reads_hold_the_credential_lock(
     env: Any, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
     backend, _, _ = env
@@ -299,7 +299,7 @@ def test_legacy_keyring_reads_and_deletes_hold_the_credential_lock(
         monkeypatch.setattr(auth, "_interactive", lambda: True)
         assert auth.legacy_login_notice() == auth.LEGACY_LOGIN_NOTICE
     else:
-        assert auth.delete_legacy_entries() is True
+        assert auth.legacy_entries_note() is not None
     assert seen and all(seen), seen
 
 

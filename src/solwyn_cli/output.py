@@ -244,9 +244,11 @@ class OutputEngine:
                 )
             )
             if one_time_secret.footer is not None:
-                # Never wrap: the footer is a shell line meant to be copied.
+                # Never wrap: the footer holds shell lines meant to be copied.
+                # Each line is made safe on its own, so the line breaks stay.
+                lines = one_time_secret.footer.get_secret_value().split("\n")
                 console.print(
-                    Text(_terminal_safe(one_time_secret.footer.get_secret_value())),
+                    Text("\n".join(_terminal_safe(line) for line in lines)),
                     soft_wrap=True,
                 )
 
