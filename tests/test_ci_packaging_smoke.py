@@ -156,12 +156,12 @@ def test_ci_python_tests_skip_only_pushes_and_draft_prs() -> None:
     )
 
 
-def test_ci_selector_fetches_full_history_only_for_prs() -> None:
+def test_ci_selector_needs_no_pr_diff() -> None:
     job = _job_block(WORKFLOW_PATH.read_text(encoding="utf-8"), "changes")
 
-    assert (
-        "fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}"
-    ) in job
+    assert "run: bash .github/scripts/wheel-matrix.sh" in job
+    assert "fetch-depth" not in job
+    assert "PR_BASE_SHA" not in job
 
 
 def test_packaging_smoke_job_pins_actions_and_inspects_distribution() -> None:

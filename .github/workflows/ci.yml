@@ -30,13 +30,8 @@ jobs:
       wheel-os: ${{ steps.matrix.outputs.os }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-      - name: Select wheel platforms from the PR diff
+      - name: Select wheel platforms (Linux on PRs, every OS after merge)
         id: matrix
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash .github/scripts/wheel-matrix.sh
 
   quality:
