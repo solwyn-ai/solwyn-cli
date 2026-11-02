@@ -38,9 +38,10 @@ uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.4.2-py3-none-
 ```
 
 Protected checks keep their existing names: `Quality`, `Tests (Python 3.11)`,
-`Tests (Python 3.12)`, and `Tests (Python 3.13)`. New `Wheel MCP` jobs run on Linux,
-macOS and Windows with Python3.11/Node24 and execute the packaged doctor's real
-pipe path. Local macOS checks do not substitute for the other OS job results.
+`Tests (Python 3.12)`, and `Tests (Python 3.13)`. New `Wheel MCP` jobs run on Linux
+for every PR and main push, and on macOS and Windows for the weekly schedule,
+manual CI runs and every release tag, with Python3.11/Node24 and execute the
+packaged doctor's real pipe path. Local macOS checks do not substitute for the other OS job results.
 Require the final repository/cross-repository and actual PR CI evidence before
 releasing. The kit neither runs providers nor supplies production rollout proof.
 
