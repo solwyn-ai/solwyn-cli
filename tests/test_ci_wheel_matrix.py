@@ -1,4 +1,5 @@
-"""Exercise wheel platform selection: Linux on PRs, every OS after merge."""
+"""Exercise wheel platform selection: Linux on PRs and main pushes, every OS
+on the weekly schedule and manual runs."""
 
 import json
 import os
@@ -26,12 +27,13 @@ def select(tmp_path: Path, event: str) -> list[str]:
     return json.loads(output.read_text().removeprefix("os="))
 
 
-def test_pull_requests_select_linux_only(tmp_path):
-    assert select(tmp_path, "pull_request") == LINUX
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_pull_requests_and_main_pushes_select_linux_only(tmp_path, event):
+    assert select(tmp_path, event) == LINUX
 
 
-@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
-def test_non_pr_events_always_select_all_platforms(tmp_path, event):
+@pytest.mark.parametrize("event", ["schedule", "workflow_dispatch"])
+def test_scheduled_and_manual_runs_select_all_platforms(tmp_path, event):
     assert select(tmp_path, event) == ALL_OS
 
 
