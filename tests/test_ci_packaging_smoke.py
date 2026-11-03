@@ -13,7 +13,7 @@ WORKFLOW_PATH = Path(".github/workflows/ci.yml")
 PUBLISH_WORKFLOW_PATH = Path(".github/workflows/publish.yml")
 INSPECTOR_PATH = Path("scripts/inspect_wheel.py")
 ACTION_PIN = re.compile(r"^\s*- uses: [^@\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
-PACKAGE_VERSION = "0.4.2"
+PACKAGE_VERSION = "0.4.3"
 METADATA_2_5_INSPECTOR = (
     "hynek/build-and-inspect-python-package@"
     "2abe76da66d0a6a4a227101f9348ee855797cfa5 # v3.0.1"

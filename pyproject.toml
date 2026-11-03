@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "solwyn-cli"
-version = "0.4.2"
-description = "Command-line client for Solwyn"
+version = "0.4.3"
+description = "Command-line client for Solwyn. mcprush.com-7c9d9446a23518e4bfd29570"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
