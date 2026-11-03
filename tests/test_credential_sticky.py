@@ -14,12 +14,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from keyring.errors import NoKeyringError, PasswordDeleteError
 from typer.testing import CliRunner
 
 from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
+from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.credential_store import FileStore, credential_origin
 from solwyn_cli.main import app
@@ -122,9 +124,22 @@ AUTHORIZATION = {
 
 
 def _authorization(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Skip the server: device authorization returns a fixed pending login."""
+    """Skip the server: device authorization returns a fixed pending login.
+
+    The client gets a transport that refuses every request. With a transport,
+    httpx never reads the host's proxy settings, which on macOS calls into
+    SystemConfiguration and crashes a forked child.
+    """
     from solwyn_cli import oauth
 
+    def offline(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    monkeypatch.setattr(
+        login_module,
+        "SolwynClient",
+        lambda *a, **kw: SolwynClient(*a, transport=httpx.MockTransport(offline), **kw),
+    )
     monkeypatch.setattr(
         login_module,
         "start_device_authorization",
@@ -892,6 +907,9 @@ def test_a_dead_session_bus_never_proves_the_keyring_absent(
     # keyring itself resolves its fail backend here (checked on Linux with no
     # bus address, and with an address that has no bus behind it), whether or
     # not a keyring holding entries exists behind that bus.
+    pytest.importorskip(
+        "secretstorage", reason="keyring installs SecretStorage only on Linux"
+    )
     from keyring.backends import SecretService
 
     backend.entries[(SERVICE, f"{PROD}/login")] = _login_document(LOGIN_TOKEN)
@@ -1032,8 +1050,9 @@ def test_a_malformed_document_is_a_structured_error_naming_the_file(
 
 @pytest.mark.parametrize("content", [b"{", b"\xff\xfe not utf-8", b"null"])
 def test_unparsable_content_is_the_same_structured_error(
-    credentials_file: Path, content: bytes
+    monkeypatch: pytest.MonkeyPatch, credentials_file: Path, content: bytes
 ) -> None:
+    _platform(monkeypatch, "linux")  # auto reads the file.
     _write_raw(credentials_file, content)
 
     with pytest.raises(auth.MalformedCredentialFileError):

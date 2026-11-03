@@ -79,7 +79,10 @@ def test_origin_normalizes_scheme_host_port_and_path(url: str, origin: str) -> N
     assert credential_origin(url) == origin
 
 
-def test_a_localhost_login_is_never_used_for_production(credentials_file: Path) -> None:
+def test_a_localhost_login_is_never_used_for_production(
+    monkeypatch: pytest.MonkeyPatch, credentials_file: Path
+) -> None:
+    _platform(monkeypatch, "linux")  # auto reads the file.
     auth.store_login(LOGIN_TOKEN, login_meta(), mode="file", api_url=LOCAL)
 
     assert auth.resolve_credential({}, api_url=LOCAL) is not None
@@ -87,7 +90,10 @@ def test_a_localhost_login_is_never_used_for_production(credentials_file: Path) 
     assert set(_read_file(credentials_file)["origins"]) == {LOCAL}
 
 
-def test_each_api_keeps_its_own_login_and_key(credentials_file: Path) -> None:
+def test_each_api_keeps_its_own_login_and_key(
+    monkeypatch: pytest.MonkeyPatch, credentials_file: Path
+) -> None:
+    _platform(monkeypatch, "linux")  # auto reads the file.
     auth.store_login(LOGIN_TOKEN, login_meta(), mode="file", api_url=LOCAL)
     auth.store_login(OTHER_LOGIN_TOKEN, login_meta(), mode="file", api_url=PROD)
     auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
@@ -223,8 +229,9 @@ def test_a_failed_replace_keeps_the_previous_file_intact(
 @posix_only
 @pytest.mark.parametrize("mode", [0o640, 0o604, 0o644, 0o660])
 def test_a_file_other_users_can_read_is_refused(
-    credentials_file: Path, mode: int
+    monkeypatch: pytest.MonkeyPatch, credentials_file: Path, mode: int
 ) -> None:
+    _platform(monkeypatch, "linux")  # auto reads the file.
     auth.store_login(LOGIN_TOKEN, login_meta(), mode="file", api_url=PROD)
     credentials_file.chmod(mode)
 
