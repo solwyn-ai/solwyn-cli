@@ -578,7 +578,7 @@ def main() -> None:
             checked(python_command(uv, python, "-c", metadata_code), cwd=root)
         )
         for alias in ("solwyn", "solwyn-cli"):
-            assert "0.4.2" in checked(
+            assert "0.4.3" in checked(
                 [str(executable(environment, alias)), "--version"], cwd=root
             )
         kit = root / "copied examples"
