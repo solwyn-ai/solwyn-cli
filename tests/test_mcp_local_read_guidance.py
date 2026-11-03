@@ -3,7 +3,7 @@
 import anyio
 import pytest
 
-from solwyn_cli import auth
+from solwyn_cli import auth, credential_store
 from solwyn_cli.mcp import server
 from test_mcp_conformance import _call_tool, _install_http
 from login_fixtures import (
@@ -74,6 +74,11 @@ def test_login_mode_guidance_with_real_credential_precedence(
 
 
 def test_project_key_capable_mode_retains_normal_auth_guidance(monkeypatch):
+    # auto reads the file on Linux; pin it so the hint names the same store
+    # on every OS.
+    monkeypatch.setattr(
+        credential_store, "platform_name", lambda platform=None: "linux"
+    )
     calls, _, _ = _install_http(monkeypatch, responses=[], credentials=[None])
     result = anyio.run(_call_tool, "get_costs", {})
     hint = result.structured_content["error"]["hint"]

@@ -1,8 +1,9 @@
 """Suite-wide isolation from the host's credentials.
 
-In-process tests never touch the host's keyring or credentials file. Each test
-gets a credentials file under its own temporary directory and an empty
-in-memory keyring that is reachable, as on a desktop. Host variables that pick
+In-process tests never touch the host's keyring, credentials file or config.
+Each test gets a credentials file and a config directory under its own
+temporary directories and an empty in-memory keyring that is reachable, as on
+a desktop. Host variables that pick
 a credential or a store are removed. A test that needs an unusable keyring
 asks for ``keychain_unreachable``.
 """
@@ -15,7 +16,7 @@ from keyring.backend import KeyringBackend
 from keyring.backends import fail
 from keyring.errors import PasswordDeleteError
 
-from solwyn_cli import auth, credential_store
+from solwyn_cli import auth, config, credential_store
 
 
 class MemoryKeyring(KeyringBackend):
@@ -54,6 +55,13 @@ def memory_keyring(
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
     monkeypatch.setattr(credential_store, "lock_directory", lambda: state / "solwyn")
     monkeypatch.setattr(credential_store, "_STRANDED", False)
+    # The config dir: a host config.toml (credential_store = "file", say) must
+    # not change what a test resolves. An absolute XDG_CONFIG_HOME replaces a
+    # host one (a relative one would mean ~) and reaches child processes;
+    # macOS platformdirs ignores it, so the patch covers macOS.
+    config_home = tmp_path_factory.mktemp("config")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setattr(config, "user_config_dir", lambda *a, **kw: str(config_home))
     for name in (credential_store.STORE_ENV, auth.TOKEN_ENV):
         monkeypatch.delenv(name, raising=False)
     auth._LAST_LOOKUP.set(None)
