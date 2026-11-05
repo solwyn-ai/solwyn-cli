@@ -51,6 +51,7 @@ from solwyn_cli._vendor.validation import (
 )
 from solwyn_cli.credential_store import (
     API_KEYS_ENTRY,
+    IndexIncompleteError,
     ENTRIES,
     LEGACY_API_KEY_ENTRY,
     LOGIN_ENTRY,
@@ -1269,19 +1270,33 @@ def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
     keyring_store = _keyring_store()
     kept = list(scan.kept)
     failed = False
-    if API_KEYS_ENTRY not in kept:
-        # Every key item the index lists, before the index itself (below).
-        # Every key item is listed (see KeyringStore.set_api_key), so deleting
-        # what the index lists, each delete confirmed by a read, and then
-        # finding the index empty is proof no key of this API is left.
-        try:
-            for project_id in keyring_store.api_key_index(origin):
+    # Every key item is listed (see KeyringStore.set_api_key), so deleting
+    # what a complete index lists, each delete confirmed by a read, and then
+    # finding the index empty is proof no key of this API is left. With an
+    # incomplete index, the keys it does list are deleted, but the index and
+    # anything it may no longer list are kept, and logout says so.
+    complete = True
+    try:
+        listed = keyring_store.api_key_index(origin)
+    except IndexIncompleteError as error:
+        listed, complete = error.ids, False
+    except StoreUnavailableError:
+        listed, complete = [], False
+    try:
+        for project_id in listed:
+            if complete:
                 keyring_store.delete_api_key(origin, project_id)
-            if keyring_store.api_key_index(origin):
-                raise StoreUnavailableError("API keys are still listed.")
-        except StoreUnavailableError:
-            failed = True
-            kept.append(API_KEYS_ENTRY)
+            else:
+                keyring_store.delete_raw(
+                    keyring_store.api_key_username(origin, project_id)
+                )
+        if complete and keyring_store.api_key_index(origin):
+            raise StoreUnavailableError("API keys are still listed.")
+    except StoreUnavailableError:
+        failed = True
+        complete = False
+    if not complete and API_KEYS_ENTRY not in kept:
+        kept.append(API_KEYS_ENTRY)
     for entry in (*ENTRIES, LEGACY_API_KEY_ENTRY):
         if entry in kept:
             continue  # Never delete what could not be read (or revoked).

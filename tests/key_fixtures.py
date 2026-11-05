@@ -50,6 +50,13 @@ def key_index(origin: str) -> str:
     return f"{origin}/api_keys"
 
 
+def index_header(ids: list[str], shards: int = 1) -> str:
+    """The keyring index header: the first ids plus the shard count."""
+    import json
+
+    return json.dumps({"shards": shards, "ids": ids})
+
+
 def key_document(
     *,
     key: str = KEY,
@@ -85,7 +92,7 @@ def stored_keychain(
         ("solwyn-cli", key_item(origin, project_id)): json.dumps(
             key_document(**fields)
         ),
-        ("solwyn-cli", key_index(origin)): json.dumps([project_id]),
+        ("solwyn-cli", key_index(origin)): index_header([project_id]),
     }
 
 

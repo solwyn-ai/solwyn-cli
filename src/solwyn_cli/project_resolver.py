@@ -590,6 +590,26 @@ def _resolve_with_login(
     )
 
 
+def stored_key_for_read(
+    candidates: Candidates,
+    *,
+    api_url: str,
+    environ: Mapping[str, str] | None = None,
+) -> ApiKeyCredential | None:
+    """The stored key a read uses when no login sends it and no env key is set.
+
+    The same rule as every read: a present login (even under
+    SOLWYN_AUTH=project_key) turns the name into an id through its own
+    account; only with no login are stored names matched locally. Diagnostics
+    choose keys through here, never on their own.
+    """
+    selection = resolve(
+        candidates, purpose="read", api_url=api_url, credential=None, environ=environ
+    )
+    credential = selection.credential
+    return credential if isinstance(credential, ApiKeyCredential) else None
+
+
 def check_setup(
     candidates: Candidates,
     *,

@@ -932,3 +932,90 @@ def test_doctor_mcp_reads_the_project_by_its_resolved_id(
     assert diagnosed.http_read.status == "ok", diagnosed.http_read
     assert f"GET {budget_path}" in paths(requests)
     assert "GET /api/v1/projects/checkout-bot/budget" not in paths(requests)
+
+
+# --- Review round 2: the doctors choose stored keys through the resolver ----------
+
+
+def _cross_account_doctor(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
+    """SOLWYN_TOKEN for account A; account B's stored login and a stored key for
+    B's same-named project; SOLWYN_AUTH=project_key."""
+    from solwyn_cli.commands import doctor, mcp_doctor
+
+    store_login(account_id=OTHER_ACCOUNT_ID)
+    store_key(project_id=OTHER_PROJECT_ID, account_id=OTHER_ACCOUNT_ID)
+    monkeypatch.setenv("SOLWYN_TOKEN", ENV_TOKEN)
+    monkeypatch.setenv("SOLWYN_AUTH", "project_key")
+    requests: list[httpx.Request] = []
+    table = {
+        "GET /health/ready": (
+            200,
+            {
+                "status": "ready",
+                "service": "solwyn-api",
+                "checks": [{"name": "database", "status": "ok", "detail": None}],
+            },
+        ),
+        "GET /api/v1/accounts/me": (200, {"id": ACCOUNT_ID, "display_name": "A"}),
+        "GET /api/v1/projects": (200, [{"id": PROJECT_ID, "name": "checkout-bot"}]),
+        "GET /api/v1/auth/key": (
+            200,
+            auth_key_body(project_id=OTHER_PROJECT_ID, account_id=OTHER_ACCOUNT_ID),
+        ),
+        f"GET /api/v1/projects/{OTHER_PROJECT_ID}/budget": (
+            200,
+            {**BUDGET_RESPONSE, "project_id": OTHER_PROJECT_ID},
+        ),
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        status, body = table.get(
+            f"{request.method} {request.url.path}", (599, {"detail": "unexpected"})
+        )
+        return httpx.Response(status, json=body)
+
+    client = functools.partial(SolwynClient, transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(doctor, "SolwynClient", client)
+    monkeypatch.setattr(mcp_doctor, "SolwynClient", client)
+    monkeypatch.setattr(project_resolver, "_client_factory", lambda: client)
+
+    def no_child(*args: object, **kwargs: object) -> None:
+        raise ValueError("no child process needed")
+
+    monkeypatch.setattr(mcp_doctor, "resolve_executable", no_child)
+    return requests
+
+
+@pytest.mark.parametrize("mode", [[], ["--mcp"]])
+def test_the_doctors_never_select_another_accounts_same_named_key(
+    monkeypatch: pytest.MonkeyPatch, mode: list[str]
+) -> None:
+    requests = _cross_account_doctor(monkeypatch)
+
+    result = runner.invoke(
+        app, ["--json", "--project", "checkout-bot", "doctor", *mode]
+    )
+
+    assert OTHER_KEY not in result.output
+    assert not any(project_header(r) == OTHER_PROJECT_ID for r in requests)
+    assert not any(r.headers.get("Authorization") == f"Bearer {KEY}" for r in requests)
+    # The name went through account A's projects, as for every read.
+    assert "GET /api/v1/projects" in paths(requests)
+    assert result.exit_code == 1
+    data = json.loads(result.stdout)
+    assert data["status"] == "degraded"
+
+
+@pytest.mark.parametrize("mode", [[], ["--mcp"]])
+def test_the_doctors_without_a_login_still_match_a_stored_name_locally(
+    monkeypatch: pytest.MonkeyPatch, mode: list[str]
+) -> None:
+    requests = _cross_account_doctor(monkeypatch)
+    monkeypatch.delenv("SOLWYN_TOKEN")
+    auth.clear_login()
+
+    runner.invoke(app, ["--json", "--project", "checkout-bot", "doctor", *mode])
+
+    assert "GET /api/v1/projects" not in paths(requests)
+    assert any(project_header(r) == OTHER_PROJECT_ID for r in requests)

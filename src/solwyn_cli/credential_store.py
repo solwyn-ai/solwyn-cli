@@ -13,8 +13,10 @@ never sent to production. Three entries exist per origin:
 
 The file keeps ``api_keys`` as one object. The keyring keeps one item per key,
 ``<origin>/api_key/<project id>``, plus an index listing the project ids,
-because keyrings cannot enumerate: ``<origin>/api_keys`` holds the first 16
-ids, ``<origin>/api_keys/1``, ``/2``, ... the next ones. 0.4.x stored one
+because keyrings cannot enumerate: ``<origin>/api_keys`` is a header holding
+the shard count and the first 16 ids, ``<origin>/api_keys/1``, ``/2``, ... the
+next ones. A shard the header expects but cannot be read makes the index
+incomplete: reads fail closed and logout keeps what it cannot account for. 0.4.x stored one
 ``sk_proj_`` key per origin (file version 1, keyring item ``<origin>/api_key``);
 those keys stopped working and are dropped, never read.
 
@@ -111,6 +113,18 @@ class NoKeyringBackendError(StoreUnavailableError):
     (not checked) when it is not the store in use, and ``unreachable`` when it
     is. Reads and writes in keyring mode fail with a storage error.
     """
+
+
+class IndexIncompleteError(StoreUnavailableError):
+    """A keyring index shard the header expects is missing or unreadable.
+
+    ``ids`` are the project ids the readable shards list: logout deletes those
+    keys and still reports the keyring kept, because others may be unlisted.
+    """
+
+    def __init__(self, message: str, ids: list[str]) -> None:
+        super().__init__(message)
+        self.ids = ids
 
 
 class LockTimeoutError(StoreUnavailableError):
@@ -956,17 +970,24 @@ class KeyringStore:
         base = f"{origin}/{API_KEYS_ENTRY}"
         return base if shard == 0 else f"{base}/{shard}"
 
-    def _index_shard(self, origin: str, shard: int) -> list[str] | None:
+    def _shard_ids(self, username: str, raw: str, *, header: bool) -> list[str]:
+        """Parse one shard: the header ``{"shards": N, "ids": [...]}`` or a list."""
         from solwyn_cli._vendor.validation import PROJECT_ID_PATTERN
 
-        username = self.api_key_index_username(origin, shard)
-        raw = self.get_raw(username)
-        if raw is None:
-            return None
         try:
-            ids = json.loads(raw)
+            value = json.loads(raw)
         except ValueError:
-            ids = None
+            value = None
+        if header:
+            ok = (
+                isinstance(value, dict)
+                and set(value) == {"shards", "ids"}
+                and type(value["shards"]) is int
+                and value["shards"] >= 1
+            )
+            ids = value["ids"] if ok else None
+        else:
+            ids = value
         if not isinstance(ids, list) or not all(
             isinstance(item, str) and PROJECT_ID_PATTERN.fullmatch(item) for item in ids
         ):
@@ -976,14 +997,58 @@ class KeyringStore:
         return ids
 
     def api_key_index_shards(self, origin: str) -> list[list[str]]:
-        """Every index shard in order; shards are contiguous from 0."""
-        shards: list[list[str]] = []
-        while (ids := self._index_shard(origin, len(shards))) is not None:
-            shards.append(ids)
+        """Every index shard in order, as the header says they should be.
+
+        ``<origin>/api_keys`` is the header and holds the first ids plus the
+        shard count. A missing or unreadable shard the header expects raises
+        IndexIncompleteError (with the ids that could be read), never a short
+        index. A shard past the count (a write that stopped between a new
+        shard and the header) is read too, so its keys are still found.
+        """
+        username = self.api_key_index_username(origin)
+        raw = self.get_raw(username)
+        if raw is None:
+            if self.get_raw(self.api_key_index_username(origin, 1)) is not None:
+                raise IndexIncompleteError(
+                    "The Solwyn API key index header is missing from the system "
+                    "keyring.",
+                    [],
+                )
+            return []
+        shards = [self._shard_ids(username, raw, header=True)]
+        expected = json.loads(raw)["shards"]
+        incomplete: list[str] = []
+        for shard in range(1, expected):
+            name = self.api_key_index_username(origin, shard)
+            value = self.get_raw(name)
+            try:
+                if value is None:
+                    raise StoreUnavailableError(name)
+                shards.append(self._shard_ids(name, value, header=False))
+            except StoreUnavailableError:
+                incomplete.append(name)
+                shards.append([])
+        shard = expected
+        while (
+            value := self.get_raw(self.api_key_index_username(origin, shard))
+        ) is not None:
+            name = self.api_key_index_username(origin, shard)
+            try:
+                shards.append(self._shard_ids(name, value, header=False))
+            except StoreUnavailableError:
+                incomplete.append(name)
+                shards.append([])
+            shard += 1
+        if incomplete:
+            raise IndexIncompleteError(
+                "The Solwyn API key index in the system keyring is incomplete "
+                f"({', '.join(incomplete)} missing or unreadable).",
+                [item for ids in shards for item in ids],
+            )
         return shards
 
     def api_key_index(self, origin: str) -> list[str]:
-        """The project ids the index lists; a malformed shard is an error."""
+        """The project ids the index lists; an incomplete index is an error."""
         return list(
             dict.fromkeys(
                 item for shard in self.api_key_index_shards(origin) for item in shard
@@ -993,14 +1058,22 @@ class KeyringStore:
     def _write_shards(
         self, origin: str, before: list[list[str]], after: list[list[str]]
     ) -> None:
-        """Write the shards that changed, then drop trailing empty ones."""
+        """Write the shards that changed; the header goes last when shards are
+        added and first when they are dropped, so a stop midway never hides a
+        shard from readers (they also read past the count)."""
         while after and not after[-1]:
             after = after[:-1]
-        for shard, ids in enumerate(after):
-            if shard >= len(before) or before[shard] != ids:
+
+        def header(ids: list[str]) -> str:
+            return json.dumps({"shards": len(after), "ids": ids})
+
+        for shard in range(1, len(after)):
+            if shard >= len(before) or before[shard] != after[shard]:
                 self.set_raw(
-                    self.api_key_index_username(origin, shard), json.dumps(ids)
+                    self.api_key_index_username(origin, shard), json.dumps(after[shard])
                 )
+        if after and (len(after) != len(before) or before[0] != after[0]):
+            self.set_raw(self.api_key_index_username(origin), header(after[0]))
         for shard in range(len(before) - 1, len(after) - 1, -1):
             self.delete_raw(self.api_key_index_username(origin, shard))
 

@@ -24,6 +24,7 @@ from key_fixtures import (
     OTHER_PROJECT_ID,
     PROJECT_ID,
     key_document,
+    index_header,
     key_index,
     key_item,
     store_key,
@@ -292,7 +293,7 @@ def test_a_key_is_listed_first_then_written_each_read_back(
     for name in (item, index):
         position = keychain.calls.index(("set", name))
         assert ("get", name) in keychain.calls[position + 1 :]
-    assert json.loads(keychain.entries[(SERVICE, index)]) == [PROJECT_ID]
+    assert _header(keychain) == {"shards": 1, "ids": [PROJECT_ID]}
     document = json.loads(keychain.entries[(SERVICE, item)])
     assert set(document) == set(credential_store.API_KEY_FIELDS)
     assert (document["key"], document["key_id"], document["account_id"]) == (
@@ -314,7 +315,7 @@ def test_keys_for_two_projects_and_deletion_keep_the_index_exact(
         project_name="support-bot",
         api_url=PROD,
     )
-    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))]) == [
+    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))])["ids"] == [
         PROJECT_ID,
         OTHER_PROJECT_ID,
     ]
@@ -323,7 +324,7 @@ def test_keys_for_two_projects_and_deletion_keep_the_index_exact(
     auth.delete_stored_api_keys((PROJECT_ID,), api_url=PROD)
 
     assert (SERVICE, key_item(PROD)) not in keychain.entries
-    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))]) == [
+    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))])["ids"] == [
         OTHER_PROJECT_ID
     ]
 
@@ -339,7 +340,9 @@ def test_storing_the_same_project_again_replaces_its_key(
     store_key(api_url=PROD)
     store_key(key=OTHER_KEY, key_id=OTHER_KEY_ID, api_url=PROD)
 
-    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))]) == [PROJECT_ID]
+    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))])["ids"] == [
+        PROJECT_ID
+    ]
     found = auth.stored_key_for_project(PROJECT_ID, api_url=PROD)
     assert found is not None and found.bearer_value() == OTHER_KEY
 
@@ -347,7 +350,7 @@ def test_storing_the_same_project_again_replaces_its_key(
 def test_an_index_entry_whose_item_is_gone_is_not_a_stored_key(
     keychain: Recording,
 ) -> None:
-    keychain.entries[(SERVICE, key_index(PROD))] = json.dumps([PROJECT_ID])
+    keychain.entries[(SERVICE, key_index(PROD))] = index_header([PROJECT_ID])
 
     assert auth.stored_api_keys(api_url=PROD) == {}
 
@@ -360,7 +363,18 @@ def test_a_key_item_is_found_by_its_exact_id_even_without_the_index(
     assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is not None
 
 
-@pytest.mark.parametrize("index", ["not json", '["checkout-bot"]', '{"a": 1}'])
+@pytest.mark.parametrize(
+    "index",
+    [
+        "not json",
+        '["checkout-bot"]',
+        '{"a": 1}',
+        # A bare list is not a header: the shard count is unknown.
+        json.dumps([PROJECT_ID]),
+        json.dumps({"shards": 0, "ids": []}),
+        json.dumps({"shards": "1", "ids": []}),
+    ],
+)
 def test_a_malformed_index_is_an_error_never_an_empty_store(
     keychain: Recording, index: str
 ) -> None:
@@ -483,6 +497,10 @@ def test_a_file_with_a_malformed_stored_key_is_refused_whole(
 # --- Review round 1: a key is never stored where logout cannot see it -------
 
 
+def _header(keychain: Recording, origin: str = PROD) -> Any:
+    return json.loads(keychain.entries[(SERVICE, key_index(origin))])
+
+
 def _key_usernames(keychain: Recording, origin: str = PROD) -> list[str]:
     return sorted(user for _, user in keychain.entries if user.startswith(origin))
 
@@ -534,7 +552,9 @@ def test_an_unconfirmed_rollback_keeps_the_key_listed_so_logout_removes_it(
 
     store_key(api_url=PROD)  # The value landed and reads back: stored.
     assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is not None
-    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))]) == [PROJECT_ID]
+    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))])["ids"] == [
+        PROJECT_ID
+    ]
 
     keychain.reject_delete = ()
     report = auth.logout_everywhere(lambda token: True, api_url=PROD)
@@ -601,3 +621,95 @@ def test_removing_keys_drops_only_trailing_empty_index_shards(
     assert (SERVICE, f"{key_index(PROD)}/2") not in keychain.entries
     assert (SERVICE, f"{key_index(PROD)}/1") not in keychain.entries
     assert set(auth.stored_api_keys(api_url=PROD)) == set(ids[:16])
+
+
+# --- Review round 2: an index the header says is incomplete is never short ---
+
+
+def _many(count: int) -> list[str]:
+    ids = [f"proj_{number:024x}" for number in range(count)]
+    for project_id in ids:
+        store_key(project_id=project_id, api_url=PROD)
+    return ids
+
+
+def test_the_header_counts_the_shards(keychain: Recording) -> None:
+    _many(33)
+
+    assert _header(keychain)["shards"] == 3
+    assert len(_header(keychain)["ids"]) == 16
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt"])
+def test_a_damaged_middle_shard_fails_reads_closed_and_logout_keeps_it(
+    keychain: Recording, damage: str
+) -> None:
+    ids = _many(33)
+    middle = (SERVICE, f"{key_index(PROD)}/1")
+    if damage == "missing":
+        del keychain.entries[middle]
+    else:
+        keychain.entries[middle] = "{not json"
+
+    with pytest.raises(auth.KeyringUnavailableError):
+        auth.stored_api_keys(api_url=PROD)
+    with pytest.raises(auth.CredentialStorageError):
+        store_key(project_id="proj_" + "f" * 24, api_url=PROD)
+
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+
+    keyring = next(store for store in report.stores if store.kind == "keyring")
+    assert not keyring.cleared
+    assert keyring.retained
+    assert auth.API_KEYS_ENTRY in keyring.kept
+    remaining = [user for user in _key_usernames(keychain) if "/api_key/" in user]
+    # What the readable shards list is deleted; the middle shard's keys remain,
+    # and so does the index, so a later look still knows something is wrong.
+    assert remaining == sorted(f"{PROD}/api_key/{pid}" for pid in ids[16:32])
+    assert (SERVICE, key_index(PROD)) in keychain.entries
+
+
+def test_logout_with_a_damaged_shard_exits_3_saying_what_it_kept(
+    keychain: Recording,
+) -> None:
+    _many(33)
+    del keychain.entries[(SERVICE, f"{key_index(PROD)}/1")]
+
+    result = runner.invoke(app, ["--json", "logout"])
+
+    assert result.exit_code == 3
+    assert json.loads(result.stderr)["code"] == "logout_incomplete"
+
+
+def test_a_missing_header_with_a_later_shard_is_incomplete(keychain: Recording) -> None:
+    _many(20)
+    del keychain.entries[(SERVICE, key_index(PROD))]
+
+    with pytest.raises(auth.KeyringUnavailableError):
+        auth.stored_api_keys(api_url=PROD)
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+    assert not next(s for s in report.stores if s.kind == "keyring").cleared
+
+
+def test_a_shard_written_before_its_header_is_still_found(keychain: Recording) -> None:
+    ids = _many(16)
+    extra = "proj_" + "e" * 24
+    # A write that stopped after the new shard and before the header update.
+    keychain.entries[(SERVICE, f"{key_index(PROD)}/1")] = json.dumps([extra])
+    keychain.entries[(SERVICE, f"{PROD}/api_key/{extra}")] = json.dumps(key_document())
+
+    assert set(auth.stored_api_keys(api_url=PROD)) == {*ids, extra}
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+    assert all(store.cleared for store in report.stores if store.checked)
+    assert _key_usernames(keychain) == []
+
+
+def test_logout_of_many_keys_with_an_intact_index_clears_everything(
+    keychain: Recording,
+) -> None:
+    _many(33)
+
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+
+    assert all(store.cleared for store in report.stores if store.checked)
+    assert _key_usernames(keychain) == []

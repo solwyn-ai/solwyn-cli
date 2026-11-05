@@ -25,7 +25,13 @@ from solwyn_cli.errors import ApiError
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import TableData
 from solwyn_cli.project_resolver import ProjectResolutionError
-from solwyn_cli.runtime import API_URL_SOURCE_LABELS, command_context, output_engine
+from solwyn_cli.runtime import (
+    API_URL_SOURCE_LABELS,
+    CommandContext,
+    candidates_of,
+    command_context,
+    output_engine,
+)
 
 
 DOCTOR_HELP = help_contract(
@@ -198,16 +204,12 @@ def _credential_store_diagnostic() -> _Diagnostic:
     return _Diagnostic(status="ok", detail=detail)
 
 
-def _stored_key(api_url: str, selector: str) -> ApiKeyCredential | None:
-    """The stored key for the selector, chosen locally (doctor never resolves
-    names over the network)."""
-    from solwyn_cli.project_resolver import _local_match
+def _stored_key(runtime: CommandContext) -> ApiKeyCredential | None:
+    """The stored key for the selected project, chosen by the shared read
+    resolver: through the present login's account, locally only without one."""
+    from solwyn_cli.project_resolver import stored_key_for_read
 
-    stored = auth_module.stored_api_keys(api_url)
-    if not stored:
-        return None
-    entry = _local_match(stored, selector)
-    return auth_module.stored_key_for_project(entry.project_id, api_url)
+    return stored_key_for_read(candidates_of(runtime), api_url=runtime.api_url)
 
 
 def _readiness_diagnostic(client: SolwynClient) -> _ReadinessDiagnostic:
@@ -482,7 +484,7 @@ def doctor(
     try:
         credential = resolve_credential()
         if credential is None and runtime.project is not None:
-            credential = _stored_key(runtime.api_url, runtime.project)
+            credential = _stored_key(runtime)
         if (
             isinstance(credential, ApiKeyCredential)
             and credential.project is None
@@ -490,9 +492,9 @@ def doctor(
         ):
             # Every key request names its project: the selector as given.
             credential = credential.model_copy(update={"project": runtime.project})
-    except (AuthError, ProjectResolutionError) as error:
+    except (AuthError, ProjectResolutionError, ApiError) as error:
         credential = None
-        credential_error = str(error)
+        credential_error = error.message if isinstance(error, ApiError) else str(error)
 
     endpoint_available = runtime.api_url_source != "fallback"
     with SolwynClient(

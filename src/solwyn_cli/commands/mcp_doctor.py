@@ -93,28 +93,30 @@ class _AccountResponse(BaseModel):
 
 
 def capture_credential(
-    project: str | None = None,
+    runtime: CommandContext | None = None,
 ) -> tuple[ResolvedCredential | None, CredentialCheck]:
     """Resolve once; availability reads after absence never select another identity.
 
     With no login and no SOLWYN_API_KEY, the key stored for the selected
-    project is chosen locally (exact id, else its stored name).
+    project is chosen by the shared read resolver: through a present login's
+    account (even under SOLWYN_AUTH=project_key), locally only without one.
     """
     try:
         credential = auth.resolve_credential()
-        if credential is None and project is not None:
+        if credential is None and runtime is not None and runtime.project is not None:
+            from solwyn_cli.errors import ApiError
             from solwyn_cli.project_resolver import (
                 ProjectResolutionError,
-                _local_match,
+                stored_key_for_read,
             )
+            from solwyn_cli.runtime import candidates_of
 
-            stored = auth.stored_api_keys()
             try:
-                entry = _local_match(stored, project) if stored else None
-            except ProjectResolutionError:
-                entry = None
-            if entry is not None:
-                credential = auth.stored_key_for_project(entry.project_id)
+                credential = stored_key_for_read(
+                    candidates_of(runtime), api_url=runtime.api_url
+                )
+            except (ProjectResolutionError, ApiError):
+                credential = None
     except auth.MalformedCredentialFileError:
         # Present but not a valid credential: never silently skipped.
         return None, CredentialCheck(status="incomplete", source=_stored_kind())
@@ -247,7 +249,7 @@ def _read_project_id(
 def diagnose(
     runtime: CommandContext, executable: Path | None, profile: Profile
 ) -> McpDoctorData:
-    credential, credential_check = capture_credential(runtime.project)
+    credential, credential_check = capture_credential(runtime)
     context = KeyContext(
         status="skipped", detail="No valid captured credential or API URL is available."
     )
