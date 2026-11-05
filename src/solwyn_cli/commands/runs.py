@@ -29,6 +29,7 @@ from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._pagination import read_pages
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -144,7 +145,7 @@ app = typer.Typer(
         exits="0 success; 2 usage",
         schema="varies by subcommand",
         guidance=(
-            "List and show accept a project key or login; stop requires login with budget.write.",
+            "List and show accept an API key or login; stop requires login with budget.write.",
         ),
     ),
 )
@@ -157,18 +158,7 @@ def _date_time(value: datetime) -> str:
 def _project_id(context: typer.Context) -> str:
     project_id = command_context(context).project
     if project_id is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     return project_id
 
 

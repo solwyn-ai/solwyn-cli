@@ -10,7 +10,7 @@ solwyn alerts show EVENT_ID --range 90d
 solwyn alerts list --account --from 2026-09-01T00:00:00Z --to 2026-09-05T00:00:00Z
 ```
 
-History defaults to 30 days. Presets are `7d`, `30d`, and `90d`. Custom windows require both timezone-aware bounds with `--to` later than `--from`; these replace the preset. Longer custom windows may require an upgrade. Core clamps retained history and the CLI reports `window.retention_clamped` on stderr. Project history accepts a project key or a Solwyn login; account history requires a login and reads account-scope events.
+History defaults to 30 days. Presets are `7d`, `30d`, and `90d`. Custom windows require both timezone-aware bounds with `--to` later than `--from`; these replace the preset. Longer custom windows may require an upgrade. Core clamps retained history and the CLI reports `window.retention_clamped` on stderr. Project history accepts an API key or a Solwyn login; account history requires a login and reads account-scope events.
 
 Core supplies at most 25 events per page and has no `limit` parameter. `--all` walks continuation cursors; otherwise JSON preserves `next_cursor` and table mode prints continuation guidance on stderr. `--scope` matches the rule scope in event metadata, such as `tag`, rather than selecting account versus project history. Scope and rule-type filters allow at most 32 characters and no NUL. `--failed-only` filters the returned page locally to `partial` and `failed` delivery rollups; combine it with `--all` to search all pages. An empty filtered page can still have a continuation cursor.
 

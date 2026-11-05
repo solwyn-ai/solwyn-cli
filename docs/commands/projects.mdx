@@ -2,22 +2,44 @@
 title: Projects
 ---
 
-Select a project with global `--project` for `show`. `list` and `create` require
-a Solwyn login; `show` accepts a project key or a login. Rename and delete require
-an owner/admin login. Create, rename and delete each need a one-time browser
+Select a project with `--project` or `SOLWYN_PROJECT` (a project name or `proj_`
+id) or the repo's `.solwyn.env` for `show`. `list` and `create` require a Solwyn
+login; `show` accepts an API key or a login. Rename and delete require an
+owner/admin login. Create, rename and delete each need a one-time browser
 approval (see [approvals](approvals.mdx)). Core enforces role and tier limits.
 
 ```sh
 solwyn projects list
-solwyn --project proj_example projects show
-solwyn projects create --name sandbox --budget 10 --store-key
+solwyn --project checkout-bot projects show
+solwyn projects create --budget 10 --store-key
+solwyn projects create --name sandbox --budget 10
 ```
 
-Creation returns the first project key once; `--store-key` writes it to the
-credential store (see [login](login.mdx)). Existing key material cannot be retrieved. Delete displays effects
-and requires confirmation or `--yes`; it irreversibly archives the project,
-revokes every project key in the same transaction and clears matching local
-project selection. The archived project immediately becomes unavailable.
+Inside a git repo, `--name` defaults to the repo's directory name, sanitised to
+letters, digits, spaces, `.`, `_` and `-` (other characters become `-`); when an
+active project already has that name, `-2`, `-3`, ... up to `-99` is added.
+Outside a repo `--name` is required.
+
+Creation returns the new project's first API key, which holds only this
+project, once. Without `--store-key` it is shown with export lines for
+`SOLWYN_API_KEY` and `SOLWYN_PROJECT`. With `--store-key` it is stored on this
+computer for the project (see [API keys](keys.mdx)) and, inside a git repo
+without one, the repo file `.solwyn.env` is written:
+
+```text
+# Solwyn project for this repo. Not a secret: commit this file.
+SOLWYN_PROJECT="checkout-bot"
+```
+
+An existing `.solwyn.env` is never overwritten; if it names another project the
+command says so on stderr. Existing key material cannot be retrieved.
+
+Rename warns that apps setting `SOLWYN_PROJECT` to the old name fail at their
+next start, and updates `.solwyn.env` when it names the old name. Delete
+displays effects and requires confirmation or `--yes`; it irreversibly archives
+the project, keys stop reaching it in the same transaction (a key left with no
+project is revoked), and this computer's stored key for it is deleted. The
+archived project immediately becomes unavailable.
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
@@ -47,7 +69,7 @@ Usage: solwyn projects create [OPTIONS]
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `--name` | `Name for the new project. (STRING; required)` | `None` |
+| `--name` | `Name for the new project. Defaults to the git repo's name (with -2, -3, ... when taken); required outside a repo. (STRING)` | `None` |
 | `--budget` | `Initial project budget in USD. (FLOAT)` | `100.0` |
 | `--period` | `Initial budget period. (Choice(['daily', 'weekly', 'monthly']))` | `monthly` |
 | `--mode` | `Initial budget enforcement mode. (Choice(['alert_only', 'hard_deny']))` | `alert_only` |
@@ -55,11 +77,13 @@ Usage: solwyn projects create [OPTIONS]
 | `--store-key` | `Store the new key in the credential store. (BOOL)` | `False` |
 
 ```text
-Endpoint: POST /api/v1/projects
+Endpoint: POST /api/v1/projects (GET /api/v1/projects first when the name comes from the repo)
 Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-create.v1
-The new project key is shown exactly once or stored directly in the credential store (--store-key).
+The new project's API key holds only this project. It is shown exactly once with export lines, or stored on this computer for the project (--store-key).
+--name defaults to the git repo's name; -2, -3, ... is added when that name is taken.
+--store-key also writes the repo's .solwyn.env (SOLWYN_PROJECT) when there is none; an existing one is never overwritten.
 ```
 
 ## `solwyn projects delete`
@@ -72,7 +96,7 @@ Usage: solwyn projects delete [OPTIONS] PROJECT_ID
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `project_id` | `Project identifier to archive. (STRING; required)` | `None` |
+| `PROJECT_ID` | `Project identifier to archive. (STRING; required)` | `None` |
 | `--yes` | `Acknowledge the irreversible project deletion. (BOOL)` | `False` |
 
 ```text
@@ -80,7 +104,8 @@ Endpoint: DELETE /api/v1/projects/{id}
 Auth: login (owner or admin)
 Exit codes: 0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-delete.v1 (CLI output after bodyless 204)
-Irreversible: archives the project, revokes every project key in the same transaction, and the project immediately becomes unavailable.
+Irreversible: archives the project; keys stop reaching it in the same transaction (a key left with no project is revoked), and the project immediately becomes unavailable.
+Deletes this computer's stored key for the project.
 Pass --yes; an interactive terminal must also type the exact project name.
 ```
 
@@ -109,7 +134,7 @@ Usage: solwyn projects rename [OPTIONS] PROJECT_ID
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `project_id` | `Project identifier to rename. (STRING; required)` | `None` |
+| `PROJECT_ID` | `Project identifier to rename. (STRING; required)` | `None` |
 | `--name` | `New project name. (STRING; required)` | `None` |
 
 ```text
@@ -133,3 +158,4 @@ Auth: any
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
 JSON schema: solwyn.projects-show.v1
 ```
+

@@ -65,9 +65,7 @@ class CommandContext(BaseModel):
     # The selected project: as given until the resolver turns it into the
     # proj_ id (then ``project_selector`` keeps the value as given).
     project: str | None
-    project_source: Literal[
-        "cli", "environment", "repo", "legacy_environment", "config", "none"
-    ] = "none"
+    project_source: Literal["cli", "environment", "repo", "none"] = "none"
     project_selector: str | None = None
     project_resolved: bool = False
     # SOLWYN_PROJECT from the repo's .solwyn.env, for the mismatch check.
@@ -128,9 +126,7 @@ def resolve_command_context(
     )
 
 
-ProjectSource = Literal[
-    "cli", "environment", "repo", "legacy_environment", "config", "none"
-]
+ProjectSource = Literal["cli", "environment", "repo", "none"]
 
 
 def project_candidates(
@@ -142,11 +138,13 @@ def project_candidates(
 ) -> tuple[str | None, ProjectSource, str | None, str | None]:
     """(selected, source, repo value, repo file error), first present wins.
 
-    ``--project`` > ``SOLWYN_PROJECT`` > the repo's ``.solwyn.env``. Until
-    14d-2 removes them, ``SOLWYN_PROJECT_ID`` and config ``default_project``
-    are still read after those three.
+    ``--project`` > ``SOLWYN_PROJECT`` > the repo's ``.solwyn.env``. There is
+    no computer-wide default: ``SOLWYN_PROJECT_ID`` and config
+    ``default_project`` are gone (a leftover SOLWYN_PROJECT_ID is named when a
+    command needs a project and nothing selects one).
     """
-    from solwyn_cli.project_resolver import read_repo_project, trim_selector
+    from solwyn_cli._vendor.validation import trim_selector
+    from solwyn_cli.repo_file import read_repo_project
 
     def present(value: str | None) -> str | None:
         trimmed = trim_selector(value) if value is not None else ""
@@ -157,8 +155,6 @@ def project_candidates(
         (flag, "cli"),
         (environ.get("SOLWYN_PROJECT"), "environment"),
         (repo, "repo"),
-        (environ.get("SOLWYN_PROJECT_ID"), "legacy_environment"),
-        (config.default_project, "config"),
     ):
         if (chosen := present(value)) is not None:
             return chosen, source, repo, repo_error  # type: ignore[return-value]

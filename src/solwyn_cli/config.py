@@ -34,7 +34,6 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
     api_url: str = "https://api.solwyn.ai"
-    default_project: str | None = None
     format: Literal["table", "json"] = "table"
     # Where stored credentials live; SOLWYN_CREDENTIAL_STORE overrides it.
     credential_store: Literal["auto", "keyring", "file"] = "auto"
@@ -226,17 +225,6 @@ def save_config(config: Config, *, omit_default_api_url: bool = False) -> None:
 def update_config_value(key: str, value: str) -> Config:
     """Atomically read, validate, and update one allowlisted setting."""
     return update_config_values({key: value})
-
-
-def clear_default_project(project_id: str) -> bool:
-    """Atomically clear ``default_project`` only when it matches one project."""
-    path = get_config_path()
-    with _config_lock(path):
-        current = load_config()
-        if current.default_project != project_id:
-            return False
-        save_config(current.model_copy(update={"default_project": None}))
-    return True
 
 
 def update_config_values(

@@ -36,6 +36,7 @@ from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData
+from solwyn_cli.project_resolver import PROJECT_HINT
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -156,8 +157,7 @@ def _validated_identifier(
 ) -> str:
     if value is None or not value.strip():
         hint = (
-            "Choose a project with --project, SOLWYN_PROJECT_ID, or "
-            "config default_project."
+            PROJECT_HINT
             if label == "project"
             else "Provide a nonblank webhook identifier."
         )

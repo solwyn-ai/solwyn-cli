@@ -210,7 +210,7 @@ def test_simulation_fallback_matches_core_pricing():
 @pytest.mark.parametrize(
     "tool,args,detail,guarantee",
     [
-        ("get_cost_total", {"project_id": "proj_" + "ab" * 12}, "busy", None),
+        ("get_cost_total", {"project": "proj_" + "ab" * 12}, "busy", None),
         (
             "budget_check",
             {"model": "gpt-4o", "provider": "openai", "estimated_input_tokens": 1},
@@ -268,9 +268,10 @@ def test_mcp_recording_preserves_transport_uncertainty(monkeypatch, status, reco
                 credential=KEY,
                 transport=httpx.MockTransport(disconnect),
             ) as client:
-                yield None, client
+                yield client
 
-        monkeypatch.setattr(server, "tool_call_client", client_factory)
+        # Reporting tools take their client (the launch project's key) here.
+        monkeypatch.setattr(server, "reporting_client", client_factory)
     else:
         _install_http(
             monkeypatch,

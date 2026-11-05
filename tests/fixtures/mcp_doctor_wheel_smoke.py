@@ -56,7 +56,23 @@ class API(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != "Bearer " + KEY:
             status, body = 401, {"detail": "PRIVATE_UNEXPECTED_CREDENTIAL"}
         elif self.path == "/api/v1/auth/key":
-            status, body = 200, {"project_id": IDENTITY, "scope": SCOPE}
+            # Core spec 2.5: the key and the project Solwyn-Project named.
+            status, body = (
+                200,
+                {
+                    "account_id": "acct_synthetic",
+                    "key_id": "6f1d0c9e-0000-4000-8000-000000000001",
+                    "key_prefix": KEY[:26],
+                    "key_name": "checkout-bot",
+                    "scope": SCOPE,
+                    "created_via": "cli",
+                    "expires_at": "2027-11-04T10:12:00Z",
+                    "rotation_grace_until": None,
+                    "project_id": IDENTITY,
+                    "project_name": "checkout-bot",
+                    "budget_mode": "hard_deny",
+                },
+            )
         elif self.path == "/api/v1/projects/proj_abababababababababababab/budget":
             status, body = (
                 (503, {"detail": "PRIVATE_REMOTE_CANARY"}) if FAIL else (200, BUDGET)

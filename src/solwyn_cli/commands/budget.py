@@ -57,6 +57,7 @@ from solwyn_cli.commands._record import (
 )
 from solwyn_cli.commands._tags import parse_tags, validate_tags
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -2021,18 +2022,7 @@ def set_budget(
 
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
 
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ApiKeyCredential):
@@ -2135,18 +2125,7 @@ def status(
 
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
 
     credential = required_credential(context, resolve=resolve_credential)
     runtime = with_project(context, credential)
@@ -2209,14 +2188,7 @@ def uncounted(context: typer.Context) -> None:
 
     runtime = command_context(context)
     if not runtime.project:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="Select a project with --project or SOLWYN_PROJECT_ID.",
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     credential = required_credential(context, resolve=resolve_credential)
     runtime = with_project(context, credential)
     try:

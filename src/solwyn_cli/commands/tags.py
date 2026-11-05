@@ -11,6 +11,7 @@ from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._pagination import read_pages
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -150,15 +151,7 @@ def _read(
 ) -> None:
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint="Use --project, SOLWYN_PROJECT_ID, or config default_project.",
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     try:
         if key is not None:
             validate_tags({key: prefix or ""})

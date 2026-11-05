@@ -1,149 +1,242 @@
 ---
-title: Project keys
+title: API keys
 ---
 
-Inspect metadata, rotate or revoke keys for the selected project with a Solwyn
-login, and hand the stored key to an SDK. Metadata never reveals existing key
-material. Rotation's replacement key is shown once; store it securely. Omitted
-`--scope` keeps its scope. `--grace-seconds` is 0–604800 seconds; omission uses
-Core's default grace period. Zero grace invalidates the old key immediately.
-Revoke takes an identifier, never raw key material, and hard-revokes it without
-minting a replacement. Rotate and revoke need a browser approval when you use a
-Solwyn login (see [approvals](approvals.mdx)).
+An API key belongs to your account and holds one or more projects. Every
+request made with a key names its project (the CLI and the SDKs send it as the
+`Solwyn-Project` header from `SOLWYN_PROJECT`, a project name or `proj_` id).
+The CLI creates a key for exactly one project. Giving an existing key another
+project is done only in the dashboard (Settings > API keys), by a person.
+
+List, create, rotate and revoke keys with a Solwyn login; each change needs a
+browser approval (see [approvals](approvals.mdx)). Listing never reveals key
+material. A new or rotated key is shown once, unless it is stored on this
+computer, where `keys env` hands it to an SDK.
 
 ```sh
-solwyn --project proj_example keys show
-solwyn --project proj_example keys rotate --grace-seconds 3600 --yes
-solwyn --project proj_example keys revoke --key-id key_example --yes
-solwyn keys env
+solwyn keys list
+solwyn keys create --project checkout-bot --store-key
+solwyn keys rotate 6f1d0c9e-0000-4000-8000-000000000001 --grace-seconds 3600 --yes
+solwyn keys revoke 6f1d0c9e-0000-4000-8000-000000000001 --yes
+solwyn keys remove-project 6f1d0c9e-0000-4000-8000-000000000001 --project research --yes
+eval "$(solwyn keys env)"
 ```
 
-`keys env` reads the project key stored for this API and prints export lines
-to stdout, nothing to stderr, so `eval "$(solwyn keys env)"` exports it for the
-SDK in the current shell:
+## Keys stored on this computer
+
+Keys are stored per (API, project id), in the operating system keychain or the
+private credentials file (see [login](login.mdx)), with the key's id, the
+account that owns it and the project's name. `keys create --store-key`,
+`projects create --store-key`, `init` and `login --with-key` store a key;
+`keys rotate` replaces the stored copy of the key it rotates, and `keys revoke`,
+`keys remove-project` and `projects delete` remove stored copies. `logout`
+clears every key stored for the API.
+
+Project keys from Solwyn CLI 0.4 (`sk_proj_...`) stopped working. The first
+`login`, `logout` or key command after the upgrade removes them from the store
+and says so once.
+
+## Handing a key to an SDK: `keys env`
+
+`keys env` prints export lines for the key stored for the selected project, and
+nothing else, so `eval "$(solwyn keys env)"` sets up the current shell:
 
 ```text
-export SOLWYN_API_KEY=sk_proj_0123...cdef
+export SOLWYN_API_KEY='solwyn_sk_0123...cdef'
+export SOLWYN_PROJECT='checkout-bot'
 ```
 
-A key works only against the API that issued it. When the effective API URL
-(from `--api-url`, `SOLWYN_API_URL` or config) is not the default
-`https://api.solwyn.ai`, `keys env` also exports it, so the key is never sent
-to production from a shell that lacks `SOLWYN_API_URL`:
+`SOLWYN_PROJECT` is the value from the repo's `.solwyn.env`, else as given with
+`--project` or `SOLWYN_PROJECT`. When the effective API URL is not the default
+`https://api.solwyn.ai`, `SOLWYN_API_URL` is exported too, so the key is never
+sent to production from a shell that lacks it. With `--json`, `export` holds the
+same lines, `names` lists the variables and `project` holds the selector and id.
 
-```text
-export SOLWYN_API_KEY=sk_proj_0123...cdef
-export SOLWYN_API_URL=https://api.staging.example.test
-```
+`keys env` only ever prints a stored key; it never reads `SOLWYN_API_KEY`. It
+refuses, before printing anything:
 
-With `--json`, `export` holds the same lines and `api_url` holds the exported
-URL, or `null` on the default API. The one-time key footer of `projects create`
-follows the same rule.
+- a project other than the one the repo's `.solwyn.env` names
+  (`project_mismatch`, exit 2);
+- a project with no stored key (`api_key_not_stored`, exit 3);
+- with a login, a stored key that belongs to another account than the login
+  (`api_key_account_mismatch`, exit 2); a project name is resolved through the
+  login's own projects, and a `SOLWYN_TOKEN` login whose account cannot be read
+  fails closed (`account_unresolved`, exit 3);
+- without a login, a name that two stored keys of different accounts share
+  (`project_ambiguous`, exit 2; use the `proj_` id).
 
-It exits 3 with `authentication_required` when no key is stored; it never reads
-`SOLWYN_API_KEY`. The CLI never writes `.env` or any other file containing the
-key. Do not put key material in arguments or repository configuration.
+The CLI never writes a key to `.env`, `.solwyn.env` or any other file in the
+repository. Do not put key material in arguments.
 
-Rotate and revoke display the selected project and effects before interactive
+## Refusals
+
+| Code | Meaning | Exit |
+| --- | --- | --- |
+| `api_key_invalid` | The key is unknown or revoked. | 3 |
+| `api_key_expired` | The key expired; rotate it. | 3 |
+| `project_selector_required` | The request named no project. | 2 |
+| `project_not_found` | No project on the key matches the name or id. A renamed project's old name stops working; its `proj_` id always works. | 2 |
+| `key_not_dedicated` | The project only accepts keys that hold only it. | 3 |
+| `api_key_not_allowed` | Keys cannot make this change or read this data; use a login. | 3 |
+| `read_only_key` | A read-only key cannot meter spend. | 3 |
+| `api_key_limit_reached` | The plan's key limit is reached; revoke a key or upgrade. | 1 |
+| `shared_keys_reach_project` | Keys that hold other projects reach this one; resolve them in the dashboard. The CLI never removes them for you. | 1 |
+
+Rotate, revoke and remove-project display their effects before interactive
 confirmation or `--yes`. Non-TTY invocations without `--yes` exit 2 with
-`confirmation_required` before credentials or HTTP. Decline, EOF or Ctrl-C exits
-2 with `confirmation_declined` without a mutation. Preview, prompt and echo use
-sanitized stderr; stdout retains the existing successful JSON/table schema.
+`confirmation_required` before credentials or HTTP.
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
 
 ## `solwyn keys`
 
-Recover from leaked or expired project keys, and hand a key to an SDK.
+List, create, rotate and revoke API keys, and hand a stored key to an SDK.
 
 ```console
 Usage: solwyn keys [OPTIONS] COMMAND [ARGS]...
 ```
 
 ```text
-Endpoint: composite router for project-key subcommands
-Auth: login
+Endpoint: composite router for API key subcommands
+Auth: login, except keys env (local)
 Exit codes: 0 success; 2 usage
 JSON schema: varies by subcommand
-Metadata help never reveals existing key material.
+A key is shown once, when it is created or rotated; listing never reveals key material.
+The CLI creates a key for one project.
+```
+
+## `solwyn keys create`
+
+Create an API key for one project and capture it exactly once.
+
+```console
+Usage: solwyn keys create [OPTIONS]
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--project, -p` | `Project name or proj_ id for the key. (STRING)` | `None` |
+| `--name` | `Key name; defaults to the project's name. (STRING)` | `None` |
+| `--scope` | `Key scope; omit for full. (Choice(['full', 'read_only']))` | `None` |
+| `--store-key` | `Store the new key on this computer. (BOOL)` | `False` |
+
+```text
+Endpoint: POST /api/v1/keys
+Auth: login (browser approval)
+Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth or storage; 6 approval
+JSON schema: solwyn.keys-create.v1
+Creates a key for exactly one project.
+--store-key stores it on this computer for that project and prints no secret; otherwise it is shown once with export lines.
 ```
 
 ## `solwyn keys env`
 
-Print export lines for the stored project key and its API URL.
+Print export lines for the stored key of the selected project.
 
 ```console
 Usage: solwyn keys env [OPTIONS]
 ```
 
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `--project, -p` | `Project name or proj_ id. (STRING)` | `None` |
+
 ```text
-Endpoint: local credential store read
-Auth: local (stored project key)
-Exit codes: 0 success; 2 usage; 3 no stored project key
-JSON schema: solwyn.keys-env.v1
-Prints export lines to stdout and nothing to stderr, so eval "$(solwyn keys env)" works.
-Exports SOLWYN_API_URL too when the API URL is not the default.
+Endpoint: local credential store read; with a login, GET /api/v1/projects (and GET /api/v1/accounts/me for SOLWYN_TOKEN)
+Auth: local (the stored key; SOLWYN_API_KEY is never read)
+Exit codes: 0 success; 2 usage or project mismatch; 3 no stored key or account unresolved
+JSON schema: solwyn.keys-env.v2
+Prints export lines to stdout, so eval "$(solwyn keys env)" works.
+Exports SOLWYN_API_KEY and SOLWYN_PROJECT, and SOLWYN_API_URL when the API URL is not the default.
+Refuses a project other than the one the repo's .solwyn.env names.
 Never writes .env or any other file.
+```
+
+## `solwyn keys list`
+
+List the account's live API keys, marking the ones stored here.
+
+```console
+Usage: solwyn keys list [OPTIONS]
+```
+
+```text
+Endpoint: GET /api/v1/keys
+Auth: login
+Exit codes: 0 success; 1 generic/API; 3 auth
+JSON schema: solwyn.keys-list.v1
+Lists the account's live keys and their projects; never key material.
+stored_here names the projects this computer holds the key for.
+```
+
+## `solwyn keys remove-project`
+
+Take a project away from a key; the key keeps its other projects.
+
+```console
+Usage: solwyn keys remove-project [OPTIONS] KEY_ID
+```
+
+| Argument or option | Meaning | Default |
+| --- | --- | --- |
+| `KEY_ID` | `Id of the key (solwyn keys list). (STRING; required)` | `None` |
+| `--project, -p` | `Project name or proj_ id to remove. (STRING; required)` | `None` |
+| `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
+
+```text
+Endpoint: DELETE /api/v1/keys/{key_id}/projects/{project_id}
+Auth: login (browser approval)
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 approval
+JSON schema: solwyn.keys-remove-project.v1
+Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
+A key keeps at least one project; revoke it instead of removing the last.
 ```
 
 ## `solwyn keys revoke`
 
-Hard-revoke a project key without minting a replacement.
+Revoke a key now, without a replacement.
 
 ```console
-Usage: solwyn keys revoke [OPTIONS]
+Usage: solwyn keys revoke [OPTIONS] KEY_ID
 ```
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `--key-id` | `Identifier of the key to hard-revoke. (STRING; required)` | `None` |
+| `KEY_ID` | `Id of the key to revoke (solwyn keys list). (STRING; required)` | `None` |
 | `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
 
 ```text
-Endpoint: DELETE /api/v1/projects/{project}/key/{key_id}
-Auth: login
-Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
+Endpoint: DELETE /api/v1/keys/{key_id}
+Auth: login (browser approval)
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 approval
 JSON schema: solwyn.keys-revoke.v1 (CLI output after bodyless 204)
-Accepts only a key identifier; never pass key material.
+Accepts only a key id; never pass key material.
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
+Deletes this computer's stored copies of the key.
 ```
 
 ## `solwyn keys rotate`
 
-Rotate the active key and reveal its replacement exactly once.
+Rotate a key; the replacement holds the same projects.
 
 ```console
-Usage: solwyn keys rotate [OPTIONS]
+Usage: solwyn keys rotate [OPTIONS] KEY_ID
 ```
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `--grace-seconds` | `Seconds the old key remains valid (0 through 604800). (INT)` | `None` |
-| `--scope` | `Scope for the replacement key; omit to keep the current scope. (Choice(['full', 'read_only']))` | `None` |
+| `KEY_ID` | `Id of the key to rotate (solwyn keys list). (STRING; required)` | `None` |
+| `--grace-seconds` | `Seconds the old key keeps working (0 through 604800). (INT)` | `None` |
+| `--scope` | `Scope for the replacement; omit to keep the current scope. (Choice(['full', 'read_only']))` | `None` |
 | `--yes` | `Acknowledge the displayed effects without prompting. (BOOL)` | `False` |
 
 ```text
-Endpoint: POST /api/v1/projects/{project}/key/rotate
-Auth: login
-Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
+Endpoint: POST /api/v1/keys/{key_id}/rotate
+Auth: login (browser approval)
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 approval
 JSON schema: solwyn.keys-rotate.v1
 Effects are shown before interactive confirmation or --yes; non-TTY requires --yes.
-The replacement key is shown exactly once; keep it in a secret manager or solwyn login --with-key.
+The replacement keeps the key's projects. When this computer stores the key, the stored copy is replaced and no secret is printed; otherwise the replacement is shown once.
 ```
 
-## `solwyn keys show`
-
-Show active project-key metadata without revealing key material.
-
-```console
-Usage: solwyn keys show [OPTIONS]
-```
-
-```text
-Endpoint: GET /api/v1/projects/{project}/key
-Auth: login
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found
-JSON schema: solwyn.keys-show.v1
-Shows metadata only and never reveals existing key material.
-```

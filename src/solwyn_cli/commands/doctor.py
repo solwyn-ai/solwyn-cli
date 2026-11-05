@@ -36,7 +36,7 @@ from solwyn_cli.runtime import (
 
 DOCTOR_HELP = help_contract(
     endpoint="GET /health/ready plus one credential-specific authenticated probe",
-    auth="optional; a login or project key enables the authenticated probe",
+    auth="optional; a login or API key enables the authenticated probe",
     exits="0 all checks pass; 1 diagnostic failure; 2 usage",
     schema="solwyn.doctor.v1; with --mcp: solwyn.doctor.mcp.v1",
     guidance=(

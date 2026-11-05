@@ -3,8 +3,7 @@ title: Attestations
 ---
 
 `solwyn attest` downloads a spend-control evidence artifact for one project.
-Select the project with `--project`, `SOLWYN_PROJECT_ID`, or
-`config default_project`. A project key or user login works.
+Select the project with `--project`, `SOLWYN_PROJECT` (a project name or `proj_` id) or the repo's `.solwyn.env`. An API key or user login works.
 
 ```sh
 solwyn --project proj_example attest --format json > attestation.json
@@ -13,8 +12,8 @@ solwyn attest --account --range 90d --format json > account-attestation.json
 ```
 
 Use `--account` for an account-wide artifact. Account attestations require user
-login with `solwyn login`; a project key cannot read account-wide evidence.
-Project artifacts requested with a project key have actor user IDs redacted by
+login with `solwyn login`; an API key cannot read account-wide evidence.
+Project artifacts requested with an API key have actor user IDs redacted by
 the server. A project export with a Solwyn login can include the account-only evidence and actor
 identity that the caller is allowed to see.
 

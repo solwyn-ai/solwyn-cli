@@ -2,7 +2,8 @@
 
 import math
 import sys
-from typing import Annotated, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 import typer
@@ -19,7 +20,7 @@ from pydantic import (
     model_validator,
 )
 
-from solwyn_cli import auth
+from solwyn_cli import auth, repo_file
 from solwyn_cli._vendor.validation import (
     API_KEY_PREFIX_LENGTH,
     API_KEY_PREFIX_PATTERN,
@@ -44,11 +45,11 @@ from solwyn_cli.commands._shared import (
     command_project,
     credential_saved_note,
     exit_for_resolution,
+    exit_project_required,
     exit_with_error,
     legacy_keys_note,
     required_credential,
 )
-from solwyn_cli.config import ConfigLoadError, ConfigWriteError, clear_default_project
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -133,6 +134,79 @@ class _ProjectCreateResponse(_CreatedProject):
 ProjectCreateResponse = _ProjectCreateResponse
 
 
+def write_repo_file(project_name: str) -> Path | None:
+    """Write the repo's .solwyn.env for a new project when there is none.
+
+    Never overwrites one: if it names another project, say so on stderr.
+    Returns the path written, or None.
+    """
+    try:
+        outcome, path, existing = repo_file.write_if_missing(project_name)
+    except (OSError, repo_file.RepoFileError):
+        typer.echo(
+            _terminal_safe(
+                f"Could not write {repo_file.REPO_FILE_NAME}; set "
+                f'SOLWYN_PROJECT="{project_name}" in it yourself.'
+            ),
+            err=True,
+        )
+        return None
+    if outcome == "written":
+        typer.echo(
+            _terminal_safe(
+                f"Wrote {path} (SOLWYN_PROJECT). Commit it; it holds no secret."
+            ),
+            err=True,
+        )
+        return path
+    if outcome == "other":
+        typer.echo(
+            _terminal_safe(
+                f"{repo_file.REPO_FILE_NAME} already names {existing}; not changed."
+            ),
+            err=True,
+        )
+    return None
+
+
+def create_named_project(
+    *,
+    client: SolwynClient,
+    name: str,
+    fields: dict[str, Any],
+    derived: bool,
+) -> ProjectCreateResponse:
+    """Create a project; a name derived from the repo avoids a taken one.
+
+    A derived name becomes ``<name>-2``, ``-3``, ... up to ``-99`` when an
+    active project already uses it (case-insensitively); Core's 409
+    ``project_name_taken`` (a race) retries the next free name once. A name
+    the user chose is posted as given.
+    """
+    if not derived:
+        return request_project_creation(
+            client=client, request=ProjectCreateRequest(name=name, **fields)
+        )
+    taken = {project.name for project in fetch_projects(client=client)}
+    for attempt in range(2):
+        chosen = repo_file.first_free_name(name, taken)
+        if chosen is None:
+            raise ProjectResolutionError(
+                "project_name_taken",
+                f"Projects {name} to {name}-99 already exist.",
+                "Pass --name with another name.",
+            )
+        try:
+            return request_project_creation(
+                client=client, request=ProjectCreateRequest(name=chosen, **fields)
+            )
+        except ApiError as error:
+            if error.code != "project_name_taken" or attempt == 1:
+                raise
+            taken.add(chosen)
+    raise AssertionError("unreachable")
+
+
 def fetch_projects(*, client: SolwynClient) -> list[Project]:
     """Fetch and validate the projects visible to a login."""
     response = client.request("GET", "/api/v1/projects")
@@ -169,6 +243,9 @@ class _ProjectCreateDisplayData(_CreatedProject):
 
 class _ProjectCreateStoredData(_CreatedProject):
     stored: bool = True
+    # The .solwyn.env this command wrote, or null (outside a repo, or one
+    # already existed: it is never overwritten).
+    repo_file: str | None = None
 
 
 class _ProjectDeleteData(BaseModel):
@@ -331,7 +408,10 @@ def _invalid_projects_response(context: typer.Context) -> None:
 @app.command(
     "create",
     epilog=help_contract(
-        endpoint="POST /api/v1/projects",
+        endpoint=(
+            "POST /api/v1/projects (GET /api/v1/projects first when the name "
+            "comes from the repo)"
+        ),
         auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.projects-create.v1",
@@ -339,12 +419,25 @@ def _invalid_projects_response(context: typer.Context) -> None:
             "The new project's API key holds only this project. It is shown "
             "exactly once with export lines, or stored on this computer for the "
             "project (--store-key).",
+            "--name defaults to the git repo's name; -2, -3, ... is added when "
+            "that name is taken.",
+            "--store-key also writes the repo's .solwyn.env (SOLWYN_PROJECT) "
+            "when there is none; an existing one is never overwritten.",
         ),
     ),
 )
 def create_project(
     context: typer.Context,
-    name: Annotated[str, typer.Option("--name", help="Name for the new project.")],
+    name: Annotated[
+        str | None,
+        typer.Option(
+            "--name",
+            help=(
+                "Name for the new project. Defaults to the git repo's name "
+                "(with -2, -3, ... when taken); required outside a repo."
+            ),
+        ),
+    ] = None,
     budget: Annotated[
         float,
         typer.Option("--budget", help="Initial project budget in USD."),
@@ -370,6 +463,20 @@ def create_project(
     ] = False,
 ) -> None:
     """Create a project and capture its first API key exactly once."""
+    derived = name is None
+    if derived:
+        name = repo_file.default_project_name()
+        if name is None:
+            exit_with_error(
+                context,
+                OutputError(
+                    code="invalid_project_create_request",
+                    message="A project name is required outside a git repo.",
+                    hint="Pass --name, or run this inside the repo the project is for.",
+                ),
+                semantic=ErrorSemantic.USAGE,
+            )
+    assert name is not None
     if not name.strip() or not math.isfinite(budget) or budget <= 0:
         exit_with_error(
             context,
@@ -380,16 +487,16 @@ def create_project(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    fields: dict[str, Any] = {
+        "budget_limit": budget,
+        "budget_period": period.value,
+        "budget_mode": mode.value,
+        # Left unset when no scope is chosen so the field is omitted rather
+        # than posted: the API rejects a null scope on creation.
+        **({} if scope is None else {"scope": scope.value}),
+    }
     try:
-        request = ProjectCreateRequest(
-            name=name.strip(),
-            budget_limit=budget,
-            budget_period=period.value,
-            budget_mode=mode.value,
-            # Left unset when no scope is chosen so the field is omitted rather
-            # than posted: the API rejects a null scope on creation.
-            **({} if scope is None else {"scope": scope.value}),
-        )
+        ProjectCreateRequest(name=name.strip(), **fields)
     except ValidationError:
         exit_with_error(
             context,
@@ -414,7 +521,11 @@ def create_project(
         exit_for_resolution(context, error)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            created = request_project_creation(client=client, request=request)
+            created = create_named_project(
+                client=client, name=name.strip(), fields=fields, derived=derived
+            )
+    except ProjectResolutionError as error:
+        exit_for_resolution(context, error)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:
@@ -456,7 +567,13 @@ def create_project(
         if isinstance(stored_key, ApiKeyCredential):
             if note := credential_saved_note(stored_key):
                 typer.echo(_terminal_safe(note), err=True)
-        stored_data = _ProjectCreateStoredData.model_validate(created.model_dump())
+        repo_path = write_repo_file(created.name)
+        stored_data = _ProjectCreateStoredData.model_validate(
+            {
+                **created.model_dump(),
+                "repo_file": None if repo_path is None else str(repo_path),
+            }
+        )
         output_engine(context).write_success(
             schema="solwyn.projects-create.v1",
             data=stored_data,
@@ -543,18 +660,7 @@ def show_project(context: typer.Context) -> None:
     """Show the project selected by the global project context."""
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project or SOLWYN_PROJECT (a project "
-                    "name or proj_ id)."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
 
     credential = required_credential(context, resolve=resolve_credential)
     project_id = command_project(context, credential)
@@ -623,8 +729,15 @@ def rename_project(
     credential = _login_credential_for_mutation(context, operation="rename")
     runtime = command_context(context)
     path = quote(validated_project_id, safe="")
+    has_repo_file = repo_file.find_repo_file() is not None
+    before: str | None = None
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            if has_repo_file:
+                # The old name, to update a .solwyn.env that names it.
+                before = _Project.model_validate(
+                    client.request("GET", f"/api/v1/projects/{path}").json()
+                ).name
             response = client.request(
                 "PUT",
                 f"/api/v1/projects/{path}",
@@ -650,11 +763,28 @@ def rename_project(
     except (ValidationError, ValueError, TypeError):
         _invalid_projects_response(context)
 
+    old_name = before or previous
     old = (
-        f"SOLWYN_PROJECT={previous}"
-        if previous is not None and previous != project.name
+        f"SOLWYN_PROJECT={old_name}"
+        if old_name is not None and old_name != project.name
         else "SOLWYN_PROJECT to the old name"
     )
+    if before is not None and before != project.name:
+        try:
+            updated = repo_file.rename_if_named(before, project.name)
+        except (OSError, repo_file.RepoFileError):
+            updated = None
+            typer.echo(
+                _terminal_safe(
+                    f"Could not update {repo_file.REPO_FILE_NAME}; set "
+                    f'SOLWYN_PROJECT="{project.name}" in it yourself.'
+                ),
+                err=True,
+            )
+        if updated is not None:
+            typer.echo(
+                _terminal_safe(f"Updated {updated} to {project.name}."), err=True
+            )
     typer.echo(
         _terminal_safe(
             f"Apps that set {old} will fail at their next start. Update "
@@ -779,24 +909,6 @@ def delete_project(
             ),
             semantic=ErrorSemantic.AUTH,
         )
-    try:
-        clear_default_project(validated_project_id)
-    except (ConfigLoadError, ConfigWriteError):
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_deleted_config_update_failed",
-                message=(
-                    "The project was archived, but the matching local "
-                    "default_project could not be cleared."
-                ),
-                hint=(
-                    "Repair config.toml or select a live project with "
-                    "solwyn config set default_project PROJECT."
-                ),
-            ),
-        )
-
     data = _ProjectDeleteData(
         project_id=validated_project_id, removed_stored_key=removed_stored_key
     )

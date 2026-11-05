@@ -17,6 +17,7 @@ from solwyn_cli.commands._cost_advice_models import (
 )
 from solwyn_cli.commands._cost_filters import window_params
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -38,15 +39,7 @@ class UnitEconomicsRange(StrEnum):
 def _project_path(context: typer.Context) -> tuple[CommandContext, str]:
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint="Choose a project with --project, SOLWYN_PROJECT_ID, or config default_project.",
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     return runtime, quote(runtime.project, safe="")
 
 

@@ -7,7 +7,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -18,8 +18,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "title": "budget_statusArguments"
@@ -1753,6 +1753,19 @@
             }
           ],
           "default": null
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The project Core says the call was for (Solwyn-Project-Id).",
+          "title": "Project Id"
         }
       },
       "required": [
@@ -3659,6 +3672,19 @@
             }
           ],
           "default": null
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The project Core says the call was for (Solwyn-Project-Id).",
+          "title": "Project Id"
         }
       },
       "required": [
@@ -3685,7 +3711,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -3696,8 +3722,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "title": "get_project_statusArguments"
@@ -3991,7 +4017,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -4002,8 +4028,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "title": "get_forecastArguments"
@@ -4205,7 +4231,7 @@
   {
     "name": "get_costs",
     "title": "Read grouped costs",
-    "description": "Read project costs grouped by a Core dimension or tag:<key>, or account costs grouped by project by default. Shared filters/custom windows apply; account mode permits only model/provider/modality and window filters. Project mode accepts a project key or a Solwyn login; account=true requires a Solwyn login and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
+    "description": "Read project costs grouped by a Core dimension or tag:<key>, or account costs grouped by project by default. Shared filters/custom windows apply; account mode permits only model/provider/modality and window filters. Project mode accepts a project key or a Solwyn login; account=true requires a Solwyn login and is mutually exclusive with an explicit project. Account filters are restricted by Core.",
     "inputSchema": {
       "type": "object",
       "$defs": {
@@ -4222,7 +4248,7 @@
       },
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -4233,8 +4259,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "$ref": "#/$defs/CostRange",
@@ -4256,7 +4282,7 @@
         },
         "account": {
           "default": false,
-          "description": "True reads account costs with a Solwyn login; mutually exclusive with explicit project_id. Supports only model/provider/modality/group_by and window filters.",
+          "description": "True reads account costs with a Solwyn login; mutually exclusive with an explicit project. Supports only model/provider/modality/group_by and window filters.",
           "title": "Account",
           "type": "boolean"
         },
@@ -5204,7 +5230,7 @@
       },
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -5215,8 +5241,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "$ref": "#/$defs/CostRange",
@@ -5680,7 +5706,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -5691,8 +5717,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "with_last_fired": {
           "default": false,
@@ -7689,6 +7715,19 @@
             }
           ],
           "default": null
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The project Core says the call was for (Solwyn-Project-Id).",
+          "title": "Project Id"
         }
       },
       "required": [
@@ -7715,7 +7754,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -7726,8 +7765,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "title": "list_tagsArguments"
@@ -7971,7 +8010,7 @@
           "title": "Key",
           "type": "string"
         },
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -7982,8 +8021,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "prefix": {
           "anyOf": [
@@ -8252,7 +8291,7 @@
       },
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -8263,8 +8302,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "$ref": "#/$defs/RunRange",
@@ -8719,7 +8758,7 @@
           "title": "Run",
           "type": "string"
         },
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -8730,8 +8769,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "required": [
@@ -9015,12 +9054,12 @@
   {
     "name": "list_alert_events",
     "title": "Read alert history",
-    "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires a Solwyn login. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed. Project history accepts a project key or a Solwyn login; account=true reads account-scope history, requires a Solwyn login and ignores project_id. Use list_alert_activity for all projects plus account scope.",
+    "description": "Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires a Solwyn login. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed. Project history accepts a project key or a Solwyn login; account=true reads account-scope history, requires a Solwyn login and ignores project. Use list_alert_activity for all projects plus account scope.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -9031,12 +9070,12 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "account": {
           "default": false,
-          "description": "True reads account-scope history and requires a Solwyn login; project_id is ignored. False reads the selected project using a project key or a Solwyn login.",
+          "description": "True reads account-scope history and requires a Solwyn login; project is ignored. False reads the selected project using a project key or a Solwyn login.",
           "title": "Account",
           "type": "boolean"
         },
@@ -11721,6 +11760,19 @@
             }
           ],
           "default": null
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The project Core says the call was for (Solwyn-Project-Id).",
+          "title": "Project Id"
         }
       },
       "required": [
@@ -12029,7 +12081,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -12040,8 +12092,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "default": "7d",
@@ -12913,7 +12965,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -12924,8 +12976,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "days": {
           "default": 7,
@@ -13115,7 +13167,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -13126,8 +13178,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "default": "30d",
@@ -13479,7 +13531,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -13490,8 +13542,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "default": "7d",
@@ -13826,7 +13878,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -13837,8 +13889,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "title": "list_priced_modelsArguments"
@@ -14123,7 +14175,7 @@
           "title": "Model",
           "type": "string"
         },
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -14134,8 +14186,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "region": {
           "anyOf": [
@@ -14613,7 +14665,7 @@
       },
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -14624,8 +14676,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "$ref": "#/$defs/FailoverRange",
@@ -14911,7 +14963,7 @@
       },
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -14922,8 +14974,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         },
         "time_range": {
           "$ref": "#/$defs/UntrackedRange",
@@ -18256,7 +18308,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "project_id": {
+        "project": {
           "anyOf": [
             {
               "minLength": 1,
@@ -18267,8 +18319,8 @@
             }
           ],
           "default": null,
-          "description": "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project.",
-          "title": "Project Id"
+          "description": "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project.",
+          "title": "Project"
         }
       },
       "title": "budget_uncountedArguments"

@@ -16,7 +16,7 @@ runner = CliRunner()
 HELP_CONTRACTS = {
     ("plan", "list"): {
         "endpoint": "GET /api/v1/billing/catalog",
-        "auth": "login or project key with user context",
+        "auth": "login or API key with user context",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.plan.catalog.v1",
     },
@@ -362,7 +362,7 @@ HELP_CONTRACTS = {
     },
     ("notifications", "set"): {
         "endpoint": "PUT /api/v1/projects/{project}/notifications",
-        "auth": "owner/admin login (project.write); project API keys refused",
+        "auth": "owner/admin login (project.write); API keys refused",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.v1",
@@ -452,7 +452,7 @@ HELP_CONTRACTS = {
             "GET /api/v1/projects/{project}/costs or, with --account, "
             "GET /api/v1/account/costs"
         ),
-        "auth": "project key or login; --account requires login",
+        "auth": "API key or login; --account requires login",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         "schema": "solwyn.costs.v1 or solwyn.account_costs.v1",
     },
@@ -464,15 +464,15 @@ HELP_CONTRACTS = {
     },
     ("doctor",): {
         "endpoint": "GET /health/ready plus one credential-specific authenticated probe",
-        "auth": "optional; a login or project key enables the authenticated probe",
+        "auth": "optional; a login or API key enables the authenticated probe",
         "exits": "0 all checks pass; 1 diagnostic failure; 2 usage",
         "schema": "solwyn.doctor.v1; with --mcp: solwyn.doctor.mcp.v1",
     },
     ("init",): {
         "endpoint": "composite onboarding workflow",
-        "auth": "any, or a browser login when none is stored",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found; 6 approval or login pending",
-        "schema": "solwyn.init.v1",
+        "auth": "a login (a browser login when none is stored); an API key only for an existing project",
+        "exits": "0 success; 1 generic/API; 2 usage or project mismatch; 3 auth; 5 not found; 6 approval or login pending",
+        "schema": "solwyn.init.v2",
     },
     ("keys",): {
         "endpoint": "composite router for API key subcommands",
@@ -592,7 +592,7 @@ HELP_CONTRACTS = {
     },
     ("plan",): {
         "endpoint": "GET /api/v1/billing/status",
-        "auth": "login or project key with account context",
+        "auth": "login or API key with account context",
         "exits": "0 success; 1 generic/API; 2 usage; 3 auth",
         "schema": "solwyn.plan.v1",
     },
@@ -821,7 +821,7 @@ _INIT_REMOTE_OPERATIONS = (
     "--run-cap adds a rule with GET/GET/PUT /api/v1/projects/{project}/budget after creation",
 )
 _INIT_LOCAL_OPERATIONS = (
-    "write local configuration",
+    "write .solwyn.env when missing",
     "scan Python imports",
     "render SDK snippets",
     "optionally write agent artifacts with --agents",

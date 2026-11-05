@@ -1888,7 +1888,8 @@ def test_init_reuses_guarded_project_login_and_budget_response_operations() -> N
     }
 
     assert expected <= OPERATION_RESPONSE_BINDINGS.keys()
-    assert init.fetch_projects is projects.fetch_projects
+    # init creates through projects' guarded create (which lists projects first).
+    assert init.create_named_project is projects.create_named_project
     assert init.fetch_budget_status is budget.fetch_budget_status
 
 

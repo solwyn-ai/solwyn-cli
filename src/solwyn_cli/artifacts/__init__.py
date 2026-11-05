@@ -108,6 +108,13 @@ Use Solwyn to enforce and attribute caller-owned AI-provider spend without expos
 - Never rotate or revoke keys, and never change billing or the plan.
 - If one of these changes looks necessary, stop and ask the human.
 
+## This repo's project and keys
+
+- This repo's Solwyn project is set in .solwyn.env (SOLWYN_PROJECT). Do not change it to reach another project's budget.
+- To hand the key to an SDK, run `eval "$(solwyn keys env)"`; it exports SOLWYN_API_KEY and SOLWYN_PROJECT for this repo's project only.
+- Never point SOLWYN_PROJECT or `--project` at another project to get past a budget limit or a denial.
+- Never ask for a key that holds more projects. Giving a key another project is a change a person makes in the dashboard.
+
 ## What Solwyn meters
 
 - The Solwyn MCP server meters the calls your code makes. It does not meter this coding assistant's own model usage.

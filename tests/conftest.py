@@ -17,7 +17,7 @@ from keyring.backend import KeyringBackend
 from keyring.backends import fail
 from keyring.errors import PasswordDeleteError
 
-from solwyn_cli import auth, config, credential_store
+from solwyn_cli import auth, config, credential_store, repo_file
 
 
 class MemoryKeyring(KeyringBackend):
@@ -72,6 +72,25 @@ def memory_keyring(
     finally:
         auth._LAST_LOOKUP.set(None)
         auth._LAST_WRITE.set(None)
+
+
+CHECKOUT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def outside_this_checkout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests run from this git checkout: never read or write its .solwyn.env.
+
+    A test that needs a repo makes one under tmp_path (a .git directory) and
+    chdirs into it; that repo's root is found as usual.
+    """
+    real = repo_file.git_root
+
+    def guarded(start: Path) -> Path | None:
+        root = real(start)
+        return None if root is not None and root.resolve() == CHECKOUT else root
+
+    monkeypatch.setattr(repo_file, "git_root", guarded)
 
 
 @pytest.fixture

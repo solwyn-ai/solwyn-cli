@@ -160,7 +160,7 @@ denies; pause releases enforcement.** Rule keys are content-addressed: editing
 keyed condition fields changes the key. Restore-defaults preserves non-threshold
 rules, and the CLI re-reads and prints the full rule state afterward.
 
-Preview routing with a project key or user login, including an unsaved condition:
+Preview routing with an API key or user login, including an unsaved condition:
 
 ```sh
 solwyn budget rule preview

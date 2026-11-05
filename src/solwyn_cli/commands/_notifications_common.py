@@ -27,6 +27,7 @@ from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.auth import AuthError, ResolvedCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     required_login,
@@ -185,7 +186,7 @@ def secret_input(context: typer.Context, *, stdin: bool, required: bool) -> str 
 def project_path(context: typer.Context) -> str:
     project = command_context(context).project
     if project is None:
-        usage(context, "Select a project with --project or SOLWYN_PROJECT_ID.")
+        exit_project_required(context)
     return f"/api/v1/projects/{quote(project, safe='')}/notifications"
 
 

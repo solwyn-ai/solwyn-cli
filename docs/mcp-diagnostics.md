@@ -38,29 +38,33 @@ trusted Solwyn server executable to run for discovery and a possible read.
 
 The result distinguishes:
 
-- `selected_project` and `project_source`: the CLI, environment, or configuration
-  selector used for reads, or `none` when absent.
+- `selected_project` and `project_source`: the launch project and where it came
+  from (`cli`, `environment` or `repo` for `.solwyn.env`), or `none` when absent.
 - `credential`: captured kind and source, with separate statuses for available,
   empty, invalid, missing, incomplete, and unavailable credentials. A stored
   login is chosen before `SOLWYN_API_KEY`. Without one, an empty or invalid
-  `SOLWYN_API_KEY` prevents fallback to the stored project key.
+  `SOLWYN_API_KEY` prevents fallback to the stored API key.
 - `key_context`: the supplied key's actual project and `full` or `read_only`
   scope, obtained with `GET /api/v1/auth/key`. This is independent of selected
   project. A wrong or missing selector does not hide a known key identity.
   The response must contain a canonical Core project ID (`proj_` followed by
   24 lowercase hex characters). Malformed remote identity yields a fixed failed
   check with unknown project and scope.
-- `http_read`: a separate selected-project budget GET, or an account GET for
+- `key_project`: the key and launch project checked together with
+  `GET /api/v1/auth/key`: `ok` with the project's name, id, budget mode and the
+  key's expiry, or Core's refusal code and message (for example
+  `project_not_found` when the key does not hold the project).
+- `http_read`: a separate selected-project budget GET by the resolved project id, or an account GET for
   a captured login with no project selected. Requests never refresh credentials.
 - `mcp`: discovery status, identity and version match against this CLI
   installation, negotiated protocol, observed known tools, unexpected-tool
   count, and comparison with the actual local profile catalog. Remote free text,
   unknown names and arbitrary server versions are not copied into the output.
 - `mcp_read`: the result of one read-only `budget_status` call using the captured
-  project key. No budget check, confirmation, recording or provider call occurs.
+  API key. No budget check, confirmation, recording or provider call occurs.
 - `tools`: discovered flags and credential constraints from the actual catalog.
   Account alert history requires a Solwyn login; project alert history accepts
-  project keys.
+  API keys.
 
 Login diagnostics use the captured login only for the parent HTTP check. The child
 has no supported environment interface for a captured login, so its authenticated MCP

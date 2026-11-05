@@ -8,8 +8,8 @@ summing all spend: grouped results can contain only the top 100 groups. Inspect
 A null savings upper bound is unknown, not zero savings.
 
 ```sh
-solwyn --json --project "$SOLWYN_PROJECT_ID" costs total --range 7d
-solwyn --project "$SOLWYN_PROJECT_ID" costs export --format json > costs.jsonl 2> costs-export.log
+solwyn --json costs total --range 7d       # project from SOLWYN_PROJECT or .solwyn.env
+solwyn --project checkout-bot costs export --format json > costs.jsonl 2> costs-export.log
 ```
 
 Export writes raw CSV or NDJSON rather than the CLI JSON envelope. Keep stdout and
@@ -72,11 +72,19 @@ do not log in again in a loop: create a personal account in the dashboard at
 https://app.solwyn.ai/no-account, then run `solwyn login`.
 
 User commands prefer `SOLWYN_TOKEN`, then the stored Solwyn login, then
-`SOLWYN_API_KEY`, then the stored project key. Set `SOLWYN_AUTH=project_key` to
+`SOLWYN_API_KEY`, then the stored API key. Set `SOLWYN_AUTH=project_key` to
 skip both logins, or `SOLWYN_AUTH=login` to require one; any other value exits 2.
 In CI, set `SOLWYN_TOKEN` to a `solwyn login --scope read --no-store` login for
-reads, and `SOLWYN_API_KEY` for metering. Metering commands
-(`budget check`, `budget confirm`, `record`) use only a project key.
+reads, and `SOLWYN_API_KEY` with `SOLWYN_PROJECT` for metering. Metering commands
+(`budget check`, `budget confirm`, `record`) use only an API key.
+
+The project comes from `--project`, then `SOLWYN_PROJECT`, then the repo's
+`.solwyn.env` (a project name or `proj_` id). There is no computer-wide default
+project, and `SOLWYN_PROJECT_ID` is no longer read: a command that needs a
+project exits 2 with `usage_error` when only `SOLWYN_PROJECT_ID` is set. With an
+API key, every request names its project; a name is resolved to its `proj_` id
+first. A `--project` or `SOLWYN_PROJECT` that disagrees with `.solwyn.env` is a
+warning for reads and exit 2 (`project_mismatch`) for metering and setup.
 
 A change a login cannot make on its own (raising a cap, changing enforcement,
 keys, billing, team or channels) returns an approval URL. The CLI prints it on

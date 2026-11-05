@@ -5,10 +5,10 @@ title: Identity
 `whoami` names the credential in use first: `Credential: CLI login dev-laptop
 (read, contain), expires 2026-11-29` for a Solwyn login, or `Credential: project
 key (environment)` for a key. A login also reads user and account identity,
-role, seats and projects, and keeps email verification state. A project key
+role, seats and projects, and keeps email verification state. An API key
 returns only the local credential source and selected-project context, with no
 network lookup, user identity or raw key material. The login comes before any
-project key, so a stored key no longer hides it; see [login](login.mdx) for the
+API key, so a stored key no longer hides it; see [login](login.mdx) for the
 order and `SOLWYN_AUTH`.
 
 ```sh

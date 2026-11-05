@@ -715,3 +715,18 @@ def test_agent_context_matches_stable_golden() -> None:
     assert result.exit_code == 0, result.stderr
     assert_matches_golden(result.stdout, GOLDEN_DIR / "agent-context.txt")
     assert result.stderr == ""
+
+
+def test_guidance_keeps_the_agent_on_this_repos_project_and_key() -> None:
+    from solwyn_cli.artifacts import agent_guidance
+
+    text = agent_guidance()
+
+    assert "This repo's Solwyn project is set in .solwyn.env (SOLWYN_PROJECT)." in text
+    assert "Do not change it to reach another project's budget." in text
+    assert 'eval "$(solwyn keys env)"' in text
+    assert "Never point SOLWYN_PROJECT or `--project` at another project" in text
+    assert "a change a person makes in the dashboard" in text
+    # Never a CLI route to widen a key.
+    for forbidden in ("add-project", "keys add", "remove-project", "—"):
+        assert forbidden not in text

@@ -264,9 +264,7 @@ def test_config_set_credential_store_waits_for_a_reader(
     holder = _hold(shared=True)  # A credential read is in progress.
     try:
         selector = runner.invoke(app, ["config", "set", "credential_store", "file"])
-        other = runner.invoke(
-            app, ["config", "set", "default_project", "proj_11f6ad8ec52a2984abaafd7c"]
-        )
+        other = runner.invoke(app, ["config", "set", "format", "json"])
     finally:
         os.close(holder)
 

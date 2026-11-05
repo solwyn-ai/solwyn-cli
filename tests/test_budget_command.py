@@ -392,7 +392,6 @@ def test_boundary_max_utilization_values_are_valid(
             "proj_dfba7aade0868074c2861c98",
             "proj_c6e454d960df4845f9d69eb1",
         ),
-        ([], "", "proj_dfba7aade0868074c2861c98", "proj_dfba7aade0868074c2861c98"),
     ],
 )
 def test_budget_status_uses_global_project_precedence(
@@ -406,14 +405,14 @@ def test_budget_status_uses_global_project_precedence(
     monkeypatch.setattr(
         runtime,
         "load_config",
-        lambda: Config(default_project=configured_project),
+        lambda: Config(),
     )
     _queue_budget_response(project_id=expected_project)
 
     result = runner.invoke(
         app,
         ["--json", *options, "budget", "status"],
-        env={"SOLWYN_PROJECT_ID": environment_project},
+        env={"SOLWYN_PROJECT": environment_project},
     )
 
     assert result.exit_code == 0
@@ -425,7 +424,7 @@ def test_budget_status_uses_global_project_precedence(
 def test_budget_status_missing_project_is_usage_error_without_api_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(runtime, "load_config", lambda: Config(default_project=None))
+    monkeypatch.setattr(runtime, "load_config", lambda: Config())
     monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
 
     result = runner.invoke(app, ["--json", "budget", "status"], env={})

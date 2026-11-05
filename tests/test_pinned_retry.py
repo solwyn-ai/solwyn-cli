@@ -397,13 +397,23 @@ def test_init_run_cap_waiting_for_approval_continues_with_budget_rule_add(
         monkeypatch.setattr(module, "SolwynClient", factory)
     monkeypatch.setattr(init_module, "resolve_credential", lambda **_: LOGIN)
     monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: LOGIN)
-    monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
-    answers = iter(["Created project", 100.0])
-    monkeypatch.setattr(init_module.typer, "prompt", lambda *a, **k: next(answers))
-    monkeypatch.setattr(init_module.auth, "store_api_key", lambda **_: None)
+    stored: list[str] = []
+    monkeypatch.setattr(
+        init_module.auth,
+        "store_api_key",
+        lambda **fields: (
+            stored.append(fields["project_id"])
+            or auth.ApiKeyCredential(
+                api_key=fields["key"], source="keyring", project=fields["project_id"]
+            )
+        ),
+    )
     config_path = tmp_path / "config.toml"
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    monkeypatch.setattr(init_module, "get_config_path", lambda: config_path)
+    # init creates a project only inside a git repo, named after it.
+    repository = tmp_path / "repo"
+    (repository / ".git").mkdir(parents=True)
+    monkeypatch.chdir(repository)
 
     waited = runner.invoke(
         app, ["--json", "--approval-wait", "0", "init", "--run-cap", "5"]
@@ -430,6 +440,7 @@ def test_init_run_cap_waiting_for_approval_continues_with_budget_rule_add(
     ]
     assert f"Project {project} was created" in error["hint"]
     assert "same project name" not in error["hint"]
+    assert stored == [project]
 
     retried = _rerun(error)
 

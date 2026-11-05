@@ -18,6 +18,7 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -64,7 +65,7 @@ COSTS_HELP = help_contract(
         "GET /api/v1/projects/{project}/costs or, with --account, "
         "GET /api/v1/account/costs"
     ),
-    auth="project key or login; --account requires login",
+    auth="API key or login; --account requires login",
     exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
     schema="solwyn.costs.v1 or solwyn.account_costs.v1",
 )
@@ -367,15 +368,7 @@ def _run(
 ) -> None:
     runtime = command_context(context)
     if runtime.project is None and not account:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint="Choose a project with --project, SOLWYN_PROJECT_ID, or config default_project.",
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     if account:
         unsupported = next(
             (

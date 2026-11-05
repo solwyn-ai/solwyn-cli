@@ -2,7 +2,7 @@
 title: Agent runs
 ---
 
-List and inspect project agent runs with a project key or a Solwyn login. Stop
+List and inspect project agent runs with an API key or a Solwyn login. Stop
 requires a login with `budget.write`; it is CLI-only. A login with the `contain`
 scope stops runs without approval; a `read`-only login needs a one-time browser
 approval (see [approvals](approvals.mdx)). Select a project with global `--project`.
@@ -57,7 +57,7 @@ Endpoint: composite router for agent-run subcommands
 Auth: varies by subcommand
 Exit codes: 0 success; 2 usage
 JSON schema: varies by subcommand
-List and show accept a project key or login; stop requires login with budget.write.
+List and show accept an API key or login; stop requires login with budget.write.
 ```
 
 ## `solwyn runs list`

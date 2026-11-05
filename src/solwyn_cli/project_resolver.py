@@ -36,9 +36,9 @@ fails the command stops (``account_unresolved``), with no fallback to stored
 names. Stored keys are only ever selected by an exact id.
 """
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, TypeAdapter, ValidationError
@@ -54,20 +54,15 @@ from solwyn_cli._vendor.validation import (
 from solwyn_cli.auth import ApiKeyCredential, AuthError, LoginCredential
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
+from solwyn_cli.repo_file import REPO_FILE_NAME
 
 Purpose: TypeAlias = Literal["read", "spend", "keys_env", "with_key", "setup"]
-ProjectSource: TypeAlias = Literal[
-    "cli", "environment", "repo", "legacy_environment", "config", "none"
-]
+ProjectSource: TypeAlias = Literal["cli", "environment", "repo", "none"]
 
-REPO_FILE_NAME = ".solwyn.env"
-REPO_VARIABLE = "SOLWYN_PROJECT"
 SOURCE_LABELS: dict[str, str] = {
     "cli": "--project",
     "environment": "SOLWYN_PROJECT",
     "repo": REPO_FILE_NAME,
-    "legacy_environment": "SOLWYN_PROJECT_ID",
-    "config": "config default_project",
     "none": "nothing",
 }
 
@@ -99,12 +94,25 @@ def account_unresolved() -> ProjectResolutionError:
     )
 
 
-def project_required() -> ProjectResolutionError:
+PROJECT_HINT = (
+    "Choose a project with --project or SOLWYN_PROJECT (a project name or proj_ "
+    "id), or set SOLWYN_PROJECT in the repo's .solwyn.env."
+)
+
+
+def project_required(
+    message: str = "A project is required.", hint: str | None = None
+) -> ProjectResolutionError:
+    """Nothing selects a project; a leftover SOLWYN_PROJECT_ID says what changed."""
+    if os.environ.get("SOLWYN_PROJECT_ID", "").strip():
+        return ProjectResolutionError(
+            "usage_error",
+            "SOLWYN_PROJECT_ID was replaced by SOLWYN_PROJECT (a project name or "
+            "proj_ id).",
+            "Set SOLWYN_PROJECT, or pass --project, instead.",
+        )
     return ProjectResolutionError(
-        "project_required",
-        "A project is required.",
-        "Choose a project with --project or SOLWYN_PROJECT (a project name or "
-        "proj_ id), or set SOLWYN_PROJECT in the repo's .solwyn.env.",
+        "project_required", message, PROJECT_HINT if hint is None else hint
     )
 
 
@@ -115,81 +123,6 @@ def api_key_not_stored(project: str) -> ProjectResolutionError:
         f"Run solwyn keys create --project {project} --store-key.",
         semantic=ErrorSemantic.AUTH,
     )
-
-
-# --- The repo file ------------------------------------------------------------
-
-
-class RepoFileError(ValueError):
-    """``.solwyn.env`` exists but is not the one assignment it may hold."""
-
-
-def git_root(start: Path) -> Path | None:
-    """The nearest directory at or above ``start`` that holds ``.git``."""
-    for directory in (start, *start.parents):
-        if (directory / ".git").exists():
-            return directory
-    return None
-
-
-def find_repo_file(start: Path | None = None) -> Path | None:
-    """``.solwyn.env`` from ``start`` (cwd) up to the git root, if any."""
-    try:
-        here = (start or Path.cwd()).resolve()
-    except OSError:
-        return None
-    root = git_root(here)
-    if root is None:
-        return None
-    for directory in (here, *here.parents):
-        candidate = directory / REPO_FILE_NAME
-        if candidate.is_file():
-            return candidate
-        if directory == root:
-            break
-    return None
-
-
-def parse_repo_file(text: str) -> str:
-    """The ``SOLWYN_PROJECT`` value of a repo file, or RepoFileError.
-
-    Accepts that one assignment (optional surrounding whitespace, optional
-    single or double quotes), comments and blank lines; nothing else.
-    """
-    value: str | None = None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        name, separator, raw = stripped.partition("=")
-        if not separator or name.strip() != REPO_VARIABLE or value is not None:
-            raise RepoFileError("unexpected line")
-        raw = raw.strip()
-        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
-            raw = raw[1:-1]
-        elif raw[:1] in "\"'" or raw[-1:] in "\"'":
-            raise RepoFileError("unbalanced quotes")
-        raw = trim_selector(raw)
-        if not raw or any(character in raw for character in "\"'$`\\"):
-            raise RepoFileError("invalid value")
-        value = raw
-    if value is None:
-        raise RepoFileError("no assignment")
-    return value
-
-
-def read_repo_project(start: Path | None = None) -> tuple[str | None, str | None]:
-    """(value, None), (None, error message) or (None, None) without a file."""
-    path = find_repo_file(start)
-    if path is None:
-        return None, None
-    try:
-        return parse_repo_file(path.read_text(encoding="utf-8")), None
-    except (OSError, UnicodeError, RepoFileError):
-        return None, (
-            f'{path} must hold one line, SOLWYN_PROJECT="<project name or '
-            'proj_ id>", plus comments.'
-        )
 
 
 # --- Server reads -----------------------------------------------------------

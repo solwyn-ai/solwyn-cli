@@ -5,19 +5,22 @@ title: Local configuration
 Inspect and update non-secret local configuration. These commands run offline,
 require no credentials and emit plain text, including when global `--json` is
 selected. Allowed keys are `api_url`, `credential_store` (`auto`, `keyring` or
-`file`; see [login](login.mdx)), `default_project` and `format`; credentials
+`file`; see [login](login.mdx)) and `format`; credentials
 belong in the credential store (`solwyn login`) or explicit environment input.
 
 ```sh
 solwyn config list
-solwyn config set default_project proj_example
-solwyn config get default_project
+solwyn config set format json
+solwyn config get api_url
 ```
 
 Explicit global flags override environment settings, which override configured
 defaults. `config set` writes only the key it sets and keeps the keys already
 saved; it never writes a default into `config.toml`. Setting
-`credential_store` to `auto` removes the key, since `auto` is the default. Changing a read selector never changes the identity of a project key.
+`credential_store` to `auto` removes the key, since `auto` is the default. There is no computer-wide default project: a repo names its project in
+`.solwyn.env` (see [init](init.mdx)). A `default_project` left in `config.toml`
+by an older CLI is ignored and dropped on the next config write, and
+`config set default_project` exits 2 (`Invalid configuration key`).
 
 `config list` shows the effective API URL and where it came from, not only the
 saved value: `--api-url`, `SOLWYN_API_URL`, config, or the default
@@ -59,7 +62,7 @@ Usage: solwyn config get [OPTIONS] KEY
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `key` | `Configuration key to read. (STRING; required)` | `None` |
+| `KEY` | `Configuration key to read. (STRING; required)` | `None` |
 
 ```text
 Endpoint: local configuration read
@@ -93,8 +96,8 @@ Usage: solwyn config set [OPTIONS] KEY VALUE
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `key` | `Configuration key to update. (STRING; required)` | `None` |
-| `value` | `New configuration value. (STRING; required)` | `None` |
+| `KEY` | `Configuration key to update. (STRING; required)` | `None` |
+| `VALUE` | `New configuration value. (STRING; required)` | `None` |
 
 ```text
 Endpoint: local configuration write
@@ -102,3 +105,4 @@ Auth: local (none)
 Exit codes: 0 success; 2 usage; 3 credential lock (credential_store only)
 JSON schema: none (human confirmation on stderr)
 ```
+

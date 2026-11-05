@@ -925,7 +925,7 @@ def test_init_reuses_guarded_login_and_project_create_requests() -> None:
 
     assert REQUEST_MIRRORS[ProjectCreateRequest] == "ProjectCreateRequest"
     assert init_command.device_login is login.device_login
-    assert init_command.request_project_creation is projects.request_project_creation
+    assert init_command.create_named_project is projects.create_named_project
     assert_project_create_operation_request_binding(snapshot)
 
 

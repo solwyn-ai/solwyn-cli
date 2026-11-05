@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from test_alerts_command import WINDOW
-from test_mcp_conformance import CHECK_RESPONSE, VALID_KEY
+from test_mcp_conformance import CHECK_RESPONSE, VALID_KEY, auth_key_answer
 
 CHILD = """import sys, time
 from pathlib import Path
@@ -57,6 +57,16 @@ def test_stdio_stop_prevents_later_effects(tmp_path, legacy, ending, scenario):
 
     class Handler(BaseHTTPRequestHandler):
         def respond(self):
+            if self.path == "/api/v1/auth/key":
+                # The reporting tools validate their launch key once (7.7).
+                body = json.dumps(
+                    auth_key_answer(self.headers.get("Solwyn-Project"))
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             requests.append((self.command, self.path))
             if self.headers.get("Content-Length"):
                 self.rfile.read(int(self.headers["Content-Length"]))

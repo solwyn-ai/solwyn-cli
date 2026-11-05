@@ -92,7 +92,7 @@ def test_project_key_capable_mode_retains_normal_auth_guidance(monkeypatch):
 @pytest.mark.parametrize(
     "args,expected",
     [
-        ({"account": True, "project_id": "private-project"}, "Omit project_id"),
+        ({"account": True, "project": "private-project"}, "Omit project"),
         (
             {"account": True, "tag": ["private-tag=value"]},
             "model, provider, modality, group_by",

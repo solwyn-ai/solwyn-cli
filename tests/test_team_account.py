@@ -267,7 +267,8 @@ def test_removal_revocation_and_honest_self_leave(mock_team, self_leave):
     assert result.exit_code == 0, result.output
     assert calls[-1].url.path.endswith("/members/" + user)
     assert calls[-1].method == "DELETE"
-    assert "sessions AND project keys they created" in result.stderr
+    assert "sessions are revoked" in result.stderr
+    assert "API keys belong to the account and keep working" in result.stderr
     assert json.loads(result.stdout)["self_leave"] == self_leave
     if self_leave:
         assert "Log in again" in result.output

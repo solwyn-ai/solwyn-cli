@@ -1,6 +1,9 @@
 Field                                                                      Value
 Project                                            proj_be76331b95dfc399cd776d2f
-Configuration                                                            written
+Project name                                                                   -
+Created                                                                       no
+Key stored                                                                    no
+Repo file                                                                      -
 Providers                                                                 openai
 SDK wiring                import os, openai; from solwyn import Solwyn; client =
                      Solwyn(openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"]))

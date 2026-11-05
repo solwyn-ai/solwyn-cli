@@ -16,12 +16,20 @@ from mcp.server.context import CallNext, HandlerResult
 from mcp.server import runner as sdk_runner
 from mcp.shared import jsonrpc_dispatcher as sdk_dispatcher
 from mcp.shared import direct_dispatcher as sdk_direct_dispatcher
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    model_validator,
+)
 
 from solwyn_cli import __version__, auth, credential_store, project_resolver, runtime
 from solwyn_cli.mcp.declarations import ToolDeclaration
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli._vendor.batch import new_operation_id, operation_expiry
+from solwyn_cli._vendor.validation import PROJECT_ID_HEADER, PROJECT_ID_PATTERN
 from solwyn_cli.mcp.parameters import (
     BudgetCheckRequest,
     MediaUsage,
@@ -48,6 +56,7 @@ from solwyn_cli.auth import (
     METERING_KEY_HINT,
     CredentialStorageError,
     MeteringKeyRequiredError,
+    ResolvedCredential,
     missing_credential_hint,
 )
 from solwyn_cli.client import SolwynClient
@@ -120,6 +129,7 @@ from solwyn_cli.commands.runs import (
 )
 from solwyn_cli.commands.status import ProjectStatusData, fetch_project_status
 from solwyn_cli.errors import (
+    API_KEY_HINTS,
     ApiError,
     BILLING_HINTS,
     BUDGET_BUSY_HINT,
@@ -291,6 +301,13 @@ _SAFE_REMOTE_ERROR_CODES = frozenset(
         "cli_credential_invalid",
         "cli_credential_expired",
         "cli_credential_revoked",
+        # The API-key path (Core spec 2.4): fixed messages, CLI-owned hints.
+        "api_key_invalid",
+        "api_key_expired",
+        "api_key_not_allowed",
+        "key_not_dedicated",
+        "project_selector_required",
+        "project_selector_conflict",
     }
 )
 _SAFE_REMOTE_HINTS = {
@@ -319,7 +336,20 @@ _SAFE_REMOTE_HINTS = {
     "read_only_key": (
         "The configured project key is read-only; set SOLWYN_API_KEY to a "
         "write-scoped key, then retry. Confirm a key's scope with "
-        "solwyn keys show."
+        "solwyn keys list."
+    ),
+    "api_key_invalid": API_KEY_HINTS["api_key_invalid"],
+    "api_key_expired": API_KEY_HINTS["api_key_expired"],
+    "api_key_not_allowed": API_KEY_HINTS["api_key_not_allowed"],
+    "key_not_dedicated": API_KEY_HINTS["key_not_dedicated"],
+    "project_selector_required": (
+        "Restart the server with --project before mcp, SOLWYN_PROJECT, or the "
+        "repo's .solwyn.env naming the project."
+    ),
+    "project_selector_conflict": API_KEY_HINTS["project_selector_conflict"],
+    "project_not_found": (
+        "Check the project name with solwyn projects list, or use the proj_ id. "
+        "A key only reaches the projects it was created for."
     ),
     "reservation_not_found": (
         "The reservation expired or was consumed; run a fresh check before spend."
@@ -345,6 +375,15 @@ _REMOTE_ERROR_MESSAGES = {
     "approval_invalid": "The approval is not valid for this request.",
     "approval_limit_reached": "Too many approvals are pending for this login.",
     "approval_required": "This change needs a human's approval in the browser.",
+    "api_key_expired": "The API key expired.",
+    "api_key_invalid": "The API key is invalid or revoked.",
+    "api_key_not_allowed": "API keys cannot make this change or read this data.",
+    "key_not_dedicated": (
+        "This project only accepts API keys dedicated to it, and this key also "
+        "reaches other projects."
+    ),
+    "project_selector_conflict": "The project selection conflicts with the request.",
+    "project_selector_required": "This API key needs a project.",
     "authentication_failed": "Solwyn rejected the credential.",
     "authentication_required": "Solwyn authentication is required.",
     "billing_plan_no_change": "The account is already on the requested plan.",
@@ -618,13 +657,21 @@ class _ToolCatalog:
 
 
 class McpLaunchOptions(BaseModel):
-    """Immutable non-secret CLI overrides retained for fresh per-call resolution."""
+    """Immutable non-secret CLI overrides retained for fresh per-call resolution.
+
+    ``project_id`` is the global ``--project`` given before ``mcp`` (a name or
+    an id). The reporting tools bind their project and key once per server
+    (``_reporting``); read tools resolve per call.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     api_url: str | None = None
     project_id: str | None = None
     profile: Literal["read", "guardrails"] = "guardrails"
+    _reporting: "_ReportingBinding" = PrivateAttr(
+        default_factory=lambda: _ReportingBinding()
+    )
 
 
 class _ToolError(BaseModel):
@@ -659,6 +706,11 @@ class _ToolResult(BaseModel, Generic[DataT]):
 
 
 class _RecordResult(_ToolResult[RecordingResult]):
+    project_id: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="The project Core says the call was for (Solwyn-Project-Id).",
+    )
     recovery: operation.OperationRecovery | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -698,6 +750,11 @@ class _BudgetRulesResult(_ToolResult[BudgetRulesData]):
 
 
 class _BudgetCheckResult(_ToolResult[BudgetCheckData]):
+    project_id: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="The project Core says the call was for (Solwyn-Project-Id).",
+    )
     recovery: operation.OperationRecovery | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -708,6 +765,11 @@ class _BudgetCheckResult(_ToolResult[BudgetCheckData]):
 
 
 class _BudgetCheckBatchResult(_ToolResult[RecoverableBatchData]):
+    project_id: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="The project Core says the call was for (Solwyn-Project-Id).",
+    )
     recovery: operation.OperationRecovery | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -717,6 +779,11 @@ class _BudgetCheckBatchResult(_ToolResult[RecoverableBatchData]):
 
 
 class _BudgetConfirmResult(_ToolResult[BudgetConfirmData]):
+    project_id: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="The project Core says the call was for (Solwyn-Project-Id).",
+    )
     recovery: operation.OperationRecovery | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -966,13 +1033,7 @@ def tool_call_client(
                     update={"project": selection.project_id, "project_resolved": True}
                 )
     except project_resolver.ProjectResolutionError as error:
-        raise ApiError(
-            status_code=None,
-            code=error.code,
-            message=error.message,
-            hint=error.hint,
-            detail=None,
-        ) from None
+        raise _local_project_error(error) from None
     except ValueError as error:
         raise AuthError(str(error)) from None
     finally:
@@ -998,6 +1059,206 @@ def tool_call_client(
         ),
     ) as client:
         yield command_runtime, client
+
+
+def _client_options() -> dict[str, Any]:
+    """The operation's transport and sleeper when a call controls them."""
+    control = operation.current()
+    return (
+        {"transport": control.transport(), "sleeper": control.sleep} if control else {}
+    )
+
+
+class _RecordingClient:
+    """Pass-through client that notes each (method, path) it sends."""
+
+    def __init__(self, inner: Any, seen: list[tuple[str, str]]) -> None:
+        self._inner = inner
+        self._seen = seen
+
+    def __enter__(self) -> "_RecordingClient":
+        self._inner.__enter__()
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self._inner.__exit__(*args)
+
+    def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        self._seen.append((method.upper(), path))
+        return self._inner.request(method, path, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+class _EchoingClient:
+    """Pass-through client that keeps Core's Solwyn-Project-Id echo."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.project_id: str | None = None
+
+    def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        response = self._inner.request(method, path, **kwargs)
+        headers = getattr(response, "headers", None)
+        echoed = headers.get(PROJECT_ID_HEADER) if headers is not None else None
+        if isinstance(echoed, str) and PROJECT_ID_PATTERN.fullmatch(echoed):
+            self.project_id = echoed
+        return response
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+# Refusals that stay true for the server's lifetime are kept and returned on
+# every reporting call; a transport failure, busy service or locked store is
+# retried on the next call.
+_KEPT_REFUSAL_STATUSES = frozenset({400, 401, 403, 404})
+
+
+class _ReportingBinding:
+    """The launch project and key of the four reporting tools, resolved once.
+
+    The project comes from the shared resolver (purpose ``spend``): --project
+    before mcp, SOLWYN_PROJECT, then the repo's .solwyn.env, checked against
+    each other; the key is SOLWYN_API_KEY, else the key stored for that
+    project, checked against the login's account. The first reporting call
+    validates the pair with GET /api/v1/auth/key on its own client. A refusal
+    is kept and returned on every call; no other key is ever tried.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._outcome: tuple[str, ResolvedCredential, bool] | Exception | None = None
+
+    def _keep(self, error: Exception) -> None:
+        if isinstance(error, _LocalProjectError) or (
+            isinstance(error, ApiError) and error.status_code in _KEPT_REFUSAL_STATUSES
+        ):
+            self._outcome = error
+
+    def get(self, launch: McpLaunchOptions) -> tuple[str, ResolvedCredential, bool]:
+        with self._lock:
+            if isinstance(self._outcome, Exception):
+                raise self._outcome
+            if self._outcome is not None:
+                return self._outcome
+            try:
+                self._outcome = _bind_reporting(launch)
+            except (_LocalProjectError, ApiError) as error:
+                self._keep(error)
+                raise
+            return self._outcome
+
+    def validate(self, client: Any, credential: ApiKeyCredential) -> ApiKeyCredential:
+        """GET /api/v1/auth/key once for the launch pair; keep the answer."""
+        with self._lock:
+            if isinstance(self._outcome, Exception):
+                raise self._outcome
+            if self._outcome is not None and self._outcome[2]:
+                return self._outcome[1]  # type: ignore[return-value]
+            try:
+                response = client.request("GET", "/api/v1/auth/key")
+                try:
+                    info = project_resolver.AuthKeyResponse.model_validate(
+                        response.json()
+                    )
+                except (ValidationError, ValueError, TypeError):
+                    raise _LocalProjectError("invalid_auth_key_response") from None
+                if info.project_id != credential.project:
+                    raise _LocalProjectError("invalid_auth_key_response")
+            except (_LocalProjectError, ApiError) as error:
+                self._keep(error)
+                raise
+            validated = credential.model_copy(
+                update={
+                    "key_id": info.key_id,
+                    "account_id": info.account_id,
+                    "project_name": info.project_name,
+                }
+            )
+            assert self._outcome is not None and not isinstance(
+                self._outcome, Exception
+            )
+            self._outcome = (self._outcome[0], validated, True)
+            return validated
+
+
+def _bind_reporting(
+    launch: McpLaunchOptions,
+) -> tuple[str, ResolvedCredential, bool]:
+    """(API URL, credential, whether /auth/key already answered for it)."""
+    command_runtime = runtime.resolve_command_context(
+        api_url=launch.api_url,
+        project=launch.project_id,
+        output_format=None,
+        json_flag=False,
+        no_color=True,
+    )
+    if command_runtime.project_selector is None and command_runtime.project:
+        command_runtime = command_runtime.model_copy(
+            update={"project_selector": command_runtime.project}
+        )
+    api_url = command_runtime.api_url
+    seen: list[tuple[str, str]] = []
+
+    def factory(**kwargs: Any) -> _RecordingClient:
+        return _RecordingClient(SolwynClient(**kwargs, **_client_options()), seen)
+
+    reset_api_url = auth.use_api_url(api_url)
+    try:
+        # SOLWYN_API_KEY, or None: without a project id no stored key is chosen
+        # here; the resolver picks the launch project's stored key below.
+        environment_key = auth.resolve_credential(purpose="metering", api_url=api_url)
+        if isinstance(environment_key, LoginCredential):
+            # Never sent: the tool refuses a login (project_key_required).
+            return api_url, environment_key, True
+        try:
+            selection = project_resolver.resolve(
+                runtime.candidates_of(command_runtime),
+                purpose="spend",
+                api_url=api_url,
+                credential=environment_key,
+                factory=factory,
+            )
+        except project_resolver.ProjectResolutionError as error:
+            raise _local_project_error(error) from None
+        credential = selection.credential
+        if credential is None:
+            missing = MeteringKeyRequiredError(METERING_KEY_HINT)
+            missing.hint = missing_credential_hint("metering")
+            raise missing
+        if not isinstance(credential, ApiKeyCredential):
+            raise MeteringKeyRequiredError(METERING_KEY_HINT)
+        if credential.project is None:
+            raise _local_project_error(project_resolver.project_required())
+        return api_url, credential, ("GET", "/api/v1/auth/key") in seen
+    finally:
+        reset_api_url()
+
+
+@contextmanager
+def reporting_client(launch_options: McpLaunchOptions) -> Iterator[_EchoingClient]:
+    """A client for budget_check, budget_check_batch, budget_confirm and
+    record_call: the launch project's key, Solwyn-Project on every request."""
+    operation.checkpoint()
+    binding = launch_options._reporting
+    api_url, credential, validated = binding.get(launch_options)
+    operation.checkpoint()
+    with SolwynClient(
+        api_url=api_url, credential=credential, **_client_options()
+    ) as client:
+        if isinstance(credential, ApiKeyCredential) and not validated:
+            binding.validate(client, credential)
+            operation.checkpoint()
+        yield _EchoingClient(client)
+
+
+def _echoed(result: ResultT, client: _EchoingClient) -> ResultT:
+    """Add the project Core says the call was for (Solwyn-Project-Id)."""
+    if client.project_id is None:
+        return result
+    return result.model_copy(update={"project_id": client.project_id})
 
 
 def _canonical_guidance_line(fragment: str) -> str:
@@ -1304,6 +1565,76 @@ def _bounded_protocol_result(
     return _protocol_result(compact)
 
 
+class _LocalProjectError(ValueError):
+    """A project resolution refusal from the CLI's own resolver.
+
+    The resolver's text can name projects and accounts; an agent sees only a
+    fixed message and hint per code.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+_LAUNCH_PROJECT_HINT = (
+    "Restart the server with --project before mcp, set SOLWYN_PROJECT, or set it "
+    "in the repo's .solwyn.env."
+)
+_LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
+    "project_required": ("A Solwyn project is required.", _LAUNCH_PROJECT_HINT),
+    "usage_error": (
+        "SOLWYN_PROJECT_ID was replaced by SOLWYN_PROJECT (a project name or proj_ "
+        "id).",
+        "Set SOLWYN_PROJECT, or pass --project before mcp, instead.",
+    ),
+    "project_mismatch": (
+        "The project selected for this server does not match the repo's .solwyn.env.",
+        "Edit .solwyn.env if the repo should use another project, or restart the "
+        "server with the project it names. Never switch projects to get around a "
+        "budget limit.",
+    ),
+    "repo_file_invalid": (
+        "The repo's .solwyn.env is not valid.",
+        'It must hold one line, SOLWYN_PROJECT="<project name or proj_ id>", plus '
+        "comments.",
+    ),
+    "project_ambiguous": (
+        "More than one stored API key is for a project with this name (different "
+        "accounts).",
+        "Use the proj_ id, or sign in with solwyn login.",
+    ),
+    "api_key_not_stored": (
+        "No API key for the launch project is stored on this computer.",
+        "Run solwyn keys create --project PROJECT --store-key, or set SOLWYN_API_KEY.",
+    ),
+    "api_key_account_mismatch": (
+        "The API key for the launch project belongs to another account than the "
+        "current login.",
+        "Run solwyn keys create --project PROJECT --store-key.",
+    ),
+    "account_unresolved": (
+        "Could not confirm which account the Solwyn login belongs to.",
+        "Check the connection, then restart the server.",
+    ),
+    "project_not_found": (
+        "The project was not found.",
+        "Check the project name with solwyn projects list, or use the proj_ id.",
+    ),
+    "invalid_projects_response": ("The projects response was invalid.", None),
+    "invalid_auth_key_response": ("The API key response was invalid.", None),
+}
+
+
+def _local_project_error(error: project_resolver.ProjectResolutionError) -> Exception:
+    """The resolver's refusal as the MCP layer reports it."""
+    if error.code == "authentication_required":
+        return LoginRequiredError(error.message)
+    return _LocalProjectError(
+        error.code if error.code in _LOCAL_PROJECT_ERRORS else "project_not_found"
+    )
+
+
 def _operation_error(
     result_type: type[ResultT],
     error: Exception,
@@ -1312,12 +1643,15 @@ def _operation_error(
     login_required: bool = False,
     invalid_response_hint: str | None = None,
 ) -> ResultT:
+    if isinstance(error, _LocalProjectError):
+        message, hint = _LOCAL_PROJECT_ERRORS[error.code]
+        return _error(result_type, code=error.code, message=message, hint=hint)
     if isinstance(error, AccountProjectConflictError):
         return _error(
             result_type,
             code="invalid_cost_query",
             message="The cost query was invalid.",
-            hint="Omit project_id for account=true, or set account=false for project costs.",
+            hint="Omit project for account=true, or set account=false for project costs.",
         )
     if isinstance(error, UnsupportedAccountCostFilterError):
         return _error(
@@ -1396,7 +1730,8 @@ def _operation_error(
             code="project_required",
             message="A Solwyn project is required.",
             hint=(
-                "Set SOLWYN_PROJECT_ID, configure default_project, or pass project_id."
+                "Pass --project before mcp, set SOLWYN_PROJECT, or set it in the "
+                "repo's .solwyn.env."
             ),
         )
     if not isinstance(error, (ValidationError, ValueError, TypeError)):
@@ -1677,7 +2012,7 @@ def _budget_check_operation(
             message="The budget check request is invalid.",
         )
     try:
-        with tool_call_client(launch_options, purpose="metering") as (_, client):
+        with reporting_client(launch_options) as client:
             auth_error = _require_project_key(
                 _BudgetCheckResult, client.current_credential, "checks"
             )
@@ -1691,7 +2026,7 @@ def _budget_check_operation(
                 estimated_output_tokens=estimated_output_tokens,
                 no_record=no_record,
             )
-        return _success(_BudgetCheckResult, data)
+        return _echoed(_success(_BudgetCheckResult, data), client)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
             _BudgetCheckResult,
@@ -1751,7 +2086,7 @@ def _budget_check_batch_operation(
             message="Provide 1–32 checks, or only the retained operation_id with recover_only or record_only.",
         )
     try:
-        with tool_call_client(launch_options, purpose="metering") as (_, client):
+        with reporting_client(launch_options) as client:
             auth_error = _require_project_key(
                 _BudgetCheckBatchResult, client.current_credential, "checks"
             )
@@ -1781,7 +2116,7 @@ def _budget_check_batch_operation(
                 hint=INGEST_BUSY_HINT
                 if all(item.status == "not_recorded" for item in data.recordings)
                 else None,
-            ).model_copy(update={"data": data})
+            ).model_copy(update={"data": data, "project_id": client.project_id})
         failed = any(item.state != "completed" for item in data.items)
         if failed:
             failure = _error(
@@ -1790,8 +2125,8 @@ def _budget_check_batch_operation(
                 message="The batch contains incomplete admission outcomes.",
                 hint="Recover with the same operation_id. Never replay unknown or unattempted items automatically.",
             )
-            return failure.model_copy(update={"data": data})
-        return _success(_BudgetCheckBatchResult, data)
+            return _echoed(failure.model_copy(update={"data": data}), client)
+        return _echoed(_success(_BudgetCheckBatchResult, data), client)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         return _operation_error(
             _BudgetCheckBatchResult,
@@ -1888,7 +2223,7 @@ def _budget_confirm_operation(
             hint=CALL_ID_HINT,
         )
     try:
-        with tool_call_client(launch_options, purpose="metering") as (_, client):
+        with reporting_client(launch_options) as client:
             auth_error = _require_project_key(
                 _BudgetConfirmResult, client.current_credential, "confirmation"
             )
@@ -1901,10 +2236,7 @@ def _budget_confirm_operation(
                     client=client, request=request, event=event, no_record=no_record
                 )
             )
-        return _success(
-            _BudgetConfirmResult,
-            data,
-        )
+        return _echoed(_success(_BudgetConfirmResult, data), client)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:
         failure = _operation_error(
             _BudgetConfirmResult,
@@ -2075,7 +2407,7 @@ def _record_operation(
             hint=CALL_ID_HINT,
         )
     try:
-        with tool_call_client(launch_options, purpose="metering") as (_, client):
+        with reporting_client(launch_options) as client:
             auth_error = _require_project_key(
                 _RecordResult, client.current_credential, "recording"
             )
@@ -2083,7 +2415,7 @@ def _record_operation(
                 return auth_error
             data = request_ingest(client=client, events=[event])
             operation.retain(data, call_id=event.call_id, recording=data.status)
-        return _success(_RecordResult, data)
+        return _echoed(_success(_RecordResult, data), client)
     except (ApiError, AuthError, ValueError, TypeError) as error:
         result = _operation_error(
             _RecordResult, error, invalid_response_code="invalid_ingest_response"
@@ -2376,10 +2708,10 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description=status_description,
     )
     async def budget_status(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetStatusResult:
         return await operation.run_sync(
-            partial(_budget_status_operation, project_id, launch)
+            partial(_budget_status_operation, project, launch)
         )
 
     @catalog.tool(
@@ -2530,10 +2862,10 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description=PROJECT_STATUS_DESCRIPTION,
     )
     async def get_project_status(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ProjectStatusResult:
         return await operation.run_sync(
-            partial(_project_status_operation, project_id, launch)
+            partial(_project_status_operation, project, launch)
         )
 
     @catalog.tool(
@@ -2542,20 +2874,18 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description=FORECAST_DESCRIPTION,
     )
     async def get_forecast(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ForecastResult:
-        return await operation.run_sync(
-            partial(_forecast_operation, project_id, launch)
-        )
+        return await operation.run_sync(partial(_forecast_operation, project, launch))
 
     @catalog.tool(
         name="get_costs",
         title="Read grouped costs",
         description=COSTS_DESCRIPTION,
-        credential_note="Project mode accepts a project key or a Solwyn login; account=true requires a Solwyn login and is mutually exclusive with explicit project_id. Account filters are restricted by Core.",
+        credential_note="Project mode accepts a project key or a Solwyn login; account=true requires a Solwyn login and is mutually exclusive with an explicit project. Account filters are restricted by Core.",
     )
     async def get_costs(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: CostRange = CostRange.SEVEN_DAYS,
         group_by: str | None = None,
         account: bool = False,
@@ -2577,7 +2907,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
             partial(
                 _costs_operation,
                 launch_options=launch,
-                project_id=project_id,
+                project_id=project,
                 time_range=time_range,
                 group_by=group_by,
                 account=account,
@@ -2612,7 +2942,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read uncapped project cost totals with the same cost filters and custom windows as get_costs.",
     )
     async def get_cost_total(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: CostRange = CostRange.SEVEN_DAYS,
         from_: str | None = None,
         to: str | None = None,
@@ -2632,7 +2962,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
             partial(
                 _cost_total_operation,
                 launch_options=launch,
-                project_id=project_id,
+                project_id=project,
                 time_range=time_range,
                 from_=from_,
                 to=to,
@@ -2657,11 +2987,11 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read budget rule conditions, routing, and separate paused/snoozed states. A snoozed hard_deny still denies; pausing releases enforcement. Rule keys change when keyed fields are edited.",
     )
     async def list_budget_rules(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         with_last_fired: bool = False,
     ) -> _BudgetRulesResult:
         return await operation.run_sync(
-            partial(_budget_rules_operation, project_id, launch, with_last_fired)
+            partial(_budget_rules_operation, project, launch, with_last_fired)
         )
 
     @catalog.tool(
@@ -2720,10 +3050,10 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="List account-scoped tag discovery through a project. Team required; keys preserve whitespace and case.",
     )
     async def list_tags(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _TagsResult:
         return await operation.run_sync(
-            partial(_tags_operation, launch_options=launch, project_id=project_id)
+            partial(_tags_operation, launch_options=launch, project_id=project)
         )
 
     @catalog.tool(
@@ -2733,7 +3063,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     )
     async def list_tag_values(
         key: Annotated[str, Field(min_length=1, max_length=64)],
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         prefix: Annotated[str | None, Field(max_length=256)] = None,
         limit: Annotated[int, Field(ge=1, le=100)] = 25,
         cursor: str | None = None,
@@ -2742,7 +3072,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
             partial(
                 _tags_operation,
                 launch_options=launch,
-                project_id=project_id,
+                project_id=project,
                 key=key,
                 prefix=prefix,
                 limit=limit,
@@ -2756,7 +3086,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description=AGENT_RUNS_DESCRIPTION,
     )
     async def list_agent_runs(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: RunRange = RunRange.SEVEN_DAYS,
         from_time: str | None = None,
         to_time: str | None = None,
@@ -2770,7 +3100,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
             partial(
                 _agent_runs_operation,
                 launch_options=launch,
-                project_id=project_id,
+                project_id=project,
                 time_range=time_range,
                 from_time=from_time,
                 to_time=to_time,
@@ -2789,25 +3119,25 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     )
     async def get_agent_run_tool(
         run: Annotated[str, Field(min_length=1, max_length=255)],
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _AgentRunResult:
         return await operation.run_sync(
             partial(
                 _agent_run_operation,
                 launch_options=launch,
                 run=run,
-                project_id=project_id,
+                project_id=project,
             )
         )
 
     @catalog.tool(
         name="list_alert_events",
         title="Read alert history",
-        credential_note="Project history accepts a project key or a Solwyn login; account=true reads account-scope history, requires a Solwyn login and ignores project_id. Use list_alert_activity for all projects plus account scope.",
+        credential_note="Project history accepts a project key or a Solwyn login; account=true reads account-scope history, requires a Solwyn login and ignores project. Use list_alert_activity for all projects plus account scope.",
         description="Read cursor-paginated alert history and per-channel delivery receipts. Project keys work for project history; account history requires a Solwyn login. failed_only filters partial/failed rollups locally; scope is the rule scope. No mutation tools are exposed.",
     )
     async def list_alert_events(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         account: bool = False,
         time_range: str = "30d",
         from_: str | None = None,
@@ -2821,7 +3151,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         return await operation.run_sync(
             partial(
                 _alert_events_operation,
-                project_id,
+                project,
                 launch,
                 account=account,
                 time_range=time_range,
@@ -2896,7 +3226,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read cursor-paginated cost events with shared filters and bounded all_pages.",
     )
     async def list_cost_events(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: str = "7d",
         from_: str | None = None,
         to: str | None = None,
@@ -2921,7 +3251,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListCostEventsResult,
                 fetch_cost_events,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 time_range=time_range,
                 from_=from_,
@@ -2950,7 +3280,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read committed daily spend baseline excluding today.",
     )
     async def get_cost_baseline(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         days: Annotated[int, Field(ge=3, le=30)] = 7,
     ) -> _GetCostBaselineResult:
         return await operation.run_sync(
@@ -2959,7 +3289,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetCostBaselineResult,
                 fetch_project_read,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 path="spend-baseline",
                 response_model=BaselineResult,
@@ -2974,7 +3304,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read unit-cost metrics and optional server-inferred causes.",
     )
     async def get_unit_economics(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: AlertRange = "30d",
         vs_prev: bool = True,
         cause: bool = False,
@@ -2985,7 +3315,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetUnitEconomicsResult,
                 fetch_project_read,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 path="unit-economics",
                 response_model=UnitEconomicsResponse,
@@ -3000,7 +3330,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Compare historical stored spend and estimates with coverage and caveats.",
     )
     async def get_cost_drift(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: str = "7d",
         from_: str | None = None,
         to: str | None = None,
@@ -3011,7 +3341,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _GetCostDriftResult,
                 fetch_drift_options,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 time_range=time_range,
                 from_=from_,
@@ -3026,7 +3356,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="List exact available priced targets and current pricing version.",
     )
     async def list_priced_models(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _ListPricedModelsResult:
         return await operation.run_sync(
             partial(
@@ -3034,7 +3364,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListPricedModelsResult,
                 fetch_priced_models,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
             )
         )
@@ -3048,7 +3378,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
     async def simulate_costs(
         provider: ProviderName,
         model: Annotated[str, Field(min_length=1, max_length=2048)],
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         region: Annotated[str | None, Field(max_length=32)] = None,
         service_tier: ServiceTier | None = None,
         time_range: str = "7d",
@@ -3061,7 +3391,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _SimulateCostsResult,
                 fetch_simulation_options,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 provider=provider,
                 model=model,
@@ -3080,7 +3410,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read recent provider/model failover groups, capped by Core at 50 groups.",
     )
     async def list_provider_failovers(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: FailoverRange = FailoverRange.SEVEN_DAYS,
     ) -> _ListProviderFailoversResult:
         return await operation.run_sync(
@@ -3089,7 +3419,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListProviderFailoversResult,
                 fetch_provider_failovers,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 time_range=time_range,
             )
@@ -3102,7 +3432,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read untracked surfaces with effective retention window, capped by Core at 25 observations.",
     )
     async def list_untracked_surfaces(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
         time_range: UntrackedRange = UntrackedRange.SEVEN_DAYS,
     ) -> _ListUntrackedSurfacesResult:
         return await operation.run_sync(
@@ -3111,7 +3441,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _ListUntrackedSurfacesResult,
                 fetch_untracked_surfaces,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
                 time_range=time_range,
             )
@@ -3267,7 +3597,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
         description="Read advisory unpriced upper-bound offline traffic, possibly overcounted. A 503 means unknown; retry the read, never assume zero or no past traffic.",
     )
     async def budget_uncounted(
-        project_id: Annotated[str | None, Field(min_length=1)] = None,
+        project: Annotated[str | None, Field(min_length=1)] = None,
     ) -> _BudgetUncountedResult:
         return await operation.run_sync(
             partial(
@@ -3275,7 +3605,7 @@ def _create_catalog(launch: McpLaunchOptions) -> _ToolCatalog:
                 _BudgetUncountedResult,
                 fetch_uncounted,
                 launch,
-                project_id=project_id,
+                project_id=project,
                 project_read=True,
             )
         )

@@ -75,7 +75,7 @@ def test_set_refuses_the_stored_project_key_without_a_request(sent):
     assert result.exit_code == 3
     error = error_of(result)
     assert error["code"] == "authentication_required"
-    assert "project API keys cannot change" in error["message"]
+    assert "API keys cannot change" in error["message"]
     assert "solwyn login" in error["hint"]
     assert KEY not in result.output
     assert sent == []
@@ -225,7 +225,7 @@ def test_help_states_the_write_is_login_only():
 
     assert result.exit_code == 0
     text = " ".join(result.output.split())
-    assert "project API keys refused" in text
+    assert "API keys refused" in text
     assert "full-scope key" not in text
 
 

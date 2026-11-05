@@ -28,7 +28,7 @@ from key_fixtures import (
     store_key,
 )
 from login_fixtures import LOGIN_TOKEN, login_meta
-from solwyn_cli import auth, project_resolver, runtime
+from solwyn_cli import auth, project_resolver, repo_file, runtime
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.commands import costs as costs_module
@@ -133,15 +133,9 @@ def costs_routes(project_id: str = PROJECT_ID) -> dict[str, Any]:
         ("flag", {"SOLWYN_PROJECT": "env"}, "repo", "cfg", "flag", "cli"),
         (None, {"SOLWYN_PROJECT": "env"}, "repo", "cfg", "env", "environment"),
         (None, {"SOLWYN_PROJECT_ID": "legacy"}, "repo", "cfg", "repo", "repo"),
-        (
-            None,
-            {"SOLWYN_PROJECT_ID": "legacy"},
-            None,
-            "cfg",
-            "legacy",
-            "legacy_environment",
-        ),
-        (None, {}, None, "cfg", "cfg", "config"),
+        # SOLWYN_PROJECT_ID and a config default_project select nothing any more.
+        (None, {"SOLWYN_PROJECT_ID": "legacy"}, None, "cfg", None, "none"),
+        (None, {}, None, "cfg", None, "none"),
         (None, {}, None, None, None, "none"),
         (" \tflag\t ", {}, None, None, "flag", "cli"),
     ],
@@ -162,7 +156,8 @@ def test_selector_precedence_is_flag_then_env_then_repo_file(
     value, chosen, repo_value, error = runtime.project_candidates(
         flag=flag,
         environ=environ,
-        config=Config(default_project=config),
+        # A default_project left in config.toml is ignored (extra field).
+        config=Config.model_validate({"default_project": config} if config else {}),
         cwd=tmp_path,
     )
 
@@ -186,7 +181,7 @@ def test_selector_precedence_is_flag_then_env_then_repo_file(
 def test_repo_file_accepts_one_assignment_quotes_comments_and_blank_lines(
     text: str, value: str
 ) -> None:
-    assert project_resolver.parse_repo_file(text) == value
+    assert repo_file.parse_repo_file(text) == value
 
 
 @pytest.mark.parametrize(
@@ -203,8 +198,8 @@ def test_repo_file_accepts_one_assignment_quotes_comments_and_blank_lines(
     ],
 )
 def test_anything_else_in_the_repo_file_is_refused(text: str) -> None:
-    with pytest.raises(project_resolver.RepoFileError):
-        project_resolver.parse_repo_file(text)
+    with pytest.raises(repo_file.RepoFileError):
+        repo_file.parse_repo_file(text)
 
 
 def test_the_repo_file_is_found_up_to_the_git_root_only(tmp_path: Path) -> None:
@@ -215,8 +210,8 @@ def test_the_repo_file_is_found_up_to_the_git_root_only(tmp_path: Path) -> None:
     (root / ".solwyn.env").write_text('SOLWYN_PROJECT="checkout-bot"\n')
     (tmp_path / ".solwyn.env").write_text('SOLWYN_PROJECT="outside"\n')
 
-    assert project_resolver.read_repo_project(nested) == ("checkout-bot", None)
-    assert project_resolver.read_repo_project(tmp_path) == (None, None)
+    assert repo_file.read_repo_project(nested) == ("checkout-bot", None)
+    assert repo_file.read_repo_project(tmp_path) == (None, None)
 
 
 def test_an_invalid_repo_file_exits_2_when_a_project_is_resolved(

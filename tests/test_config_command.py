@@ -31,25 +31,35 @@ def test_config_group_is_registered_on_real_app(config_path: Path) -> None:
 def test_config_get_set_and_list_stdout_stderr_discipline(
     config_path: Path,
 ) -> None:
-    set_result = runner.invoke(
-        app, ["config", "set", "default_project", "proj_11f6ad8ec52a2984abaafd7c"]
-    )
-    get_result = runner.invoke(app, ["config", "get", "default_project"])
+    set_result = runner.invoke(app, ["config", "set", "format", "json"])
+    get_result = runner.invoke(app, ["config", "get", "format"])
     list_result = runner.invoke(app, ["config", "list"])
 
     assert set_result.exit_code == 0
     assert set_result.stdout == ""
-    assert set_result.stderr == "Set default_project.\n"
+    assert set_result.stderr == "Set format.\n"
     assert get_result.exit_code == 0
-    assert get_result.stdout == "proj_11f6ad8ec52a2984abaafd7c\n"
+    assert get_result.stdout == "json\n"
     assert get_result.stderr == ""
     assert list_result.exit_code == 0
     assert list_result.stdout == (
-        "api_url=https://api.solwyn.ai (default)\ncredential_store=auto\n"
-        "default_project=proj_11f6ad8ec52a2984abaafd7c\n"
-        "format=table\n"
+        "api_url=https://api.solwyn.ai (default)\ncredential_store=auto\nformat=json\n"
     )
     assert list_result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "command", [["set", "default_project", "proj_x"], ["get", "default_project"]]
+)
+def test_the_computer_wide_default_project_is_gone(
+    config_path: Path, command: list[str]
+) -> None:
+    result = runner.invoke(app, ["config", *command])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Invalid configuration key: default_project" in result.stderr
+    assert not config_path.exists()
 
 
 @pytest.mark.parametrize("key", ["unknown", "api_key", "access_token", "refresh_token"])

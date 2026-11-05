@@ -47,7 +47,7 @@ from solwyn_cli.runtime import command_context, output_engine
 
 PLAN_HELP = help_contract(
     endpoint="GET /api/v1/billing/status",
-    auth="login or project key with account context",
+    auth="login or API key with account context",
     exits="0 success; 1 generic/API; 2 usage; 3 auth",
     schema="solwyn.plan.v1",
 )
@@ -250,7 +250,7 @@ def plan(context: typer.Context) -> None:
     "list",
     epilog=help_contract(
         endpoint="GET /api/v1/billing/catalog",
-        auth="login or project key with user context",
+        auth="login or API key with user context",
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.plan.catalog.v1",
     ),

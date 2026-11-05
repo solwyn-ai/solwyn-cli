@@ -387,7 +387,7 @@ async def telemetry_probe():
                     if not default:
                         for arguments in [
                             {},
-                            {"project_id": "fail"},
+                            {"project": "fail"},
                             {"projectid": CANARY},
                             CANARY,
                         ]:

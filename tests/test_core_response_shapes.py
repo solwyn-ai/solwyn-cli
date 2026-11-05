@@ -183,7 +183,7 @@ def test_mcp_list_cost_events_parses_a_complete_core_page(
         monkeypatch,
         "list_cost_events",
         [httpx.Response(200, json=_page(copy.deepcopy(event)))],
-        {"project_id": "proj_be76331b95dfc399cd776d2f"},
+        {"project": "proj_be76331b95dfc399cd776d2f"},
     )
 
     assert not result.is_error, result.structured_content

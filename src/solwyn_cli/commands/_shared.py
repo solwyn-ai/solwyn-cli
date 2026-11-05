@@ -1,6 +1,7 @@
 """Shared command authentication and error dispatch."""
 
 from collections.abc import Callable
+from typing import NoReturn
 
 import typer
 
@@ -87,6 +88,25 @@ def _bind_key(
         credential=credential,
     )
     return selection.credential
+
+
+def exit_project_required(
+    context: typer.Context,
+    *,
+    message: str = "A project is required.",
+    hint: str | None = None,
+) -> NoReturn:
+    """Exit 2: nothing selects a project (or SOLWYN_PROJECT_ID is left over)."""
+    exit_for_resolution(context, project_required(message, hint))
+    raise AssertionError("unreachable")
+
+
+def selected_project(context: typer.Context) -> str:
+    """The project selector this command needs; exits 2 when there is none."""
+    project = command_context(context).project
+    if project is None:
+        exit_project_required(context)
+    return project  # type: ignore[return-value]
 
 
 def command_project(context: typer.Context, credential: ResolvedCredential) -> str:
