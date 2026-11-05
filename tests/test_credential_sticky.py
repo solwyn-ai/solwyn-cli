@@ -204,10 +204,12 @@ def test_a_failed_keychain_write_fails_and_stores_nothing(
     assert not credentials_file.exists()
 
 
-def test_a_wholly_locked_keychain_cannot_confirm_a_refused_write(
+def test_a_wholly_locked_keychain_refuses_before_writing_anything(
     monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
 ) -> None:
-    # Writes and the read that checks the key's item both fail.
+    # Writes and reads of the key's entries all fail. The index is read (and
+    # written) before the key's item, so nothing is attempted, and the message
+    # can truthfully say nothing was stored.
     backend.refuse_writes = True
     backend.fail_get.update({key_item(PROD), key_index(PROD)})
 
@@ -218,12 +220,11 @@ def test_a_wholly_locked_keychain_cannot_confirm_a_refused_write(
     assert result.exit_code == 3
     error = json.loads(result.stderr)
     assert error["code"] == "credential_storage_failed"
-    assert error["message"].startswith("Could not confirm the write to the macOS ")
-    assert "It may or may not have been stored." in error["message"]
-    assert "Run solwyn logout" in error["message"]
-    assert "Nothing was stored" not in result.stderr
+    assert error["message"].startswith("Could not write to the macOS ")
+    assert error["message"].endswith("Nothing was stored.")
     assert error["hint"] == HINT
     assert not credentials_file.exists()
+    assert not any(user.startswith(PROD) for _, user in backend.entries)
     assert KEY not in result.stdout + result.stderr
 
 

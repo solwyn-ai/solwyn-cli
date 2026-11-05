@@ -637,16 +637,16 @@ def resolve(
     env key, or None for the stored key. ``with_key``: ``supplied_key``.
     """
     _repo_error(candidates)
-    # Whichever credential will send the request, a present login (SOLWYN_TOKEN
-    # or the stored one, even under SOLWYN_AUTH=project_key) decides how a
-    # stored key's name becomes an id: through that login's account, never by
-    # matching stored names across accounts.
+    # A read with an env key resolves names through /auth/key and never needs
+    # the login (so SOLWYN_AUTH=project_key still works with a locked
+    # keychain). Every other path that may choose a stored key reads the
+    # present login first (below for reads).
     login = (
         credential
         if isinstance(credential, LoginCredential)
-        else None
-        if purpose == "with_key"
         else auth.current_login(environ, api_url=api_url)
+        if purpose in ("keys_env", "spend", "setup")
+        else None
     )
     reads = _Reads(api_url=api_url, login=login)
     if factory is not None:
@@ -711,6 +711,11 @@ def resolve(
             return ProjectSelection(
                 selector=candidates.selected, source=candidates.source, project_id=None
             )
+        # Whichever credential sends the request, a present login
+        # (SOLWYN_TOKEN or the stored one, even under SOLWYN_AUTH=project_key)
+        # decides how a stored key's name becomes an id: through that login's
+        # account, never by matching stored names across accounts.
+        reads.login = auth.current_login(environ, api_url=api_url)
         return _resolve_stored(candidates, reads, purpose, account_check=False)
     if isinstance(credential, LoginCredential):
         return _resolve_with_login(candidates, reads, purpose)
