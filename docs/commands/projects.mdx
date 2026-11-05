@@ -102,7 +102,7 @@ Usage: solwyn projects delete [OPTIONS] PROJECT_ID
 ```text
 Endpoint: DELETE /api/v1/projects/{id}
 Auth: login (owner or admin)
-Exit codes: 0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
+Exit codes: 0 success; 1 generic/API; 2 usage or confirmation; 3 auth or stored-key cleanup; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-delete.v1 (CLI output after bodyless 204)
 Irreversible: archives the project; keys stop reaching it in the same transaction (a key left with no project is revoked), and the project immediately becomes unavailable.
 Deletes this computer's stored key for the project.

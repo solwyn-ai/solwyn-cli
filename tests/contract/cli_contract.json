@@ -27,7 +27,7 @@
             "-p"
           ],
           "default": null,
-          "help": "Project ID for this invocation.",
+          "help": "Project name or proj_ id for this invocation.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",

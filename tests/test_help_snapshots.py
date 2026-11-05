@@ -611,7 +611,7 @@ HELP_CONTRACTS = {
     ("projects", "delete"): {
         "endpoint": "DELETE /api/v1/projects/{id}",
         "auth": "login (owner or admin)",
-        "exits": "0 success; 1 generic/API or local config cleanup; 2 usage or confirmation; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth or stored-key cleanup; 5 not found",
         "schema": "solwyn.projects-delete.v1 (CLI output after bodyless 204)",
     },
     ("projects", "list"): {
