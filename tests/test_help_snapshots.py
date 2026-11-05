@@ -363,7 +363,7 @@ HELP_CONTRACTS = {
     },
     ("notifications", "set"): {
         "endpoint": "PUT /api/v1/projects/{project}/notifications",
-        "auth": "any; full-scope key for writes",
+        "auth": "owner/admin login (project.write); project API keys refused",
         "exits": "0 success; 1 generic/API or delivery failure; 2 "
         "usage; 3 auth; 5 not found",
         "schema": "solwyn.notifications.v1",

@@ -24,9 +24,13 @@ from solwyn_cli._vendor.notification_wire import (
     Severity,
 )
 from solwyn_cli.approvals import add_retry_note
-from solwyn_cli.auth import AuthError, ProjectKeyCredential, resolve_credential
+from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    required_login,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -205,21 +209,18 @@ def request(
     *,
     body: BaseModel | None = None,
     login: bool = True,
+    login_message: str = "This operation requires a Solwyn login.",
     secrets: tuple[str, ...] = (),
     list_response: bool = False,
     deleted_id: str | None = None,
 ) -> T:
-    credential = required_credential(context, resolve=resolve_credential)
-    if login and isinstance(credential, ProjectKeyCredential):
-        exit_with_error(
-            context,
-            OutputError(
-                code="authentication_required",
-                message="This operation requires user login.",
-                hint="Run solwyn login; mutations require the account owner.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    # Login-only routes never fall back to a project API key: the key is
+    # refused here, before any request, with the same exit 3 as no login.
+    credential = (
+        required_login(context, resolve=resolve_credential, message=login_message)
+        if login
+        else required_credential(context, resolve=resolve_credential)
+    )
     try:
         options: dict[str, Any] = {}
         if body is not None:

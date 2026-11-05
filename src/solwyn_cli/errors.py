@@ -289,7 +289,9 @@ def error_from_response(
             "admin_required",
             "role_required",
         }
-        if code == "read_only_key":
+        if code == "api_key_not_allowed":
+            hint = "Run solwyn login, then retry; project API keys cannot make this change."
+        elif code == "read_only_key":
             hint = "Rotate to a full-scope key with solwyn keys rotate --scope full."
         elif detail == "This endpoint requires JWT authentication":
             hint = "Run solwyn login to authenticate with your user account."
