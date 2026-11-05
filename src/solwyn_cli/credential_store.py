@@ -12,8 +12,9 @@ never sent to production. Three entries exist per origin:
   only ever selected by its exact ``proj_`` id; there is no name lookup here.
 
 The file keeps ``api_keys`` as one object. The keyring keeps one item per key,
-``<origin>/api_key/<project id>``, plus an index item ``<origin>/api_keys``
-listing the project ids, because keyrings cannot enumerate. 0.4.x stored one
+``<origin>/api_key/<project id>``, plus an index listing the project ids,
+because keyrings cannot enumerate: ``<origin>/api_keys`` holds the first 16
+ids, ``<origin>/api_keys/1``, ``/2``, ... the next ones. 0.4.x stored one
 ``sk_proj_`` key per origin (file version 1, keyring item ``<origin>/api_key``);
 those keys stopped working and are dropped, never read.
 
@@ -82,6 +83,9 @@ LEGACY_API_KEY_ENTRY = "api_key"
 ENTRIES = (LOGIN_ENTRY, API_KEYS_ENTRY, PENDING_DEVICE_ENTRY)
 # Entries whose values are JSON documents; the file keeps them as objects.
 JSON_ENTRIES = frozenset({LOGIN_ENTRY, PENDING_DEVICE_ENTRY, API_KEYS_ENTRY})
+# Project ids per keyring index entry: 16 ids are about 500 characters, about
+# 1 KB as UTF-16, under Windows Credential Manager's 2560-byte value limit.
+API_KEY_INDEX_SHARD_SIZE = 16
 # The fields of one stored API key, exactly.
 API_KEY_FIELDS = frozenset({"key", "key_id", "account_id", "project_name", "stored_at"})
 
@@ -935,55 +939,122 @@ class KeyringStore:
         self.delete_raw(f"{origin}/{entry}")
 
     # API keys: one item per project id, plus an index of the ids.
+    #
+    # Invariant: every key item is listed in the index. The index entry is
+    # written before the item and removed only after the item is confirmed
+    # gone, so logout (which can only find items through the index, because
+    # keyrings cannot enumerate) never leaves a key behind and calls it
+    # cleared. The index is sharded so no single entry outgrows a keyring's
+    # value limit (Windows Credential Manager: 2560 bytes, UTF-16).
 
     @staticmethod
     def api_key_username(origin: str, project_id: str) -> str:
         return f"{origin}/api_key/{project_id}"
 
     @staticmethod
-    def api_key_index_username(origin: str) -> str:
-        return f"{origin}/{API_KEYS_ENTRY}"
+    def api_key_index_username(origin: str, shard: int = 0) -> str:
+        base = f"{origin}/{API_KEYS_ENTRY}"
+        return base if shard == 0 else f"{base}/{shard}"
 
-    def api_key_index(self, origin: str) -> list[str]:
-        """The project ids the index lists; a malformed index is an error."""
+    def _index_shard(self, origin: str, shard: int) -> list[str] | None:
         from solwyn_cli._vendor.validation import PROJECT_ID_PATTERN
 
-        raw = self.get_raw(self.api_key_index_username(origin))
+        username = self.api_key_index_username(origin, shard)
+        raw = self.get_raw(username)
         if raw is None:
-            return []
+            return None
         try:
-            index = json.loads(raw)
+            ids = json.loads(raw)
         except ValueError:
-            index = None
-        if not isinstance(index, list) or not all(
-            isinstance(item, str) and PROJECT_ID_PATTERN.fullmatch(item)
-            for item in index
+            ids = None
+        if not isinstance(ids, list) or not all(
+            isinstance(item, str) and PROJECT_ID_PATTERN.fullmatch(item) for item in ids
         ):
             raise StoreUnavailableError(
-                "The system keyring holds an invalid Solwyn API key index "
-                f"({self.api_key_index_username(origin)})."
+                f"The system keyring holds an invalid Solwyn API key index ({username})."
             )
-        return list(dict.fromkeys(index))
+        return ids
+
+    def api_key_index_shards(self, origin: str) -> list[list[str]]:
+        """Every index shard in order; shards are contiguous from 0."""
+        shards: list[list[str]] = []
+        while (ids := self._index_shard(origin, len(shards))) is not None:
+            shards.append(ids)
+        return shards
+
+    def api_key_index(self, origin: str) -> list[str]:
+        """The project ids the index lists; a malformed shard is an error."""
+        return list(
+            dict.fromkeys(
+                item for shard in self.api_key_index_shards(origin) for item in shard
+            )
+        )
+
+    def _write_shards(
+        self, origin: str, before: list[list[str]], after: list[list[str]]
+    ) -> None:
+        """Write the shards that changed, then drop trailing empty ones."""
+        while after and not after[-1]:
+            after = after[:-1]
+        for shard, ids in enumerate(after):
+            if shard >= len(before) or before[shard] != ids:
+                self.set_raw(
+                    self.api_key_index_username(origin, shard), json.dumps(ids)
+                )
+        for shard in range(len(before) - 1, len(after) - 1, -1):
+            self.delete_raw(self.api_key_index_username(origin, shard))
+
+    def _index_add(self, origin: str, project_id: str) -> None:
+        before = self.api_key_index_shards(origin)
+        after = [list(ids) for ids in before]
+        for ids in after:
+            if len(ids) < API_KEY_INDEX_SHARD_SIZE:
+                ids.append(project_id)
+                break
+        else:
+            after.append([project_id])
+        self._write_shards(origin, before, after)
+
+    def _index_remove(self, origin: str, project_id: str) -> None:
+        before = self.api_key_index_shards(origin)
+        after = [[item for item in ids if item != project_id] for ids in before]
+        if after != before:
+            self._write_shards(origin, before, after)
 
     def get_api_key(self, origin: str, project_id: str) -> str | None:
         return self.get_raw(self.api_key_username(origin, project_id))
 
     def set_api_key(self, origin: str, project_id: str, value: str) -> None:
-        """Write the item, then the index; each write is read back."""
-        self.set_raw(self.api_key_username(origin, project_id), value)
-        index = self.api_key_index(origin)
-        if project_id not in index:
-            self.set_raw(
-                self.api_key_index_username(origin), json.dumps([*index, project_id])
-            )
+        """List the id first, then write the item (each write read back).
+
+        A new item that cannot be written is rolled back: the item is deleted
+        (a failed write is not proof it did not land) and only then dropped
+        from the index. If the rollback cannot be confirmed the id stays
+        listed, so logout still finds and removes the key, and the error says
+        the key may have been stored.
+        """
+        username = self.api_key_username(origin, project_id)
+        listed = project_id in self.api_key_index(origin)
+        existed = listed or self.get_raw(username) is not None
+        if not listed:
+            self._index_add(origin, project_id)
+        try:
+            self.set_raw(username, value)
+        except StoreUnavailableError as error:
+            if existed or isinstance(error, KeyringTimeoutError):
+                # A replaced key stays listed; a timed-out write may still land.
+                raise
+            try:
+                self.delete_raw(username)
+                self._index_remove(origin, project_id)
+            except StoreUnavailableError:
+                raise WriteUnconfirmedError(
+                    f"{error} The key may have been stored; it stays listed so "
+                    "solwyn logout removes it."
+                ) from None
+            raise
 
     def delete_api_key(self, origin: str, project_id: str) -> None:
-        """Delete the item, then drop it from the index (the index last)."""
+        """Delete the item (confirmed by a read), then drop it from the index."""
         self.delete_raw(self.api_key_username(origin, project_id))
-        index = self.api_key_index(origin)
-        if project_id in index:
-            remaining = [item for item in index if item != project_id]
-            if remaining:
-                self.set_raw(self.api_key_index_username(origin), json.dumps(remaining))
-            else:
-                self.delete_raw(self.api_key_index_username(origin))
+        self._index_remove(origin, project_id)

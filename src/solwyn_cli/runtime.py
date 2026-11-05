@@ -211,6 +211,18 @@ def resolve_project(
     return selection
 
 
+def check_setup(context: typer.Context, credential: "ResolvedCredential") -> str | None:
+    """Run the shared setup checks (repo file, mismatch, login account) for a
+    command that creates projects or keys or writes files; returns the login's
+    account id when a login is used."""
+    from solwyn_cli import project_resolver
+
+    resolved = command_context(context)
+    return project_resolver.check_setup(
+        candidates_of(resolved), api_url=resolved.api_url, credential=credential
+    )
+
+
 def validate_output_intent(
     *,
     output_format: str | None,

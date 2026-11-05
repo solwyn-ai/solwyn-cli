@@ -52,7 +52,7 @@ PLAN_HELP = help_contract(
     schema="solwyn.plan.v1",
 )
 
-_CTA_PATH = "/billing"
+_CTA_PATH = "/settings/billing"
 
 
 class _PlanData(BaseModel):

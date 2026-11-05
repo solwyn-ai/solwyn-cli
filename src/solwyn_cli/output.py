@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from solwyn_cli.errors import ApiError, redact_secrets
+from solwyn_cli.errors import ApiError, redact_secrets, redact_secrets_except
 
 
 _COMMAND_SCHEMA = re.compile(
@@ -215,18 +215,24 @@ class OutputEngine:
         table: TableData | None = None,
         one_time_secret: OneTimeSecretPanel | None = None,
         reveal: Mapping[str, SecretStr] | None = None,
+        exempt: SecretStr | None = None,
     ) -> None:
         """Write one schema-bearing JSON object or its explicit human table.
 
-        Everything is redacted except ``reveal`` (top-level JSON fields) and
-        the one-time panel: the deliberate, single display of a new key.
+        Everything is redacted except one value, ``exempt`` (by default the
+        one-time panel's): the deliberate, single display of a newly minted
+        key. ``reveal`` fields (top-level JSON) and the panel footer carry it,
+        and any other secret inside them is still redacted.
         """
         if _COMMAND_SCHEMA.fullmatch(schema) is None:
             raise OutputUsageError("Invalid command schema.")
+        if exempt is None and one_time_secret is not None:
+            exempt = one_time_secret.value
+        keep = "" if exempt is None else exempt.get_secret_value()
         payload = redact_secrets(_success_data(data))
         if self.output_format is OutputFormat.JSON:
             for name, secret in (reveal or {}).items():
-                payload[name] = secret.get_secret_value()
+                payload[name] = redact_secrets_except(secret.get_secret_value(), keep)
             self._write_json({"schema": schema, **payload}, error=False)
             return
         if table is None:
@@ -251,7 +257,11 @@ class OutputEngine:
             console.print(
                 Panel(
                     Text(
-                        _controls_neutralized(one_time_secret.value.get_secret_value())
+                        _controls_neutralized(
+                            redact_secrets_except(
+                                one_time_secret.value.get_secret_value(), keep
+                            )
+                        )
                     ),
                     title=Text(_terminal_safe(one_time_secret.title)),
                     expand=False,
@@ -262,7 +272,12 @@ class OutputEngine:
                 # Each line is made safe on its own, so the line breaks stay.
                 lines = one_time_secret.footer.get_secret_value().split("\n")
                 console.print(
-                    Text("\n".join(_controls_neutralized(line) for line in lines)),
+                    Text(
+                        "\n".join(
+                            _controls_neutralized(redact_secrets_except(line, keep))
+                            for line in lines
+                        )
+                    ),
                     soft_wrap=True,
                 )
 

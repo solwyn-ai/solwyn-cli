@@ -512,6 +512,88 @@ def test_keys_rotate_replaces_the_stored_copy_and_prints_no_secret(
     assert "Replaced the stored key on this computer" in result.stderr
 
 
+def _store_fails_after_the_rotation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The keychain stops answering once Core has rotated (a lock after the
+    browser approval, say): every read and write of stored keys fails."""
+
+    class Locking(FakeClient):
+        def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+            response = super().request(method, path, **kwargs)
+
+            def locked(*args: Any, **kwargs: Any) -> Any:
+                raise auth.CredentialStorageError("Synthetic keychain locked.")
+
+            monkeypatch.setattr(auth, "stored_api_keys", locked)
+            monkeypatch.setattr(auth, "store_api_key", locked)
+            return response
+
+    monkeypatch.setattr(keys_module, "SolwynClient", Locking)
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_keys_rotate_still_shows_the_replacement_when_the_store_locks_after_core(
+    monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    _login(monkeypatch)
+    _store_fails_after_the_rotation(monkeypatch)
+    FakeClient.responses = [httpx.Response(200, json=ROTATED)]
+
+    result = runner.invoke(
+        app,
+        [
+            *_options(output_format),
+            "keys",
+            "rotate",
+            KEY_ID,
+            "--grace-seconds",
+            "0",
+            "--yes",
+        ],
+        env={"COLUMNS": "200"},
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert NEW_KEY in result.stdout
+    if output_format == "json":
+        assert json.loads(result.stdout)["key"] == NEW_KEY
+
+
+def test_keys_rotate_shows_the_replacement_when_the_stored_copy_cannot_be_replaced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _login(monkeypatch)
+    store_key()
+    _store_fails_after_the_rotation(monkeypatch)
+    FakeClient.responses = [httpx.Response(200, json=ROTATED)]
+
+    result = runner.invoke(
+        app, ["--json", "keys", "rotate", KEY_ID, "--grace-seconds", "0", "--yes"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["key"] == NEW_KEY
+    assert payload["stored"] is False
+    assert "Could not replace the stored key for checkout-bot" in result.stderr
+
+
+def test_keys_rotate_reads_local_holdings_before_asking_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _login(monkeypatch)
+
+    def locked(*args: Any, **kwargs: Any) -> Any:
+        raise auth.CredentialStorageError("Synthetic keychain locked.")
+
+    monkeypatch.setattr(auth, "stored_api_keys", locked)
+
+    result = runner.invoke(app, ["--json", "keys", "rotate", KEY_ID, "--yes"])
+
+    assert result.exit_code == 3
+    assert _last_error(result)["code"] == "credential_storage_failed"
+    assert FakeClient.instances == []
+
+
 def test_keys_rotate_projects_changed_says_to_run_it_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

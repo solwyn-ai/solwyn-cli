@@ -114,7 +114,7 @@ UNADOPTED_OPTIONAL_FIELDS = {
     "AccountUpdateRequest": ("alert_email_override",),
     # Declined for 14d-1: removing shared keys while switching to hard_deny is
     # a deliberate, approved budget change the CLI does not offer yet.
-    "BudgetUpdateRequest": ("shared_keys_action",),
+    "BudgetUpdateRequest": ("shared_keys_action", "shared_keys_expected"),
     "IngestMetadataEvent": (
         # SDK-internal velocity observation and aggregate receipt accounting.
         "velocity_flags",

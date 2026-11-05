@@ -1271,9 +1271,14 @@ def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
     failed = False
     if API_KEYS_ENTRY not in kept:
         # Every key item the index lists, before the index itself (below).
+        # Every key item is listed (see KeyringStore.set_api_key), so deleting
+        # what the index lists, each delete confirmed by a read, and then
+        # finding the index empty is proof no key of this API is left.
         try:
             for project_id in keyring_store.api_key_index(origin):
                 keyring_store.delete_api_key(origin, project_id)
+            if keyring_store.api_key_index(origin):
+                raise StoreUnavailableError("API keys are still listed.")
         except StoreUnavailableError:
             failed = True
             kept.append(API_KEYS_ENTRY)

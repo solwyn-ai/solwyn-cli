@@ -216,6 +216,34 @@ def http_read(
         )
 
 
+def _read_project_id(
+    runtime: CommandContext, credential: ResolvedCredential, context: KeyContext
+) -> str | None:
+    """The proj_ id the project read uses: URLs carry ids, never names.
+
+    A key's id is the one /auth/key just answered for the selector; a login
+    turns a name into an id through its projects. Unresolvable names stay as
+    given, so the read fails and says so.
+    """
+    from solwyn_cli._vendor.validation import canonical_project_id, is_project_id
+    from solwyn_cli import project_resolver
+
+    selected = runtime.project
+    if selected is None or is_project_id(selected):
+        return None if selected is None else canonical_project_id(selected)
+    if isinstance(credential, ApiKeyCredential):
+        return context.project_id or selected
+    try:
+        return project_resolver.resolve(
+            project_resolver.Candidates(selected=selected, source="cli", repo=None),
+            purpose="read",
+            api_url=runtime.api_url,
+            credential=credential,
+        ).project_id
+    except Exception:  # noqa: BLE001 - a diagnostic reports, never raises.
+        return selected
+
+
 def diagnose(
     runtime: CommandContext, executable: Path | None, profile: Profile
 ) -> McpDoctorData:
@@ -243,7 +271,11 @@ def diagnose(
         try:
             with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
                 context = key_context(client, credential)
-                read = http_read(client, credential, runtime.project)
+                read = http_read(
+                    client,
+                    credential,
+                    _read_project_id(runtime, credential, context),
+                )
         except Exception:
             read = Check(
                 status="failed",

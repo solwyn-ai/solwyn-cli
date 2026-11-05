@@ -234,11 +234,19 @@ def test_file_mode_never_migrates_the_keyring(
 
 
 class Recording:
-    """An in-memory keyring that records every call in order."""
+    """An in-memory keyring that records every call in order.
+
+    ``reject`` makes writes to usernames ending with one of its suffixes fail;
+    ``limit`` emulates a value-size bound (bytes of UTF-16, as python-keyring
+    writes on Windows).
+    """
 
     def __init__(self) -> None:
         self.entries: dict[tuple[str, str], str] = {}
         self.calls: list[tuple[str, str]] = []
+        self.reject: tuple[str, ...] = ()
+        self.reject_delete: tuple[str, ...] = ()
+        self.limit: int | None = None
 
     def get_password(self, service: str, username: str) -> str | None:
         self.calls.append(("get", username))
@@ -246,12 +254,18 @@ class Recording:
 
     def set_password(self, service: str, username: str, value: str) -> None:
         self.calls.append(("set", username))
+        if self.reject and username.endswith(self.reject):
+            raise RuntimeError("Synthetic write rejected")
+        if self.limit is not None and len(value.encode("utf-16-le")) > self.limit:
+            raise RuntimeError("Synthetic 2560-byte CredentialBlob limit")
         self.entries[(service, username)] = value
 
     def delete_password(self, service: str, username: str) -> None:
         from keyring.errors import PasswordDeleteError
 
         self.calls.append(("delete", username))
+        if self.reject_delete and username.endswith(self.reject_delete):
+            raise RuntimeError("Synthetic delete rejected")
         if (service, username) not in self.entries:
             raise PasswordDeleteError(username)
         del self.entries[(service, username)]
@@ -265,14 +279,15 @@ def keychain(monkeypatch: pytest.MonkeyPatch) -> Recording:
     return backend
 
 
-def test_a_key_is_written_item_first_then_the_index_each_read_back(
+def test_a_key_is_listed_first_then_written_each_read_back(
     keychain: Recording,
 ) -> None:
     stored = store_key(api_url=PROD)
 
     item, index = key_item(PROD), key_index(PROD)
     writes = [user for op, user in keychain.calls if op == "set"]
-    assert writes == [item, index]
+    # The index first: an item is never left where logout cannot find it.
+    assert writes == [index, item]
     # Each write is followed by a read of the same entry.
     for name in (item, index):
         position = keychain.calls.index(("set", name))
@@ -463,3 +478,126 @@ def test_a_file_with_a_malformed_stored_key_is_refused_whole(
 
     with pytest.raises(MalformedFileError):
         FileStore().load()
+
+
+# --- Review round 1: a key is never stored where logout cannot see it -------
+
+
+def _key_usernames(keychain: Recording, origin: str = PROD) -> list[str]:
+    return sorted(user for _, user in keychain.entries if user.startswith(origin))
+
+
+def test_a_rejected_index_write_stores_nothing_and_logout_tells_the_truth(
+    keychain: Recording,
+) -> None:
+    keychain.reject = ("/api_keys",)
+
+    with pytest.raises(auth.CredentialStorageError) as caught:
+        store_key(api_url=PROD)
+
+    assert "Nothing was stored" in str(caught.value)
+    assert _key_usernames(keychain) == []
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is None
+    keychain.reject = ()
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+    assert all(store.cleared for store in report.stores if store.checked)
+    assert _key_usernames(keychain) == []
+
+
+def test_a_rejected_item_write_is_rolled_back_from_the_index(
+    keychain: Recording,
+) -> None:
+    keychain.reject = (f"/api_key/{PROJECT_ID}",)
+
+    with pytest.raises(auth.CredentialStorageError) as caught:
+        store_key(api_url=PROD)
+
+    assert "Nothing was stored" in str(caught.value)
+    assert _key_usernames(keychain) == []
+    assert auth.stored_api_keys(api_url=PROD) == {}
+
+
+def test_an_unconfirmed_rollback_keeps_the_key_listed_so_logout_removes_it(
+    keychain: Recording, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = key_item(PROD)
+    original = keychain.set_password
+
+    def lands_then_fails(service: str, username: str, value: str) -> None:
+        original(service, username, value)
+        if username == item:
+            raise RuntimeError("Synthetic label read failed after the write")
+
+    monkeypatch.setattr(keychain, "set_password", lands_then_fails)
+    # The rollback delete is refused, so the key may be stored.
+    keychain.reject_delete = (f"/api_key/{PROJECT_ID}",)
+
+    store_key(api_url=PROD)  # The value landed and reads back: stored.
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is not None
+    assert json.loads(keychain.entries[(SERVICE, key_index(PROD))]) == [PROJECT_ID]
+
+    keychain.reject_delete = ()
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+    assert all(store.cleared for store in report.stores if store.checked)
+    assert _key_usernames(keychain) == []
+
+
+def test_a_failed_delete_on_logout_is_reported_kept_not_cleared(
+    keychain: Recording,
+) -> None:
+    store_key(api_url=PROD)
+    keychain.reject_delete = (f"/api_key/{PROJECT_ID}",)
+
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+
+    keyring = next(store for store in report.stores if store.kind == "keyring")
+    assert not keyring.cleared
+    assert auth.API_KEYS_ENTRY in keyring.kept
+    assert (SERVICE, key_index(PROD)) in keychain.entries
+
+
+def test_the_index_stays_under_the_windows_value_limit_for_many_projects(
+    keychain: Recording,
+) -> None:
+    """Emulates Windows Credential Manager's 2560-byte CredentialBlob (UTF-16).
+
+    Before sharding, the 39th project's index write failed. Not a native
+    Windows run: python-keyring's WinVault backend encodes values as UTF-16.
+    """
+    keychain.limit = 2560
+    ids = [f"proj_{number:024x}" for number in range(120)]
+    for number, project_id in enumerate(ids):
+        store_key(project_id=project_id, project_name=f"project-{number}", api_url=PROD)
+
+    assert set(auth.stored_api_keys(api_url=PROD)) == set(ids)
+    index_items = [user for user in _key_usernames(keychain) if "/api_keys" in user]
+    assert len(index_items) == 8
+    for (service, user), value in keychain.entries.items():
+        assert len(value.encode("utf-16-le")) <= 2560, user
+
+    for project_id in ids[:20]:
+        auth.delete_stored_api_keys((project_id,), api_url=PROD)
+    assert set(auth.stored_api_keys(api_url=PROD)) == set(ids[20:])
+
+    report = auth.logout_everywhere(lambda token: True, api_url=PROD)
+    assert all(store.cleared for store in report.stores if store.checked)
+    assert _key_usernames(keychain) == []
+
+
+def test_removing_keys_drops_only_trailing_empty_index_shards(
+    keychain: Recording,
+) -> None:
+    ids = [f"proj_{number:024x}" for number in range(40)]
+    for project_id in ids:
+        store_key(project_id=project_id, api_url=PROD)
+    assert (SERVICE, f"{key_index(PROD)}/2") in keychain.entries
+
+    # Emptying the middle shard keeps it, so the shards stay contiguous.
+    auth.delete_stored_api_keys(tuple(ids[16:32]), api_url=PROD)
+    assert json.loads(keychain.entries[(SERVICE, f"{key_index(PROD)}/1")]) == []
+    assert set(auth.stored_api_keys(api_url=PROD)) == set(ids[:16] + ids[32:])
+
+    auth.delete_stored_api_keys(tuple(ids[32:]), api_url=PROD)
+    assert (SERVICE, f"{key_index(PROD)}/2") not in keychain.entries
+    assert (SERVICE, f"{key_index(PROD)}/1") not in keychain.entries
+    assert set(auth.stored_api_keys(api_url=PROD)) == set(ids[:16])

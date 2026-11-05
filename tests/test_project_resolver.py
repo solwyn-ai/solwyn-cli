@@ -845,3 +845,90 @@ def test_resolution_errors_never_echo_a_key(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert KEY not in result.output
     assert "[REDACTED]" in result.stderr
+
+
+# --- Review round 1 regressions -----------------------------------------------------
+
+
+def test_a_forced_key_read_resolves_names_through_the_current_logins_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SOLWYN_TOKEN for account A, a stored login and key for account B with the
+    same project name, SOLWYN_AUTH=project_key: never pick B's key by name."""
+    store_login(account_id=OTHER_ACCOUNT_ID)
+    store_key(project_id=OTHER_PROJECT_ID, account_id=OTHER_ACCOUNT_ID)
+    monkeypatch.setenv("SOLWYN_TOKEN", ENV_TOKEN)
+    monkeypatch.setenv("SOLWYN_AUTH", "project_key")
+    requests = serve(
+        monkeypatch,
+        core(
+            {
+                "GET /api/v1/accounts/me": (
+                    200,
+                    {"id": ACCOUNT_ID, "display_name": "A"},
+                ),
+                "GET /api/v1/projects": (
+                    200,
+                    [{"id": PROJECT_ID, "name": "checkout-bot"}],
+                ),
+                **costs_routes(OTHER_PROJECT_ID),
+            }
+        ),
+    )
+
+    result = runner.invoke(app, ["--json", "--project", "checkout-bot", "costs"])
+
+    assert result.exit_code == 3
+    assert json.loads(result.stderr)["code"] == "api_key_not_stored"
+    assert paths(requests) == ["GET /api/v1/accounts/me", "GET /api/v1/projects"]
+    assert f"/projects/{OTHER_PROJECT_ID}/" not in " ".join(paths(requests))
+
+
+@pytest.mark.parametrize("credential", ["key", "login"])
+def test_doctor_mcp_reads_the_project_by_its_resolved_id(
+    monkeypatch: pytest.MonkeyPatch, credential: str
+) -> None:
+    from solwyn_cli.commands import mcp_doctor
+
+    if credential == "key":
+        monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+    else:
+        store_login()
+    requests: list[httpx.Request] = []
+    budget_path = f"/api/v1/projects/{PROJECT_ID}/budget"
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/v1/auth/key":
+            return httpx.Response(200, json=auth_key_body())
+        if request.url.path == "/api/v1/projects":
+            return httpx.Response(
+                200, json=[{"id": PROJECT_ID, "name": "checkout-bot"}]
+            )
+        if request.url.path == budget_path:
+            return httpx.Response(
+                200, json={**BUDGET_RESPONSE, "project_id": PROJECT_ID}
+            )
+        return httpx.Response(404, json={"detail": "Project not found"})
+
+    client = functools.partial(SolwynClient, transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(mcp_doctor, "SolwynClient", client)
+    monkeypatch.setattr(project_resolver, "_client_factory", lambda: client)
+
+    def no_child(*args: object, **kwargs: object) -> None:
+        raise ValueError("no child process needed")
+
+    monkeypatch.setattr(mcp_doctor, "resolve_executable", no_child)
+    context = runtime.resolve_command_context(
+        api_url=None,
+        project="checkout-bot",
+        output_format=None,
+        json_flag=False,
+        no_color=True,
+    )
+
+    diagnosed = mcp_doctor.diagnose(context, None, "read")
+
+    assert diagnosed.http_read.status == "ok", diagnosed.http_read
+    assert f"GET {budget_path}" in paths(requests)
+    assert "GET /api/v1/projects/checkout-bot/budget" not in paths(requests)

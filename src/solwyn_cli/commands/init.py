@@ -52,7 +52,12 @@ from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData, _terminal_safe
-from solwyn_cli.runtime import command_context, output_engine, resolve_project
+from solwyn_cli.runtime import (
+    check_setup,
+    command_context,
+    output_engine,
+    resolve_project,
+)
 
 
 _DEFAULT_API_URL = Config().api_url
@@ -223,6 +228,16 @@ def _create_project(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    login = client.current_credential
+    try:
+        # The account the stored key records is known before the project is.
+        account_id = (
+            _login_account_id(command_context(context).api_url, login)
+            if isinstance(login, LoginCredential)
+            else ""
+        )
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
     try:
         request = ProjectCreateRequest(
             name=name,
@@ -234,16 +249,11 @@ def _create_project(
             client=client,
             request=request,
         )
-        login = client.current_credential
         stored_credential = auth.store_api_key(
             project_id=created.id,
             key=created.key.get_secret_value(),
             key_id=created.key_id,
-            account_id=(
-                _login_account_id(command_context(context).api_url, login)
-                if isinstance(login, LoginCredential)
-                else ""
-            ),
+            account_id=account_id,
             project_name=created.name,
             api_url=command_context(context).api_url,
         )
@@ -709,6 +719,12 @@ def init(
                 semantic=ErrorSemantic.USAGE,
             )
     credential = _resolve_auth(context)
+    # Before any project, key, config or agent file is created: the repo file
+    # agrees with --project and SOLWYN_PROJECT, and a login's account is known.
+    try:
+        check_setup(context, credential)
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
     project_id, credential = _resolve_project(context, credential, run_cap)
     runtime = command_context(context)
     config_path = _persist_config(context, runtime.api_url, project_id)

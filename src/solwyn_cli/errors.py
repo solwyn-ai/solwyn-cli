@@ -34,6 +34,17 @@ def redact_secrets(value: Any) -> Any:
     return value
 
 
+def redact_secrets_except(value: str, keep: str) -> str:
+    """Redact every secret in ``value`` except the exact ``keep`` value.
+
+    The one-time display of a newly minted key: that key, and only it, is
+    shown; any other token next to it (a server echo, a selector) is redacted.
+    """
+    if not keep:
+        return _SECRET_TOKEN.sub(REDACTED, value)
+    return keep.join(_SECRET_TOKEN.sub(REDACTED, part) for part in value.split(keep))
+
+
 SERVICE_BUSY_HINT = "Service is busy; retry in a moment."
 WRITE_BUSY_HINT = (
     "Service is busy. This write's outcome may be unknown; inspect known state "
@@ -60,6 +71,7 @@ _INGEST_UNACCEPTED_DETAILS = frozenset(
     }
 )
 NO_ACCOUNT_URL = "https://app.solwyn.ai/no-account"
+DASHBOARD_KEYS_URL = "https://app.solwyn.ai/settings/keys"
 MEMBERSHIP_RECOVERY_HINT = (
     f"Create a personal account at {NO_ACCOUNT_URL}, then run solwyn login."
 )
@@ -278,6 +290,14 @@ API_KEY_HINTS = {
         "then rotate again."
     ),
     "key_projects_changed": "Run the same solwyn keys rotate command again.",
+    # Changing who may spend from a project is a person's decision in the
+    # dashboard; this CLI never removes a project from shared keys for you.
+    "shared_keys_reach_project": (
+        "Keys that also hold other projects can spend from this one. Review "
+        "them in the dashboard, on the project's Budget & Alerts page or in "
+        f"Settings > API keys ({DASHBOARD_KEYS_URL}), then retry. The detail "
+        "lists the keys."
+    ),
 }
 _CROSS_PROJECT_KEY_DETAILS = frozenset(
     {

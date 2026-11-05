@@ -24,6 +24,11 @@ purpose                   key for spend, and how a name becomes an id
 ``setup``                 the login: ``/api/v1/projects``.
 ========================  ===================================================
 
+A present login (``SOLWYN_TOKEN`` or the stored one) decides how a stored
+key's name becomes an id, whichever credential sends the request, even under
+``SOLWYN_AUTH=project_key``: through that login's projects, never by matching
+stored names across accounts. Local name matching applies only with no login.
+
 Whenever a login is present and a name is resolved or a key is created or
 stored, the login's account must be known first: a stored login records it;
 ``SOLWYN_TOKEN`` is asked through ``GET /api/v1/accounts/me``, and if that
@@ -585,6 +590,36 @@ def _resolve_with_login(
     )
 
 
+def check_setup(
+    candidates: Candidates,
+    *,
+    api_url: str,
+    credential: auth.ResolvedCredential,
+) -> str | None:
+    """The checks a setup command passes before it creates or writes anything.
+
+    The repo file must be valid and must not disagree with ``--project`` or
+    ``SOLWYN_PROJECT`` (compared by id through the credential, else as
+    case-folded text): ``project_mismatch``. With a login, its account must be
+    known (``account_unresolved`` otherwise); its id is returned for the keys
+    the command will store.
+    """
+    _repo_error(candidates)
+    login = credential if isinstance(credential, LoginCredential) else None
+    reads = _Reads(api_url=api_url, login=login)
+    if login is not None:
+        reads.account()
+        method = _Method(lambda value: _name_in_login(reads, value).id)
+    elif isinstance(credential, ApiKeyCredential):
+        method = _Method(
+            lambda value: reads.auth_key(credential, trim_selector(value)).project_id
+        )
+    else:
+        method = _Method(lambda value: trim_selector(value))
+    _apply_mismatch(candidates, method, None, "setup")
+    return None if reads._account is None else reads._account[0]
+
+
 def resolve(
     candidates: Candidates,
     *,
@@ -602,12 +637,16 @@ def resolve(
     env key, or None for the stored key. ``with_key``: ``supplied_key``.
     """
     _repo_error(candidates)
+    # Whichever credential will send the request, a present login (SOLWYN_TOKEN
+    # or the stored one, even under SOLWYN_AUTH=project_key) decides how a
+    # stored key's name becomes an id: through that login's account, never by
+    # matching stored names across accounts.
     login = (
         credential
         if isinstance(credential, LoginCredential)
-        else auth.current_login(environ, api_url=api_url)
-        if purpose in ("keys_env", "spend", "setup")
         else None
+        if purpose == "with_key"
+        else auth.current_login(environ, api_url=api_url)
     )
     reads = _Reads(api_url=api_url, login=login)
     if factory is not None:

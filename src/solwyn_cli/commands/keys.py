@@ -43,7 +43,7 @@ from solwyn_cli.commands._shared import (
     required_login,
 )
 from solwyn_cli.config import DEFAULT_API_URL
-from solwyn_cli.errors import ApiError
+from solwyn_cli.errors import DASHBOARD_KEYS_URL, ApiError, redact_secrets_except
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData, _terminal_safe
@@ -54,8 +54,7 @@ from solwyn_cli.project_resolver import (
 )
 from solwyn_cli.runtime import command_context, output_engine, resolve_project
 
-DASHBOARD_URL = "https://app.solwyn.ai"
-KEYS_PAGE = f"{DASHBOARD_URL}/settings/keys"
+KEYS_PAGE = DASHBOARD_KEYS_URL
 
 app = typer.Typer(
     help="List, create, rotate and revoke API keys, and hand a stored key to an SDK.",
@@ -634,6 +633,13 @@ def rotate_key(
     check_confirmation(context, yes=yes, effect=effect)
     legacy_keys_note(context)
     credential = _login(context, "rotate API keys")
+    # Read what this computer holds before Core rotates: afterwards nothing
+    # may stop the replacement from being stored or shown.
+    holdings = {
+        project_id: entry
+        for project_id, entry in _stored_keys(context).items()
+        if entry.key_id == validated
+    }
     confirm_effects(context, yes=yes, effect=effect)
     runtime = command_context(context)
     try:
@@ -654,12 +660,9 @@ def rotate_key(
     except (ValidationError, ValueError, TypeError):
         _invalid_response(context)
 
-    stored = _stored_keys(context)
     names = {project.id: project.name for project in rotated.projects}
     replaced: list[str] = []
-    for project_id, entry in stored.items():
-        if entry.key_id != validated:
-            continue
+    for project_id, entry in holdings.items():
         try:
             auth.store_api_key(
                 project_id=project_id,
@@ -669,9 +672,14 @@ def rotate_key(
                 project_name=names.get(project_id, entry.project_name),
                 api_url=runtime.api_url,
             )
-        except AuthError as error:
-            # The server already rotated: the replacement must not be lost.
-            _note(f"Could not replace the stored key for {entry.project_name}: {error}")
+        except Exception as error:  # noqa: BLE001 - the replacement must not be lost.
+            # Core already rotated: show the replacement once instead (below).
+            reason = str(error) if isinstance(error, AuthError) else "the store failed"
+            _note(
+                f"Could not replace the stored key for {entry.project_name}: "
+                f"{reason} The replacement is shown once below; store it again "
+                "with solwyn login --with-key."
+            )
             continue
         replaced.append(project_id)
     data = _KeyRotateData(
@@ -692,9 +700,7 @@ def rotate_key(
             ("Stored", ", ".join(sorted(replaced)) or "no"),
         )
     )
-    if replaced and len(replaced) == sum(
-        1 for entry in stored.values() if entry.key_id == validated
-    ):
+    if replaced and len(replaced) == len(holdings):
         _note(
             "Replaced the stored key on this computer; run solwyn keys env to "
             "hand it to an SDK."
@@ -749,6 +755,13 @@ def revoke_key(
     check_confirmation(context, yes=yes, effect=effect)
     legacy_keys_note(context)
     credential = _login(context, "revoke API keys")
+    removed = tuple(
+        sorted(
+            project_id
+            for project_id, entry in _stored_keys(context).items()
+            if entry.key_id == validated
+        )
+    )
     confirm_effects(context, yes=yes, effect=effect)
     runtime = command_context(context)
     try:
@@ -765,14 +778,21 @@ def revoke_key(
     except (ValidationError, ValueError, TypeError):
         _invalid_response(context)
 
-    stored = _stored_keys(context)
-    removed = tuple(
-        sorted(pid for pid, entry in stored.items() if entry.key_id == validated)
-    )
     try:
         auth.delete_stored_api_keys(removed, runtime.api_url)
     except AuthError as error:
-        _storage_failure(context, error)
+        exit_with_error(
+            context,
+            OutputError(
+                code="credential_storage_failed",
+                message=(
+                    f"Key {validated} was revoked, but its stored copies could "
+                    f"not be deleted: {error}"
+                ),
+                hint=error.hint or "Run solwyn logout to clear this API's stored keys.",
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
     data = _KeyRevokeData(key_id=validated, removed_stored_projects=list(removed))
     output_engine(context).write_success(
         schema="solwyn.keys-revoke.v1",
@@ -963,6 +983,10 @@ def env_key(
                 ),
             ),
             reveal={"export": SecretStr(line)},
+            exempt=credential.api_key,
         )
         return
+    # The stored key is the one value shown; the selector is redacted like
+    # any other text if it ever holds a secret.
+    line = redact_secrets_except(line, credential.bearer_value())
     typer.echo(line)

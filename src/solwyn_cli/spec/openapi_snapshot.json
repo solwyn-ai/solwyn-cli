@@ -13307,7 +13307,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -16203,6 +16203,24 @@
             ],
             "title": "Shared Keys Action",
             "description": "Only read when mode changes from alert_only to hard_deny: 'remove' takes this project off every live key that also holds another project."
+          },
+          "shared_keys_expected": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared Keys Expected",
+            "description": "Required with shared_keys_action 'remove': the ids of the shared keys the person confirmed removing this project from (the keys a 409 shared_keys_reach_project listed). Only these keys are ever removed: if another key shares the project when the change is applied, it is refused with 409 shared_keys_reach_project and the current list, and nothing is removed. A listed key that no longer shares it is left alone."
           }
         },
         "additionalProperties": false,
@@ -21895,6 +21913,24 @@
             ],
             "title": "Shared Keys Action",
             "description": "With dedicated_keys_only true: 'remove' takes this project off every live key that also holds another project. Without it, such keys answer 409 shared_keys_reach_project."
+          },
+          "shared_keys_expected": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared Keys Expected",
+            "description": "Required with shared_keys_action 'remove': the ids of the shared keys the person confirmed removing this project from (the keys a 409 shared_keys_reach_project listed). Only these keys are ever removed: if another key shares the project when the change is applied, it is refused with 409 shared_keys_reach_project and the current list, and nothing is removed. A listed key that no longer shares it is left alone."
           }
         },
         "additionalProperties": false,
@@ -21927,7 +21963,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -22287,7 +22323,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -25041,7 +25077,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -25516,5 +25552,5 @@
     }
   },
   "x-solwyn-snapshot-date": "2026-11-05",
-  "x-solwyn-core-ref": "7bfb5257ff64d33551adf99eede4550f3580e79f"
+  "x-solwyn-core-ref": "ac5a5df31b011d932bfb28f4e2fc2676e82cc95f"
 }

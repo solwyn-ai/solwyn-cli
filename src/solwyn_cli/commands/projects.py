@@ -60,7 +60,7 @@ from solwyn_cli.output import (
     TableData,
     _terminal_safe,
 )
-from solwyn_cli.runtime import command_context, output_engine
+from solwyn_cli.runtime import check_setup, command_context, output_engine
 
 
 app = typer.Typer(
@@ -405,13 +405,13 @@ def create_project(
         legacy_keys_note(context)
     credential = _login_credential_for_create(context)
     runtime = command_context(context)
-    account_id: str | None = None
-    if store_key:
-        # The account a stored key records is known before anything is created.
-        try:
-            account_id = _login_account_id(runtime.api_url, credential)
-        except (ProjectResolutionError, ApiError, AuthError) as error:
-            exit_for_resolution(context, error)
+    # Before anything is created: the repo file agrees with --project and
+    # SOLWYN_PROJECT, and the login's account (recorded with a stored key) is
+    # known; a SOLWYN_TOKEN login asks /accounts/me and fails closed.
+    try:
+        account_id = check_setup(context, credential)
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             created = request_project_creation(client=client, request=request)
