@@ -28,13 +28,16 @@ def metering_credential() -> ResolvedCredential | None:
     return resolve_credential(purpose="metering")
 
 
+def _project_key_selected() -> bool:
+    try:
+        return auth_selection() == "project_key"
+    except ValueError:
+        return False
+
+
 def _login_required_error(message: str) -> OutputError:
     hint = "Run solwyn login, then retry."
-    try:
-        key_selected = auth_selection() == "project_key"
-    except ValueError:
-        key_selected = False
-    if key_selected:
+    if _project_key_selected():
         hint = "Unset SOLWYN_AUTH=project_key, run solwyn login if needed, then retry."
     return OutputError(code="authentication_required", message=message, hint=hint)
 
@@ -54,7 +57,11 @@ def _missing_credential_error(
         return OutputError(
             code="authentication_required",
             message=f"Your Solwyn login expired on {expired_on.date().isoformat()}.",
-            hint="Run solwyn login.",
+            hint=(
+                "Unset SOLWYN_AUTH=project_key, run solwyn login, then retry."
+                if login_message is not None and _project_key_selected()
+                else "Run solwyn login."
+            ),
         )
     if login_message is not None:
         return _login_required_error(login_message)

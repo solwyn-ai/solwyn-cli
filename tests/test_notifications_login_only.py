@@ -214,3 +214,21 @@ def test_help_states_the_write_is_login_only():
     text = " ".join(result.output.split())
     assert "project API keys refused" in text
     assert "full-scope key" not in text
+
+
+def test_expired_login_with_key_override_names_the_override(sent, monkeypatch):
+    from datetime import UTC, datetime
+
+    shared = importlib.import_module("solwyn_cli.commands._shared")
+    monkeypatch.setattr(
+        shared, "expired_login_date", lambda: datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    monkeypatch.setenv(auth.AUTH_SELECTION_ENV, "project_key")
+
+    result = invoke("notifications", "set", "--no-email")
+
+    assert result.exit_code == 3
+    error = error_of(result)
+    assert "expired on 2026-01-01" in error["message"]
+    assert "Unset SOLWYN_AUTH=project_key" in error["hint"]
+    assert sent == []
