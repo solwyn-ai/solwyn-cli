@@ -3,8 +3,9 @@ title: Project notifications
 ---
 
 Read or update selected-project routing. Reads accept a project key or a Solwyn
-login; settings writes need a full-scope key, or a login plus a one-time browser
-approval (see [approvals](approvals.mdx)). Omitted options keep current
+login. Changing settings needs a Solwyn login plus a one-time browser approval
+(see [approvals](approvals.mdx)); project API keys cannot change them, so without
+a login `notifications set` exits 3 and tells you to run `solwyn login`. Omitted options keep current
 settings. `--clear-channels` clears channel references and `--all-events` clears the
 event filter to allow all events;
 email/SMS resets send explicit null. `--event` takes one of Core's event types:
@@ -61,9 +62,10 @@ Usage: solwyn notifications set [OPTIONS]
 
 ```text
 Endpoint: PUT /api/v1/projects/{project}/notifications
-Auth: any; full-scope key for writes
+Auth: owner/admin login (project.write); project API keys refused
 Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.notifications.v1
+Project API keys cannot change notification settings; without a login this exits 3 before any request. Run solwyn login.
 Omitted options leave settings unchanged. Clear channel/event lists with []; reset email/SMS configs with null.
 Channel enablement follows Core capabilities; SMS requires Production, verified phone and consent.
 ```

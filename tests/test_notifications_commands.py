@@ -316,6 +316,7 @@ def test_channel_test_false_exits_one(api):
         ["account", "alert-email", "show"],
         ["account", "alert-email", "set", "ops@example.com"],
         ["notifications", "test", "email"],
+        ["notifications", "set", "--sms"],
     ],
 )
 def test_jwt_only_routes_reject_project_keys(api, monkeypatch, args):
@@ -337,7 +338,6 @@ def test_jwt_only_routes_reject_project_keys(api, monkeypatch, args):
     "args",
     [
         ["notifications", "show"],
-        ["notifications", "set", "--sms"],
         ["notifications", "test", "sms"],
     ],
 )

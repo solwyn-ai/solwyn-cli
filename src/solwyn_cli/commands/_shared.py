@@ -8,6 +8,7 @@ from solwyn_cli import auth
 from solwyn_cli.auth import (
     AuthError,
     CredentialClass,
+    LoginCredential,
     ProjectKeyCredential,
     ResolvedCredential,
     auth_selection,
@@ -27,7 +28,20 @@ def metering_credential() -> ResolvedCredential | None:
     return resolve_credential(purpose="metering")
 
 
-def _missing_credential_error(purpose: CredentialClass) -> OutputError:
+def _login_required_error(message: str) -> OutputError:
+    hint = "Run solwyn login, then retry."
+    try:
+        key_selected = auth_selection() == "project_key"
+    except ValueError:
+        key_selected = False
+    if key_selected:
+        hint = "Unset SOLWYN_AUTH=project_key, run solwyn login if needed, then retry."
+    return OutputError(code="authentication_required", message=message, hint=hint)
+
+
+def _missing_credential_error(
+    purpose: CredentialClass, *, login_message: str | None = None
+) -> OutputError:
     hint = missing_credential_hint(purpose)
     if purpose == "metering":
         return OutputError(
@@ -42,6 +56,8 @@ def _missing_credential_error(purpose: CredentialClass) -> OutputError:
             message=f"Your Solwyn login expired on {expired_on.date().isoformat()}.",
             hint="Run solwyn login.",
         )
+    if login_message is not None:
+        return _login_required_error(login_message)
     try:
         login_only = auth_selection() == "login"
     except ValueError:
@@ -64,8 +80,13 @@ def required_credential(
     *,
     resolve: Callable[[], ResolvedCredential | None] = resolve_credential,
     purpose: CredentialClass = "user",
+    login_message: str | None = None,
 ) -> ResolvedCredential:
-    """Resolve one required credential with the stable command auth contract."""
+    """Resolve one required credential with the stable command auth contract.
+
+    ``login_message`` marks a command that only a login may run: with no
+    credential the error names the login instead of every credential source.
+    """
     try:
         credential = resolve()
     except AuthError as error:
@@ -88,8 +109,27 @@ def required_credential(
             typer.echo(_terminal_safe(notice), err=True)
         exit_with_error(
             context,
-            _missing_credential_error(purpose),
+            _missing_credential_error(purpose, login_message=login_message),
             semantic=ErrorSemantic.AUTH,
+        )
+    return credential
+
+
+def required_login(
+    context: typer.Context,
+    *,
+    message: str,
+    resolve: Callable[[], ResolvedCredential | None] = resolve_credential,
+) -> LoginCredential:
+    """Resolve the login for a command that a project API key may never run.
+
+    A stored or environment project key is refused before any request is sent,
+    exactly like a missing credential: exit 3 with a hint to run solwyn login.
+    """
+    credential = required_credential(context, resolve=resolve, login_message=message)
+    if isinstance(credential, ProjectKeyCredential):
+        exit_with_error(
+            context, _login_required_error(message), semantic=ErrorSemantic.AUTH
         )
     return credential
 
