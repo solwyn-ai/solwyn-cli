@@ -802,7 +802,9 @@ def _stored_key_from(
         )
         raise MalformedCredentialFileError(
             f"The API key stored for {project_id} in {where} is not valid. "
-            f"Run solwyn keys revoke for it, or remove it, then store a new key."
+            f"Remove it, then store a new key with solwyn keys create --project "
+            f"{project_id} --store-key. To revoke the old key too, run solwyn keys "
+            f"revoke KEY_ID with its id from the dashboard (Settings > API keys)."
         ) from None
 
 

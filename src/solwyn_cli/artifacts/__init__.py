@@ -121,7 +121,7 @@ Use Solwyn to enforce and attribute caller-owned AI-provider spend without expos
 
 ## Polling and reservations
 
-- Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget.
+- Use `solwyn --json budget status` for polling. It is a pure read and does not hold budget.
 - Use `solwyn budget check` followed by `solwyn budget confirm` only around a specific un-instrumented provider spend that you make yourself.
 - Never wrap SDK-instrumented code with `budget check` or `budget confirm`; the Solwyn SDK already reserves and confirms that spend.
 - Fail-open is explicit: when a check returns `allowed=true` and `reservation_id=null`, skip confirm.

@@ -2,7 +2,7 @@
   {
     "name": "budget_status",
     "title": "Read budget status",
-    "description": "Use `solwyn budget status --json` for polling. It is a pure read and does not hold budget. Accepts a Solwyn login or a project API key with access to the selected project.",
+    "description": "Use `solwyn --json budget status` for polling. It is a pure read and does not hold budget. Accepts a Solwyn login or a project API key with access to the selected project.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
