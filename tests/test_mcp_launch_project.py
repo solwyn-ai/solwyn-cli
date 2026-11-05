@@ -19,6 +19,7 @@ from mcp import Client
 from key_fixtures import (
     ACCOUNT_ID,
     KEY,
+    KEY_ID,
     OTHER_ACCOUNT_ID,
     OTHER_KEY,
     OTHER_KEY_ID,
@@ -27,8 +28,8 @@ from key_fixtures import (
     auth_key_body,
     store_key,
 )
-from login_fixtures import LOGIN_TOKEN, login_meta
-from solwyn_cli import auth, project_resolver, repo_file, runtime
+from login_fixtures import LOGIN_TOKEN, OTHER_LOGIN_TOKEN, login_meta
+from solwyn_cli import auth, credential_store, project_resolver, repo_file, runtime
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.commands import mcp_doctor
 from solwyn_cli.mcp import server as mcp_server
@@ -649,3 +650,194 @@ def test_a_busy_name_lookup_cannot_switch_between_stored_keys(
     assert not any(
         r.headers.get("Authorization") == f"Bearer {OTHER_KEY}" for r in core.requests
     )
+
+
+# --- Review round 2 (#57): the credential store and login are frozen too -------
+
+
+class _TwoAccountCore(Core):
+    """Two accounts, each with a project named checkout-bot (A: PROJECT_ID
+    with KEY and LOGIN_TOKEN; B: OTHER_PROJECT_ID with OTHER_KEY and
+    OTHER_LOGIN_TOKEN)."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        super().__init__(monkeypatch)
+        self.busy_projects = 0
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        bearer = request.headers.get("Authorization")
+        if request.url.path == "/api/v1/projects":
+            self.requests.append(request)
+            if self.busy_projects:
+                self.busy_projects -= 1
+                return httpx.Response(
+                    503, json={"detail": "busy"}, headers={"Retry-After": "0"}
+                )
+            other = bearer == f"Bearer {OTHER_LOGIN_TOKEN}"
+            project = OTHER_PROJECT_ID if other else PROJECT_ID
+            return httpx.Response(200, json=[{"id": project, "name": "checkout-bot"}])
+        if request.url.path == "/api/v1/accounts/me":
+            self.requests.append(request)
+            other = bearer == f"Bearer {OTHER_LOGIN_TOKEN}"
+            return httpx.Response(
+                200,
+                json={
+                    "id": OTHER_ACCOUNT_ID if other else ACCOUNT_ID,
+                    "display_name": "A",
+                },
+            )
+        if request.url.path == "/api/v1/auth/key":
+            self.requests.append(request)
+            other = bearer == f"Bearer {OTHER_KEY}"
+            project = OTHER_PROJECT_ID if other else PROJECT_ID
+            assert request.headers["Solwyn-Project"] == project
+            return httpx.Response(
+                200,
+                json=auth_key_body(
+                    project_id=project,
+                    project_name="checkout-bot",
+                    account_id=OTHER_ACCOUNT_ID if other else ACCOUNT_ID,
+                    key=OTHER_KEY if other else KEY,
+                    key_id=OTHER_KEY_ID if other else KEY_ID,
+                ),
+            )
+        return super().handle(request)
+
+    def used_other_key(self) -> bool:
+        return any(
+            r.headers.get("Authorization") == f"Bearer {OTHER_KEY}"
+            for r in self.requests
+        )
+
+
+def _store_other_account(*, login: bool = False, mode: Any = None) -> None:
+    store_key(
+        project_id=OTHER_PROJECT_ID,
+        key=OTHER_KEY,
+        key_id=OTHER_KEY_ID,
+        account_id=OTHER_ACCOUNT_ID,
+        project_name="checkout-bot",
+        mode=mode,
+    )
+    if login:
+        auth.store_login(OTHER_LOGIN_TOKEN, login_meta(account_id=OTHER_ACCOUNT_ID))
+
+
+@pytest.mark.parametrize("selector", ["file", "mode"])
+def test_the_credential_store_is_chosen_at_launch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, selector: str
+) -> None:
+    _repo(tmp_path, monkeypatch, "checkout-bot")
+    original = credential_store.credentials_path()
+    store_key(project_name="checkout-bot")
+    alternate = tmp_path / "alternate" / "credentials.json"
+    if selector == "file":
+        monkeypatch.setenv(credential_store.FILE_ENV, str(alternate))
+        _store_other_account(mode="file")
+        monkeypatch.setenv(credential_store.FILE_ENV, str(original))
+    else:
+        _store_other_account(mode="keyring")
+    core = _TwoAccountCore(monkeypatch)
+    server = mcp_server.create_server()
+    assert core.requests == []
+
+    def edit() -> None:
+        if selector == "file":
+            monkeypatch.setenv(credential_store.FILE_ENV, str(alternate))
+        else:
+            monkeypatch.setenv(credential_store.STORE_ENV, "keyring")
+
+    first, second = _session(server, edit, before_first=True)
+
+    assert first["ok"] and second["ok"], (first, second)
+    assert first["project_id"] == second["project_id"] == PROJECT_ID
+    assert not core.used_other_key()
+
+
+@pytest.mark.parametrize("edit_kind", ["unchanged", "file-env", "stored-login"])
+def test_a_retry_never_resolves_through_another_login(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, edit_kind: str
+) -> None:
+    _repo(tmp_path, monkeypatch, "checkout-bot")
+    original = credential_store.credentials_path()
+    store_key(project_name="checkout-bot")
+    _store_other_account()
+    auth.store_login(LOGIN_TOKEN, login_meta(account_id=ACCOUNT_ID))
+    alternate = tmp_path / "alternate" / "credentials.json"
+    monkeypatch.setenv(credential_store.FILE_ENV, str(alternate))
+    _store_other_account(login=True)
+    monkeypatch.setenv(credential_store.FILE_ENV, str(original))
+    core = _TwoAccountCore(monkeypatch)
+    core.busy_projects = 2
+    server = mcp_server.create_server()
+    assert core.requests == []
+
+    def edit() -> None:
+        if edit_kind == "file-env":
+            monkeypatch.setenv(credential_store.FILE_ENV, str(alternate))
+        elif edit_kind == "stored-login":
+            auth.store_login(OTHER_LOGIN_TOKEN, login_meta(account_id=OTHER_ACCOUNT_ID))
+
+    first, second = _session(server, edit)
+
+    assert first["error"]["code"] == "service_busy"
+    assert not core.used_other_key()
+    assert _sent_projects(core) <= {PROJECT_ID}
+    if edit_kind == "stored-login":
+        # The login the launch project was to be resolved through is gone:
+        # refused for the server's life, never resolved through the new one.
+        assert second["error"]["code"] == "credentials_changed", second
+        assert not any(
+            r.headers.get("Authorization") == f"Bearer {OTHER_LOGIN_TOKEN}"
+            for r in core.requests
+        )
+        third = _session(server, lambda: None)
+        assert [r["error"]["code"] for r in third] == ["credentials_changed"] * 2
+        return
+    assert second["ok"], second
+    assert second["project_id"] == PROJECT_ID
+
+
+def test_a_login_change_after_binding_keeps_the_bound_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _repo(tmp_path, monkeypatch, "checkout-bot")
+    store_key(project_name="checkout-bot")
+    _store_other_account()
+    auth.store_login(LOGIN_TOKEN, login_meta(account_id=ACCOUNT_ID))
+    core = _TwoAccountCore(monkeypatch)
+    server = mcp_server.create_server()
+
+    first, second = _session(
+        server,
+        lambda: auth.store_login(
+            OTHER_LOGIN_TOKEN, login_meta(account_id=OTHER_ACCOUNT_ID)
+        ),
+    )
+
+    assert first["ok"] and second["ok"], (first, second)
+    assert first["project_id"] == second["project_id"] == PROJECT_ID
+    assert not core.used_other_key()
+
+
+def test_an_environment_login_ignores_the_stored_login(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _repo(tmp_path, monkeypatch, "checkout-bot")
+    store_key(project_name="checkout-bot")
+    _store_other_account()
+    monkeypatch.setenv("SOLWYN_TOKEN", LOGIN_TOKEN)
+    core = _TwoAccountCore(monkeypatch)
+    core.busy_projects = 2
+    server = mcp_server.create_server()
+
+    def edit() -> None:
+        auth.store_login(OTHER_LOGIN_TOKEN, login_meta(account_id=OTHER_ACCOUNT_ID))
+        monkeypatch.setenv("SOLWYN_TOKEN", OTHER_LOGIN_TOKEN)
+
+    first, second = _session(server, edit)
+
+    assert first["error"]["code"] == "service_busy"
+    assert second["ok"], second
+    assert second["project_id"] == PROJECT_ID
+    assert not core.used_other_key()

@@ -39,9 +39,16 @@ Tag discovery requires the Team plan. Core still checks project access, plan
 entitlements and key scope. A profile only reduces the exposed tool surface; it
 never grants permission to spend. Writes use the project authenticated by the
 key. The launch project is global `--project` before `mcp`, then `SOLWYN_PROJECT`,
-then the repo's `.solwyn.env`. The server reads these, its environment and its
-working directory once, when it starts; later edits to them change nothing
-until it restarts. Reporting tools (`budget_check`,
+then the repo's `.solwyn.env`. The server reads these, its environment, its
+working directory and which credential store to use (`SOLWYN_CREDENTIAL_STORE`
+or config `credential_store`, and `SOLWYN_CREDENTIALS_FILE`) once, when it
+starts; later edits to them change nothing until it restarts. It also notes
+which login a project name would be resolved through: `SOLWYN_TOKEN`, else the
+stored login, else none. If the stored login is replaced, removed or added
+before the reporting tools are bound (the first reporting call that gets
+past a busy or unreachable Core), every reporting call returns
+`credentials_changed` until the server restarts; once bound, the server keeps
+the key it chose even if the login changes. Reporting tools (`budget_check`,
 `budget_check_batch`, `budget_confirm`, `record_call`) always spend from it: they
 take no project argument, refuse one, and use only an API key (`SOLWYN_API_KEY`,
 then the key stored for the launch project, never a login and never another

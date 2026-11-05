@@ -1138,12 +1138,14 @@ class _ReportingBinding:
         """Capture the launch inputs once, without any network.
 
         The resolved command context (--project, SOLWYN_PROJECT, the API URL
-        and the repo's .solwyn.env as it reads now, from the launch cwd) and
-        the environment the credential policy reads (SOLWYN_API_KEY,
-        SOLWYN_TOKEN, SOLWYN_AUTH). Every bind attempt, retries after a
+        and the repo's .solwyn.env as it reads now, from the launch cwd), the
+        environment the credential policy reads (SOLWYN_API_KEY, SOLWYN_TOKEN,
+        SOLWYN_AUTH), the credential store (mode and file) and which login the
+        project would be resolved through. Every bind attempt, retries after a
         transient failure included, resolves from exactly these inputs, so a
-        later edit of the repo file, the environment or the cwd can never
-        change the project or key the reporting tools use.
+        later edit of the repo file, the environment, the cwd or the store
+        selection can never change the project or key the reporting tools
+        use; a changed login refuses (credentials_changed) instead.
         """
         with self._lock:
             if self._inputs is not None:
@@ -1163,7 +1165,15 @@ class _ReportingBinding:
                 )
             except Exception as error:  # noqa: BLE001 - kept, raised per call.
                 context = error
-            self._inputs = _LaunchInputs(context=context, environ=environ)
+            store = auth.store_selection(environ)
+            login = (
+                None
+                if isinstance(context, Exception)
+                else _login_identity(context.api_url, environ, store)
+            )
+            self._inputs = _LaunchInputs(
+                context=context, environ=environ, store=store, login=login
+            )
 
     def _keep(self, error: Exception) -> None:
         if isinstance(error, _LocalProjectError) or (
@@ -1226,6 +1236,25 @@ class _LaunchInputs:
 
     context: runtime.CommandContext | Exception
     environ: Mapping[str, str]
+    store: auth.StoreSelection
+    # "environment" (SOLWYN_TOKEN, frozen with environ), the stored login's
+    # fingerprint, "none" or "unreadable"; None when the context failed.
+    login: str | None
+
+
+def _login_identity(
+    api_url: str, environ: Mapping[str, str], store: auth.StoreSelection
+) -> str:
+    """Which login a project name would be resolved through (no network)."""
+    if auth.TOKEN_ENV in environ:
+        return "environment"
+    reset = auth.use_store_selection(store)
+    try:
+        return auth.stored_login_fingerprint(api_url) or "none"
+    except AuthError:
+        return "unreadable"
+    finally:
+        reset()
 
 
 def _bind_reporting(
@@ -1233,12 +1262,28 @@ def _bind_reporting(
 ) -> tuple[str, ResolvedCredential, bool]:
     """(API URL, credential, whether /auth/key already answered for it).
 
-    Reads only the frozen launch inputs (and the credential store), never the
-    live environment, cwd or repo file.
+    Reads only the frozen launch inputs and the credential store chosen at
+    launch, never the live environment, cwd, repo file or store selection. A
+    stored login that changed since launch refuses for the server's life.
     """
     if isinstance(inputs.context, Exception):
         raise inputs.context
     command_runtime = inputs.context
+    reset_store = auth.use_store_selection(inputs.store)
+    try:
+        if (
+            _login_identity(command_runtime.api_url, inputs.environ, inputs.store)
+            != inputs.login
+        ):
+            raise _LocalProjectError("credentials_changed")
+        return _bind_with(inputs, command_runtime)
+    finally:
+        reset_store()
+
+
+def _bind_with(
+    inputs: _LaunchInputs, command_runtime: runtime.CommandContext
+) -> tuple[str, ResolvedCredential, bool]:
     if command_runtime.project_selector is None and command_runtime.project:
         command_runtime = command_runtime.model_copy(
             update={"project_selector": command_runtime.project}
@@ -1670,6 +1715,10 @@ _LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
     ),
     "invalid_projects_response": ("The projects response was invalid.", None),
     "invalid_auth_key_response": ("The API key response was invalid.", None),
+    "credentials_changed": (
+        "The Solwyn login on this computer changed after the server started.",
+        "Restart the server. It never switches logins, projects or keys while it runs.",
+    ),
 }
 
 
