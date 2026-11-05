@@ -28,7 +28,7 @@ from key_fixtures import (
     store_key,
 )
 from login_fixtures import LOGIN_TOKEN, login_meta
-from solwyn_cli import auth, project_resolver, runtime
+from solwyn_cli import auth, project_resolver, repo_file, runtime
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.commands import mcp_doctor
 from solwyn_cli.mcp import server as mcp_server
@@ -509,3 +509,143 @@ def test_doctor_mcp_reports_an_unknown_launch_project(
 
     assert data.key_project.status == "failed"
     assert data.key_project.code == "project_not_found"
+
+
+# --- Review round 1 (#57): the launch inputs are frozen at server start --------
+
+
+def _repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> Path:
+    _repo(tmp_path, monkeypatch, value)
+    return tmp_path / "repo"
+
+
+def _session(server: Any, edit: Any, *, before_first: bool = False) -> list[dict]:
+    async def probe() -> list[dict]:
+        async with Client(server, cache=None) as client:
+            if before_first:
+                edit()
+            first = await client.call_tool("budget_check", CHECK_ARGS)
+            if not before_first:
+                edit()
+            second = await client.call_tool("budget_check", CHECK_ARGS)
+            return [first.structured_content, second.structured_content]
+
+    return anyio.run(probe)
+
+
+def _sent_projects(core: Core) -> set[str | None]:
+    return {
+        r.headers.get("Solwyn-Project")
+        for r in core.requests
+        if r.url.path.startswith("/api/v1/budgets")
+    }
+
+
+def test_a_retry_after_a_busy_first_bind_keeps_the_launch_project(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repo_root(tmp_path, monkeypatch, "checkout-bot")
+    core = Core(monkeypatch)
+    core.auth_key_status = [503, 503, 200]
+    monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+    server = mcp_server.create_server(launch_options=mcp_server.McpLaunchOptions())
+
+    first, second = _session(
+        server,
+        lambda: (root / ".solwyn.env").write_text(repo_file.render("research")),
+    )
+
+    assert first["error"]["code"] == "service_busy"
+    assert second["ok"] and second["project_id"] == PROJECT_ID
+    assert _sent_projects(core) == {PROJECT_ID}
+
+
+def test_a_repo_file_edit_before_the_first_call_changes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repo_root(tmp_path, monkeypatch, "checkout-bot")
+    core = Core(monkeypatch)
+    monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+    server = mcp_server.create_server(launch_options=mcp_server.McpLaunchOptions())
+
+    first, second = _session(
+        server,
+        lambda: (root / ".solwyn.env").write_text(repo_file.render("research")),
+        before_first=True,
+    )
+
+    assert first["ok"] and first["project_id"] == PROJECT_ID
+    assert second["ok"] and second["project_id"] == PROJECT_ID
+    assert _sent_projects(core) == {PROJECT_ID}
+
+
+def test_env_and_cwd_changes_after_launch_change_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _repo_root(tmp_path, monkeypatch, "checkout-bot")
+    core = Core(monkeypatch)
+    core.auth_key_status = [503, 503, 200]
+    monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+    server = mcp_server.create_server(launch_options=mcp_server.McpLaunchOptions())
+
+    def elsewhere() -> None:
+        monkeypatch.setenv("SOLWYN_PROJECT", "research")
+        monkeypatch.setenv("SOLWYN_API_KEY", OTHER_KEY)
+        monkeypatch.chdir(tmp_path)
+
+    first, second = _session(server, elsewhere)
+
+    assert first["error"]["code"] == "service_busy"
+    assert second["ok"] and second["project_id"] == PROJECT_ID
+    assert {r.headers.get("Authorization") for r in core.requests} == {f"Bearer {KEY}"}
+
+
+def test_a_busy_name_lookup_cannot_switch_between_stored_keys(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Two stored keys and a login: a 503 on the login's project list, then a
+    repo-file edit, must not make the retry bind the other project's key."""
+    root = _repo_root(tmp_path, monkeypatch, "checkout-bot")
+    store_key(project_name="checkout-bot")
+    store_key(
+        project_id=OTHER_PROJECT_ID,
+        project_name="research",
+        key=OTHER_KEY,
+        key_id=OTHER_KEY_ID,
+        account_id=ACCOUNT_ID,
+    )
+    auth.store_login(LOGIN_TOKEN, login_meta(account_id=ACCOUNT_ID))
+    core = Core(monkeypatch)
+    reads = {"projects": 0}
+    plain = core.handle
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/projects":
+            core.requests.append(request)
+            reads["projects"] += 1
+            if reads["projects"] <= 2:
+                return httpx.Response(
+                    503, json={"detail": "busy"}, headers={"Retry-After": "0"}
+                )
+            return httpx.Response(
+                200,
+                json=[
+                    {"id": PROJECT_ID, "name": "checkout-bot"},
+                    {"id": OTHER_PROJECT_ID, "name": "research"},
+                ],
+            )
+        return plain(request)
+
+    core.handle = handle  # type: ignore[method-assign]
+    server = mcp_server.create_server()
+
+    first, second = _session(
+        server,
+        lambda: (root / ".solwyn.env").write_text(repo_file.render("research")),
+    )
+
+    assert first["error"]["code"] == "service_busy"
+    assert second["ok"] and second["project_id"] == PROJECT_ID
+    assert not any(
+        r.headers.get("Authorization") == f"Bearer {OTHER_KEY}" for r in core.requests
+    )

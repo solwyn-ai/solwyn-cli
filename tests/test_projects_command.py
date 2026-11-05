@@ -14,7 +14,7 @@ from login_fixtures import login_credential
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from solwyn_cli import auth
+from solwyn_cli import auth, repo_file
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.commands import projects as projects_module
 from solwyn_cli import config as config_module
@@ -1840,6 +1840,36 @@ def test_rename_leaves_a_repo_file_naming_another_project(
     assert (root / ".solwyn.env").read_text() == 'SOLWYN_PROJECT="Beta"\n'
 
 
+def test_rename_keeps_a_repo_file_edited_while_it_is_updated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path, monkeypatch)
+    path = root / ".solwyn.env"
+    path.write_text('SOLWYN_PROJECT="alpha"\n')
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    real_render = repo_file.render
+
+    def edit_then_render(value: str) -> str:
+        path.write_text(real_render("Beta"))
+        return real_render(value)
+
+    monkeypatch.setattr(repo_file, "render", edit_then_render)
+    project_id = PROJECTS_RESPONSE[0]["id"]
+    FakeClient.responses = [
+        httpx.Response(200, json=PROJECTS_RESPONSE[0]),
+        httpx.Response(200, json={**PROJECTS_RESPONSE[0], "name": "Gamma"}),
+    ]
+
+    result = runner.invoke(
+        app, ["--json", "projects", "rename", project_id, "--name", "Gamma"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert repo_file.parse_repo_file(path.read_text()) == "Beta"
+    assert f"Did not update {path}: it changed while" in result.stderr
+    assert "Updated" not in result.stderr
+
+
 def test_delete_no_longer_touches_local_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1859,3 +1889,18 @@ def test_delete_no_longer_touches_local_configuration(
     assert config_path.read_text() == (
         'default_project = "proj_be76331b95dfc399cd776d2f"\n'
     )
+
+
+def test_create_from_the_repo_name_refuses_a_leftover_solwyn_project_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path, monkeypatch)
+    monkeypatch.setenv("SOLWYN_PROJECT_ID", "proj_" + "ab" * 12)
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+
+    result = runner.invoke(app, ["--json", "projects", "create", "--store-key"])
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["code"] == "usage_error"
+    assert FakeClient.instances == []
+    assert not (root / ".solwyn.env").exists()

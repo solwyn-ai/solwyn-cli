@@ -81,7 +81,9 @@ reads, and `SOLWYN_API_KEY` with `SOLWYN_PROJECT` for metering. Metering command
 The project comes from `--project`, then `SOLWYN_PROJECT`, then the repo's
 `.solwyn.env` (a project name or `proj_` id). There is no computer-wide default
 project, and `SOLWYN_PROJECT_ID` is no longer read: a command that needs a
-project exits 2 with `usage_error` when only `SOLWYN_PROJECT_ID` is set. With an
+project exits 2 with `usage_error` when only `SOLWYN_PROJECT_ID` is set, and
+`init` and `projects create` refuse it the same way before they create a project
+or write `.solwyn.env`. With an
 API key, every request names its project; a name is resolved to its `proj_` id
 first. A `--project` or `SOLWYN_PROJECT` that disagrees with `.solwyn.env` is a
 warning for reads and exit 2 (`project_mismatch`) for metering and setup.

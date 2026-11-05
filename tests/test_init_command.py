@@ -9,6 +9,7 @@ import httpx
 import pytest
 from click import unstyle
 from golden.harness import assert_matches_golden
+from key_fixtures import OTHER_PROJECT_ID
 from login_fixtures import login_credential
 from typer.testing import CliRunner
 
@@ -1291,3 +1292,58 @@ def test_a_created_project_is_verified_with_the_login(
 
     assert result.exit_code == 0, result.stderr
     assert isinstance(FakeClient.instances[-1].credential, auth.LoginCredential)
+
+
+# --- Review round 1 (#57) ----------------------------------------------------
+
+
+def _requests() -> list[tuple[str, str]]:
+    return [(m, p) for c in FakeClient.instances for m, p, _ in c.requests]
+
+
+def test_init_refuses_a_leftover_solwyn_project_id_before_creating_anything(
+    monkeypatch: pytest.MonkeyPatch, isolated_init: Path
+) -> None:
+    (isolated_init / ".git").mkdir()
+    monkeypatch.setenv("SOLWYN_PROJECT_ID", PROJECT_ID)
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(200, json=BUDGET),
+    ]
+
+    result = _invoke()
+
+    assert result.exit_code == 2
+    error = json.loads(result.stderr)
+    assert error["code"] == "usage_error"
+    assert "SOLWYN_PROJECT_ID was replaced by SOLWYN_PROJECT" in error["message"]
+    assert _requests() == []
+    assert not (isolated_init / ".solwyn.env").exists()
+    assert auth.stored_api_keys() == {}
+
+
+def test_init_never_writes_a_project_it_could_not_verify(
+    monkeypatch: pytest.MonkeyPatch, isolated_init: Path
+) -> None:
+    from solwyn_cli.errors import error_from_response
+
+    (isolated_init / ".git").mkdir()
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    missing = error_from_response(
+        httpx.Response(
+            404,
+            json={"detail": "Project not found"},
+            request=httpx.Request("GET", "https://api.test/x"),
+        )
+    )
+    FakeClient.responses = [missing]
+
+    result = runner.invoke(
+        app, ["--json", "--project", OTHER_PROJECT_ID, "init", "--agents"]
+    )
+
+    assert result.exit_code != 0
+    assert not (isolated_init / ".solwyn.env").exists()
+    assert not (isolated_init / "AGENTS.md").exists()

@@ -5,7 +5,9 @@ import inspect
 import logging
 import os
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from contextlib import contextmanager
 from functools import partial
 from typing import Any, Annotated, Generic, Literal, TypeVar
@@ -1130,6 +1132,38 @@ class _ReportingBinding:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._outcome: tuple[str, ResolvedCredential, bool] | Exception | None = None
+        self._inputs: _LaunchInputs | None = None
+
+    def freeze(self, launch: McpLaunchOptions) -> None:
+        """Capture the launch inputs once, without any network.
+
+        The resolved command context (--project, SOLWYN_PROJECT, the API URL
+        and the repo's .solwyn.env as it reads now, from the launch cwd) and
+        the environment the credential policy reads (SOLWYN_API_KEY,
+        SOLWYN_TOKEN, SOLWYN_AUTH). Every bind attempt, retries after a
+        transient failure included, resolves from exactly these inputs, so a
+        later edit of the repo file, the environment or the cwd can never
+        change the project or key the reporting tools use.
+        """
+        with self._lock:
+            if self._inputs is not None:
+                return
+            environ = dict(os.environ)
+            try:
+                context: runtime.CommandContext | Exception = (
+                    runtime.resolve_command_context(
+                        api_url=launch.api_url,
+                        project=launch.project_id,
+                        output_format=None,
+                        json_flag=False,
+                        no_color=True,
+                        environ=environ,
+                        cwd=Path.cwd(),
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 - kept, raised per call.
+                context = error
+            self._inputs = _LaunchInputs(context=context, environ=environ)
 
     def _keep(self, error: Exception) -> None:
         if isinstance(error, _LocalProjectError) or (
@@ -1138,13 +1172,15 @@ class _ReportingBinding:
             self._outcome = error
 
     def get(self, launch: McpLaunchOptions) -> tuple[str, ResolvedCredential, bool]:
+        self.freeze(launch)
         with self._lock:
             if isinstance(self._outcome, Exception):
                 raise self._outcome
             if self._outcome is not None:
                 return self._outcome
+            assert self._inputs is not None
             try:
-                self._outcome = _bind_reporting(launch)
+                self._outcome = _bind_reporting(self._inputs)
             except (_LocalProjectError, ApiError) as error:
                 self._keep(error)
                 raise
@@ -1184,17 +1220,25 @@ class _ReportingBinding:
             return validated
 
 
+@dataclass(frozen=True)
+class _LaunchInputs:
+    """What the reporting tools' project and key come from, read at launch."""
+
+    context: runtime.CommandContext | Exception
+    environ: Mapping[str, str]
+
+
 def _bind_reporting(
-    launch: McpLaunchOptions,
+    inputs: _LaunchInputs,
 ) -> tuple[str, ResolvedCredential, bool]:
-    """(API URL, credential, whether /auth/key already answered for it)."""
-    command_runtime = runtime.resolve_command_context(
-        api_url=launch.api_url,
-        project=launch.project_id,
-        output_format=None,
-        json_flag=False,
-        no_color=True,
-    )
+    """(API URL, credential, whether /auth/key already answered for it).
+
+    Reads only the frozen launch inputs (and the credential store), never the
+    live environment, cwd or repo file.
+    """
+    if isinstance(inputs.context, Exception):
+        raise inputs.context
+    command_runtime = inputs.context
     if command_runtime.project_selector is None and command_runtime.project:
         command_runtime = command_runtime.model_copy(
             update={"project_selector": command_runtime.project}
@@ -1209,7 +1253,9 @@ def _bind_reporting(
     try:
         # SOLWYN_API_KEY, or None: without a project id no stored key is chosen
         # here; the resolver picks the launch project's stored key below.
-        environment_key = auth.resolve_credential(purpose="metering", api_url=api_url)
+        environment_key = auth.resolve_credential(
+            environ=inputs.environ, purpose="metering", api_url=api_url
+        )
         if isinstance(environment_key, LoginCredential):
             # Never sent: the tool refuses a login (project_key_required).
             return api_url, environment_key, True
@@ -1219,6 +1265,7 @@ def _bind_reporting(
                 purpose="spend",
                 api_url=api_url,
                 credential=environment_key,
+                environ=inputs.environ,
                 factory=factory,
             )
         except project_resolver.ProjectResolutionError as error:
@@ -3705,6 +3752,8 @@ def get_tool_catalog(
 def create_server(*, launch_options: McpLaunchOptions | None = None) -> Server:
     """Build the stateless local MCP server with one fixed launch profile."""
     launch = launch_options or McpLaunchOptions()
+    # The reporting tools' inputs are read now, at launch, and never again.
+    launch._reporting.freeze(launch)
     catalog = _create_catalog(launch)
     server = Server(
         "solwyn",

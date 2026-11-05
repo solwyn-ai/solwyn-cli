@@ -28,6 +28,7 @@ from solwyn_cli.commands._shared import (
     credential_saved_note,
     exit_for_resolution,
     exit_project_required,
+    refuse_retired_project_id,
     exit_with_error,
 )
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
@@ -503,6 +504,14 @@ def _snippets(
     return [_Snippet(provider=provider, code=code[provider]) for provider in providers]
 
 
+def _record_repo_project(value: str) -> tuple[Path | None, bool]:
+    """Write .solwyn.env naming ``value`` when there is none: (path, written)."""
+    path = write_repo_file(value)
+    if path is not None:
+        return path, True
+    return repo_file.find_repo_file(), False
+
+
 def _verify_budget(
     context: typer.Context,
     credential: ResolvedCredential,
@@ -614,6 +623,9 @@ def init(
         "budget_period": period.value,
         "budget_mode": mode.value,
     }
+    # A leftover SOLWYN_PROJECT_ID names a project the user meant; never
+    # create one in its place.
+    refuse_retired_project_id(context)
     credential = _resolve_auth(context)
     # Before any project, key or file is created: the repo file agrees with
     # --project and SOLWYN_PROJECT, and a login's account is known.
@@ -641,20 +653,19 @@ def init(
         )
     # The repo file: one that selected the project is already right; a flag or
     # env value (as given) or a new project's name is written when there is
-    # none, and an existing file is never overwritten.
+    # none, and an existing file is never overwritten. A new project's name is
+    # written at once, so a rerun finds it instead of creating another; a
+    # selected project's is written last, after the project answered and
+    # every other step succeeded, so a project that could not be used is never
+    # recorded.
+    repo_path: Path | None = None
     written = False
     if runtime.project_source == "repo":
         repo_path = repo_file.find_repo_file()
-    else:
-        value = (
-            chosen.project_name
-            if chosen.created
-            else runtime.project_selector or chosen.project_id
+    elif chosen.created:
+        repo_path, written = _record_repo_project(
+            chosen.project_name or chosen.project_id
         )
-        repo_path = write_repo_file(value or chosen.project_id)
-        written = repo_path is not None
-        if repo_path is None:
-            repo_path = repo_file.find_repo_file()
     providers, module_imports = _detect_providers(Path.cwd())
     snippets = _snippets(providers, module_imports)
     status = _verify_budget(context, chosen.credential, chosen.project_id)
@@ -690,6 +701,10 @@ def init(
                     hint="Check repository permissions and AGENTS.md markers.",
                 ),
             )
+    if runtime.project_source != "repo" and not chosen.created:
+        repo_path, written = _record_repo_project(
+            runtime.project_selector or chosen.project_id
+        )
     data = _InitData(
         project_id=chosen.project_id,
         project_name=chosen.project_name,

@@ -46,6 +46,7 @@ from solwyn_cli.commands._shared import (
     credential_saved_note,
     exit_for_resolution,
     exit_project_required,
+    refuse_retired_project_id,
     exit_with_error,
     legacy_keys_note,
     required_credential,
@@ -464,6 +465,10 @@ def create_project(
 ) -> None:
     """Create a project and capture its first API key exactly once."""
     derived = name is None
+    if derived or store_key:
+        # The name or the repo file would be chosen for the user; a leftover
+        # SOLWYN_PROJECT_ID says they meant another project.
+        refuse_retired_project_id(context)
     if derived:
         name = repo_file.default_project_name()
         if name is None:
@@ -772,6 +777,17 @@ def rename_project(
     if before is not None and before != project.name:
         try:
             updated = repo_file.rename_if_named(before, project.name)
+        except repo_file.RepoFileConflictError as conflict:
+            updated = None
+            typer.echo(
+                _terminal_safe(
+                    f"Did not update {conflict.path}: it changed while the CLI "
+                    "was updating it, and the other change was kept"
+                    + ("" if conflict.kept is None else f" in {conflict.kept}")
+                    + f'. Check it names the project you want (now "{project.name}").'
+                ),
+                err=True,
+            )
         except (OSError, repo_file.RepoFileError):
             updated = None
             typer.echo(

@@ -167,3 +167,81 @@ def test_the_repo_file_is_found_from_a_nested_directory(repo: Path) -> None:
     (repo / ".solwyn.env").write_text(repo_file.render("checkout-bot"))
 
     assert repo_file.read_repo_project(nested) == ("checkout-bot", None)
+
+
+def _hidden(repo: Path) -> list[str]:
+    """Staged or moved-aside copies left beside the repo file."""
+    return sorted(p.name for p in repo.iterdir() if p.name.startswith("..solwyn.env."))
+
+
+def test_rename_keeps_an_edit_saved_after_the_old_name_was_read(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+    real_render = repo_file.render
+
+    def edit_then_render(value: str) -> str:
+        # Another editor saves once rename_if_named has read the old name.
+        path.write_text(real_render("research"))
+        return real_render(value)
+
+    monkeypatch.setattr(repo_file, "render", edit_then_render)
+
+    with pytest.raises(repo_file.RepoFileConflictError) as raised:
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert raised.value.path == path
+    assert raised.value.kept is None
+    assert repo_file.parse_repo_file(path.read_text()) == "research"
+    assert _hidden(repo) == []
+
+
+def test_rename_keeps_a_file_written_while_the_old_one_is_moved_aside(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+    real_rename = os.rename
+
+    def rename_then_write(source: object, target: object) -> None:
+        real_rename(source, target)
+        if Path(source) == path:
+            path.write_text(repo_file.render("research"))
+
+    monkeypatch.setattr(os, "rename", rename_then_write)
+
+    with pytest.raises(repo_file.RepoFileConflictError):
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert repo_file.parse_repo_file(path.read_text()) == "research"
+    assert _hidden(repo) == []
+
+
+def test_rename_keeps_a_write_through_an_already_open_file(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+    real_rename, real_link = os.rename, os.link
+    aside: list[Path] = []
+
+    def record_rename(source: object, target: object) -> None:
+        real_rename(source, target)
+        aside.append(Path(target))
+
+    def link_then_late_write(source: object, target: object) -> None:
+        real_link(source, target)
+        if Path(target) == path and aside:
+            # An editor that opened the file earlier saves into it now.
+            aside[0].write_text(repo_file.render("research"))
+
+    monkeypatch.setattr(os, "rename", record_rename)
+    monkeypatch.setattr(os, "link", link_then_late_write)
+
+    with pytest.raises(repo_file.RepoFileConflictError) as raised:
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert raised.value.kept == aside[0]
+    assert repo_file.parse_repo_file(aside[0].read_text()) == "research"
+    assert _hidden(repo) == [aside[0].name]

@@ -32,6 +32,19 @@ class RepoFileError(ValueError):
     """``.solwyn.env`` exists but is not the one assignment it may hold."""
 
 
+class RepoFileConflictError(RepoFileError):
+    """``.solwyn.env`` changed while the CLI was updating it; the change was kept."""
+
+    def __init__(self, path: Path, kept: Path | None = None) -> None:
+        self.path = path
+        self.kept = kept
+        where = path if kept is None else kept
+        super().__init__(
+            f"{path} changed while it was being updated; the other change was "
+            f"kept in {where} and nothing was overwritten."
+        )
+
+
 def git_root(start: Path) -> Path | None:
     """The nearest directory at or above ``start`` that holds ``.git``."""
     for directory in (start, *start.parents):
@@ -116,23 +129,69 @@ def render(value: str) -> str:
     return f'{HEADER}\n{REPO_VARIABLE}="{value}"\n'
 
 
-def _publish(path: Path, content: str, *, replace: bool) -> None:
-    """Write a temporary file beside ``path``, then link (new) or replace it."""
-    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
-    descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+def _stage(path: Path, content: str, suffix: str) -> Path:
+    """Write ``content`` durably to a new hidden file beside ``path``."""
+    staged = path.with_name(f".{path.name}.{secrets.token_hex(8)}.{suffix}")
+    descriptor = os.open(staged, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        if replace:
-            os.replace(temporary, path)
-        else:
-            # A hard link never replaces an existing file: a concurrent
-            # writer's file is kept and this one reports "exists".
-            os.link(temporary, path)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+    return staged
+
+
+def _publish_new(path: Path, content: str) -> None:
+    """Create ``path`` holding ``content``; FileExistsError if it exists.
+
+    A hard link never replaces an existing file: a concurrent writer's file
+    is kept and this one reports "exists".
+    """
+    staged = _stage(path, content, "tmp")
+    try:
+        os.link(staged, path)
     finally:
-        temporary.unlink(missing_ok=True)
+        staged.unlink(missing_ok=True)
+
+
+def _replace_if_unchanged(path: Path, content: str, expected: bytes) -> None:
+    """Replace ``path`` with ``content`` only while it still holds ``expected``.
+
+    The file is moved aside (one atomic rename) before it is compared, so an
+    edit saved after the comparison lands in a new file at ``path`` and the
+    new content's hard link then refuses to replace it. An edit found in the
+    moved-aside file is put back (or kept beside it when ``path`` was written
+    again meanwhile). Nothing unexpected is ever deleted: on any conflict
+    this raises RepoFileConflictError naming where the other change is.
+    """
+    staged = _stage(path, content, "tmp")
+    aside = path.with_name(f".{path.name}.{secrets.token_hex(8)}.old")
+    try:
+        os.rename(path, aside)
+        if aside.read_bytes() != expected:
+            try:
+                os.link(aside, path)
+            except FileExistsError:
+                raise RepoFileConflictError(path, kept=aside) from None
+            aside.unlink()
+            raise RepoFileConflictError(path)
+        try:
+            os.link(staged, path)
+        except FileExistsError:
+            # Written while it was aside: that file wins. The aside copy is
+            # the old content the writer replaced.
+            aside.unlink()
+            raise RepoFileConflictError(path) from None
+        # An editor that had the file open may have written to it after the
+        # comparison: keep that copy rather than delete it.
+        if aside.read_bytes() != expected:
+            raise RepoFileConflictError(path, kept=aside)
+        aside.unlink()
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 WriteOutcome = Literal["written", "same", "other", "outside_repo"]
@@ -156,7 +215,7 @@ def write_if_missing(
             return "same", path, existing
         return "other", path, existing
     try:
-        _publish(path, render(value), replace=False)
+        _publish_new(path, render(value))
     except FileExistsError:
         existing, _ = read_repo_project(root)
         if existing is not None and existing.casefold() == value.casefold():
@@ -166,14 +225,22 @@ def write_if_missing(
 
 
 def rename_if_named(old: str, new: str, start: Path | None = None) -> Path | None:
-    """Point the repo file at ``new`` when it names ``old``; its path, or None."""
+    """Point the repo file at ``new`` when it names ``old``; its path, or None.
+
+    Raises RepoFileConflictError, changing nothing, when the file is edited
+    while it is being updated.
+    """
     path = find_repo_file(start)
     if path is None:
         return None
-    value, error = read_repo_project(path.parent)
-    if error is not None or value is None or value.casefold() != old.casefold():
+    try:
+        before = path.read_bytes()
+        value = parse_repo_file(before.decode("utf-8"))
+    except (OSError, UnicodeError, RepoFileError):
         return None
-    _publish(path, render(new), replace=True)
+    if value.casefold() != old.casefold():
+        return None
+    _replace_if_unchanged(path, render(new), before)
     return path
 
 
