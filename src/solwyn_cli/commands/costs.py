@@ -17,7 +17,11 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands._cost_filters import (
     UnsupportedAccountCostFilterError,
     cost_params,
@@ -284,7 +288,12 @@ def _account_table(data: AccountCostsData) -> TableData:
             groups=[
                 CostGroup.model_validate(
                     group.model_dump(
-                        exclude={"project_name", "current_period_cost", "daily"}
+                        exclude={
+                            "project_name",
+                            "current_period_cost",
+                            "current_period_estimated_cost",
+                            "daily",
+                        }
                     )
                 )
                 for group in data.groups
@@ -408,6 +417,8 @@ def _run(
             semantic=ErrorSemantic.USAGE,
         )
     credential = required_credential(context, resolve=resolve_credential)
+    if not account:
+        runtime = with_project(context, credential)
     if account and not isinstance(credential, LoginCredential):
         exit_with_error(
             context,

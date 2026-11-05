@@ -8,21 +8,20 @@ from typing import Any
 import httpx
 import pytest
 from click.utils import strip_ansi
-
 from golden.harness import assert_matches_golden
+from key_fixtures import ACCOUNT_ID, KEY_ID, PROJECT_ID, FakeCore, auth_key_body
 from login_fixtures import LOGIN_TOKEN, login_credential
+from typer.testing import CliRunner
+
 from solwyn_cli import auth
 from solwyn_cli import config as config_module
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.commands import whoami as whoami_module
-from typer.testing import CliRunner
-
 from solwyn_cli.main import app
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "a1" * 32
+VALID_KEY = "solwyn_sk_" + "7a" * 32
 ACCESS_TOKEN = LOGIN_TOKEN
 
 
@@ -138,35 +137,109 @@ def test_remote_command_rejects_invalid_config_without_leaking_it(
     assert "Traceback" not in result.stderr
 
 
-def test_piped_project_key_is_validated_stored_and_matches_json_golden(
-    monkeypatch: pytest.MonkeyPatch,
+def _fake_store(stored: list[dict[str, Any]]) -> Any:
+    def store(**kwargs: Any) -> auth.ApiKeyCredential:
+        stored.append(kwargs)
+        return auth.ApiKeyCredential(
+            api_key=kwargs["key"],
+            source="keyring",
+            project=kwargs["project_id"],
+            key_id=kwargs["key_id"],
+            account_id=kwargs["account_id"],
+            project_name=kwargs["project_name"],
+        )
+
+    return store
+
+
+def test_piped_api_key_is_checked_stored_and_matches_json_golden(
+    monkeypatch: pytest.MonkeyPatch, fake_core: FakeCore
 ) -> None:
-    stored: list[str] = []
+    stored: list[dict[str, Any]] = []
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: False)
-    monkeypatch.setattr(
-        login_module,
-        "store_project_key",
-        lambda value, **_: (
-            stored.append(value)
-            or auth.ProjectKeyCredential(api_key=value, source="keyring")
-        ),
-    )
+    monkeypatch.setattr(auth, "store_api_key", _fake_store(stored))
 
     result = runner.invoke(
         app,
-        ["--format", "json", "login", "--with-key"],
+        ["--format", "json", "--project", "checkout-bot", "login", "--with-key"],
         input=f"{VALID_KEY}\n",
     )
 
-    assert result.exit_code == 0
-    assert stored == [VALID_KEY]
+    assert result.exit_code == 0, result.stderr
+    # Checked once, with the supplied key and the selector as given.
+    assert [(method, path) for method, path, _ in fake_core.calls] == [
+        ("GET", "/api/v1/auth/key")
+    ]
+    headers = fake_core.calls[0][2]
+    assert headers["authorization"] == f"Bearer {VALID_KEY}"
+    assert headers["solwyn-project"] == "checkout-bot"
+    # Stored under the resolved id with the account the API says owns it.
+    assert [{k: v for k, v in call.items() if k != "api_url"} for call in stored] == [
+        {
+            "project_id": PROJECT_ID,
+            "key": VALID_KEY,
+            "key_id": KEY_ID,
+            "account_id": ACCOUNT_ID,
+            "project_name": "checkout-bot",
+            "mode": None,
+        }
+    ]
     assert result.stderr == ""
     assert_matches_golden(result.stdout, GOLDEN_DIR / "login-key.json")
     assert VALID_KEY not in result.stdout
 
 
-def test_tty_project_key_prompt_is_hidden(
-    monkeypatch: pytest.MonkeyPatch,
+def test_login_with_key_needs_a_project_and_stores_nothing_without_one(
+    monkeypatch: pytest.MonkeyPatch, fake_core: FakeCore
+) -> None:
+    stored: list[dict[str, Any]] = []
+    monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(auth, "store_api_key", _fake_store(stored))
+
+    result = runner.invoke(
+        app, ["--json", "login", "--with-key"], input=f"{VALID_KEY}\n"
+    )
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["code"] == "project_required"
+    assert stored == [] and fake_core.calls == []
+    assert VALID_KEY not in result.stdout + result.stderr
+
+
+def test_login_with_key_refused_by_the_api_stores_nothing(
+    monkeypatch: pytest.MonkeyPatch, fake_core: FakeCore
+) -> None:
+    stored: list[dict[str, Any]] = []
+    fake_core.on(
+        "GET",
+        "/api/v1/auth/key",
+        httpx.Response(
+            404,
+            json={
+                "detail": {
+                    "code": "project_not_found",
+                    "message": "No project on this API key matches Solwyn-Project.",
+                }
+            },
+        ),
+    )
+    monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: False)
+    monkeypatch.setattr(auth, "store_api_key", _fake_store(stored))
+
+    result = runner.invoke(
+        app,
+        ["--json", "--project", "other", "login", "--with-key"],
+        input=f"{VALID_KEY}\n",
+    )
+
+    assert result.exit_code == 2
+    assert json.loads(result.stderr)["code"] == "project_not_found"
+    assert stored == []
+
+
+def test_tty_api_key_prompt_is_hidden(
+    monkeypatch: pytest.MonkeyPatch, fake_core: FakeCore
 ) -> None:
     prompt_calls: list[tuple[str, bool, bool]] = []
 
@@ -174,55 +247,56 @@ def test_tty_project_key_prompt_is_hidden(
         prompt_calls.append((label, hide_input, err))
         return VALID_KEY
 
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(login_module.typer, "prompt", prompt)
-    monkeypatch.setattr(
-        login_module,
-        "store_project_key",
-        lambda value, **_: auth.ProjectKeyCredential(api_key=value, source="keyring"),
-    )
+    monkeypatch.setattr(auth, "store_api_key", _fake_store([]))
 
-    result = runner.invoke(app, ["login", "--with-key"])
+    result = runner.invoke(app, ["--project", PROJECT_ID, "login", "--with-key"])
 
-    assert result.exit_code == 0
-    assert prompt_calls == [("Project key", True, True)]
+    assert result.exit_code == 0, result.stderr
+    assert prompt_calls == [("API key", True, True)]
     assert_matches_golden(result.stdout, GOLDEN_DIR / "login-key-table.txt")
     assert VALID_KEY not in result.stdout + result.stderr
 
 
+@pytest.mark.parametrize(
+    "invalid", ["malformed-sensitive-value", "sk_proj_" + "a1" * 32]
+)
 def test_invalid_piped_key_fails_without_echoing_secret(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, fake_core: FakeCore, invalid: str
 ) -> None:
-    invalid = "malformed-sensitive-value"
     monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: False)
 
     result = runner.invoke(
         app,
-        ["--format", "json", "login", "--with-key"],
+        ["--format", "json", "--project", PROJECT_ID, "login", "--with-key"],
         input=f"{invalid}\n",
     )
 
-    assert result.exit_code == 3
+    assert result.exit_code == 2
     assert result.stdout == ""
-    assert json.loads(result.stderr)["code"] == "invalid_project_key"
+    assert json.loads(result.stderr)["code"] == "invalid_api_key"
+    assert fake_core.calls == []  # Refused locally, never sent.
     assert invalid not in result.stdout + result.stderr + repr(result.exception)
 
 
-def test_project_key_storage_failure_is_structured_exit_three_without_secret(
-    monkeypatch: pytest.MonkeyPatch,
+def test_api_key_storage_failure_is_structured_exit_three_without_secret(
+    monkeypatch: pytest.MonkeyPatch, fake_core: FakeCore
 ) -> None:
-    def fail_store(value: str, **_: object) -> None:
-        assert value == VALID_KEY
+    def fail_store(**kwargs: Any) -> None:
+        assert kwargs["key"] == VALID_KEY
         raise auth.CredentialStorageError(
             "Could not update credentials in the operating-system keychain."
         )
 
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     monkeypatch.setattr(login_module, "_stdin_is_tty", lambda: False)
-    monkeypatch.setattr(login_module, "store_project_key", fail_store)
+    monkeypatch.setattr(auth, "store_api_key", fail_store)
 
     result = runner.invoke(
         app,
-        ["--json", "login", "--with-key"],
+        ["--json", "--project", PROJECT_ID, "login", "--with-key"],
         input=f"{VALID_KEY}\n",
     )
 
@@ -299,8 +373,8 @@ def test_whoami_project_key_uses_configured_project_without_http(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_explicit", "whoami"],
-        env={"SOLWYN_PROJECT_ID": "proj_environment"},
+        ["--json", "--project", "proj_a45c2264b8cab0f1e0637f6c", "whoami"],
+        env={"SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1"},
     )
 
     assert result.exit_code == 0
@@ -313,7 +387,7 @@ def test_whoami_project_key_uses_configured_project_without_http(
 def test_whoami_key_missing_project_has_safe_machine_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="keyring")
     monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
 
     result = runner.invoke(app, ["--json", "whoami"], env={})
@@ -362,7 +436,7 @@ def test_whoami_login_fetches_and_validates_identity_and_projects(
             200,
             json=[
                 {
-                    "id": "proj_alpha",
+                    "id": "proj_be76331b95dfc399cd776d2f",
                     "name": "Alpha",
                     "budget_limit": 100.0,
                     "budget_period": "monthly",
@@ -370,7 +444,7 @@ def test_whoami_login_fetches_and_validates_identity_and_projects(
                     "created_at": "2026-07-10T12:00:00Z",
                 },
                 {
-                    "id": "proj_beta",
+                    "id": "proj_a295e0bdde1938d1fbfd343e",
                     "name": "Beta",
                     "budget_limit": 50.0,
                     "budget_period": "weekly",
@@ -450,7 +524,7 @@ def test_whoami_login_table_matches_golden(
             200,
             json=[
                 {
-                    "id": "proj_alpha",
+                    "id": "proj_be76331b95dfc399cd776d2f",
                     "name": "Alpha",
                     "budget_limit": 100.0,
                     "budget_period": "monthly",
@@ -484,7 +558,9 @@ def test_whoami_table_and_no_color_match_golden(
     )
     monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
 
-    result = runner.invoke(app, ["--no-color", "-p", "proj_alpha", "whoami"])
+    result = runner.invoke(
+        app, ["--no-color", "-p", "proj_be76331b95dfc399cd776d2f", "whoami"]
+    )
 
     assert result.exit_code == 0
     assert_matches_golden(result.stdout, GOLDEN_DIR / "whoami-key-table.txt")

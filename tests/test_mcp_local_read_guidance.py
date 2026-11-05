@@ -2,16 +2,16 @@
 
 import anyio
 import pytest
-
-from solwyn_cli import auth, credential_store
-from solwyn_cli.mcp import server
-from test_mcp_conformance import _call_tool, _install_http
 from login_fixtures import (
-    fake_keychain,
     OTHER_LOGIN_TOKEN,
+    fake_keychain,
     login_credential,
     login_entries,
 )
+from test_mcp_conformance import _call_tool, _install_http
+
+from solwyn_cli import auth, credential_store
+from solwyn_cli.mcp import server
 
 LOGIN_MODES = [
     ("get_costs", {"account": True}),
@@ -46,15 +46,15 @@ def test_login_mode_guidance_with_real_credential_precedence(
 ):
     monkeypatch.delenv("SOLWYN_API_KEY", raising=False)
     monkeypatch.delenv("SOLWYN_AUTH", raising=False)
-    key = "sk_proj_" + "a1" * 32
+    key = "solwyn_sk_" + "a1" * 32
     if source == "environment":
         monkeypatch.setenv("SOLWYN_API_KEY", key)
     elif source == "keyring":
-        keychain[auth.API_KEY_ENTRY] = key
+        keychain[auth.API_KEYS_ENTRY] = key
     elif source == "forced_project_key":
         # A stored login is skipped only when SOLWYN_AUTH asks for the key.
         keychain.update(login_entries(OTHER_LOGIN_TOKEN))
-        keychain[auth.API_KEY_ENTRY] = key
+        keychain[auth.API_KEYS_ENTRY] = key
         monkeypatch.setenv("SOLWYN_AUTH", "project_key")
     resolve = auth.resolve_credential
     calls, _, _ = _install_http(monkeypatch, responses=[], credentials=[])
@@ -84,7 +84,7 @@ def test_project_key_capable_mode_retains_normal_auth_guidance(monkeypatch):
     hint = result.structured_content["error"]["hint"]
     assert hint.startswith(
         "Run solwyn login, or set SOLWYN_TOKEN (a login) or SOLWYN_API_KEY "
-        "(a project key) in the environment. Looked in: file, "
+        "(an API key) in the environment. Looked in: file, "
     )
     assert calls == []
 

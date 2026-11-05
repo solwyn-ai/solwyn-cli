@@ -7,19 +7,17 @@ from typing import Any
 
 import httpx
 import pytest
-
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import overview as overview_module
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "e4" * 32
+VALID_KEY = "solwyn_sk_" + "e4" * 32
 ACCESS_TOKEN = "overview-access-token"
 REFRESH_TOKEN = "overview-refresh-token"
 OVERVIEW_RESPONSE = {
@@ -126,7 +124,7 @@ def test_overview_project_key_stops_before_http_with_login_hint(
     monkeypatch.setattr(
         overview_module,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         raising=False,
     )
 

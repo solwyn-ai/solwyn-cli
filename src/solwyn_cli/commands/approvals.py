@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 
-from solwyn_cli.auth import AuthError, ProjectKeyCredential, resolve_credential
+from solwyn_cli.auth import AuthError, ApiKeyCredential, resolve_credential
 from solwyn_cli.client import (
     ApprovalView,
     SolwynClient,
@@ -87,7 +87,7 @@ def status(
 ) -> None:
     """Show an approval and optionally wait for its decision."""
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         exit_with_error(
             context,
             OutputError(

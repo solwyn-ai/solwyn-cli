@@ -5,13 +5,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
 from solwyn_cli.commands import tags
-from solwyn_cli.main import app
 from solwyn_cli.errors import error_from_response
-from golden.harness import assert_matches_golden
-from login_fixtures import login_credential
+from solwyn_cli.main import app
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 runner = CliRunner()
@@ -58,7 +58,7 @@ def transport(monkeypatch):
                 raise reply
             return reply
 
-    monkeypatch.setenv("SOLWYN_API_KEY", "sk_proj_" + "f6" * 32)
+    monkeypatch.setenv("SOLWYN_API_KEY", "solwyn_sk_" + "f6" * 32)
     monkeypatch.setattr(tags, "SolwynClient", Client)
     return requests, replies
 
@@ -66,10 +66,12 @@ def transport(monkeypatch):
 def test_list_account_scope(transport):
     requests, replies = transport
     replies.append(httpx.Response(200, json=DISCOVERY))
-    result = runner.invoke(app, ["--json", "--project", "proj_1", "tags", "list"])
+    result = runner.invoke(
+        app, ["--json", "--project", "proj_356a192b7913b04c54574d18", "tags", "list"]
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["scope"] == "account"
-    assert requests[0][1] == "/api/v1/projects/proj_1/tags"
+    assert requests[0][1] == "/api/v1/projects/proj_356a192b7913b04c54574d18/tags"
 
 
 def test_values_reserved_characters_are_query_parameter(transport):
@@ -80,7 +82,7 @@ def test_values_reserved_characters_are_query_parameter(transport):
         [
             "--json",
             "--project",
-            "proj_1",
+            "proj_356a192b7913b04c54574d18",
             "tags",
             "values",
             "route /? # =",
@@ -93,7 +95,9 @@ def test_values_reserved_characters_are_query_parameter(transport):
         ],
     )
     assert result.exit_code == 0, result.output
-    assert requests[0][1] == "/api/v1/projects/proj_1/tags/values"
+    assert (
+        requests[0][1] == "/api/v1/projects/proj_356a192b7913b04c54574d18/tags/values"
+    )
     assert requests[0][2]["params"] == {
         "key": "route /? # =",
         "q": "p",
@@ -137,7 +141,7 @@ def test_tag_goldens(transport, monkeypatch, mode, case):
         [
             *(["--json"] if mode == "json" else ["--no-color"]),
             "--project",
-            "proj_1",
+            "proj_356a192b7913b04c54574d18",
             *args,
         ],
     )
@@ -167,7 +171,9 @@ def test_tag_goldens(transport, monkeypatch, mode, case):
 def test_tags_error_contract(transport, code, detail, expected):
     _, replies = transport
     replies.append(error_from_response(httpx.Response(code, json={"detail": detail})))
-    result = runner.invoke(app, ["--json", "--project", "proj_1", "tags", "list"])
+    result = runner.invoke(
+        app, ["--json", "--project", "proj_356a192b7913b04c54574d18", "tags", "list"]
+    )
     assert result.exit_code == expected
     if code == 402:
         assert "Tag analytics need Team" in result.stderr
@@ -178,7 +184,16 @@ def test_tag_values_limit_matches_core(transport):
     requests, _ = transport
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_1", "tags", "values", "env", "--limit", "101"],
+        [
+            "--json",
+            "--project",
+            "proj_356a192b7913b04c54574d18",
+            "tags",
+            "values",
+            "env",
+            "--limit",
+            "101",
+        ],
     )
     assert result.exit_code == 2 and requests == []
 
@@ -226,7 +241,7 @@ def test_values_invalid_cursor_is_usage_error_with_safe_local_hint(transport):
         [
             "--json",
             "--project",
-            "proj_1",
+            "proj_356a192b7913b04c54574d18",
             "tags",
             "values",
             "env",

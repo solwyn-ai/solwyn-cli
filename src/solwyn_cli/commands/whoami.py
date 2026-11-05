@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from solwyn_cli.auth import (
     AuthError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -100,7 +100,7 @@ class _WhoamiData(BaseModel):
 _PROJECTS = TypeAdapter(list[_Project])
 
 
-def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiData:
+def _key_data(credential: ApiKeyCredential, project: str | None) -> _WhoamiData:
     return _WhoamiData(
         auth_type="project_key",
         auth_source=credential.source,
@@ -113,7 +113,7 @@ def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiD
             expires_at=None,
         ),
         configured_project=project,
-        account_id=None,
+        account_id=credential.account_id,
         your_role=None,
         seats_used=None,
         seat_limit=None,
@@ -129,7 +129,7 @@ def _key_data(credential: ProjectKeyCredential, project: str | None) -> _WhoamiD
 
 def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _WhoamiData:
     credential = client.current_credential
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         return _key_data(credential, project)
     identity = _Identity.model_validate(
         client.request("GET", "/api/v1/account/me").json()
@@ -266,7 +266,7 @@ def whoami(context: typer.Context) -> None:
     runtime = command_context(context)
     data = (
         _key_data(credential, runtime.project)
-        if isinstance(credential, ProjectKeyCredential)
+        if isinstance(credential, ApiKeyCredential)
         else _jwt_data(context, credential)
     )
     output_engine(context).write_success(

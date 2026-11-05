@@ -5,16 +5,16 @@ import json
 import anyio
 import httpx
 import pytest
+from login_fixtures import LOGIN_TOKEN, fake_keychain, login_entries
 from mcp import Client
+from test_cost_advice_command import SIMULATION
 from typer.testing import CliRunner
 
+from solwyn_cli import auth
 from solwyn_cli.client import MAX_RETRY_AFTER_SECONDS, SolwynClient
 from solwyn_cli.commands import cost_pricing
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server
-from solwyn_cli import auth
-from test_cost_advice_command import SIMULATION
-from login_fixtures import fake_keychain, LOGIN_TOKEN, login_entries
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def simulation(monkeypatch, keychain, request):
                 [
                     "--json",
                     "--project",
-                    "proj_alpha",
+                    "proj_be76331b95dfc399cd776d2f",
                     "costs",
                     "simulate",
                     "--provider",
@@ -76,7 +76,9 @@ def simulation(monkeypatch, keychain, request):
         async def exercise():
             async with Client(
                 server.create_server(
-                    launch_options=server.McpLaunchOptions(project_id="proj_alpha")
+                    launch_options=server.McpLaunchOptions(
+                        project_id="proj_be76331b95dfc399cd776d2f"
+                    )
                 ),
                 cache=None,
             ) as client:
@@ -107,7 +109,7 @@ def test_simulation_401_is_never_replayed_with_the_stored_login(simulation):
         "authentication_failed" if interface == "cli" else "authentication_required"
     )
     assert [call.url.path for call in calls] == [
-        "/api/v1/projects/proj_alpha/costs/simulate",
+        "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/simulate",
     ]
     assert calls[0].headers["Authorization"] == f"Bearer {LOGIN_TOKEN}"
     assert json.loads(stored[auth.LOGIN_ENTRY])["token"] == LOGIN_TOKEN

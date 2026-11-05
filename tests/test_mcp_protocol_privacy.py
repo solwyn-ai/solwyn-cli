@@ -1,25 +1,24 @@
 """Outer protocol privacy across real stdio and the public SDK runner."""
 
 import asyncio
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import os
-from pathlib import Path
 import queue
 import subprocess
 import sys
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 
 import anyio
-from mcp import MCPError, types
 import pytest
-
-from solwyn_cli.mcp import server as mcp_server
+from mcp import MCPError, types
 from test_mcp_conformance import BUDGET_RESPONSE, VALID_KEY
 from test_mcp_sdk_migration import raw_connection, synthetic_status
 
+from solwyn_cli.mcp import server as mcp_server
 
 CANARY = "PRIVATE_UNKNOWN_METHOD_4ad197"
 METHODS = [CANARY, json.dumps({"nested": {"private": CANARY}}), "x" * 8192 + CANARY]
@@ -60,7 +59,7 @@ def stdio_peer(tmp_path, *, legacy):
                     "--api-url",
                     f"http://127.0.0.1:{http.server_port}",
                     "--project",
-                    "proj_alpha",
+                    "proj_be76331b95dfc399cd776d2f",
                     "mcp",
                 ],
                 cwd=tmp_path,
@@ -194,9 +193,12 @@ def test_unknown_method_stdio_privacy_and_later_calls(tmp_path, legacy):
         assert good["isError"] is False
         assert good["structuredContent"]["ok"] is True
         assert json.loads(good["content"][0]["text"]) == good["structuredContent"]
-        assert good["structuredContent"]["data"]["project_id"] == "proj_alpha"
+        assert (
+            good["structuredContent"]["data"]["project_id"]
+            == "proj_be76331b95dfc399cd776d2f"
+        )
     assert http_requests == [
-        ("/api/v1/projects/proj_alpha/budget", f"Bearer {VALID_KEY}")
+        ("/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", f"Bearer {VALID_KEY}")
     ]
     assert CANARY not in "".join(output + diagnostics)
     assert VALID_KEY not in "".join(output + diagnostics)

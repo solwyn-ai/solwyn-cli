@@ -20,15 +20,18 @@ from solwyn_cli.auth import (
     LoginCredential,
     LoginMetadata,
     PendingDevice,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     ResolvedCredential,
-    store_project_key,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
     credential_saved_note,
+    exit_for_resolution,
     exit_with_error,
+    legacy_keys_note,
 )
+from solwyn_cli.project_resolver import ProjectResolutionError
+from solwyn_cli.runtime import resolve_project
 from solwyn_cli.credential_store import STORE_ENV, STORE_MODES, StoreMode
 from solwyn_cli.errors import ApiError, redact_secrets
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -46,8 +49,8 @@ from solwyn_cli.runtime import command_context, output_engine
 
 LOGIN_HELP = help_contract(
     endpoint=(
-        "POST /oauth/device_authorization and POST /oauth/token, or a local "
-        "credential store write with --with-key"
+        "POST /oauth/device_authorization and POST /oauth/token, or with "
+        "--with-key GET /api/v1/auth/key and a local credential store write"
     ),
     auth="none",
     exits=(
@@ -62,6 +65,8 @@ LOGIN_HELP = help_contract(
         "Exit 6 is error code login_pending; its detail (solwyn.login.pending.v1) has "
         "user_code, verification_uri, verification_uri_complete and expires_at.",
         "Keys are never accepted as command-line arguments or echoed.",
+        "--with-key needs a project (--project, SOLWYN_PROJECT or .solwyn.env): "
+        "the key is checked with GET /api/v1/auth/key and stored for that project.",
         "Stores in the OS keychain on macOS and Windows and in a private 0600 "
         "credentials file on Linux; --store auto|keyring|file chooses and is saved "
         "to config. SOLWYN_CREDENTIAL_STORE overrides config.",
@@ -127,6 +132,8 @@ class _LoginData(BaseModel):
     account_name: str | None
     email: str | None
     role: Literal["owner", "admin", "member"] | None
+    project_id: str | None = None
+    project_name: str | None = None
 
 
 def _note(text: str) -> None:
@@ -147,11 +154,6 @@ def _sanitize_label(value: str) -> str:
         character for character in value if 0x20 <= ord(character) < 0x7F
     ).strip()
     return cleaned[:64]
-
-
-def authenticate_with_project_key(project_key: str) -> ProjectKeyCredential:
-    """Validate and store one project key through the shared auth boundary."""
-    return store_project_key(project_key)
 
 
 def _selected_store(context: typer.Context, requested: str | None) -> StoreMode | None:
@@ -532,9 +534,25 @@ def _login_data(credential: ResolvedCredential) -> _LoginData:
         "keyring" if credential.source == "keyring" else "file"
     )
     location = credential.location
-    if isinstance(credential, ProjectKeyCredential) or credential.meta is None:
+    if isinstance(credential, ApiKeyCredential):
         return _LoginData(
             auth_type="project_key",
+            store=store,
+            location=location,
+            credential_id=credential.key_id,
+            label=None,
+            scope=None,
+            expires_at=None,
+            account_id=credential.account_id,
+            account_name=None,
+            email=None,
+            role=None,
+            project_id=credential.project,
+            project_name=credential.project_name,
+        )
+    if credential.meta is None:
+        return _LoginData(
+            auth_type="login",
             store=store,
             location=location,
             credential_id=None,
@@ -568,11 +586,15 @@ def _login_success(context: typer.Context, credential: ResolvedCredential) -> No
         "Stored in",
         f"{data.store} ({data.location})" if data.location else data.store,
     )
-    if isinstance(credential, ProjectKeyCredential) or credential.meta is None:
+    if isinstance(credential, ApiKeyCredential):
         rows: tuple[tuple[str, str], ...] = (
             ("Authentication", "project_key"),
+            ("Project", f"{credential.project_name} ({credential.project})"),
+            ("Key ID", credential.key_id or "-"),
             stored_in,
         )
+    elif credential.meta is None:
+        rows = (("Authentication", "login"), stored_in)
     else:
         meta = credential.meta
         rows = (
@@ -599,31 +621,73 @@ def _login_success(context: typer.Context, credential: ResolvedCredential) -> No
     )
 
 
-def _login_with_key(context: typer.Context, store: StoreMode | None) -> None:
-    project_key = (
-        typer.prompt("Project key", hide_input=True, err=True)
-        if _stdin_is_tty()
-        else sys.stdin.read().strip()
-    )
+def store_supplied_key(
+    context: typer.Context, raw_key: str, store: StoreMode | None
+) -> ApiKeyCredential:
+    """Check a supplied key with GET /api/v1/auth/key, then store it.
+
+    The key is never a stored or SOLWYN_API_KEY key. It is checked against the
+    selected project first, so a mismatch with the repo file or an unknown
+    project stores nothing; it is stored under (API, project id) with the
+    account the API says owns it.
+    """
     try:
-        credential = store_project_key(project_key, mode=store)
-    except CredentialStorageError as error:
-        _fail(context, "credential_storage_failed", str(error), error.hint)
-    except AuthError:
+        supplied = ApiKeyCredential(
+            api_key=raw_key.strip(), source="environment", location=None
+        )
+    except ValidationError:
         _fail(
             context,
-            "invalid_project_key",
-            "The project key is empty or malformed.",
+            "invalid_api_key",
+            "The API key is empty or malformed.",
+            "Solwyn API keys start with solwyn_sk_. Keys from Solwyn CLI 0.4 and "
+            "earlier (sk_proj_) stopped working; create one with solwyn keys create.",
+            semantic=ErrorSemantic.USAGE,
         )
+    legacy_keys_note(context)
+    try:
+        selection = resolve_project(context, purpose="with_key", supplied_key=supplied)
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
+    bound = selection.credential
+    if (
+        not isinstance(bound, ApiKeyCredential)
+        or bound.project is None
+        or bound.key_id is None
+        or bound.account_id is None
+        or bound.project_name is None
+    ):
+        _fail(context, "invalid_auth_key_response", "The API key response was invalid.")
+        raise AssertionError("unreachable")
+    try:
+        credential = auth.store_api_key(
+            project_id=bound.project,
+            key=bound.bearer_value(),
+            key_id=bound.key_id,
+            account_id=bound.account_id,
+            project_name=bound.project_name,
+            mode=store,
+            api_url=command_context(context).api_url,
+        )
+    except CredentialStorageError as error:
+        _fail(context, "credential_storage_failed", str(error), error.hint)
     except Exception:  # noqa: BLE001 - a structured error, never a traceback.
-        _fail(
-            context, "credential_storage_failed", "The project key could not be stored."
-        )
+        _fail(context, "credential_storage_failed", "The API key could not be stored.")
     if note := credential_saved_note(credential):
         _note(note)
     if note := auth.legacy_entries_note(store):
         _note(note)
-    _login_success(context, credential)
+    return credential
+
+
+def _login_with_key(context: typer.Context, store: StoreMode | None) -> None:
+    """Read a key from a hidden prompt or stdin, never an argument; store it."""
+    raw_key = (
+        typer.prompt("API key", hide_input=True, err=True)
+        if _stdin_is_tty()
+        else sys.stdin.read().strip()
+    )
+    _login_success(context, store_supplied_key(context, raw_key, store))
 
 
 def login(
@@ -632,7 +696,7 @@ def login(
         bool,
         typer.Option(
             "--with-key",
-            help="Read and store a project API key from a hidden prompt or stdin.",
+            help="Check an API key from a hidden prompt or stdin and store it for the project.",
         ),
     ] = False,
     scope: Annotated[
@@ -682,7 +746,7 @@ def login(
         ),
     ] = False,
 ) -> None:
-    """Log in through the browser, or store a project key with --with-key."""
+    """Log in through the browser, or store an API key with --with-key."""
     if no_store and (with_key or resume or store is not None or wait == 0):
         _fail(
             context,
@@ -719,6 +783,7 @@ def login(
         )
         _print_unstored_token(context, token, meta)
         return
+    legacy_keys_note(context, strict=False)
     credential = device_login(
         context,
         scope=requested,
@@ -745,6 +810,7 @@ def logout(context: typer.Context) -> None:
     selected, it looks in both the credentials file and the keychain.
     """
     api_url = command_context(context).api_url
+    legacy_keys_note(context, strict=False)
     try:
         report = auth.logout_everywhere(lambda token: revoke_token(api_url, token))
     except CredentialStorageError as error:

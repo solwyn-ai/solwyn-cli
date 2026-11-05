@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from pydantic import BaseModel
 
 from solwyn_cli.commands.attest import (
@@ -23,7 +22,6 @@ from solwyn_cli.commands.attest import (
     AttestationWindow,
     SpendControlAttestation,
 )
-
 
 SNAPSHOT = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 ATTESTATION_QUERY_PARAMETER_MIRRORS = {

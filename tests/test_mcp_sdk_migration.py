@@ -1,18 +1,19 @@
 """Released protocol and public SDK migration regressions."""
 
 import asyncio
-from contextlib import asynccontextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import os
-from pathlib import Path
 import subprocess
 import sys
+from contextlib import asynccontextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 
 import anyio
 import httpx
+import pytest
 from jsonschema import validate
 from mcp import Client, types
 from mcp.server import Server
@@ -22,16 +23,15 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-import pytest
-
-from solwyn_cli import __version__, auth
-from solwyn_cli.mcp import server as mcp_server
 from test_mcp_conformance import (
     BUDGET_RESPONSE,
     CHECK_RESPONSE,
     VALID_KEY,
     _install_http,
 )
+
+from solwyn_cli import __version__, auth
+from solwyn_cli.mcp import server as mcp_server
 
 
 def test_current_stdio_discovery_without_initialization(tmp_path):
@@ -242,7 +242,7 @@ def test_unsupported_current_protocol_is_sdk_error():
 @pytest.mark.parametrize("mode", ["auto", "legacy", "2026-07-28"])
 def test_public_clients_and_fresh_auth_without_caching(monkeypatch, mode):
     credentials = [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         None,
     ]
     requests, _, _ = _install_http(
@@ -283,9 +283,7 @@ def test_legacy_json_preparsing_and_numeric_coercion(monkeypatch):
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json=CHECK_RESPONSE)],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
 
     async def exercise():
@@ -456,9 +454,9 @@ def test_actual_pre_v2_client_against_stdio(tmp_path, profile):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             assert self.headers["Authorization"] == f"Bearer {VALID_KEY}"
-            assert self.path == "/api/v1/projects/proj_legacy/budget"
+            assert self.path == "/api/v1/projects/proj_9b33046ed39d182e3adafa90/budget"
             payload = json.dumps(
-                {**BUDGET_RESPONSE, "project_id": "proj_legacy"}
+                {**BUDGET_RESPONSE, "project_id": "proj_9b33046ed39d182e3adafa90"}
             ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

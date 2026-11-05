@@ -6,10 +6,10 @@ import typer
 
 from solwyn_cli import auth
 from solwyn_cli.auth import (
+    ApiKeyCredential,
     AuthError,
     CredentialClass,
     LoginCredential,
-    ProjectKeyCredential,
     ResolvedCredential,
     auth_selection,
     expired_login_date,
@@ -20,12 +20,96 @@ from solwyn_cli.auth import (
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic, exit_code_for_error
 from solwyn_cli.output import OutputError, _terminal_safe
-from solwyn_cli.runtime import output_engine
+from solwyn_cli.project_resolver import ProjectResolutionError, project_required
+from solwyn_cli.runtime import (
+    CommandContext,
+    command_context,
+    output_engine,
+    resolve_project,
+)
 
 
 def metering_credential() -> ResolvedCredential | None:
-    """Resolve a project key for metering; the login is never used."""
+    """Resolve an API key for metering; the login is never used."""
     return resolve_credential(purpose="metering")
+
+
+def exit_for_resolution(
+    context: typer.Context, error: ProjectResolutionError | ApiError | AuthError
+) -> None:
+    """Render a resolver failure with its stable exit code."""
+    if isinstance(error, ProjectResolutionError):
+        exit_with_error(
+            context,
+            OutputError(code=error.code, message=error.message, hint=error.hint),
+            semantic=error.semantic,
+        )
+    if isinstance(error, ApiError):
+        exit_with_error(context, error)
+    exit_with_error(
+        context,
+        OutputError(
+            code=(
+                "credential_storage_failed"
+                if isinstance(error, auth.CredentialStorageError)
+                else "authentication_failed"
+            ),
+            message=str(error),
+            hint=error.hint,
+        ),
+        semantic=ErrorSemantic.AUTH,
+    )
+
+
+def _bind_key(
+    context: typer.Context,
+    credential: ResolvedCredential | None,
+    purpose: CredentialClass,
+) -> ResolvedCredential | None:
+    """Choose and bind the API key for this command's project.
+
+    A login is returned as is (``command_project`` resolves its project when
+    the command needs one). A key always needs its project: an env key is
+    bound through the resolver, and with no login and no env key the stored
+    key for the selected project is chosen there.
+    """
+    if isinstance(credential, LoginCredential):
+        return credential
+    if credential is None and purpose != "metering":
+        try:
+            if auth_selection() == "login":
+                return None
+        except ValueError:
+            return None
+    selection = resolve_project(
+        context,
+        purpose="spend" if purpose == "metering" else "read",
+        credential=credential,
+    )
+    return selection.credential
+
+
+def command_project(context: typer.Context, credential: ResolvedCredential) -> str:
+    """The proj_ id this command's requests use; exits when there is none.
+
+    An API key was bound to its project when it was resolved. A login turns
+    the selector into an id through ``GET /api/v1/projects`` (a ``proj_``
+    value needs no read).
+    """
+    if isinstance(credential, ApiKeyCredential):
+        if credential.project is None:
+            exit_for_resolution(context, project_required())
+        return credential.project  # type: ignore[return-value]
+    resolved = command_context(context)
+    if resolved.project_resolved and resolved.project is not None:
+        return resolved.project
+    if resolved.project_selector is None:
+        exit_for_resolution(context, project_required())
+    try:
+        selection = resolve_project(context, purpose="read", credential=credential)
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
+    return selection.project_id  # type: ignore[return-value]
 
 
 def _project_key_selected() -> bool:
@@ -82,6 +166,14 @@ def _missing_credential_error(
     )
 
 
+def with_project(
+    context: typer.Context, credential: ResolvedCredential
+) -> CommandContext:
+    """The command context with ``project`` set to the resolved proj_ id."""
+    command_project(context, credential)
+    return command_context(context)
+
+
 def required_credential(
     context: typer.Context,
     *,
@@ -96,6 +188,10 @@ def required_credential(
     """
     try:
         credential = resolve()
+        if login_message is None:
+            credential = _bind_key(context, credential, purpose)
+    except (ProjectResolutionError, ApiError) as error:
+        exit_for_resolution(context, error)
     except AuthError as error:
         exit_with_error(
             context,
@@ -134,7 +230,7 @@ def required_login(
     exactly like a missing credential: exit 3 with a hint to run solwyn login.
     """
     credential = required_credential(context, resolve=resolve, login_message=message)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         exit_with_error(
             context, _login_required_error(message), semantic=ErrorSemantic.AUTH
         )
@@ -159,17 +255,33 @@ def credential_saved_note(credential: ResolvedCredential) -> str:
     location = credential.location if written is None else written.location
     if location is None:
         return ""
-    if isinstance(credential, ProjectKeyCredential) and kind == "file":
+    if isinstance(credential, ApiKeyCredential) and kind == "file":
+        project = credential.project_name or credential.project
         return (
-            f"Stored the project key in {location}. It has full project access and "
-            "does not expire. For CI and agents, prefer SOLWYN_API_KEY from a secret "
-            "manager."
+            f"Stored the API key for {project} in {location}. For CI and agents, "
+            "prefer SOLWYN_API_KEY from a secret manager."
         )
     if kind == "keyring":
         return f"Saved to {location}."
     return (
         f"Saved to {location} (readable only by your user, and by any program you run)."
     )
+
+
+def legacy_keys_note(context: typer.Context, *, strict: bool = True) -> None:
+    """Drop 0.4.x project keys from the store in use; say so once on stderr.
+
+    ``strict=False`` (login, logout) leaves a store that cannot be read to the
+    command itself, which reports it in its own terms.
+    """
+    try:
+        removed = auth.migrate_legacy_keys(command_context(context).api_url)
+    except AuthError as error:
+        if not strict:
+            return
+        exit_for_resolution(context, error)
+    if removed:
+        typer.echo(_terminal_safe(auth.LEGACY_KEYS_REMOVED_NOTE), err=True)
 
 
 def unused_store_note() -> str | None:

@@ -18,7 +18,7 @@ from mcp.shared import jsonrpc_dispatcher as sdk_dispatcher
 from mcp.shared import direct_dispatcher as sdk_direct_dispatcher
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from solwyn_cli import __version__, auth, credential_store, runtime
+from solwyn_cli import __version__, auth, credential_store, project_resolver, runtime
 from solwyn_cli.mcp.declarations import ToolDeclaration
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli._vendor.batch import new_operation_id, operation_expiry
@@ -42,7 +42,7 @@ from solwyn_cli.auth import (
     AuthError,
     CredentialClass,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     LoginRequiredError,
     LOGIN_REQUIRED_HINT,
     METERING_KEY_HINT,
@@ -913,10 +913,16 @@ def tool_call_client(
     launch_options: McpLaunchOptions | None = None,
     *,
     purpose: CredentialClass = "user",
+    project: str | None = None,
+    needs_project: bool = False,
 ) -> Iterator[tuple[runtime.CommandContext, SolwynClient]]:
     """Resolve fresh runtime, credential, and client state for one MCP tool call.
 
-    Metering tools resolve only a project key; every other tool prefers the login.
+    Metering tools resolve only an API key (``SOLWYN_API_KEY``, else the key
+    stored for the launch project); every other tool prefers the login. An
+    API key is always bound to its project; a login resolves the project only
+    for project reads (``needs_project``). ``project`` is the tool's own
+    project argument, which overrides the launch project.
     """
     launch = launch_options or McpLaunchOptions()
     command_runtime = runtime.resolve_command_context(
@@ -926,12 +932,49 @@ def tool_call_client(
         json_flag=False,
         no_color=True,
     )
+    if project is not None and project.strip(" \t"):
+        selected = project.strip(" \t")
+        command_runtime = command_runtime.model_copy(
+            update={
+                "project": selected,
+                "project_selector": selected,
+                # A tool argument names the project explicitly, like a flag.
+                "project_source": "cli",
+            }
+        )
     operation.checkpoint()
     reset_api_url = auth.use_api_url(command_runtime.api_url)
     try:
         credential = auth.resolve_credential(
             purpose=purpose, api_url=command_runtime.api_url
         )
+        login_only = purpose != "metering" and auth.auth_selection() == "login"
+        if (
+            command_runtime.project_selector is not None
+            and not (credential is None and login_only)
+            and (not isinstance(credential, LoginCredential) or needs_project)
+        ):
+            selection = project_resolver.resolve(
+                runtime.candidates_of(command_runtime),
+                purpose="spend" if purpose == "metering" else "read",
+                api_url=command_runtime.api_url,
+                credential=credential,
+            )
+            credential = selection.credential
+            if selection.project_id is not None:
+                command_runtime = command_runtime.model_copy(
+                    update={"project": selection.project_id, "project_resolved": True}
+                )
+    except project_resolver.ProjectResolutionError as error:
+        raise ApiError(
+            status_code=None,
+            code=error.code,
+            message=error.message,
+            hint=error.hint,
+            detail=None,
+        ) from None
+    except ValueError as error:
+        raise AuthError(str(error)) from None
     finally:
         reset_api_url()
     operation.checkpoint()
@@ -1009,7 +1052,12 @@ def _project_id(
     command_runtime: runtime.CommandContext,
     requested_project_id: str | None,
 ) -> str:
-    project_id = requested_project_id or command_runtime.project
+    # tool_call_client resolved the requested (or launch) project to its id.
+    project_id = (
+        command_runtime.project
+        if command_runtime.project_resolved
+        else requested_project_id or command_runtime.project
+    )
     if project_id is None or not project_id.strip():
         raise ValueError("project_required")
     return project_id
@@ -1450,10 +1498,10 @@ def _safe_remote_error_hint(error: ApiError, code: str) -> str | None:
 
 def _require_project_key(
     result_type: type[ResultT],
-    credential: LoginCredential | ProjectKeyCredential,
+    credential: LoginCredential | ApiKeyCredential,
     operation: str,
 ) -> ResultT | None:
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         return None
     return _error(
         result_type,
@@ -1463,7 +1511,10 @@ def _require_project_key(
             if operation == "checks"
             else "Budget confirmation requires a project API key."
         ),
-        hint="Set SOLWYN_API_KEY or store a project key with solwyn login --with-key.",
+        hint=(
+            "Set SOLWYN_API_KEY and SOLWYN_PROJECT, or run solwyn keys create "
+            "--project PROJECT --store-key."
+        ),
     )
 
 
@@ -1475,7 +1526,9 @@ def _alert_events_operation(
     **filters: Any,
 ) -> _AlertEventsResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=not account
+        ) as (command_runtime, client):
             data = request_alert_events(
                 client=client,
                 project_id=None
@@ -1506,7 +1559,9 @@ def _budget_status_operation(
     launch_options: McpLaunchOptions,
 ) -> _BudgetStatusResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = request_budget_status(
                 client=client,
@@ -1527,7 +1582,9 @@ def _budget_rules_operation(
     with_last_fired: bool = False,
 ) -> _BudgetRulesResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             data = request_budget_rules(
                 client=client,
                 project_id=_project_id(command_runtime, project_id),
@@ -1877,7 +1934,9 @@ def _project_status_operation(
     launch_options: McpLaunchOptions,
 ) -> _ProjectStatusResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = fetch_project_status(
                 client=client,
@@ -1897,7 +1956,9 @@ def _forecast_operation(
     launch_options: McpLaunchOptions,
 ) -> _ForecastResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = fetch_forecast(client=client, project_id=resolved_project)
         return _success(_ForecastResult, data)
@@ -1919,7 +1980,9 @@ def _costs_operation(
     **filters: Any,
 ) -> _CostsResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=not account
+        ) as (command_runtime, client):
             if account:
                 if project_id is not None:
                     raise AccountProjectConflictError(
@@ -1957,7 +2020,9 @@ def _cost_total_operation(
     **filters: Any,
 ) -> _CostTotalResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             data = fetch_cost_total(
                 client=client,
                 project_id=_project_id(command_runtime, project_id),
@@ -1974,7 +2039,7 @@ def _cost_total_operation(
 def _projects_operation(launch_options: McpLaunchOptions) -> _ProjectsResult:
     try:
         with tool_call_client(launch_options) as (_, client):
-            if isinstance(client.current_credential, ProjectKeyCredential):
+            if isinstance(client.current_credential, ApiKeyCredential):
                 return _error(
                     _ProjectsResult,
                     code="authentication_required",
@@ -2060,7 +2125,9 @@ def _tags_operation(
             result_class, code="invalid_tag_query", message="Invalid tag key or prefix."
         )
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             project = _project_id(command_runtime, project_id)
             data = (
                 fetch_tags(client=client, project_id=project)
@@ -2118,7 +2185,9 @@ def _agent_runs_operation(
                 hint="Remove cursor when changing sort.",
             )
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             data = fetch_agent_runs(
                 client=client,
@@ -2178,7 +2247,9 @@ def _agent_run_operation(
     project_id: str | None,
 ) -> _AgentRunResult:
     try:
-        with tool_call_client(launch_options) as (command_runtime, client):
+        with tool_call_client(
+            launch_options, project=project_id, needs_project=True
+        ) as (command_runtime, client):
             resolved_project = _project_id(command_runtime, project_id)
             storage_run_id = resolve_agent_run_id(
                 client=client,
@@ -2210,7 +2281,7 @@ def _agent_run_operation(
 def _overview_operation(launch_options: McpLaunchOptions) -> _OverviewResult:
     try:
         with tool_call_client(launch_options) as (_, client):
-            if isinstance(client.current_credential, ProjectKeyCredential):
+            if isinstance(client.current_credential, ApiKeyCredential):
                 return _error(
                     _OverviewResult,
                     code="authentication_required",
@@ -2262,7 +2333,9 @@ def _read_operation(
     **options,
 ):
     try:
-        with tool_call_client(launch) as (command_runtime, client):
+        with tool_call_client(
+            launch, project=project_id, needs_project=project_read
+        ) as (command_runtime, client):
             if project_read:
                 options["project_id"] = _project_id(command_runtime, project_id)
             if identity:

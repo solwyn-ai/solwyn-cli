@@ -10,7 +10,6 @@ from typer.testing import CliRunner
 
 from solwyn_cli.main import app
 
-
 runner = CliRunner()
 
 
@@ -476,33 +475,51 @@ HELP_CONTRACTS = {
         "schema": "solwyn.init.v1",
     },
     ("keys",): {
-        "endpoint": "composite router for project-key subcommands",
-        "auth": "login",
+        "endpoint": "composite router for API key subcommands",
+        "auth": "login, except keys env (local)",
         "exits": "0 success; 2 usage",
         "schema": "varies by subcommand",
     },
-    ("keys", "revoke"): {
-        "endpoint": "DELETE /api/v1/projects/{project}/key/{key_id}",
+    ("keys", "list"): {
+        "endpoint": "GET /api/v1/keys",
         "auth": "login",
-        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
+        "exits": "0 success; 1 generic/API; 3 auth",
+        "schema": "solwyn.keys-list.v1",
+    },
+    ("keys", "create"): {
+        "endpoint": "POST /api/v1/keys",
+        "auth": "login (browser approval)",
+        "exits": "0 success; 1 generic/API; 2 usage; 3 auth or storage; 6 approval",
+        "schema": "solwyn.keys-create.v1",
+    },
+    ("keys", "revoke"): {
+        "endpoint": "DELETE /api/v1/keys/{key_id}",
+        "auth": "login (browser approval)",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 approval",
         "schema": "solwyn.keys-revoke.v1 (CLI output after bodyless 204)",
     },
     ("keys", "rotate"): {
-        "endpoint": "POST /api/v1/projects/{project}/key/rotate",
-        "auth": "login",
-        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found",
+        "endpoint": "POST /api/v1/keys/{key_id}/rotate",
+        "auth": "login (browser approval)",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 approval",
         "schema": "solwyn.keys-rotate.v1",
     },
-    ("keys", "show"): {
-        "endpoint": "GET /api/v1/projects/{project}/key",
-        "auth": "login",
-        "exits": "0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
-        "schema": "solwyn.keys-show.v1",
+    ("keys", "add-project"): {
+        "endpoint": "none: only the dashboard adds a project to a key",
+        "auth": "none; no credential lookup",
+        "exits": "2 always",
+        "schema": "solwyn.error.v1",
+    },
+    ("keys", "remove-project"): {
+        "endpoint": "DELETE /api/v1/keys/{key_id}/projects/{project_id}",
+        "auth": "login (browser approval)",
+        "exits": "0 success; 1 generic/API; 2 usage or confirmation; 3 auth; 5 not found; 6 approval",
+        "schema": "solwyn.keys-remove-project.v1",
     },
     ("login",): {
         "endpoint": (
-            "POST /oauth/device_authorization and POST /oauth/token, or a local "
-            "credential store write with --with-key"
+            "POST /oauth/device_authorization and POST /oauth/token, or with "
+            "--with-key GET /api/v1/auth/key and a local credential store write"
         ),
         "auth": "none",
         "exits": (
@@ -553,10 +570,13 @@ HELP_CONTRACTS = {
         "schema": "solwyn.approval.v1",
     },
     ("keys", "env"): {
-        "endpoint": "local credential store read",
-        "auth": "local (stored project key)",
-        "exits": "0 success; 2 usage; 3 no stored project key",
-        "schema": "solwyn.keys-env.v1",
+        "endpoint": (
+            "local credential store read; with a login, GET /api/v1/projects "
+            "(and GET /api/v1/accounts/me for SOLWYN_TOKEN)"
+        ),
+        "auth": "local (the stored key; SOLWYN_API_KEY is never read)",
+        "exits": "0 success; 2 usage or project mismatch; 3 no stored key or account unresolved",
+        "schema": "solwyn.keys-env.v2",
     },
     ("mcp-config",): {
         "endpoint": "none (offline)",
@@ -1007,7 +1027,8 @@ def test_project_delete_help_states_irreversibility_and_key_revocation() -> None
     rendered = _normalized_help(("projects", "delete"))
 
     assert "Irreversible" in rendered
-    assert "revokes every project key in the same transaction" in rendered
+    assert "keys stop reaching it in the same transaction" in rendered
+    assert "stored key for the project" in rendered
     assert "immediately becomes unavailable" in rendered
 
 
@@ -1044,8 +1065,8 @@ def test_auth_and_key_help_is_secret_safe() -> None:
     assert "Keys are never accepted as command-line arguments or echoed" in login_help
     assert "The CLI never opens a browser" in login_help
     assert "--wait 0 starts and returns" in login_help
-    assert "never reveals existing key material" in keys_help
-    assert "replacement key is shown exactly once" in keys_help
+    assert "listing never reveals key material" in keys_help
+    assert "otherwise the replacement is shown once" in keys_help
 
 
 def test_webhooks_help_pins_secret_and_delivery_contract() -> None:

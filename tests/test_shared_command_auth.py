@@ -1,7 +1,6 @@
 """Structural guard for one shared command credential resolver."""
 
-from solwyn_cli.commands import _shared
-from solwyn_cli.commands import budget, costs, projects, status
+from solwyn_cli.commands import _shared, budget, costs, projects, status
 
 
 def test_read_only_commands_use_one_shared_credential_resolver() -> None:

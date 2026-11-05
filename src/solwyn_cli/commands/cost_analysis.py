@@ -16,7 +16,11 @@ from solwyn_cli.commands._cost_advice_models import (
     UnitEconomicsResponse,
 )
 from solwyn_cli.commands._cost_filters import window_params
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands.costs import report_window
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -55,6 +59,7 @@ def _request(
 ) -> BaselineResult | UnitEconomicsResponse | CostDriftResponse:
     runtime, _ = _project_path(context)
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             from solwyn_cli.commands._cost_reads import fetch_project_read

@@ -13,25 +13,24 @@ from pathlib import Path
 
 import httpx
 import pytest
+from test_costs_command import WINDOW
+from test_mcp_read_gaps import call
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import costs as costs_module
 from solwyn_cli.main import app
-from test_costs_command import WINDOW
-from test_mcp_read_gaps import call
-
 
 runner = CliRunner()
 SNAPSHOT = json.loads(Path("src/solwyn_cli/spec/openapi_snapshot.json").read_text())
-KEY = auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment")
+KEY = auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment")
 
 # One cost event exactly as Core's CostEventResponse serializes it, with the
 # failover and trace fields populated.
 CORE_COST_EVENT = {
     "id": "evt_0123456789abcdef",
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "agent_run_id": "run_0123456789abcdef0123456789abcdef",
     "provider": "anthropic",
     "model": "claude-sonnet-5-5",
@@ -65,6 +64,8 @@ CORE_COST_EVENT = {
     "span_id": "00f067aa0ba902b7",
     "trace_sampled": True,
     "trace_url": "https://traces.example/trace/4bf92f3577b34da6a3ce929d0e0e4736",
+    "receipt_cost": 0.0,
+    "receipt_is_estimated": False,
     "created_at": "2026-10-30T14:00:00Z",
 }
 # The same event with every nullable field null, as Core sends a call with no
@@ -136,14 +137,19 @@ def test_cli_cost_events_parse_a_complete_core_page(
         functools.partial(SolwynClient, transport=httpx.MockTransport(handle)),
     )
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs", "events"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs", "events"]
+    )
 
     assert result.exit_code == 0, result.stderr
     item = json.loads(result.stdout)["items"][0]
     assert {field: item[field] for field in NEW_FIELDS} == {
         field: event[field] for field in NEW_FIELDS
     }
-    assert requests[-1].url.path == "/api/v1/projects/proj_alpha/costs/events"
+    assert (
+        requests[-1].url.path
+        == "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/events"
+    )
 
 
 def test_cli_cost_events_table_parses_a_complete_core_page(
@@ -161,7 +167,9 @@ def test_cli_cost_events_table_parses_a_complete_core_page(
         ),
     )
 
-    result = runner.invoke(app, ["--no-color", "-p", "proj_alpha", "costs", "events"])
+    result = runner.invoke(
+        app, ["--no-color", "-p", "proj_be76331b95dfc399cd776d2f", "costs", "events"]
+    )
 
     assert result.exit_code == 0, result.stderr
     assert result.stdout.split()[:2] == ["Denied", "Deny"]
@@ -175,7 +183,7 @@ def test_mcp_list_cost_events_parses_a_complete_core_page(
         monkeypatch,
         "list_cost_events",
         [httpx.Response(200, json=_page(copy.deepcopy(event)))],
-        {"project_id": "proj_alpha"},
+        {"project_id": "proj_be76331b95dfc399cd776d2f"},
     )
 
     assert not result.is_error, result.structured_content

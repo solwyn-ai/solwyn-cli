@@ -7,8 +7,6 @@ from typing import Any
 
 import httpx
 import pytest
-from typer.testing import CliRunner
-
 from login_fixtures import (
     APPROVAL_ID,
     approval_body,
@@ -16,13 +14,14 @@ from login_fixtures import (
     approval_required,
     login_credential,
 )
+from test_notifications_commands import CHANNEL
+from typer.testing import CliRunner
+
 from solwyn_cli import approvals, auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import _notifications_common as common
 from solwyn_cli.commands import budget_rules, plan
 from solwyn_cli.main import app
-from test_notifications_commands import CHANNEL
-
 
 runner = CliRunner()
 LOGIN = login_credential()
@@ -286,7 +285,6 @@ def _dummy(param: Any) -> list[str]:
 
 def test_every_approval_capable_positional_round_trips_through_the_retry() -> None:
     import typer.main
-
     from test_help_snapshots import _NO_APPROVAL_WRITES, _WRITE, _commands
 
     checked = []
@@ -338,11 +336,12 @@ def test_init_run_cap_waiting_for_approval_continues_with_budget_rule_add(
 ) -> None:
     import copy
 
+    from test_budget_rules_command import ROUTING
+    from test_budget_set_command import BUDGET_RESPONSE
+
     from solwyn_cli import config as config_module
     from solwyn_cli.commands import budget as budget_module
     from solwyn_cli.commands import init as init_module
-    from test_budget_rules_command import ROUTING
-    from test_budget_set_command import BUDGET_RESPONSE
 
     project = BUDGET_RESPONSE["project_id"]
     created = {
@@ -352,9 +351,13 @@ def test_init_run_cap_waiting_for_approval_continues_with_budget_rule_add(
         "budget_period": "monthly",
         "budget_mode": "alert_only",
         "created_at": "2026-07-10T12:00:00Z",
-        "key": "sk_proj_" + "cd" * 32,
-        "key_prefix": ("sk_proj_" + "cd" * 32)[:24],
+        "key": "solwyn_sk_" + "cd" * 32,
+        "key_prefix": ("solwyn_sk_" + "cd" * 32)[:26],
         "scope": "full",
+        "dedicated_keys_only": False,
+        "key_id": "6f1d0c9e-0000-4000-8000-0000000000cd",
+        "created_via": "cli",
+        "expires_at": "2027-07-10T12:00:00Z",
     }
     puts: list[httpx.Request] = []
 
@@ -397,7 +400,7 @@ def test_init_run_cap_waiting_for_approval_continues_with_budget_rule_add(
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     answers = iter(["Created project", 100.0])
     monkeypatch.setattr(init_module.typer, "prompt", lambda *a, **k: next(answers))
-    monkeypatch.setattr(init_module, "store_project_key", lambda value: None)
+    monkeypatch.setattr(init_module.auth, "store_api_key", lambda **_: None)
     config_path = tmp_path / "config.toml"
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     monkeypatch.setattr(init_module, "get_config_path", lambda: config_path)

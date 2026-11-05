@@ -1,6 +1,6 @@
-Field                                      Value
-Credential             project key (environment)
-Authentication                       project_key
-Source                               environment
-Stored in           environment (SOLWYN_API_KEY)
-Configured project                    proj_alpha
+Field                                       Value
+Credential              project key (environment)
+Authentication                        project_key
+Source                                environment
+Stored in            environment (SOLWYN_API_KEY)
+Configured project  proj_be76331b95dfc399cd776d2f

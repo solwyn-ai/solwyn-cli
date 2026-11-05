@@ -16,9 +16,16 @@ from typing import Any
 
 import httpx
 import pytest
+from key_fixtures import (
+    PROJECT_ID,
+    FakeCore,
+    auth_key_body,
+    key_document,
+    store_key,
+)
+from login_fixtures import LOGIN_TOKEN, login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
@@ -27,7 +34,7 @@ from solwyn_cli.main import app
 
 runner = CliRunner()
 PROD = "https://api.solwyn.ai"
-VALID_KEY = "sk_proj_" + "a1" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
 ISSUED_TOKEN = "solwyn_cli_" + "9a" * 32
 posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 LOGIN_NOTICE = (
@@ -36,7 +43,8 @@ LOGIN_NOTICE = (
 )
 KEY_NOTICE = (
     "A project key saved by Solwyn CLI 0.3 is in the system keyring and is no "
-    "longer read. Run solwyn login --with-key again, or set SOLWYN_API_KEY."
+    "longer read. Run solwyn keys create --project PROJECT --store-key, or set "
+    "SOLWYN_API_KEY and SOLWYN_PROJECT."
 )
 
 
@@ -143,11 +151,11 @@ def test_a_file_swapped_between_check_and_open_is_refused(
 ) -> None:
     # The path keeps passing the privacy check (0600), but every open lands on
     # the attacker's 0644 file: a check-then-open race made deterministic.
-    other_key = "sk_proj_" + "b2" * 32
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
+    other_key = "solwyn_sk_" + "b2" * 32
+    store_key(key=VALID_KEY, mode="file", api_url=PROD)
     attacker = credentials_file.with_name("attacker.json")
     document = json.loads(credentials_file.read_text())
-    document["origins"][PROD]["api_key"] = other_key
+    document["origins"][PROD]["api_keys"][PROJECT_ID]["key"] = other_key
     attacker.write_text(json.dumps(document))
     attacker.chmod(0o644)
     assert stat.S_IMODE(credentials_file.stat().st_mode) == 0o600
@@ -173,7 +181,9 @@ def test_a_file_swapped_between_check_and_open_is_refused(
     monkeypatch.setattr(credential_store.os, "open", hooked_os_open)
 
     result = runner.invoke(
-        app, ["--json", "keys", "env"], env={"SOLWYN_CREDENTIAL_STORE": "file"}
+        app,
+        ["--json", "-p", PROJECT_ID, "keys", "env"],
+        env={"SOLWYN_CREDENTIAL_STORE": "file"},
     )
 
     assert other_key not in result.stdout + result.stderr
@@ -188,15 +198,17 @@ def test_a_symlinked_credentials_file_is_refused(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path, tmp_path: Path
 ) -> None:
     target = tmp_path / "elsewhere.json"
-    FileStore(target).set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: VALID_KEY})
+    FileStore(target).set_api_key(
+        credential_origin(PROD), PROJECT_ID, key_document(key=VALID_KEY)
+    )
     credentials_file.parent.mkdir(parents=True, exist_ok=True)
     credentials_file.symlink_to(target)
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
 
     with pytest.raises(auth.InsecureCredentialFileError, match="symbolic link"):
-        auth.stored_project_key(api_url=PROD)
+        auth.stored_key_for_project(PROJECT_ID, api_url=PROD)
     with pytest.raises(auth.InsecureCredentialFileError, match="symbolic link"):
-        auth.store_project_key(VALID_KEY, api_url=PROD)
+        store_key(key=VALID_KEY, api_url=PROD)
 
 
 @posix_only
@@ -210,9 +222,9 @@ def test_an_existing_directory_we_own_is_tightened_to_0700(
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
 
     if operation == "read":
-        auth.stored_project_key(api_url=PROD)
+        auth.stored_api_keys(api_url=PROD)
     else:
-        auth.store_project_key(VALID_KEY, api_url=PROD)
+        store_key(key=VALID_KEY, api_url=PROD)
 
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
 
@@ -238,7 +250,7 @@ def test_a_directory_owned_by_another_user_is_refused(
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
 
     with pytest.raises(auth.InsecureCredentialFileError) as caught:
-        auth.store_project_key(VALID_KEY, api_url=PROD)
+        store_key(key=VALID_KEY, api_url=PROD)
 
     assert str(caught.value) == (
         f"The credentials directory {credentials_file.parent} is owned by another "
@@ -262,8 +274,8 @@ def test_reads_and_writes_never_follow_symlinks(
     monkeypatch.setattr(credential_store.os, "open", recording)
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
 
-    auth.store_project_key(VALID_KEY, api_url=PROD)
-    auth.stored_project_key(api_url=PROD)
+    store_key(key=VALID_KEY, api_url=PROD)
+    auth.stored_key_for_project(PROJECT_ID, api_url=PROD)
 
     assert flags_seen
     assert all(flags & os.O_NOFOLLOW and flags & os.O_CLOEXEC for flags in flags_seen)
@@ -301,7 +313,9 @@ def test_logout_with_an_unreachable_keychain_reports_what_it_kept_and_fails(
     _oauth_server(monkeypatch)
     keychain = _Lockable(monkeypatch, memory_keyring)
     auth.store_login(LOGIN_TOKEN, login_meta(), mode="keyring", api_url=PROD)
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: VALID_KEY})
+    FileStore().set_api_key(
+        credential_origin(PROD), PROJECT_ID, key_document(key=VALID_KEY)
+    )
     keychain.locked = True
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -323,7 +337,7 @@ def test_logout_without_a_usable_keyring_succeeds_when_the_file_is_in_use(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path, keychain_unreachable: None
 ) -> None:
     _platform(monkeypatch, "linux")
-    auth.store_project_key(VALID_KEY, api_url=PROD)
+    store_key(key=VALID_KEY, api_url=PROD)
 
     result = runner.invoke(app, ["--json", "logout"])
 
@@ -413,8 +427,9 @@ def test_logout_deletes_0_3_keyring_entries_in_every_mode(
 
 @pytest.mark.parametrize("interactive", [True, False])
 def test_linux_auto_login_never_touches_the_keyring(
-    monkeypatch: pytest.MonkeyPatch, interactive: bool
+    monkeypatch: pytest.MonkeyPatch, interactive: bool, fake_core: FakeCore
 ) -> None:
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     _platform(monkeypatch, "linux")
     _oauth_server(monkeypatch)
     monkeypatch.setattr(auth, "_interactive", lambda: interactive)
@@ -424,7 +439,9 @@ def test_linux_auto_login_never_touches_the_keyring(
 
     monkeypatch.setattr(credential_store, "backend_factory", touched)
 
-    with_key = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
+    with_key = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=VALID_KEY
+    )
     start = runner.invoke(app, ["--json", "login", "--wait", "0"])
     resume = runner.invoke(app, ["--json", "login", "--continue"])
 

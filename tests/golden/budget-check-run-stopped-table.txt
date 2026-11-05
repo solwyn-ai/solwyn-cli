@@ -1,7 +1,7 @@
 Field                                                                    Value
 Allowed                                                                     no
 Reservation ID                                                               -
-Project                                                          proj_from_key
+Project                                          proj_52f2908c222d2665b628ea26
 Budget mode                                                          hard_deny
 Budget limit                                                            100.00
 Current usage                                                            18.75

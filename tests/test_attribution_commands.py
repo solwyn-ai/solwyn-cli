@@ -5,12 +5,12 @@ from pathlib import Path
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
 from typer.testing import CliRunner
 
 from solwyn_cli.commands import budget
-from solwyn_cli.main import app
 from solwyn_cli.errors import ApiError, error_from_response
-from golden.harness import assert_matches_golden
+from solwyn_cli.main import app
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 runner = CliRunner()
@@ -39,7 +39,7 @@ def transport(monkeypatch):
                 raise reply
             return reply
 
-    monkeypatch.setenv("SOLWYN_API_KEY", "sk_proj_" + "f6" * 32)
+    monkeypatch.setenv("SOLWYN_API_KEY", "solwyn_sk_" + "f6" * 32)
     monkeypatch.delenv("SOLWYN_TAGS", raising=False)
     monkeypatch.setattr(budget, "SolwynClient", Client)
     # Additional command modules are registered after the first red run.
@@ -79,7 +79,7 @@ DENIED = dict(
     budget_limit=10,
     current_usage=10,
     denied_by_period="tag",
-    project_id="proj_1",
+    project_id="proj_356a192b7913b04c54574d18",
 )
 
 

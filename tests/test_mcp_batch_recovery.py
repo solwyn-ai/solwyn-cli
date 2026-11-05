@@ -6,12 +6,11 @@ from uuid import UUID, uuid5
 import anyio
 import httpx
 import pytest
+from mcp_batch_fixtures import CHECKED, ID, journal
+from test_budget_batch import ALLOWED, CHECK, DENIED
+from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
 
 from solwyn_cli import auth
-from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
-from test_budget_batch import CHECK, ALLOWED, DENIED
-
-from mcp_batch_fixtures import ID, CHECKED, journal
 
 
 def install(monkeypatch, responses):
@@ -20,9 +19,7 @@ def install(monkeypatch, responses):
     return _install_http(
         monkeypatch,
         responses=responses,
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
 
 

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 MAX_SNAPSHOT_AGE_DAYS = 30
 COMMIT_OID = re.compile(r"[0-9a-f]{40}")

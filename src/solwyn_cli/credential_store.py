@@ -6,7 +6,16 @@ never sent to production. Three entries exist per origin:
 - ``login``: one JSON document holding the CLI token and its metadata, so a
   token can never be paired with metadata from another write;
 - ``pending_device``: one JSON document for an in-progress device login;
-- ``api_key``: a project key.
+- ``api_keys``: API keys, one per project id. Each records the key, its id,
+  the account that owns it, the project's name when stored and when it was
+  stored. One origin can hold keys from several accounts, so a stored key is
+  only ever selected by its exact ``proj_`` id; there is no name lookup here.
+
+The file keeps ``api_keys`` as one object. The keyring keeps one item per key,
+``<origin>/api_key/<project id>``, plus an index item ``<origin>/api_keys``
+listing the project ids, because keyrings cannot enumerate. 0.4.x stored one
+``sk_proj_`` key per origin (file version 1, keyring item ``<origin>/api_key``);
+those keys stopped working and are dropped, never read.
 
 Two stores hold them:
 
@@ -62,14 +71,19 @@ KEYRING_SERVICE = "solwyn-cli"
 KEYRING_TIMEOUT_SECONDS = 5.0
 LOCK_TIMEOUT_SECONDS = 10.0
 LOCK_NAME = "credentials.lock"
-FILE_VERSION = 1
+FILE_VERSION = 2
+LEGACY_FILE_VERSION = 1
 
 LOGIN_ENTRY = "login"
 PENDING_DEVICE_ENTRY = "pending_device"
-API_KEY_ENTRY = "api_key"
-ENTRIES = (LOGIN_ENTRY, API_KEY_ENTRY, PENDING_DEVICE_ENTRY)
+API_KEYS_ENTRY = "api_keys"
+# The 0.4.x project key slot: dropped on migration, never read.
+LEGACY_API_KEY_ENTRY = "api_key"
+ENTRIES = (LOGIN_ENTRY, API_KEYS_ENTRY, PENDING_DEVICE_ENTRY)
 # Entries whose values are JSON documents; the file keeps them as objects.
-JSON_ENTRIES = frozenset({LOGIN_ENTRY, PENDING_DEVICE_ENTRY})
+JSON_ENTRIES = frozenset({LOGIN_ENTRY, PENDING_DEVICE_ENTRY, API_KEYS_ENTRY})
+# The fields of one stored API key, exactly.
+API_KEY_FIELDS = frozenset({"key", "key_id", "account_id", "project_name", "stored_at"})
 
 T = TypeVar("T")
 
@@ -379,14 +393,52 @@ def credential_lock(*, shared: bool = False) -> Iterator[None]:
 # --- The file ---------------------------------------------------------------
 
 
-def _valid_section(section: Any) -> bool:
-    """Every entry present is complete and well typed; null is never valid."""
-    if not isinstance(section, dict) or not set(section) <= set(ENTRIES):
+def valid_api_key_entry(value: Any) -> bool:
+    """One stored API key: exactly the five fields, each well formed."""
+    from datetime import datetime
+
+    from solwyn_cli._vendor.validation import API_KEY_PATTERN
+
+    if not isinstance(value, dict) or set(value) != API_KEY_FIELDS:
+        return False
+    if not all(isinstance(value[field], str) and value[field] for field in value):
+        return False
+    if API_KEY_PATTERN.fullmatch(value["key"]) is None:
+        return False
+    try:
+        stored_at = datetime.fromisoformat(value["stored_at"].replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return stored_at.tzinfo is not None
+
+
+def _valid_api_keys(value: Any) -> bool:
+    from solwyn_cli._vendor.validation import PROJECT_ID_PATTERN
+
+    return isinstance(value, dict) and all(
+        isinstance(project_id, str)
+        and PROJECT_ID_PATTERN.fullmatch(project_id) is not None
+        and valid_api_key_entry(entry)
+        for project_id, entry in value.items()
+    )
+
+
+def _valid_section(section: Any, *, version: int = FILE_VERSION) -> bool:
+    """Every entry present is complete and well typed; null is never valid.
+
+    A version 1 section may still hold the 0.4.x ``api_key`` string; it is
+    accepted only so the file can be migrated, and never read.
+    """
+    allowed = (
+        {LOGIN_ENTRY, PENDING_DEVICE_ENTRY, LEGACY_API_KEY_ENTRY}
+        if version == LEGACY_FILE_VERSION
+        else set(ENTRIES)
+    )
+    if not isinstance(section, dict) or not set(section) <= allowed:
         return False
     from pydantic import ValidationError
 
     from solwyn_cli import auth
-    from solwyn_cli._vendor.validation import validate_project_key_format
 
     try:
         if LOGIN_ENTRY in section:
@@ -406,27 +458,49 @@ def _valid_section(section: Any) -> bool:
             if not isinstance(pending, dict):
                 return False
             auth.PendingDevice.model_validate(pending)
-        if API_KEY_ENTRY in section:
-            key = section[API_KEY_ENTRY]
-            if not isinstance(key, str):
-                return False
-            validate_project_key_format(key)
+        if LEGACY_API_KEY_ENTRY in section and not isinstance(
+            section[LEGACY_API_KEY_ENTRY], str
+        ):
+            return False
+        if API_KEYS_ENTRY in section and not _valid_api_keys(section[API_KEYS_ENTRY]):
+            return False
     except (ValidationError, ValueError, TypeError):
         return False
     return True
 
 
-def _valid_document(document: Any) -> bool:
+def _valid_document(document: Any, *, allow_legacy: bool = False) -> bool:
+    versions = (FILE_VERSION, LEGACY_FILE_VERSION) if allow_legacy else (FILE_VERSION,)
     return (
         isinstance(document, dict)
         and set(document) == {"version", "origins"}
-        and document["version"] == FILE_VERSION
+        and document["version"] in versions
         and isinstance(document["origins"], dict)
         and all(
-            isinstance(origin, str) and _valid_section(section)
+            isinstance(origin, str)
+            and _valid_section(section, version=document["version"])
             for origin, section in document["origins"].items()
         )
     )
+
+
+def _upgrade(document: dict[str, Any]) -> bool:
+    """Turn a validated version 1 document into version 2, in place.
+
+    Keeps every login and pending device login and drops every 0.4.x project
+    key. Returns whether a key was dropped.
+    """
+    if document["version"] == FILE_VERSION:
+        return False
+    removed = False
+    for origin in list(document["origins"]):
+        section = document["origins"][origin]
+        if section.pop(LEGACY_API_KEY_ENTRY, None) is not None:
+            removed = True
+        if not section:
+            document["origins"].pop(origin)
+    document["version"] = FILE_VERSION
+    return removed
 
 
 class FileStore:
@@ -469,11 +543,20 @@ class FileStore:
             return handle.read()
 
     def load(self, *, create_directory: bool = False) -> dict[str, Any]:
-        """Return the validated document; a missing file is an empty one."""
+        """Return the validated document; a missing file is an empty one.
+
+        A version 1 file is returned as version 2, without its 0.4.x keys;
+        the file itself changes only on the next write or ``migrate``.
+        """
+        document, _ = self._load(create_directory=create_directory)
+        return document
+
+    def _load(self, *, create_directory: bool = False) -> tuple[dict[str, Any], bool]:
+        """The document as version 2, and whether the file holds 0.4.x keys."""
         empty: dict[str, Any] = {"version": FILE_VERSION, "origins": {}}
         try:
             if not private_directory(self.path.parent, create=create_directory):
-                return empty
+                return empty, False
             raw = self._read_bytes()
         except InsecureFileError:
             raise
@@ -482,14 +565,14 @@ class FileStore:
                 f"Could not read the credentials file at {self.path}."
             ) from None
         if raw is None:
-            return empty
+            return empty, False
         try:
             document = json.loads(raw.decode("utf-8"))
         except ValueError:  # Includes UnicodeDecodeError.
             raise MalformedFileError(self.path) from None
-        if not _valid_document(document):
+        if not _valid_document(document, allow_legacy=True):
             raise MalformedFileError(self.path)
-        return document
+        return document, _upgrade(document)
 
     def section(self, origin: str) -> dict[str, str]:
         """Return every entry stored for one origin, as strings."""
@@ -504,6 +587,70 @@ class FileStore:
 
     def has_origin(self, origin: str) -> bool:
         return bool(self.section(origin))
+
+    def api_keys(self, origin: str) -> dict[str, dict[str, str]]:
+        """Every API key stored for one origin, by project id."""
+        section = self.load()["origins"].get(origin) or {}
+        return dict(section.get(API_KEYS_ENTRY) or {})
+
+    def set_api_key(self, origin: str, project_id: str, entry: dict[str, str]) -> None:
+        def change(origins: dict[str, Any]) -> None:
+            keys = origins.setdefault(origin, {}).setdefault(API_KEYS_ENTRY, {})
+            keys[project_id] = dict(entry)
+
+        self._update(change)
+
+    def delete_api_keys(self, origin: str, project_ids: tuple[str, ...]) -> None:
+        def change(origins: dict[str, Any]) -> None:
+            section = origins.get(origin)
+            if section is None:
+                return
+            keys = section.get(API_KEYS_ENTRY) or {}
+            for project_id in project_ids:
+                keys.pop(project_id, None)
+            if not keys:
+                section.pop(API_KEYS_ENTRY, None)
+            if not section:
+                origins.pop(origin, None)
+
+        if self.path.exists() or self.path.is_symlink():
+            self._update(change)
+
+    def migrate(self) -> bool:
+        """Rewrite a version 1 file as version 2; True when 0.4.x keys went."""
+        with credential_lock():
+            try:
+                if not self.path.exists() and not self.path.is_symlink():
+                    return False
+                # Validates the whole document first: a malformed file is
+                # refused here, before any command goes further.
+                document, removed = self._load()
+                if not self._is_legacy():
+                    return False
+                if document["origins"]:
+                    self._write(document)
+                else:
+                    self.path.unlink(missing_ok=True)
+            except (InsecureFileError, MalformedFileError):
+                raise
+            except (OSError, StoreUnavailableError):
+                raise StoreUnavailableError(
+                    f"Could not write the credentials file at {self.path}."
+                ) from None
+        return removed
+
+    def _is_legacy(self) -> bool:
+        """Whether the file on disk is still version 1 (read under the lock)."""
+        raw = self._read_bytes()
+        if raw is None:
+            return False
+        try:
+            document = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return False
+        return isinstance(document, dict) and document.get("version") == (
+            LEGACY_FILE_VERSION
+        )
 
     def set_many(self, origin: str, values: Mapping[str, str]) -> None:
         def change(origins: dict[str, Any]) -> None:
@@ -786,3 +933,57 @@ class KeyringStore:
 
     def delete(self, origin: str, entry: str) -> None:
         self.delete_raw(f"{origin}/{entry}")
+
+    # API keys: one item per project id, plus an index of the ids.
+
+    @staticmethod
+    def api_key_username(origin: str, project_id: str) -> str:
+        return f"{origin}/api_key/{project_id}"
+
+    @staticmethod
+    def api_key_index_username(origin: str) -> str:
+        return f"{origin}/{API_KEYS_ENTRY}"
+
+    def api_key_index(self, origin: str) -> list[str]:
+        """The project ids the index lists; a malformed index is an error."""
+        from solwyn_cli._vendor.validation import PROJECT_ID_PATTERN
+
+        raw = self.get_raw(self.api_key_index_username(origin))
+        if raw is None:
+            return []
+        try:
+            index = json.loads(raw)
+        except ValueError:
+            index = None
+        if not isinstance(index, list) or not all(
+            isinstance(item, str) and PROJECT_ID_PATTERN.fullmatch(item)
+            for item in index
+        ):
+            raise StoreUnavailableError(
+                "The system keyring holds an invalid Solwyn API key index "
+                f"({self.api_key_index_username(origin)})."
+            )
+        return list(dict.fromkeys(index))
+
+    def get_api_key(self, origin: str, project_id: str) -> str | None:
+        return self.get_raw(self.api_key_username(origin, project_id))
+
+    def set_api_key(self, origin: str, project_id: str, value: str) -> None:
+        """Write the item, then the index; each write is read back."""
+        self.set_raw(self.api_key_username(origin, project_id), value)
+        index = self.api_key_index(origin)
+        if project_id not in index:
+            self.set_raw(
+                self.api_key_index_username(origin), json.dumps([*index, project_id])
+            )
+
+    def delete_api_key(self, origin: str, project_id: str) -> None:
+        """Delete the item, then drop it from the index (the index last)."""
+        self.delete_raw(self.api_key_username(origin, project_id))
+        index = self.api_key_index(origin)
+        if project_id in index:
+            remaining = [item for item in index if item != project_id]
+            if remaining:
+                self.set_raw(self.api_key_index_username(origin), json.dumps(remaining))
+            else:
+                self.delete_raw(self.api_key_index_username(origin))

@@ -5,19 +5,19 @@ import json
 
 import httpx
 import pytest
-from typer.testing import CliRunner
-
-from solwyn_cli import auth
-from solwyn_cli.commands import alerts, budget, plan, account
-from solwyn_cli.main import app
+from login_fixtures import login_credential
 from test_alerts_command import EVENT, WINDOW
 from test_budget_set_command import FakeClient
 from test_plan_command import BILLING_STATUS
-from login_fixtures import login_credential
+from typer.testing import CliRunner
+
+from solwyn_cli import auth
+from solwyn_cli.commands import account, alerts, budget, plan
+from solwyn_cli.main import app
 
 runner = CliRunner()
 JWT = login_credential("synthetic-access")
-KEY = auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment")
+KEY = auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment")
 
 
 @pytest.fixture(autouse=True)
@@ -36,12 +36,14 @@ def reads(monkeypatch):
 
 
 def invoke(*args):
-    return runner.invoke(app, ["--json", "--project", "proj_alpha", *args])
+    return runner.invoke(
+        app, ["--json", "--project", "proj_be76331b95dfc399cd776d2f", *args]
+    )
 
 
 def test_activity_cross_project_empty_continued_page_and_filters():
     event = copy.deepcopy(EVENT)
-    event.update(project_id="proj_other", event_type="fired")
+    event.update(project_id="proj_d0941e68da8f38151ff86a61", event_type="fired")
     FakeClient.responses = [
         httpx.Response(200, json=dict(events=[], next_cursor="next", window=WINDOW)),
         httpx.Response(200, json=dict(events=[event], next_cursor=None, window=WINDOW)),
@@ -51,7 +53,7 @@ def test_activity_cross_project_empty_continued_page_and_filters():
     )
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
-    assert data["events"][0]["project_id"] == "proj_other"
+    assert data["events"][0]["project_id"] == "proj_d0941e68da8f38151ff86a61"
     assert data["next_cursor"] is None
     requests = FakeClient.instances[0].requests
     assert requests[0] == (
@@ -83,7 +85,7 @@ def test_uncounted_is_separate_advisory_read(calls):
         httpx.Response(
             200,
             json=dict(
-                project_id="proj_alpha",
+                project_id="proj_be76331b95dfc399cd776d2f",
                 uncounted_calls=calls,
                 uncounted_tokens=42,
                 last_reported_at=None,
@@ -96,7 +98,7 @@ def test_uncounted_is_separate_advisory_read(calls):
     assert "unpriced upper bound" in result.stderr
     assert (
         FakeClient.instances[0].requests[0][1]
-        == "/api/v1/projects/proj_alpha/budget/uncounted"
+        == "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget/uncounted"
     )
 
 
@@ -171,8 +173,9 @@ def test_phone_show_inspects_sms_prerequisites():
 
 
 def test_budget_rules_last_fired_percent_mapping_and_null(monkeypatch):
-    from solwyn_cli.commands import budget_rules
     from test_budget_set_command import _response
+
+    from solwyn_cli.commands import budget_rules
 
     monkeypatch.setattr(budget_rules, "SolwynClient", FakeClient)
     monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: JWT)
@@ -391,9 +394,13 @@ def test_new_account_reads_reject_project_key_before_http(monkeypatch, args):
 @pytest.mark.parametrize(
     "payload",
     [
-        dict(project_id="proj_alpha", uncounted_calls=0, uncounted_tokens=0),
         dict(
-            project_id="proj_alpha",
+            project_id="proj_be76331b95dfc399cd776d2f",
+            uncounted_calls=0,
+            uncounted_tokens=0,
+        ),
+        dict(
+            project_id="proj_be76331b95dfc399cd776d2f",
             uncounted_calls=0,
             uncounted_tokens=0,
             last_reported_at=None,
@@ -423,7 +430,7 @@ def test_uncounted_503_never_becomes_zero():
         json={"detail": "Budget backend temporarily unavailable; retry"},
         request=httpx.Request(
             "GET",
-            "https://api.example.invalid/api/v1/projects/proj_alpha/budget/uncounted",
+            "https://api.example.invalid/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget/uncounted",
         ),
     )
     FakeClient.responses = [error_from_response(response)]
@@ -460,7 +467,9 @@ def test_latest_selector_chunk_cap_and_empty_nulls():
 
     selectors = [
         AlertRuleLookup(
-            rule_key=f"rule-{i}", project_id="proj_alpha", rule_type="scoped_budget"
+            rule_key=f"rule-{i}",
+            project_id="proj_be76331b95dfc399cd776d2f",
+            rule_type="scoped_budget",
         )
         for i in range(201)
     ]
@@ -476,8 +485,9 @@ def test_latest_selector_chunk_cap_and_empty_nulls():
 
 
 def test_last_fired_opt_out_no_extra_requests(monkeypatch):
-    from solwyn_cli.commands import budget_rules
     from test_budget_set_command import _response
+
+    from solwyn_cli.commands import budget_rules
 
     monkeypatch.setattr(budget_rules, "SolwynClient", FakeClient)
     monkeypatch.setattr(budget_rules, "resolve_credential", lambda **_: JWT)
@@ -547,7 +557,7 @@ def test_identity_missing_and_unexpected_fields_fail_closed(monkeypatch, mutate)
             "budget-uncounted",
             ["budget", "uncounted"],
             dict(
-                project_id="proj_alpha",
+                project_id="proj_be76331b95dfc399cd776d2f",
                 uncounted_calls=0,
                 uncounted_tokens=0,
                 last_reported_at=None,
@@ -559,6 +569,7 @@ def test_identity_missing_and_unexpected_fields_fail_closed(monkeypatch, mutate)
 )
 def test_new_cli_json_output_goldens(name, args, payload):
     from pathlib import Path
+
     from golden.harness import assert_matches_golden
 
     FakeClient.responses = [httpx.Response(200, json=payload)]

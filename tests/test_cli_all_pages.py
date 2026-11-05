@@ -1,16 +1,16 @@
 """Public CLI pagination using synthetic, offline HTTP responses."""
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import click
 import httpx
 import pytest
+from help_options import assert_public_bool_flag
 from typer.testing import CliRunner
 
-from help_options import assert_public_bool_flag
-from solwyn_cli.auth import ProjectKeyCredential
+from solwyn_cli.auth import ApiKeyCredential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import costs, runs, tags
 from solwyn_cli.main import app
@@ -45,8 +45,8 @@ def paging(request, monkeypatch):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda **_: ProjectKeyCredential(
-            api_key="sk_proj_" + "a4" * 32, source="environment"
+        lambda **_: ApiKeyCredential(
+            api_key="solwyn_sk_" + "a4" * 32, source="environment"
         ),
     )
     monkeypatch.setattr(costs, "get_capabilities", lambda **kwargs: None)
@@ -71,7 +71,8 @@ def paging(request, monkeypatch):
 
     def invoke(*args):
         return runner.invoke(
-            app, ["--json", "--project", "proj_alpha", *command, *args]
+            app,
+            ["--json", "--project", "proj_be76331b95dfc399cd776d2f", *command, *args],
         )
 
     return calls, replies, page, invoke, field, schema, command
@@ -267,7 +268,9 @@ def test_providers_group_has_useful_public_description():
 def test_all_pages_table_keeps_server_order_and_has_no_stale_continuation(paging):
     _, replies, page, _, _, _, command = paging
     replies.extend([page("next"), page(label="second")])
-    result = runner.invoke(app, ["--project", "proj_alpha", *command, "--all"])
+    result = runner.invoke(
+        app, ["--project", "proj_be76331b95dfc399cd776d2f", *command, "--all"]
+    )
     assert result.exit_code == 0, result.output
     assert result.stdout.index("first") < result.stdout.index("second")
     assert "next cursor" not in result.stderr.lower()

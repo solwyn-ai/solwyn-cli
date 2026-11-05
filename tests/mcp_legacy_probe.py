@@ -10,7 +10,6 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.exceptions import McpError
 
-
 READ_TOOL_NAMES = frozenset(
     {
         "budget_status",
@@ -62,12 +61,12 @@ async def main():
             "--api-url",
             sys.argv[2],
             "--project",
-            "proj_legacy",
+            "proj_9b33046ed39d182e3adafa90",
             "mcp",
             "--profile",
             profile,
         ],
-        env={"SOLWYN_API_KEY": "sk_proj_" + "a1" * 32},
+        env={"SOLWYN_API_KEY": "solwyn_sk_" + "a1" * 32},
     )
     with tempfile.TemporaryFile(mode="w+") as stderr:
         with anyio.fail_after(15):

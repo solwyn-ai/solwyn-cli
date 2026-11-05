@@ -1,26 +1,26 @@
 """Budget confirmation guardrail command contract tests."""
 
 import json
-from datetime import UTC, datetime
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli._vendor import wire as wire_module
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
 
-
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "f6" * 32
+VALID_KEY = "solwyn_sk_" + "f6" * 32
 JWT_ACCESS = "budget-confirm-access-token"
 JWT_REFRESH = "budget-confirm-refresh-token"
 BASE_ARGS = [
@@ -115,8 +115,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _credential(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
+def _credential(source: str = "environment", **_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source=source)
 
 
 def _queue_success(status_code: int = 204) -> None:
@@ -167,7 +167,7 @@ def test_budget_confirm_posts_every_token_detail_with_project_key(
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
-    assert client.credential is credential
+    assert same_credential(client.credential, credential)
     assert client.requests[:1] == [
         (
             "POST",
@@ -456,7 +456,7 @@ def test_budget_confirm_resolves_only_a_metering_key_without_request(
     error = json.loads(result.stderr)
     assert error["code"] == "authentication_required"
     assert error["hint"].startswith(auth.METERING_KEY_HINT + " Looked in: ")
-    assert "--with-key" in error["hint"]
+    assert "keys create" in error["hint"]
 
 
 @pytest.mark.parametrize(

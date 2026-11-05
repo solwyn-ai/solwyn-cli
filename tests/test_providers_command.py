@@ -7,19 +7,19 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import providers as providers_module
 from solwyn_cli.errors import ApiError, error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "e5" * 32
+VALID_KEY = "solwyn_sk_" + "e5" * 32
 ACCESS_TOKEN = "providers-access-token"
 REFRESH_TOKEN = "providers-refresh-token"
 
@@ -143,8 +143,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _key(**_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+def _key(**_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 def test_providers_commands_are_registered() -> None:
@@ -161,7 +161,7 @@ def test_providers_commands_are_registered() -> None:
 @pytest.mark.parametrize(
     "credential",
     [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         login_credential(ACCESS_TOKEN),
     ],
 )
@@ -176,14 +176,22 @@ def test_failovers_supports_key_and_jwt_and_preserves_the_wire_payload(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "providers", "failovers", "--range", "24h"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "providers",
+            "failovers",
+            "--range",
+            "24h",
+        ],
     )
 
     assert result.exit_code == 0
     assert FakeClient.instances[0].requests == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/providers/failovers",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers/failovers",
             {"params": {"range": "24h"}},
         )
     ]
@@ -199,7 +207,7 @@ def test_failovers_table_labels_known_reasons_and_passes_unknown_reasons_through
 
     result = runner.invoke(
         app,
-        ["--no-color", "-p", "proj_alpha", "providers", "failovers"],
+        ["--no-color", "-p", "proj_be76331b95dfc399cd776d2f", "providers", "failovers"],
     )
 
     assert result.exit_code == 0
@@ -223,7 +231,15 @@ def test_failovers_accepts_only_the_frozen_ranges(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "providers", "failovers", "--range", time_range],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "providers",
+            "failovers",
+            "--range",
+            time_range,
+        ],
     )
 
     assert result.exit_code == 0
@@ -233,7 +249,7 @@ def test_failovers_accepts_only_the_frozen_ranges(
 @pytest.mark.parametrize(
     "credential",
     [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         login_credential(ACCESS_TOKEN),
     ],
 )
@@ -251,16 +267,24 @@ def test_untracked_supports_key_and_jwt_and_prints_effective_billing_retention(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "providers", "untracked", "--range", "90d"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "providers",
+            "untracked",
+            "--range",
+            "90d",
+        ],
     )
 
     assert result.exit_code == 0
-    assert FakeClient.instances[0].credential is credential
+    assert same_credential(FakeClient.instances[0].credential, credential)
     assert FakeClient.instances[0].requests == [
         ("GET", "/api/v1/billing/status", {}),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/untracked-surfaces",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/untracked-surfaces",
             {"params": {"range": "90d"}},
         ),
     ]
@@ -279,7 +303,15 @@ def test_untracked_table_marks_occurrences_advisory(
 
     result = runner.invoke(
         app,
-        ["--no-color", "-p", "proj_alpha", "providers", "untracked", "--range", "90d"],
+        [
+            "--no-color",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "providers",
+            "untracked",
+            "--range",
+            "90d",
+        ],
     )
 
     assert result.exit_code == 0
@@ -308,7 +340,15 @@ def test_untracked_keeps_the_window_unknown_when_entitlement_probe_fails(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "providers", "untracked", "--range", "30d"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "providers",
+            "untracked",
+            "--range",
+            "30d",
+        ],
     )
 
     assert result.exit_code == 0
@@ -319,7 +359,7 @@ def test_untracked_keeps_the_window_unknown_when_entitlement_probe_fails(
     assert payload["window_source"] == "unknown"
     assert [path for _, path, _ in FakeClient.instances[0].requests] == [
         "/api/v1/billing/status",
-        "/api/v1/projects/proj_alpha/untracked-surfaces",
+        "/api/v1/projects/proj_be76331b95dfc399cd776d2f/untracked-surfaces",
     ]
 
 
@@ -336,7 +376,15 @@ def test_untracked_accepts_only_the_frozen_ranges(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "providers", "untracked", "--range", time_range],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "providers",
+            "untracked",
+            "--range",
+            time_range,
+        ],
     )
 
     assert result.exit_code == 0
@@ -376,7 +424,7 @@ def test_provider_failovers_fails_closed_on_extended_response(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "providers", "failovers"],
+        ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "providers", "failovers"],
     )
 
     assert result.exit_code == 1
@@ -402,7 +450,7 @@ def test_provider_cross_project_key_403_has_an_actionable_project_hint(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_other", "providers", "failovers"],
+        ["--json", "-p", "proj_d0941e68da8f38151ff86a61", "providers", "failovers"],
     )
 
     assert result.exit_code == 3

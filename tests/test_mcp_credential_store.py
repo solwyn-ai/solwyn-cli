@@ -16,13 +16,13 @@ from typing import Any
 
 import anyio
 import pytest
+from login_fixtures import LOGIN_TOKEN, login_meta
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from test_mcp_conformance import _install_http
 
-from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, credential_store
 from solwyn_cli.mcp import server
-from test_mcp_conformance import _install_http
 
 
 @pytest.fixture
@@ -226,7 +226,7 @@ def _minimal_env_list_projects(home: Path, api_url: str) -> Any:
             "-c",
             "from solwyn_cli.main import app; app()",
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "--api-url",
             api_url,
             "mcp",

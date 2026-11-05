@@ -5,14 +5,13 @@ import json
 import anyio
 import httpx
 import pytest
+from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
 from solwyn_cli.commands import budget
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server as mcp_server
-from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
-
 
 RUN_ID = "integration-job"
 STOPPED = {
@@ -22,7 +21,7 @@ STOPPED = {
     "budget_limit": 100,
     "current_usage": 18,
     "denied_by_period": "run_stopped",
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "run_control": {
         "version": "1",
         "action": "terminate",
@@ -35,7 +34,7 @@ STOPPED = {
 def _check(
     monkeypatch, interface, responses, *, no_record=False, from_environment=False
 ):
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, remaining = _install_http(
         monkeypatch, responses=responses, credentials=[credential]
     )

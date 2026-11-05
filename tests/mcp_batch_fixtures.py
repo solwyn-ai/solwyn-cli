@@ -1,7 +1,7 @@
 """Exact Core journal fixtures for MCP consumers."""
 
-from datetime import UTC, datetime, timedelta
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 CHECKED = datetime(2026, 9, 6, tzinfo=UTC)

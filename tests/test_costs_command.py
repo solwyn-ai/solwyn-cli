@@ -9,23 +9,23 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
+from test_entitlement import BILLING
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
-from test_entitlement import BILLING
-from solwyn_cli.commands._entitlement import TierCapabilities
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import costs as costs_module
 from solwyn_cli.commands._cost_models import AccountCostDailyPoint
+from solwyn_cli.commands._entitlement import TierCapabilities
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "c3" * 32
+VALID_KEY = "solwyn_sk_" + "c3" * 32
 ACCESS_TOKEN = "costs-access-token"
 REFRESH_TOKEN = "costs-refresh-token"
 
@@ -42,7 +42,7 @@ ACCOUNT_RESPONSE = {
     "group_by": "project",
     "groups": [
         {
-            "group_key": "proj_alpha",
+            "group_key": "proj_be76331b95dfc399cd776d2f",
             "provider": None,
             "modality": None,
             "agent_run_name": None,
@@ -108,7 +108,7 @@ GROUPS = {
 
 def _response(
     *,
-    project_id: str = "proj_alpha",
+    project_id: str = "proj_be76331b95dfc399cd776d2f",
     time_range: str = "7d",
     group_by: str = "model",
 ) -> dict[str, Any]:
@@ -174,8 +174,8 @@ def _queue_costs_response(**kwargs: str) -> None:
     FakeClient.responses = [httpx.Response(200, json=_response(**kwargs))]
 
 
-def _credential(**_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+def _credential(**_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 def test_costs_command_is_registered() -> None:
@@ -528,7 +528,7 @@ def test_account_costs_keep_core_402_and_403_messages_safe(
 @pytest.mark.parametrize(
     "credential",
     [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         login_credential(ACCESS_TOKEN),
     ],
 )
@@ -543,17 +543,17 @@ def test_costs_supports_bare_key_and_jwt_with_one_read_only_get(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "costs"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "costs"],
     )
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
-    assert client.credential is credential
+    assert same_credential(client.credential, credential)
     assert client.api_url == "https://api.solwyn.ai"
     assert client.requests == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/costs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs",
             {"params": {"range": "7d", "group_by": "model"}},
         )
     ]
@@ -577,7 +577,7 @@ def test_costs_sends_every_frozen_range_and_group_value(
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "--range",
             time_range,
@@ -608,7 +608,7 @@ def test_costs_grouping_shapes_match_goldens(
         [
             *output_options,
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "--group-by",
             group_by,
@@ -628,9 +628,19 @@ def test_costs_grouping_shapes_match_goldens(
 @pytest.mark.parametrize(
     ("options", "environment_project", "configured_project", "expected_project"),
     [
-        (["--project", "proj_flag"], "proj_environment", "proj_config", "proj_flag"),
-        ([], "proj_environment", "proj_config", "proj_environment"),
-        ([], "", "proj_config", "proj_config"),
+        (
+            ["--project", "proj_112f3a99b283a4e1788dedd8"],
+            "proj_c6e454d960df4845f9d69eb1",
+            "proj_dfba7aade0868074c2861c98",
+            "proj_112f3a99b283a4e1788dedd8",
+        ),
+        (
+            [],
+            "proj_c6e454d960df4845f9d69eb1",
+            "proj_dfba7aade0868074c2861c98",
+            "proj_c6e454d960df4845f9d69eb1",
+        ),
+        ([], "", "proj_dfba7aade0868074c2861c98", "proj_dfba7aade0868074c2861c98"),
     ],
 )
 def test_costs_project_precedence_is_flag_environment_then_config(
@@ -696,7 +706,9 @@ def test_costs_missing_credentials_is_auth_error_without_api_calls(
         costs_module, "resolve_credential", lambda **_: None, raising=False
     )
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs"]
+    )
 
     assert result.exit_code == 3
     assert result.stdout == ""
@@ -714,7 +726,9 @@ def test_costs_missing_credentials_is_auth_error_without_api_calls(
     ],
 )
 def test_costs_rejects_malformed_tag_group_before_request(option: list[str]) -> None:
-    result = runner.invoke(app, ["-p", "proj_alpha", "costs", *option])
+    result = runner.invoke(
+        app, ["-p", "proj_be76331b95dfc399cd776d2f", "costs", *option]
+    )
 
     assert result.exit_code == 2
     assert FakeClient.instances == []
@@ -736,7 +750,8 @@ def test_costs_relays_production_gated_402_for_free_project_key(
         402,
         json={"detail": detail},
         request=httpx.Request(
-            "GET", "https://api.solwyn.ai/api/v1/projects/proj_alpha/costs"
+            "GET",
+            "https://api.solwyn.ai/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs",
         ),
     )
     FakeClient.responses = [error_from_response(response)]
@@ -746,7 +761,7 @@ def test_costs_relays_production_gated_402_for_free_project_key(
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "--range",
             "365d",
@@ -764,7 +779,7 @@ def test_costs_relays_production_gated_402_for_free_project_key(
     assert FakeClient.instances[0].requests == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/costs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs",
             {"params": {"range": "365d", "group_by": "model"}},
         )
     ]
@@ -782,7 +797,9 @@ def test_costs_rejects_invalid_response_without_leaking_credentials(
     invalid["groups"][0].pop("call_count")
     FakeClient.responses = [httpx.Response(200, json=invalid)]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs"]
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -803,7 +820,9 @@ def test_costs_accepts_snapshot_optional_group_fields(
     response["groups"] = [group]
     FakeClient.responses = [httpx.Response(200, json=response)]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs"]
+    )
 
     assert result.exit_code == 0
     rendered_group = json.loads(result.stdout)["groups"][0]
@@ -831,7 +850,7 @@ def test_truncated_costs_note_stays_on_stderr(output_format, monkeypatch):
         app,
         [
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             *(["--json"] if output_format == "json" else []),
             "costs",
         ],
@@ -855,7 +874,9 @@ def test_costs_rejects_missing_truncation_flag(monkeypatch):
     response = _response()
     response.pop("truncated", None)
     FakeClient.responses = [httpx.Response(200, json=response)]
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs"]
+    )
     assert result.exit_code == 1
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "invalid_costs_response"
@@ -887,7 +908,7 @@ def test_expanded_dimensions_match_goldens(monkeypatch, dimension, output_format
             "--format",
             output_format,
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "--group-by",
             dimension,
@@ -904,7 +925,7 @@ def test_expanded_dimensions_match_goldens(monkeypatch, dimension, output_format
 
 EVENT = {
     "id": "event_1",
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "agent_run_id": None,
     "provider": "openai",
     "model": "gpt-5-mini",
@@ -930,7 +951,7 @@ EVENT = {
     "tags": {"customer": "example"},
 }
 TOTAL = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "range": "7d",
     "total_cost": 2.5,
     "total_input_tokens": 2400,
@@ -963,7 +984,15 @@ def test_events_and_total_goldens(monkeypatch, command, payload, output_format):
     monkeypatch.setattr(costs_module, "resolve_credential", _credential)
     FakeClient.responses = [httpx.Response(200, json=payload)]
     result = runner.invoke(
-        app, ["--format", output_format, "-p", "proj_alpha", "costs", command]
+        app,
+        [
+            "--format",
+            output_format,
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            command,
+        ],
     )
     assert result.exit_code == 0, result.stderr
     suffix = "json" if output_format == "json" else "txt"
@@ -984,7 +1013,7 @@ def test_all_filters_and_custom_window_reach_core(monkeypatch):
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "total",
             "--from",
@@ -1040,7 +1069,15 @@ def test_core_invalid_query_is_usage_error(monkeypatch, status_code):
         )
     ]
     result = runner.invoke(
-        app, ["--json", "-p", "proj_alpha", "costs", "--group-by", "invalid"]
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            "--group-by",
+            "invalid",
+        ],
     )
     assert result.exit_code == 2
     assert "Invalid group_by from Core" in result.stderr
@@ -1057,7 +1094,9 @@ def test_retention_clamp_and_nullable_savings(monkeypatch):
         "blocked_call_count": 2,
     }
     FakeClient.responses = [httpx.Response(200, json=payload)]
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs", "total"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs", "total"]
+    )
     assert result.exit_code == 0
     assert json.loads(result.stdout)["savings"]["saved_cost_upper"] is None
     assert "Retention clamped" in result.stderr
@@ -1073,7 +1112,9 @@ def test_retention_clamp_and_nullable_savings(monkeypatch):
     ],
 )
 def test_all_cost_subcommands_reject_invalid_windows_before_auth(command, option):
-    result = runner.invoke(app, ["-p", "proj_alpha", "costs", command, *option])
+    result = runner.invoke(
+        app, ["-p", "proj_be76331b95dfc399cd776d2f", "costs", command, *option]
+    )
     assert result.exit_code == 2
     assert not FakeClient.instances
 
@@ -1081,7 +1122,8 @@ def test_all_cost_subcommands_reject_invalid_windows_before_auth(command, option
 @pytest.mark.parametrize("limit", ["0", "101"])
 def test_events_limit_bounds(limit):
     result = runner.invoke(
-        app, ["-p", "proj_alpha", "costs", "events", "--limit", limit]
+        app,
+        ["-p", "proj_be76331b95dfc399cd776d2f", "costs", "events", "--limit", limit],
     )
     assert result.exit_code == 2
     assert not FakeClient.instances
@@ -1105,7 +1147,7 @@ def test_events_cursor_and_probe_limit_reach_core(monkeypatch):
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "events",
             "--limit",
@@ -1133,7 +1175,15 @@ def test_current_capabilities_supply_choices_without_static_dimension_list(monke
     payload["group_by"] = "future_dimension"
     FakeClient.responses = [httpx.Response(200, json=payload)]
     result = runner.invoke(
-        app, ["--json", "-p", "proj_alpha", "costs", "--group-by", "future_dimension"]
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            "--group-by",
+            "future_dimension",
+        ],
     )
     assert result.exit_code == 0
     assert not result.stderr
@@ -1154,7 +1204,9 @@ def test_disallowed_capabilities_keep_core_400_message_and_show_current_choices(
             httpx.Response(400, json={"detail": "Invalid group_by from Core"})
         )
     ]
-    result = runner.invoke(app, ["-p", "proj_alpha", "costs", "--group-by", "bad"])
+    result = runner.invoke(
+        app, ["-p", "proj_be76331b95dfc399cd776d2f", "costs", "--group-by", "bad"]
+    )
     assert result.exit_code == 2
     assert "future_dimension" in result.stderr
     assert "Invalid group_by from Core" in result.stderr
@@ -1188,7 +1240,9 @@ def test_account_project_grouping_never_gets_a_false_capability_hint(
 
 
 def test_parent_filters_are_not_silently_ignored_for_subcommands():
-    result = runner.invoke(app, ["-p", "proj_alpha", "costs", "--model", "m", "total"])
+    result = runner.invoke(
+        app, ["-p", "proj_be76331b95dfc399cd776d2f", "costs", "--model", "m", "total"]
+    )
     assert result.exit_code == 2
     assert "after the subcommand" in result.stderr
     assert not FakeClient.instances
@@ -1218,7 +1272,9 @@ def test_cost_feature_upgrade_ladder_preserves_core_message(
     FakeClient.responses = [
         error_from_response(httpx.Response(402, json={"detail": detail}))
     ]
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "costs", command])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs", command]
+    )
     assert result.exit_code == 1
     assert not result.stdout
     error = json.loads(result.stderr)
@@ -1235,7 +1291,7 @@ def test_ndjson_export_is_not_wrapped_or_decoded(monkeypatch):
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "export",
             "--format",
@@ -1266,7 +1322,8 @@ def test_entitlement_hints_keep_json_error_envelope_parseable(monkeypatch):
         )
     ]
     result = runner.invoke(
-        app, ["--json", "-p", "proj_alpha", "costs", "--group-by", "bad"]
+        app,
+        ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "costs", "--group-by", "bad"],
     )
     assert result.exit_code == 2
     assert "future_dimension" in json.loads(result.stderr)["hint"]
@@ -1291,7 +1348,15 @@ def test_events_continuation_notice_stays_on_table_stderr(
         )
     ]
     result = runner.invoke(
-        app, ["--format", output_format, "-p", "proj_alpha", "costs", "events"]
+        app,
+        [
+            "--format",
+            output_format,
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            "events",
+        ],
     )
     assert result.exit_code == 0
     assert "More events" not in result.stdout

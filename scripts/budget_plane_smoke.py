@@ -295,8 +295,8 @@ class Fixture:
         self.project_id = project_id
         key = data.get("key")
         require(
-            isinstance(key, str) and key.startswith("sk_proj_"),
-            "Fixture creation: missing project key",
+            isinstance(key, str) and key.startswith("solwyn_sk_"),
+            "Fixture creation: missing API key",
         )
         info(f"Created disposable project {self.project_id} ({self.name})")
         return key

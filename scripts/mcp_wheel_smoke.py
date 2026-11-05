@@ -23,7 +23,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = "proj_0123456789abcdef01234567"
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 BASELINE = (
     "PATH",
     "HOME",

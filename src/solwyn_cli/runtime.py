@@ -3,13 +3,18 @@
 import os
 import sys
 from collections.abc import Mapping
-from typing import Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import typer
 from pydantic import BaseModel, ConfigDict
 
 from solwyn_cli.config import DEFAULT_API_URL, Config, ConfigLoadError, load_config
 from solwyn_cli.output import OutputEngine, OutputFormat, resolve_output_format
+
+if TYPE_CHECKING:
+    from solwyn_cli.auth import ApiKeyCredential, ResolvedCredential
+    from solwyn_cli.project_resolver import Candidates, ProjectSelection, Purpose
 
 
 ApiUrlSource = Literal["cli", "environment", "config", "default", "fallback"]
@@ -57,8 +62,17 @@ class CommandContext(BaseModel):
     api_url: str
     api_url_source: ApiUrlSource = "config"
     config_load_failed: bool = False
+    # The selected project: as given until the resolver turns it into the
+    # proj_ id (then ``project_selector`` keeps the value as given).
     project: str | None
-    project_source: Literal["cli", "environment", "config", "none"] = "none"
+    project_source: Literal[
+        "cli", "environment", "repo", "legacy_environment", "config", "none"
+    ] = "none"
+    project_selector: str | None = None
+    project_resolved: bool = False
+    # SOLWYN_PROJECT from the repo's .solwyn.env, for the mismatch check.
+    repo_project: str | None = None
+    repo_error: str | None = None
     output_format: OutputFormat
     no_color: bool
     environment_no_color: bool
@@ -73,6 +87,7 @@ def resolve_command_context(
     no_color: bool,
     allow_config_error: bool = False,
     environ: Mapping[str, str] | None = None,
+    cwd: Path | None = None,
 ) -> CommandContext:
     """Resolve CLI, environment, config, and default precedence."""
     environment = os.environ if environ is None else environ
@@ -90,22 +105,18 @@ def resolve_command_context(
         config=config,
         config_load_failed=config_load_failed,
     )
+    selected, source, repo_project, repo_error = project_candidates(
+        flag=project, environ=environment, config=config, cwd=cwd
+    )
     return CommandContext(
         api_url=validated_url,
         api_url_source=api_url_source,
         config_load_failed=config_load_failed,
-        project=(
-            project or environment.get("SOLWYN_PROJECT_ID") or config.default_project
-        ),
-        project_source=(
-            "cli"
-            if project
-            else "environment"
-            if environment.get("SOLWYN_PROJECT_ID")
-            else "config"
-            if config.default_project
-            else "none"
-        ),
+        project=selected,
+        project_source=source,
+        project_selector=selected,
+        repo_project=repo_project,
+        repo_error=repo_error,
         output_format=resolve_output_format(
             explicit_format=output_format,
             json_flag=json_flag,
@@ -115,6 +126,89 @@ def resolve_command_context(
         no_color=no_color,
         environment_no_color="NO_COLOR" in environment,
     )
+
+
+ProjectSource = Literal[
+    "cli", "environment", "repo", "legacy_environment", "config", "none"
+]
+
+
+def project_candidates(
+    *,
+    flag: str | None,
+    environ: Mapping[str, str],
+    config: Config,
+    cwd: Path | None = None,
+) -> tuple[str | None, ProjectSource, str | None, str | None]:
+    """(selected, source, repo value, repo file error), first present wins.
+
+    ``--project`` > ``SOLWYN_PROJECT`` > the repo's ``.solwyn.env``. Until
+    14d-2 removes them, ``SOLWYN_PROJECT_ID`` and config ``default_project``
+    are still read after those three.
+    """
+    from solwyn_cli.project_resolver import read_repo_project, trim_selector
+
+    def present(value: str | None) -> str | None:
+        trimmed = trim_selector(value) if value is not None else ""
+        return trimmed or None
+
+    repo, repo_error = read_repo_project(cwd)
+    for value, source in (
+        (flag, "cli"),
+        (environ.get("SOLWYN_PROJECT"), "environment"),
+        (repo, "repo"),
+        (environ.get("SOLWYN_PROJECT_ID"), "legacy_environment"),
+        (config.default_project, "config"),
+    ):
+        if (chosen := present(value)) is not None:
+            return chosen, source, repo, repo_error  # type: ignore[return-value]
+    return None, "none", repo, repo_error
+
+
+def candidates_of(resolved: CommandContext) -> "Candidates":
+    """The resolver's view of this invocation's project candidates."""
+    from solwyn_cli.project_resolver import Candidates
+
+    return Candidates(
+        selected=resolved.project_selector,
+        source=resolved.project_source,
+        repo=resolved.repo_project,
+        repo_error=resolved.repo_error,
+    )
+
+
+def resolve_project(
+    context: typer.Context,
+    *,
+    purpose: "Purpose",
+    credential: "ResolvedCredential | None" = None,
+    supplied_key: "ApiKeyCredential | None" = None,
+) -> "ProjectSelection":
+    """Run the one project resolver for a command; record the resolved id.
+
+    After it returns, ``command_context(context).project`` is the ``proj_``
+    id (``project_selector`` keeps the value as given). A read prints a
+    mismatch with the repo file once, as a warning; other purposes fail.
+    """
+    from solwyn_cli import project_resolver
+
+    resolved = command_context(context)
+    selection = project_resolver.resolve(
+        candidates_of(resolved),
+        purpose=purpose,
+        api_url=resolved.api_url,
+        credential=credential,
+        supplied_key=supplied_key,
+    )
+    if selection.warning is not None and not resolved.project_resolved:
+        from solwyn_cli.output import _terminal_safe
+
+        typer.echo(_terminal_safe(f"Warning: {selection.warning}"), err=True)
+    if selection.project_id is not None:
+        context.obj = resolved.model_copy(
+            update={"project": selection.project_id, "project_resolved": True}
+        )
+    return selection
 
 
 def validate_output_intent(

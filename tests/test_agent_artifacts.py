@@ -5,9 +5,9 @@ import re
 from pathlib import Path
 
 import pytest
+from golden.harness import assert_matches_golden
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import artifacts as artifacts_module
 from solwyn_cli.artifacts import (
     AGENTS_PATH,
@@ -19,7 +19,6 @@ from solwyn_cli.artifacts import (
     write_agent_artifacts,
 )
 from solwyn_cli.main import app
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"

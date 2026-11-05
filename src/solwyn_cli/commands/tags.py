@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._pagination import read_pages
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands._tags import validate_tags
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -165,6 +169,7 @@ def _read(
             semantic=ErrorSemantic.USAGE,
         )
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             data = (

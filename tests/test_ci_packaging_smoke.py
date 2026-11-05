@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 WORKFLOW_PATH = Path(".github/workflows/ci.yml")
 PUBLISH_WORKFLOW_PATH = Path(".github/workflows/publish.yml")
 INSPECTOR_PATH = Path("scripts/inspect_wheel.py")

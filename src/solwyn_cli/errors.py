@@ -13,15 +13,16 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 RawDetail: TypeAlias = str | dict[str, Any]
 
-# Spec section 4: CLI credentials and device codes never reach any output.
-# No word boundaries: "_" is a word character, so a token wrapped in underscores
-# or other text would slip past \b. Redacting an embedded token is the safe side.
-_SECRET_TOKEN = re.compile(r"solwyn_(?:cli|dc)_[0-9a-f]{64}")
+# Spec section 4: CLI credentials, device codes and API keys never reach any
+# output (except a newly created key's one-time display). No word boundaries:
+# "_" is a word character, so a token wrapped in underscores or other text
+# would slip past \b. Redacting an embedded token is the safe side.
+_SECRET_TOKEN = re.compile(r"solwyn_(?:cli|dc|sk)_[0-9a-f]{64}")
 REDACTED = "[REDACTED]"
 
 
 def redact_secrets(value: Any) -> Any:
-    """Replace CLI tokens and device codes anywhere inside a JSON-like value."""
+    """Replace CLI tokens, device codes and API keys inside a JSON-like value."""
     if isinstance(value, str):
         return _SECRET_TOKEN.sub(REDACTED, value)
     if isinstance(value, dict):
@@ -219,10 +220,64 @@ def _project_limit_hint(cta_path: str) -> str:
     return f"Manage project limits in the dashboard: {cta_path}"
 
 
+def _api_key_limit_hint(cta_path: str) -> str:
+    return (
+        "Revoke a key you no longer use (solwyn keys list, then solwyn keys "
+        f"revoke KEY_ID), or review plan limits in the dashboard: {cta_path}"
+    )
+
+
 _ENTITLEMENT_HINTS = {
     "upgrade_required": _upgrade_hint,
     "quota_exceeded": _quota_hint,
     "project_limit_reached": _project_limit_hint,
+    "api_key_limit_reached": _api_key_limit_hint,
+}
+
+# Refusals on the API-key path (Core's ApiKeyErrorDetail) and the key routes.
+# Core's message says what happened; the hint says what to run next. None of
+# them ever suggests adding a project to a key: that is dashboard-only.
+API_KEY_HINTS = {
+    "api_key_invalid": (
+        "Check SOLWYN_API_KEY or the stored key. To replace it, run solwyn keys "
+        "create --project PROJECT --store-key."
+    ),
+    "api_key_expired": (
+        "Run solwyn keys list to find it, then solwyn keys rotate KEY_ID."
+    ),
+    "project_selector_required": (
+        "Set SOLWYN_PROJECT, or pass --project, to a project name or proj_ id."
+    ),
+    "project_not_found": (
+        "Check the name with solwyn projects list, or use the proj_ id. A key "
+        "only reaches the projects it was created for."
+    ),
+    "project_selector_conflict": (
+        "Use one project per command: --project, SOLWYN_PROJECT and the URL must agree."
+    ),
+    "key_not_dedicated": (
+        "Run solwyn keys create --project PROJECT --store-key for a key that "
+        "holds only this project."
+    ),
+    "api_key_not_allowed": (
+        "Run solwyn login, then retry; API keys cannot make this change."
+    ),
+    "read_only_key": (
+        "This key is read-only. Rotate it to a full-scope key with solwyn keys "
+        "rotate KEY_ID --scope full, or create one with solwyn keys create."
+    ),
+    "api_key_not_found": "Run solwyn keys list to see this account's live keys.",
+    "api_key_project_not_found": (
+        "Run solwyn keys list to see which projects this key holds."
+    ),
+    "key_would_have_no_projects": (
+        "Revoke the key instead: solwyn keys revoke KEY_ID."
+    ),
+    "nested_rotation": (
+        "Wait for the rotation grace window to end (solwyn keys list shows it), "
+        "then rotate again."
+    ),
+    "key_projects_changed": "Run the same solwyn keys rotate command again.",
 }
 _CROSS_PROJECT_KEY_DETAILS = frozenset(
     {
@@ -282,6 +337,9 @@ def error_from_response(
             allowed_hint = "Allowed values: " + ", ".join(allowed_values)
             hint = f"{allowed_hint}. {hint}" if hint else allowed_hint
 
+    if code in API_KEY_HINTS and hint is None:
+        hint = API_KEY_HINTS[code]
+
     if response.status_code == 403:
         role_codes = {
             "permission_required",
@@ -289,10 +347,8 @@ def error_from_response(
             "admin_required",
             "role_required",
         }
-        if code == "api_key_not_allowed":
-            hint = "Run solwyn login, then retry; project API keys cannot make this change."
-        elif code == "read_only_key":
-            hint = "Rotate to a full-scope key with solwyn keys rotate --scope full."
+        if code in API_KEY_HINTS:
+            pass
         elif detail == "This endpoint requires JWT authentication":
             hint = "Run solwyn login to authenticate with your user account."
         elif isinstance(detail, str) and detail in _CROSS_PROJECT_KEY_DETAILS:

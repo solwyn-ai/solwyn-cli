@@ -6,15 +6,15 @@ from pathlib import Path
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
+from test_budget_set_command import BUDGET_RESPONSE, ROUTING, FakeClient
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import budget_rules
-from solwyn_cli.main import app
 from solwyn_cli.errors import error_from_response
-from test_budget_set_command import BUDGET_RESPONSE, ROUTING, FakeClient
-from login_fixtures import login_credential
+from solwyn_cli.main import app
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -81,7 +81,15 @@ def fake(monkeypatch):
 
 def invoke(args, fmt="json"):
     return runner.invoke(
-        app, ["--format", fmt, "--project", "proj_alpha", "budget", *args]
+        app,
+        [
+            "--format",
+            fmt,
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            *args,
+        ],
     )
 
 
@@ -211,7 +219,9 @@ def test_actions_golden(group, action, payload, method, fmt):
 @pytest.mark.parametrize("fmt", ["json", "table"])
 def test_restore_reads_full_state(fmt):
     FakeClient.responses = [
-        httpx.Response(200, json={"project_id": "proj_alpha", "thresholds": []}),
+        httpx.Response(
+            200, json={"project_id": "proj_be76331b95dfc399cd776d2f", "thresholds": []}
+        ),
         response(),
     ]
     result = invoke(["restore-defaults"], fmt)
@@ -229,8 +239,8 @@ def test_preview_key_auth_and_draft_channels(monkeypatch, fmt):
     monkeypatch.setattr(
         budget_rules,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(
-            api_key="sk_proj_" + "a7" * 32, source="environment"
+        lambda **_: auth.ApiKeyCredential(
+            api_key="solwyn_sk_" + "a7" * 32, source="environment"
         ),
     )
     FakeClient.responses = [
@@ -439,7 +449,10 @@ def test_preview_unsaved_condition_without_status_read():
     )
     assert result.exit_code == 0, result.output
     request = FakeClient.instances[0].requests[0]
-    assert request[0:2] == ("POST", "/api/v1/projects/proj_alpha/alerts/preview")
+    assert request[0:2] == (
+        "POST",
+        "/api/v1/projects/proj_be76331b95dfc399cd776d2f/alerts/preview",
+    )
     assert request[2]["json"]["alerts"][0]["rule"]["mode"] == "hard_deny"
 
 
@@ -448,8 +461,8 @@ def test_rule_mutations_reject_project_key_without_http(monkeypatch, action):
     monkeypatch.setattr(
         budget_rules,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(
-            api_key="sk_proj_" + "a7" * 32, source="environment"
+        lambda **_: auth.ApiKeyCredential(
+            api_key="solwyn_sk_" + "a7" * 32, source="environment"
         ),
     )
     result = invoke(

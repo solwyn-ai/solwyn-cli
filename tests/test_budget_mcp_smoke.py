@@ -4,9 +4,8 @@ import importlib.util
 from pathlib import Path
 
 import anyio
-from mcp.types import CallToolResult
 import pytest
-
+from mcp.types import CallToolResult
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 

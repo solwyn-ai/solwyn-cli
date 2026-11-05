@@ -31,8 +31,8 @@ from contract.builder import (
     render_contract,
 )
 
-from solwyn_cli.exit_codes import ExitCode
 from solwyn_cli.commands.budget import BudgetCheckBatchData
+from solwyn_cli.exit_codes import ExitCode
 
 
 def test_cli_contract_snapshot_matches_the_live_cli() -> None:

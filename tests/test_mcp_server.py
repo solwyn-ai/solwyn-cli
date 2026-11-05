@@ -1,19 +1,18 @@
 """Protocol and command tests for the local MCP stdio server."""
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import subprocess
 import sys
 import tomllib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 
 import anyio
 import pytest
-from mcp import ClientSession, MCPError
+from mcp import Client, ClientSession, MCPError
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp import Client
 from typer.testing import CliRunner
 
 from solwyn_cli import auth, runtime
@@ -22,7 +21,6 @@ from solwyn_cli.commands import mcp as mcp_command
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server as mcp_server
 from solwyn_cli.output import OutputFormat
-
 
 runner = CliRunner()
 _GUARDRAIL_INSTRUCTIONS = (
@@ -198,13 +196,13 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
     tmp_path: Path,
 ) -> None:
     received: list[tuple[str, str | None]] = []
-    project_key = "sk_proj_" + "d4" * 32
+    project_key = "solwyn_sk_" + "d4" * 32
 
     class ApiHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             received.append((self.path, self.headers.get("Authorization")))
             payload = {
-                "project_id": "proj_override",
+                "project_id": "proj_1a95769f3608d94e2e343786",
                 "budget_limit": 100.0,
                 "current_usage": 12.5,
                 "remaining_budget": 87.5,
@@ -248,7 +246,7 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
                 "--api-url",
                 api_url,
                 "--project",
-                "proj_override",
+                "proj_1a95769f3608d94e2e343786",
                 "mcp",
             ],
             cwd=Path(__file__).resolve().parents[1],
@@ -256,7 +254,7 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
                 "HOME": str(tmp_path),
                 "SOLWYN_API_KEY": project_key,
                 "SOLWYN_API_URL": "https://environment.invalid",
-                "SOLWYN_PROJECT_ID": "proj_environment_wrong",
+                "SOLWYN_PROJECT_ID": "proj_280b1e09690baa427a2c8b48",
                 "XDG_CONFIG_HOME": str(tmp_path / "config"),
             },
         )
@@ -270,7 +268,10 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
             assert stderr.read() == ""
         assert result.is_error is False
         assert result.structured_content["ok"] is True
-        assert result.structured_content["data"]["project_id"] == "proj_override"
+        assert (
+            result.structured_content["data"]["project_id"]
+            == "proj_1a95769f3608d94e2e343786"
+        )
 
     try:
         anyio.run(exercise_stdio_entrypoint)
@@ -281,7 +282,7 @@ def test_real_stdio_entrypoint_applies_global_api_and_project_overrides(
 
     assert received == [
         (
-            "/api/v1/projects/proj_override/budget",
+            "/api/v1/projects/proj_1a95769f3608d94e2e343786/budget",
             f"Bearer {project_key}",
         )
     ]
@@ -346,7 +347,7 @@ def test_tool_call_client_resolves_fresh_runtime_and_credential_each_time(
 
     launch = mcp_server.McpLaunchOptions(
         api_url="https://override.example",
-        project_id="proj_override",
+        project_id="proj_1a95769f3608d94e2e343786",
     )
     with mcp_server.tool_call_client(launch) as first:
         assert first[0].api_url == "https://first.example"
@@ -361,14 +362,14 @@ def test_tool_call_client_resolves_fresh_runtime_and_credential_each_time(
     assert runtime_options == [
         {
             "api_url": "https://override.example",
-            "project": "proj_override",
+            "project": "proj_1a95769f3608d94e2e343786",
             "output_format": None,
             "json_flag": False,
             "no_color": True,
         },
         {
             "api_url": "https://override.example",
-            "project": "proj_override",
+            "project": "proj_1a95769f3608d94e2e343786",
             "output_format": None,
             "json_flag": False,
             "no_color": True,
@@ -382,7 +383,7 @@ def test_tool_call_client_without_overrides_defers_to_runtime_resolution(
     options: list[dict[str, object]] = []
     command_runtime = runtime.CommandContext(
         api_url="https://configured.example",
-        project="proj_configured",
+        project="proj_3be9f957f29f905f10f7b652",
         output_format=OutputFormat.TABLE,
         no_color=True,
         environment_no_color=False,
@@ -452,7 +453,7 @@ def test_mcp_command_dispatches_stdio_without_eager_auth(
             "--api-url",
             "https://override.example",
             "--project",
-            "proj_override",
+            "proj_1a95769f3608d94e2e343786",
             "mcp",
         ],
     )
@@ -462,7 +463,7 @@ def test_mcp_command_dispatches_stdio_without_eager_auth(
     assert transports == ["stdio"]
     assert len(launches) == 1
     assert launches[0].api_url == "https://override.example"
-    assert launches[0].project_id == "proj_override"
+    assert launches[0].project_id == "proj_1a95769f3608d94e2e343786"
 
 
 def test_mcp_modules_are_importable_from_the_package() -> None:

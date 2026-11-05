@@ -1,5 +1,5 @@
 Metric                                                                    Value
-Project                                                              proj_alpha
+Project                                           proj_be76331b95dfc399cd776d2f
 Period             2026-09-01T00:00:00+00:00 - 2026-09-30T23:59:59.999999+00:00
 Days                                                   5 elapsed / 25 remaining
 Current spend                                                        $12.500000

@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+
 import pytest
 
 SNAPSHOT = Path("src/solwyn_cli/spec/openapi_snapshot.json")

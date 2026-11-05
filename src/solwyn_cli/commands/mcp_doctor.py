@@ -16,7 +16,7 @@ from solwyn_cli._mcp_launch import Profile, resolve_executable
 from solwyn_cli.auth import (
     AuthError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     ResolvedCredential,
 )
 from solwyn_cli.client import SolwynClient
@@ -61,7 +61,9 @@ class McpDoctorData(BaseModel):
     config: Check
     executable: Check
     selected_project: str | None
-    project_source: Literal["cli", "environment", "config", "none"]
+    project_source: Literal[
+        "cli", "environment", "repo", "legacy_environment", "config", "none"
+    ]
     credential: CredentialCheck
     key_context: KeyContext
     http_read: Check
@@ -73,7 +75,9 @@ class McpDoctorData(BaseModel):
 
 
 class _KeyResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+    """The fields of ``GET /api/v1/auth/key`` this diagnostic reports."""
+
+    model_config = ConfigDict(extra="ignore", strict=True, hide_input_in_errors=True)
     project_id: str = Field(pattern=r"^proj_[a-f0-9]{24}$")
     scope: Literal["full", "read_only"]
 
@@ -88,10 +92,29 @@ class _AccountResponse(BaseModel):
     user_id: str = Field(min_length=1)
 
 
-def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
-    """Resolve once; availability reads after absence never select another identity."""
+def capture_credential(
+    project: str | None = None,
+) -> tuple[ResolvedCredential | None, CredentialCheck]:
+    """Resolve once; availability reads after absence never select another identity.
+
+    With no login and no SOLWYN_API_KEY, the key stored for the selected
+    project is chosen locally (exact id, else its stored name).
+    """
     try:
         credential = auth.resolve_credential()
+        if credential is None and project is not None:
+            from solwyn_cli.project_resolver import (
+                ProjectResolutionError,
+                _local_match,
+            )
+
+            stored = auth.stored_api_keys()
+            try:
+                entry = _local_match(stored, project) if stored else None
+            except ProjectResolutionError:
+                entry = None
+            if entry is not None:
+                credential = auth.stored_key_for_project(entry.project_id)
     except auth.MalformedCredentialFileError:
         # Present but not a valid credential: never silently skipped.
         return None, CredentialCheck(status="incomplete", source=_stored_kind())
@@ -107,7 +130,7 @@ def capture_credential() -> tuple[ResolvedCredential | None, CredentialCheck]:
             else "invalid"
         )
         return None, CredentialCheck(status=status, kind="project_key", source=source)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         return credential, CredentialCheck(
             status="available", kind="project_key", source=credential.source
         )
@@ -196,13 +219,20 @@ def http_read(
 def diagnose(
     runtime: CommandContext, executable: Path | None, profile: Profile
 ) -> McpDoctorData:
-    credential, credential_check = capture_credential()
+    credential, credential_check = capture_credential(runtime.project)
     context = KeyContext(
         status="skipped", detail="No valid captured credential or API URL is available."
     )
     read = Check(
         status="skipped", detail="No valid captured credential or API URL is available."
     )
+    if (
+        isinstance(credential, ApiKeyCredential)
+        and credential.project is None
+        and runtime.project is not None
+    ):
+        # Every key request names its project: the selector as given.
+        credential = credential.model_copy(update={"project": runtime.project})
     if credential is not None and runtime.api_url_source != "fallback":
         context = KeyContext(
             status="skipped" if isinstance(credential, LoginCredential) else "failed",
@@ -239,7 +269,7 @@ def diagnose(
                 expected_tools=[tool.definition.name for tool in declarations],
                 expected_version=__version__,
                 api_key=credential.api_key
-                if isinstance(credential, ProjectKeyCredential)
+                if isinstance(credential, ApiKeyCredential)
                 and runtime.api_url_source != "fallback"
                 else None,
             )

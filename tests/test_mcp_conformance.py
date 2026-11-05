@@ -1,8 +1,8 @@
 """In-process MCP conformance tests for the supported tool surface."""
 
+import json
 from collections.abc import Callable, Iterator
 from copy import deepcopy
-import json
 from pathlib import Path
 from threading import get_ident
 from typing import Any
@@ -10,18 +10,17 @@ from typing import Any
 import anyio
 import httpx
 import pytest
-from mcp import MCPError
-from mcp import Client
+from login_fixtures import login_credential
+from mcp import Client, MCPError
+from test_alerts_command import EVENT as ALERT_EVENT
+from test_alerts_command import WINDOW as ALERT_WINDOW
 
-from test_alerts_command import EVENT as ALERT_EVENT, WINDOW as ALERT_WINDOW
 from solwyn_cli import auth, runtime
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.mcp import server as mcp_server
 from solwyn_cli.output import OutputFormat
-from login_fixtures import login_credential
 
-
-VALID_KEY = "sk_proj_" + "a1" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
 JWT_ACCESS = "mcp-access-token"
 JWT_REFRESH = "mcp-refresh-token"
 TOOL_NAMES = [
@@ -65,7 +64,7 @@ TOOL_NAMES = [
 ]
 
 BUDGET_RESPONSE = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "budget_limit": 100.0,
     "current_usage": 12.5,
     "remaining_budget": 87.5,
@@ -169,7 +168,7 @@ CHECK_RESPONSE = {
     "budget_limit": 100.0,
     "current_usage": 13.5,
     "denied_by_period": None,
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "price_hints": {"openai": 0.01},
 }
 PROVIDERS_RESPONSE = [
@@ -208,7 +207,7 @@ COSTS_RESPONSE = {
         "retention_clamped": False,
     },
     "truncated": False,
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "range": "30d",
     "group_by": "provider",
     "groups": [
@@ -247,7 +246,7 @@ OVERVIEW_RESPONSE = {
 }
 PROJECTS_RESPONSE = [
     {
-        "id": "proj_alpha",
+        "id": "proj_be76331b95dfc399cd776d2f",
         "name": "Alpha",
         "budget_limit": 100.0,
         "budget_period": "monthly",
@@ -260,7 +259,7 @@ RUN_RESPONSE = {
     "id": RUN_ID,
     "name": "checkout-agent",
     "parent_run_id": None,
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "started_at": "2026-08-01T10:00:00Z",
     "last_seen_at": "2026-08-07T12:30:00Z",
     "total_calls": 42,
@@ -403,7 +402,7 @@ def _install_http(
     *,
     responses: list[httpx.Response],
     credentials: list[auth.ResolvedCredential | None],
-    project: str | None = "proj_alpha",
+    project: str | None = "proj_be76331b95dfc399cd776d2f",
 ) -> tuple[
     list[tuple[str, str, dict[str, Any]]],
     list[RealSolwynClient],
@@ -472,7 +471,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
 def test_get_overview_requires_login_before_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[],
@@ -565,7 +564,7 @@ def mcp_http(
         httpx.Response(200, json=OVERVIEW_RESPONSE),
     ]
 
-    project_key = auth.ProjectKeyCredential(
+    project_key = auth.ApiKeyCredential(
         api_key=VALID_KEY,
         source="environment",
     )
@@ -869,7 +868,10 @@ def test_exact_tool_contract_and_mocked_http_conformance(
         assert all(call.is_error is False for call in calls)
         assert all(call.structured_content is not None for call in calls)
         assert [call.structured_content["ok"] for call in calls] == [True] * 10
-        assert calls[0].structured_content["data"]["project_id"] == "proj_alpha"
+        assert (
+            calls[0].structured_content["data"]["project_id"]
+            == "proj_be76331b95dfc399cd776d2f"
+        )
         assert (
             calls[1].structured_content["data"]["reservation_id"] == "res_01JZEXAMPLE"
         )
@@ -901,7 +903,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
     anyio.run(exercise_protocol)
 
     assert _wire_requests(mcp_http) == [
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}, None),
         (
             "POST",
             "/api/v1/budgets/check",
@@ -947,30 +949,30 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 },
             },
         ),
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
-        ("GET", "/api/v1/projects/proj_alpha/providers", {}, None),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers", {}, None),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/forecast",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/forecast",
             {"period": "mtd"},
             None,
         ),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/costs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs",
             {"range": "30d", "group_by": "provider"},
             None,
         ),
         ("GET", "/api/v1/projects", {}, None),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/agent-runs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs",
             {"range": "30d", "q": "checkout", "sort": "last_seen_at", "limit": "25"},
             None,
         ),
         (
             "GET",
-            f"/api/v1/projects/proj_alpha/agent-runs/{RUN_ID}",
+            f"/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs/{RUN_ID}",
             {},
             None,
         ),
@@ -1030,12 +1032,12 @@ def test_budget_descriptions_are_live_views_of_canonical_guidance(
 def test_auth_and_client_are_fresh_per_call_without_server_restart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first_key = auth.ProjectKeyCredential(
-        api_key="sk_proj_" + "b2" * 32,
+    first_key = auth.ApiKeyCredential(
+        api_key="solwyn_sk_" + "b2" * 32,
         source="environment",
     )
-    second_key = auth.ProjectKeyCredential(
-        api_key="sk_proj_" + "c3" * 32,
+    second_key = auth.ApiKeyCredential(
+        api_key="solwyn_sk_" + "c3" * 32,
         source="environment",
     )
     requests, clients, responses = _install_http(
@@ -1058,8 +1060,8 @@ def test_auth_and_client_are_fresh_per_call_without_server_restart(
 
     assert all(result.structured_content["ok"] for result in results)
     assert _wire_requests(requests) == [
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}, None),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}, None),
     ]
     assert [request[2]["authorization"] for request in requests] == [
         f"Bearer {first_key.bearer_value()}",
@@ -1073,9 +1075,9 @@ def test_auth_and_client_are_fresh_per_call_without_server_restart(
 @pytest.mark.parametrize(
     ("credential", "project", "expected_code", "expected_clients"),
     [
-        (None, "proj_alpha", "authentication_required", 0),
+        (None, "proj_be76331b95dfc399cd776d2f", "authentication_required", 0),
         (
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+            auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
             None,
             "project_required",
             1,
@@ -1155,7 +1157,7 @@ def test_key_only_tools_reject_jwt_without_http(
                 if tool_name == "budget_check"
                 else "Budget confirmation requires a project API key."
             ),
-            "hint": "Set SOLWYN_API_KEY or store a project key with solwyn login --with-key.",
+            "hint": "Set SOLWYN_API_KEY and SOLWYN_PROJECT, or run solwyn keys create --project PROJECT --store-key.",
             "status_code": None,
         },
     }
@@ -1169,7 +1171,7 @@ def test_key_only_tools_reject_jwt_without_http(
 def test_list_projects_returns_structured_login_remediation_under_project_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[],
@@ -1193,7 +1195,7 @@ def test_budget_status_reads_every_threshold_rule_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every declared rule type survives the tool's closed response union."""
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[
@@ -1225,7 +1227,7 @@ def test_budget_status_reads_every_threshold_rule_type(
     assert thresholds[5]["limit"] == 25.5
     assert thresholds[5]["mode"] == "hard_deny"
     assert _wire_requests(requests) == [
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}, None)
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}, None)
     ]
     assert responses == []
     assert len(clients) == 1 and clients[0].is_closed
@@ -1234,7 +1236,7 @@ def test_budget_status_reads_every_threshold_rule_type(
 def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     fail_open = {**CHECK_RESPONSE, "reservation_id": None}
     requests, clients, responses = _install_http(
         monkeypatch,
@@ -1275,7 +1277,7 @@ def test_fail_open_check_returns_null_reservation_without_hidden_confirm(
 def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     responses = [
         httpx.Response(
             402,
@@ -1310,7 +1312,7 @@ def test_costs_preserves_402_semantics_without_echoing_server_or_auth_secrets(
     assert _wire_requests(requests) == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/costs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs",
             {"range": "7d", "group_by": "model"},
             None,
         )
@@ -1405,7 +1407,7 @@ def test_remote_error_fields_never_reflect_untrusted_secret_material(
     detail: dict[str, Any],
     expected_code: str,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[httpx.Response(402, json={"detail": detail})],
@@ -1441,7 +1443,7 @@ def test_remote_error_fields_never_reflect_untrusted_secret_material(
     assert _wire_requests(requests) == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/costs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs",
             {"range": "7d", "group_by": "model"},
             None,
         )
@@ -1477,7 +1479,7 @@ def test_read_only_key_403_keeps_its_code_and_points_agents_at_key_scope(
     path: str,
 ) -> None:
     """The code survives normalization and the hint names scope, not account access."""
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, response_queue = _install_http(
         monkeypatch,
         responses=[
@@ -1517,7 +1519,7 @@ def test_plain_403_still_collapses_to_forbidden_without_a_key_scope_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A 403 that is not about key scope keeps the generic account-access hint."""
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     _install_http(
         monkeypatch,
         responses=[httpx.Response(403, json={"detail": "Forbidden."})],
@@ -1540,7 +1542,7 @@ def test_plain_403_still_collapses_to_forbidden_without_a_key_scope_claim(
 def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, responses = _install_http(
         monkeypatch,
         responses=[
@@ -1576,7 +1578,7 @@ def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
     assert _wire_requests(requests) == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/agent-runs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs",
             {"range": "30d", "sort": "last_seen_at", "limit": "25"},
             None,
         )
@@ -1587,7 +1589,7 @@ def test_agent_runs_range_gate_preserves_safe_source_explanation_and_ranges(
 def test_agent_runs_custom_window_gate_does_not_blame_default_preset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, responses = _install_http(
         monkeypatch,
         responses=[
@@ -1626,7 +1628,7 @@ def test_agent_runs_custom_window_gate_does_not_blame_default_preset(
     assert _wire_requests(requests) == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/agent-runs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs",
             {
                 "range": "7d",
                 "from": "2026-07-01T00:00:00Z",
@@ -1686,7 +1688,7 @@ def test_budget_check_puts_agent_run_id_on_the_wire_only_when_supplied(
     arguments: dict[str, Any],
     expected_run_id: str | None,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, response_queue = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json=CHECK_RESPONSE)],
@@ -1743,7 +1745,7 @@ def test_budget_check_puts_estimated_media_on_the_wire_only_when_supplied(
     expected_media: dict[str, Any] | None,
 ) -> None:
     """A text-only call keeps today's body; a media call carries its quantities."""
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, response_queue = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json=CHECK_RESPONSE)],
@@ -1774,7 +1776,7 @@ def test_budget_check_rejects_an_out_of_contract_media_quantity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Media bounds are advertised and enforced before any HTTP call."""
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, response_queue = _install_http(
         monkeypatch,
         responses=[],
@@ -1800,7 +1802,7 @@ def test_budget_check_rejects_an_out_of_contract_media_quantity(
 def test_budget_check_honors_exactly_one_429_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[
@@ -1840,7 +1842,7 @@ def test_budget_check_honors_exactly_one_429_retry(
 def test_budget_confirm_429_is_structured_safe_and_never_replayed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, responses = _install_http(
         monkeypatch,
         responses=[
@@ -1947,7 +1949,7 @@ def test_cost_tools_forward_complete_filters(monkeypatch, tool):
     payload = deepcopy(COSTS_RESPONSE)
     if tool == "get_cost_total":
         payload = {
-            "project_id": "proj_alpha",
+            "project_id": "proj_be76331b95dfc399cd776d2f",
             "range": "custom",
             "total_cost": 1.25,
             "total_input_tokens": 100,
@@ -1961,9 +1963,7 @@ def test_cost_tools_forward_complete_filters(monkeypatch, tool):
     requests, clients, remaining = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json=payload)],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
     args = {
         "from_": "2026-07-01T00:00:00Z",
@@ -2007,9 +2007,7 @@ def test_invalid_local_cost_queries_have_safe_actionable_errors(
     requests, clients, remaining = _install_http(
         monkeypatch,
         responses=[],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
     result = anyio.run(_call_tool, tool, arguments)
     error = result.structured_content["error"]
@@ -2029,9 +2027,7 @@ def test_invalid_cost_responses_are_not_mislabeled_as_query_errors(monkeypatch, 
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json={"invalid": "response"})],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
     result = anyio.run(_call_tool, tool, {})
     assert result.structured_content["error"]["code"] == "invalid_costs_response"
@@ -2046,15 +2042,15 @@ def test_list_budget_rules_is_read_only_with_project_key(monkeypatch):
                 200, json={**BUDGET_RESPONSE, "thresholds": EVERY_RULE_TYPE_THRESHOLDS}
             )
         ],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
     result = anyio.run(_call_tool, "list_budget_rules", {})
     assert not result.is_error
     assert result.structured_content["schema"] == "solwyn.budget.rules.v1"
     assert len(result.structured_content["data"]["rules"]) == 6
-    assert [r[:2] for r in requests] == [("GET", "/api/v1/projects/proj_alpha/budget")]
+    assert [r[:2] for r in requests] == [
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget")
+    ]
 
 
 @pytest.mark.parametrize("status", ["ingested", "deduplicated", "rejected", "failed"])
@@ -2084,7 +2080,7 @@ def test_record_call_preserves_dispositions(monkeypatch, status):
                 }
             ],
         }
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, responses = _install_http(
         monkeypatch, responses=[httpx.Response(202, json=body)], credentials=[key]
     )
@@ -2111,7 +2107,7 @@ def test_record_call_preserves_dispositions(monkeypatch, status):
 
 
 def test_mcp_confirm_records_same_call_id_by_default(monkeypatch):
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, responses = _install_http(
         monkeypatch,
         responses=[httpx.Response(204), httpx.Response(202, json={"ingested": 1})],
@@ -2138,7 +2134,7 @@ def test_mcp_confirm_records_same_call_id_by_default(monkeypatch):
 
 
 def test_mcp_denial_receipt(monkeypatch):
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     denied = {
         **CHECK_RESPONSE,
         "allowed": False,
@@ -2189,7 +2185,7 @@ def test_mcp_denial_receipt(monkeypatch):
     ],
 )
 def test_mcp_tag_discovery(monkeypatch, tool, args, body):
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, responses = _install_http(
         monkeypatch, responses=[httpx.Response(200, json=body)], credentials=[key]
     )
@@ -2222,7 +2218,7 @@ def test_mcp_confirm_bad_uuid_rejected_before_network(monkeypatch):
 
 
 def test_mcp_record_details_populate_top_level_counts(monkeypatch):
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[httpx.Response(202, json={"ingested": 1})],
@@ -2246,7 +2242,7 @@ def test_mcp_record_details_populate_top_level_counts(monkeypatch):
 def test_mcp_confirm_ingest_failure_does_not_undo_settlement(
     monkeypatch, known_rejection
 ):
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[
@@ -2309,9 +2305,7 @@ def test_list_alert_events_project_key_and_filters(monkeypatch):
                 },
             )
         ],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
     result = anyio.run(
         _call_tool,
@@ -2329,7 +2323,10 @@ def test_list_alert_events_project_key_and_filters(monkeypatch):
         result.structured_content["data"]["events"][0]["delivery"]["status"]
         == "partial"
     )
-    assert requests[0][:2] == ("GET", "/api/v1/projects/proj_alpha/alert-events")
+    assert requests[0][:2] == (
+        "GET",
+        "/api/v1/projects/proj_be76331b95dfc399cd776d2f/alert-events",
+    )
     assert requests[0][2]["query"] == {
         "range": "7d",
         "scope": "tag",
@@ -2342,9 +2339,7 @@ def test_list_alert_events_bad_query(monkeypatch):
     _install_http(
         monkeypatch,
         responses=[],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
     )
     result = anyio.run(
         _call_tool, "list_alert_events", {"from_": "2026-09-01T00:00:00Z"}

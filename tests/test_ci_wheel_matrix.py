@@ -3,11 +3,10 @@ on the weekly schedule and manual runs."""
 
 import json
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 SELECTOR = Path(__file__).resolve().parents[1] / ".github/scripts/wheel-matrix.sh"
 LINUX = ["ubuntu-latest"]

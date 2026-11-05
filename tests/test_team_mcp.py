@@ -6,13 +6,13 @@ from pathlib import Path
 
 import anyio
 import httpx
-from mcp import Client
 import pytest
+from mcp import Client
+from test_mcp_conformance import _install_http
+from test_team_account import INVITATION, JWT, MEMBER
 
 from solwyn_cli import auth
 from solwyn_cli.mcp import server
-from test_mcp_conformance import _install_http
-from test_team_account import MEMBER, INVITATION, JWT
 
 READS = [
     ("list_team_members", "members", MEMBER),
@@ -103,7 +103,7 @@ def test_team_mcp_errors_fail_closed_private_and_respect_key_mask(
         else httpx.Response(200, json=[item])
     )
     credential = (
-        auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment")
+        auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment")
         if failure == "project_key"
         else JWT
     )
@@ -140,6 +140,7 @@ def test_team_read_native_deadline_begins_after_http_start(
     monkeypatch, name, path, payload
 ):
     from contextlib import asynccontextmanager
+
     from solwyn_cli import _mcp_operation as operation
 
     entered = anyio.Event()

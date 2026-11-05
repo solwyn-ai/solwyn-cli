@@ -14,7 +14,7 @@ from solwyn_cli import config as config_module
 from solwyn_cli.auth import (
     AuthError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     ResolvedCredential,
     resolve_credential,
 )
@@ -24,6 +24,7 @@ from solwyn_cli.commands.mcp_doctor import doctor_mcp
 from solwyn_cli.errors import ApiError
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import TableData
+from solwyn_cli.project_resolver import ProjectResolutionError
 from solwyn_cli.runtime import API_URL_SOURCE_LABELS, command_context, output_engine
 
 
@@ -121,10 +122,11 @@ class _MeProbeResponse(BaseModel):
     user_id: str
 
 
-class _BudgetProbeResponse(BaseModel):
+class _KeyProbeResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     project_id: str
+    project_name: str
 
 
 def _today() -> date:
@@ -169,7 +171,7 @@ def _credential_store_diagnostic() -> _Diagnostic:
                 detail=f"{place} contains an incomplete login. Run solwyn login.",
             )
         login = auth_module.stored_login(include_expired=True)
-        token_found = status == "found" and auth_module.stored_project_key() is None
+        token_found = status == "found" and not auth_module.stored_api_keys()
         if token_found and login is None:
             return _Diagnostic(
                 status="degraded",
@@ -194,6 +196,18 @@ def _credential_store_diagnostic() -> _Diagnostic:
             "in use; run solwyn logout to clear both stores."
         )
     return _Diagnostic(status="ok", detail=detail)
+
+
+def _stored_key(api_url: str, selector: str) -> ApiKeyCredential | None:
+    """The stored key for the selector, chosen locally (doctor never resolves
+    names over the network)."""
+    from solwyn_cli.project_resolver import _local_match
+
+    stored = auth_module.stored_api_keys(api_url)
+    if not stored:
+        return None
+    entry = _local_match(stored, selector)
+    return auth_module.stored_key_for_project(entry.project_id, api_url)
 
 
 def _readiness_diagnostic(client: SolwynClient) -> _ReadinessDiagnostic:
@@ -262,7 +276,7 @@ def _authenticated_probe(
         credential_type: Literal["login", "project_key"] | None = None
         if isinstance(credential, LoginCredential):
             credential_type = "login"
-        elif isinstance(credential, ProjectKeyCredential):
+        elif isinstance(credential, ApiKeyCredential):
             credential_type = "project_key"
         return _AuthenticatedProbe(
             status="skipped",
@@ -287,12 +301,15 @@ def _authenticated_probe(
             endpoint=None,
             detail="No credential configured.",
         )
-    if isinstance(credential, ProjectKeyCredential) and project_id is None:
+    if isinstance(credential, ApiKeyCredential) and project_id is None:
         return _AuthenticatedProbe(
             status="skipped",
             credential_type="project_key",
             endpoint=None,
-            detail="A default project is required to test the project key.",
+            detail=(
+                "A project is required to test the API key; set SOLWYN_PROJECT or "
+                "pass --project."
+            ),
         )
 
     credential_type: Literal["login", "project_key"]
@@ -301,7 +318,7 @@ def _authenticated_probe(
         endpoint = "/api/v1/account/me"
     else:
         credential_type = "project_key"
-        endpoint = f"/api/v1/projects/{project_id}/budget"
+        endpoint = "/api/v1/auth/key"
 
     try:
         response = client.request("GET", endpoint)
@@ -309,10 +326,10 @@ def _authenticated_probe(
             _MeProbeResponse.model_validate(response.json())
             detail = "Login accepted."
         else:
-            budget = _BudgetProbeResponse.model_validate(response.json())
-            if budget.project_id != project_id:
-                raise ValueError("project mismatch")
-            detail = "Project budget readable."
+            key = _KeyProbeResponse.model_validate(response.json())
+            detail = (
+                f"API key accepted for project {key.project_name} ({key.project_id})."
+            )
     except (ApiError, AuthError) as error:
         return _AuthenticatedProbe(
             status="degraded",
@@ -464,7 +481,16 @@ def doctor(
     credential_error: str | None = None
     try:
         credential = resolve_credential()
-    except AuthError as error:
+        if credential is None and runtime.project is not None:
+            credential = _stored_key(runtime.api_url, runtime.project)
+        if (
+            isinstance(credential, ApiKeyCredential)
+            and credential.project is None
+            and runtime.project is not None
+        ):
+            # Every key request names its project: the selector as given.
+            credential = credential.model_copy(update={"project": runtime.project})
+    except (AuthError, ProjectResolutionError) as error:
         credential = None
         credential_error = str(error)
 

@@ -7,10 +7,10 @@ from typing import Any
 import anyio
 import httpx
 import pytest
+from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
 
 from solwyn_cli import auth
 from solwyn_cli.mcp import server
-from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
 
 REJECTED = "The Solwyn API rejected the request."
 HOSTILE = (
@@ -22,7 +22,7 @@ HOSTILE = (
 def _remote_result(
     monkeypatch: pytest.MonkeyPatch, status: int, detail: Any, *, repeat: int = 1
 ) -> Any:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     _, _, responses = _install_http(
         monkeypatch,
         responses=[
@@ -404,7 +404,7 @@ def test_huge_server_message_is_ignored_quickly(
 
 
 def test_5xx_errors_keep_the_fixed_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     _install_http(
         monkeypatch,
         responses=[

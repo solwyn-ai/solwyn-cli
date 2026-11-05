@@ -8,26 +8,25 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from login_fixtures import (
+    DictStore,
+    expired_login_entries,
+    install_store,
+    login_credential,
+    login_entries,
+)
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli import config as config_module
 from solwyn_cli.commands import doctor as doctor_module
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
-from login_fixtures import (
-    DictStore,
-    install_store,
-    expired_login_entries,
-    login_credential,
-    login_entries,
-)
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "a1" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
 CORE_REF = "690d61c0de1f11c6653f7a8a17800356f5009a8c"
 
 
@@ -107,7 +106,9 @@ def test_doctor_login_json_reports_all_checks_and_redis_degraded_is_non_gating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text('default_project = "proj_alpha"\n', encoding="utf-8")
+    config_path.write_text(
+        'default_project = "proj_be76331b95dfc399cd776d2f"\n', encoding="utf-8"
+    )
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = login_credential("access-secret")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
@@ -140,9 +141,11 @@ def test_doctor_key_table_keeps_503_readiness_body_informative(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text('default_project = "proj_alpha"\n', encoding="utf-8")
+    config_path.write_text(
+        'default_project = "proj_be76331b95dfc399cd776d2f"\n', encoding="utf-8"
+    )
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(
@@ -160,7 +163,13 @@ def test_doctor_key_table_keeps_503_readiness_body_informative(
                 ],
             },
         ),
-        httpx.Response(200, json={"project_id": "proj_alpha"}),
+        httpx.Response(
+            200,
+            json={
+                "project_id": "proj_be76331b95dfc399cd776d2f",
+                "project_name": "checkout-bot",
+            },
+        ),
     ]
 
     result = runner.invoke(app, ["--no-color", "doctor"])
@@ -178,9 +187,11 @@ def test_doctor_key_budget_503_is_reported_as_backend_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text('default_project = "proj_alpha"\n', encoding="utf-8")
+    config_path.write_text(
+        'default_project = "proj_be76331b95dfc399cd776d2f"\n', encoding="utf-8"
+    )
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="keyring")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         _ready_response(),
@@ -200,7 +211,7 @@ def test_doctor_key_budget_503_is_reported_as_backend_unavailable(
     assert payload["authenticated_probe"] == {
         "status": "degraded",
         "credential_type": "project_key",
-        "endpoint": "/api/v1/projects/proj_alpha/budget",
+        "endpoint": "/api/v1/auth/key",
         "detail": "Budget backend temporarily unavailable; retry",
     }
     assert result.stderr == ""
@@ -212,7 +223,7 @@ def test_doctor_key_without_default_project_skips_auth_http_and_fails_diagnostic
 ) -> None:
     config_path = tmp_path / "config.toml"
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [_ready_response()]
 
@@ -221,7 +232,7 @@ def test_doctor_key_without_default_project_skips_auth_http_and_fails_diagnostic
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
     assert payload["authenticated_probe"]["status"] == "skipped"
-    assert "default project" in payload["authenticated_probe"]["detail"].lower()
+    assert "a project is required" in payload["authenticated_probe"]["detail"].lower()
     assert [request[1] for request in FakeClient.instances[0].requests] == [
         "/health/ready"
     ]
@@ -405,7 +416,7 @@ def test_doctor_labels_degraded_advisory_checks_non_gating(
     name: str, output_format: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text('default_project = "proj_alpha"\n')
+    config_path.write_text('default_project = "proj_be76331b95dfc399cd776d2f"\n')
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     monkeypatch.setattr(
         doctor_module,

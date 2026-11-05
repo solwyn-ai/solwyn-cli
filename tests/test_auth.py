@@ -1,25 +1,24 @@
 """Credential resolution by command class; store behaviour is in test_credential_store."""
 
 import json
-
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
+from key_fixtures import PROJECT_ID, keys_entry
 from login_fixtures import (
+    LOGIN_TOKEN,
     DictStore,
+    expired_login_entries,
     fake_keychain,
     install_store,
-    LOGIN_TOKEN,
-    expired_login_entries,
     login_entries,
     login_meta,
 )
+
 from solwyn_cli import auth
 
-
-VALID_KEY = "sk_proj_" + "a1" * 32
-ENV_KEY = "sk_proj_" + "e1" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
+ENV_KEY = "solwyn_sk_" + "e1" * 32
 DEVICE_CODE = "solwyn_dc_" + "0f" * 32
 
 
@@ -55,7 +54,7 @@ def _setup(
     if login:
         keychain.update(login_entries())
     if stored_key:
-        keychain[auth.API_KEY_ENTRY] = VALID_KEY
+        keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
     return {"SOLWYN_API_KEY": ENV_KEY} if env_key else {}
 
 
@@ -65,7 +64,24 @@ def test_user_class_prefers_login_then_environment_key_then_stored_key(
 ) -> None:
     environ = _setup(keychain, *present)
 
-    assert _kind(auth.resolve_credential(environ)) == expected
+    assert _kind(auth.resolve_credential(environ, project_id=PROJECT_ID)) == expected
+
+
+def test_a_stored_key_is_chosen_only_by_an_exact_project_id(
+    keychain: dict[str, str],
+) -> None:
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
+
+    assert auth.resolve_credential({}) is None
+    assert auth.resolve_credential({}, project_id="proj_" + "0" * 24) is None
+    found = auth.resolve_credential({}, project_id=PROJECT_ID)
+    assert isinstance(found, auth.ApiKeyCredential)
+    # Bound to its project: every request with it names that project.
+    assert (found.project, found.key_id, found.account_id) == (
+        PROJECT_ID,
+        "6f1d0c9e-0000-4000-8000-000000000001",
+        "acct_synthetic",
+    )
 
 
 @pytest.mark.parametrize(
@@ -84,7 +100,12 @@ def test_metering_class_never_uses_the_login(
     environ = _setup(keychain, *present)
     environ["SOLWYN_AUTH"] = "login"
 
-    assert _kind(auth.resolve_credential(environ, purpose="metering")) == expected
+    assert (
+        _kind(
+            auth.resolve_credential(environ, purpose="metering", project_id=PROJECT_ID)
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -101,7 +122,7 @@ def test_solwyn_auth_project_key_skips_the_login(
     environ = _setup(keychain, *present)
     environ["SOLWYN_AUTH"] = "project_key"
 
-    assert _kind(auth.resolve_credential(environ)) == expected
+    assert _kind(auth.resolve_credential(environ, project_id=PROJECT_ID)) == expected
 
 
 @pytest.mark.parametrize(
@@ -118,7 +139,7 @@ def test_solwyn_auth_login_requires_the_login_without_fallback(
     environ = _setup(keychain, *present)
     environ["SOLWYN_AUTH"] = "login"
 
-    assert _kind(auth.resolve_credential(environ)) == expected
+    assert _kind(auth.resolve_credential(environ, project_id=PROJECT_ID)) == expected
 
 
 @pytest.mark.parametrize("value", ["jwt", "LOGIN", "key", " login"])
@@ -138,9 +159,9 @@ def test_empty_solwyn_auth_means_default_order(keychain: dict[str, str]) -> None
 
 def test_expired_local_login_counts_as_absent(keychain: dict[str, str]) -> None:
     keychain.update(expired_login_entries())
-    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
 
-    assert _kind(auth.resolve_credential({})) == "key:file"
+    assert _kind(auth.resolve_credential({}, project_id=PROJECT_ID)) == "key:file"
     assert auth.expired_login_date() is not None
     assert auth.stored_login() is None
     assert auth.stored_login(include_expired=True) is not None
@@ -173,10 +194,10 @@ def test_incomplete_or_corrupt_login_is_a_structured_error(
 ) -> None:
     # Never skipped: skipping would fall through to a stored project key.
     keychain.update(entries)
-    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
 
     with pytest.raises(auth.MalformedCredentialFileError):
-        auth.resolve_credential({})
+        auth.resolve_credential({}, project_id=PROJECT_ID)
 
 
 def test_invalid_environment_key_fails_without_echoing_it(
@@ -198,24 +219,53 @@ def test_login_masks_an_invalid_environment_key(keychain: dict[str, str]) -> Non
     assert _kind(auth.resolve_credential({"SOLWYN_API_KEY": "broken"})) == "login"
 
 
-def test_store_project_key_validates_and_writes_only_to_keyring(
+def test_store_api_key_writes_one_entry_per_project_to_the_store_in_use(
     keychain: dict[str, str],
 ) -> None:
-    credential = auth.store_project_key(VALID_KEY)
+    credential = auth.store_api_key(
+        project_id=PROJECT_ID,
+        key=VALID_KEY,
+        key_id="key-1",
+        account_id="acct_synthetic",
+        project_name="checkout-bot",
+    )
 
     assert credential.bearer_value() == VALID_KEY
-    assert keychain == {auth.API_KEY_ENTRY: VALID_KEY}
+    assert credential.project == PROJECT_ID
+    assert set(keychain) == {auth.API_KEYS_ENTRY}
+    stored = json.loads(keychain[auth.API_KEYS_ENTRY])
+    assert set(stored) == {PROJECT_ID}
+    assert set(stored[PROJECT_ID]) == {
+        "key",
+        "key_id",
+        "account_id",
+        "project_name",
+        "stored_at",
+    }
+    assert stored[PROJECT_ID]["key"] == VALID_KEY
 
 
-def test_store_project_key_rejects_invalid_secret_without_echoing_it(
-    keychain: dict[str, str],
+@pytest.mark.parametrize(
+    ("project_id", "key"),
+    [
+        (PROJECT_ID, "invalid-secret"),
+        (PROJECT_ID, "sk_proj_" + "a1" * 32),
+        ("checkout-bot", VALID_KEY),
+    ],
+)
+def test_store_api_key_rejects_invalid_input_without_echoing_it(
+    keychain: dict[str, str], project_id: str, key: str
 ) -> None:
-    invalid_key = "invalid-secret"
-
     with pytest.raises(auth.AuthError) as exc_info:
-        auth.store_project_key(invalid_key)
+        auth.store_api_key(
+            project_id=project_id,
+            key=key,
+            key_id="key-1",
+            account_id="acct_synthetic",
+            project_name="checkout-bot",
+        )
 
-    assert invalid_key not in str(exc_info.value)
+    assert key not in str(exc_info.value)
     assert keychain == {}
 
 
@@ -247,17 +297,25 @@ def test_pending_device_round_trips_and_clears(keychain: dict[str, str]) -> None
     assert auth.load_pending_device() is None
 
 
-def test_clear_login_keeps_the_project_key(keychain: dict[str, str]) -> None:
+def test_clear_login_keeps_the_stored_keys(keychain: dict[str, str]) -> None:
     keychain.update(login_entries())
-    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
 
     auth.clear_login()
 
-    assert keychain == {auth.API_KEY_ENTRY: VALID_KEY}
+    assert keychain == {auth.API_KEYS_ENTRY: keys_entry(key=VALID_KEY)}
+
+
+def test_a_new_login_keeps_the_stored_keys(keychain: dict[str, str]) -> None:
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
+
+    auth.store_login(LOGIN_TOKEN, login_meta(account_id="acct_other"))
+
+    assert keychain[auth.API_KEYS_ENTRY] == keys_entry(key=VALID_KEY)
 
 
 def test_secret_models_are_redacted() -> None:
-    key = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
+    key = auth.ApiKeyCredential(api_key=VALID_KEY, source="keyring")
     login = auth.LoginCredential(token=LOGIN_TOKEN, meta=login_meta())
 
     assert VALID_KEY not in repr(key)
@@ -274,7 +332,7 @@ def test_login_model_enforces_the_token_format_without_echoing_it() -> None:
 
 def test_project_key_model_enforces_format_without_echoing_secret() -> None:
     with pytest.raises(ValueError) as exc_info:
-        auth.ProjectKeyCredential(api_key="sk_proj_short", source="keyring")
+        auth.ApiKeyCredential(api_key="sk_proj_short", source="keyring")
 
     assert "sk_proj_short" not in str(exc_info.value)
 
@@ -285,10 +343,11 @@ NEW_TOKEN = "solwyn_cli_" + "f7" * 32
 def test_metering_never_uses_a_stored_login(monkeypatch: pytest.MonkeyPatch) -> None:
     # The file is read whole; metering still selects only the project key.
     install_store(
-        monkeypatch, DictStore({**login_entries(), auth.API_KEY_ENTRY: VALID_KEY})
+        monkeypatch,
+        DictStore({**login_entries(), auth.API_KEYS_ENTRY: keys_entry(key=VALID_KEY)}),
     )
 
-    found = auth.resolve_credential({}, purpose="metering")
+    found = auth.resolve_credential({}, purpose="metering", project_id=PROJECT_ID)
 
-    assert isinstance(found, auth.ProjectKeyCredential)
+    assert isinstance(found, auth.ApiKeyCredential)
     assert found.bearer_value() == VALID_KEY

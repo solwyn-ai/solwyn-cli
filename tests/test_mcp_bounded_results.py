@@ -7,16 +7,17 @@ from contextlib import asynccontextmanager
 import anyio
 import httpx
 import pytest
-
-from solwyn_cli import auth, _mcp_operation as operation
-from solwyn_cli.commands import budget, _record
-from solwyn_cli.mcp import server
-from test_mcp_conformance import VALID_KEY, CHECK_RESPONSE, _call_tool, _install_http
+from mcp_batch_fixtures import ID, journal
 from test_alerts_command import EVENT, WINDOW
 from test_budget_batch import CHECK
-from mcp_batch_fixtures import ID, journal
+from test_mcp_conformance import CHECK_RESPONSE, VALID_KEY, _call_tool, _install_http
 
-KEY = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+from solwyn_cli import _mcp_operation as operation
+from solwyn_cli import auth
+from solwyn_cli.commands import _record, budget
+from solwyn_cli.mcp import server
+
+KEY = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 CALL_ID = "12345678-1234-4000-8000-123456789abc"
 
 

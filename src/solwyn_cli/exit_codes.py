@@ -53,6 +53,21 @@ APPROVAL_ERROR_CODES = frozenset(
 )
 
 
+# A project selector that names no project, several, or conflicting ones: the
+# command's input is wrong, whichever side (Core or the local resolver) found it.
+PROJECT_SELECTION_ERROR_CODES = frozenset(
+    {
+        "project_selector_required",
+        "project_not_found",
+        "project_selector_conflict",
+        "project_ambiguous",
+        "project_mismatch",
+        "api_key_account_mismatch",
+        "project_required",
+    }
+)
+
+
 def exit_code_for_error(
     error: BaseException | None,
     *,
@@ -61,6 +76,11 @@ def exit_code_for_error(
     """Map typed failures without interfering with Click's native usage handling."""
     if getattr(error, "code", None) in APPROVAL_ERROR_CODES:
         return ExitCode.APPROVAL_REQUIRED
+    if (
+        semantic is None
+        and getattr(error, "code", None) in PROJECT_SELECTION_ERROR_CODES
+    ):
+        return ExitCode.USAGE_ERROR
     if semantic is not None:
         return _SEMANTIC_EXIT_CODES[semantic]
     if error is None:

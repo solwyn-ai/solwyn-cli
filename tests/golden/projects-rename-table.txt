@@ -1,7 +1,7 @@
-Field                         Value
-ID                       proj_alpha
-Name                Renamed project
-Budget limit                 100.00
-Budget period               monthly
-Budget mode               hard_deny
-Created        2026-07-09T14:30:00Z
+Field                                  Value
+ID             proj_be76331b95dfc399cd776d2f
+Name                         Renamed project
+Budget limit                          100.00
+Budget period                        monthly
+Budget mode                        hard_deny
+Created                 2026-07-09T14:30:00Z

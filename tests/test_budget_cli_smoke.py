@@ -8,7 +8,6 @@ from pathlib import Path
 import httpx
 import pytest
 
-
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/budget-plane-cli-smoke.py"
 
 
@@ -196,7 +195,7 @@ def test_failure_cleanup_only_archives_the_created_project(
                 201,
                 json={
                     "id": project_id,
-                    "key": "invalid" if bad_key else "sk_proj_private-key",
+                    "key": "invalid" if bad_key else "solwyn_sk_private-key",
                 },
             )
         if (
@@ -227,7 +226,7 @@ def test_failure_cleanup_only_archives_the_created_project(
     assert summary["passed"] is False
     assert summary["project_id"] == project_id
     assert "private-jwt" not in output.out + output.err
-    assert "sk_proj_private-key" not in output.out + output.err
+    assert "solwyn_sk_private-key" not in output.out + output.err
     assert requests == [("POST", "/api/v1/projects")] + (
         [] if keep else [("DELETE", f"/api/v1/projects/{project_id}")]
     )
@@ -247,7 +246,7 @@ def test_batch_coverage_can_only_be_disabled_explicitly(
     def handler(request):
         if request.method == "POST":
             return httpx.Response(
-                201, json={"id": project_id, "key": "sk_proj_private-key"}
+                201, json={"id": project_id, "key": "solwyn_sk_private-key"}
             )
         return httpx.Response(204)
 

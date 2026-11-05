@@ -4,13 +4,13 @@ import copy
 
 import pytest
 from pydantic import ValidationError
+from test_budget_command import BUDGET_RESPONSE, EVERY_RULE_TYPE_THRESHOLDS
 
 from solwyn_cli._vendor.wire import (
     BudgetCheckRequest,
     BudgetUpdateRequest,
 )
 from solwyn_cli.commands.budget import BudgetStatusData, _threshold_configs
-from test_budget_command import BUDGET_RESPONSE, EVERY_RULE_TYPE_THRESHOLDS
 
 
 def current_budget():

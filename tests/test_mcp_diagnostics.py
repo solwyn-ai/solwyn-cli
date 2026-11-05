@@ -8,17 +8,18 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from click import unstyle
+from golden.harness import assert_matches_golden
+from key_fixtures import keys_entry
+from login_fixtures import LOGIN_TOKEN, DictStore, install_store, login_entries
 from typer.testing import CliRunner
 
 from solwyn_cli import _mcp_launch, auth, config, runtime
-from solwyn_cli.commands import mcp_config, mcp_doctor
-from golden.harness import assert_matches_golden
 from solwyn_cli._mcp_doctor_ipc import HelperResult
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands import mcp_config, mcp_doctor
 from solwyn_cli.main import app
-from login_fixtures import DictStore, install_store, LOGIN_TOKEN, login_entries
 
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 runner = CliRunner()
 
 
@@ -167,7 +168,9 @@ def test_doctor_mcp_has_dedicated_schema():
     "project,environ,want",
     [
         ("cli", {"SOLWYN_PROJECT_ID": "env"}, "cli"),
-        (None, {"SOLWYN_PROJECT_ID": "env"}, "environment"),
+        (None, {"SOLWYN_PROJECT": "env"}, "environment"),
+        # Read until 14d-2 removes it, after SOLWYN_PROJECT and .solwyn.env.
+        (None, {"SOLWYN_PROJECT_ID": "env"}, "legacy_environment"),
         (None, {}, "none"),
     ],
 )
@@ -228,7 +231,7 @@ def test_actual_key_identity_is_separate_from_wrong_selected_project(
 ):
     requests, responses, launches = probes
     monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-    install_store(monkeypatch, _store({}, fail_on={auth.API_KEY_ENTRY}))
+    install_store(monkeypatch, _store({}, fail_on={auth.API_KEYS_ENTRY}))
     responses.extend(
         [
             httpx.Response(
@@ -282,7 +285,7 @@ def test_invalid_environment_presence_never_falls_back(
 ):
     requests, _, launches = probes
     monkeypatch.setenv("SOLWYN_API_KEY", value)
-    install_store(monkeypatch, _store({}, fail_on={auth.API_KEY_ENTRY}))
+    install_store(monkeypatch, _store({}, fail_on={auth.API_KEYS_ENTRY}))
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
     assert result.exit_code == 1
@@ -419,7 +422,7 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
     requests, _, launches = probes
     if kind == "project_key":
         monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-        install_store(monkeypatch, _store({}, fail_on={auth.API_KEY_ENTRY}))
+        install_store(monkeypatch, _store({}, fail_on={auth.API_KEYS_ENTRY}))
     else:
         install_store(monkeypatch, _store(login_entries(LOGIN_TOKEN)))
 
@@ -540,7 +543,12 @@ def test_successful_key_read_and_configured_project_source(
         'default_project = "proj_abababababababababababab"\n'
     )
     monkeypatch.setenv("SOLWYN_PROJECT_ID", "")
-    install_store(monkeypatch, DictStore({auth.API_KEY_ENTRY: KEY}))
+    install_store(
+        monkeypatch,
+        DictStore(
+            {auth.API_KEYS_ENTRY: keys_entry("proj_abababababababababababab", key=KEY)}
+        ),
+    )
     probes[1].extend(
         [
             httpx.Response(

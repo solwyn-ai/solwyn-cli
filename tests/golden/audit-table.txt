@@ -11,5 +11,5 @@ Created                            2026-08-29T12:00:00Z
 Account                                      acct_alpha
 Actor                                        user_owner
 Action                                  project.updated
-Target                               project:proj_alpha
+Target            project:proj_be76331b95dfc399cd776d2f
 Detail                                               {}

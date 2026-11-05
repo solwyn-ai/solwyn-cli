@@ -1,3 +1,5 @@
-Field                 Value
-Authentication  project_key
-Stored in           keyring
+Field                                                  Value
+Authentication                                   project_key
+Project         checkout-bot (proj_8a8a8a8a8a8a8a8a8a8a8a8a)
+Key ID                  6f1d0c9e-0000-4000-8000-000000000001
+Stored in                                            keyring

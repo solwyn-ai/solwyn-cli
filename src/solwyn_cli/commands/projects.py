@@ -2,7 +2,7 @@
 
 import math
 import sys
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 import typer
@@ -19,33 +19,41 @@ from pydantic import (
     model_validator,
 )
 
-from solwyn_cli._vendor.validation import validate_project_key_format
+from solwyn_cli import auth
+from solwyn_cli._vendor.validation import (
+    API_KEY_PREFIX_LENGTH,
+    API_KEY_PREFIX_PATTERN,
+    validate_api_key_format,
+)
 from solwyn_cli._vendor.wire import (
+    ApiKeyScope,
     BudgetMode,
     BudgetPeriod,
     ProjectCreateRequest,
-    ProjectKeyScope,
     ProjectUpdateRequest,
 )
 from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
-    store_project_key,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
+    command_project,
     credential_saved_note,
+    exit_for_resolution,
     exit_with_error,
+    legacy_keys_note,
     required_credential,
 )
 from solwyn_cli.config import ConfigLoadError, ConfigWriteError, clear_default_project
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.commands.keys import export_line
+from solwyn_cli.commands.keys import export_lines
+from solwyn_cli.project_resolver import ProjectResolutionError
 from solwyn_cli.output import (
     OneTimeSecretPanel,
     OutputError,
@@ -91,14 +99,18 @@ ProjectsListData = _ProjectsListData
 class _CreatedProject(BaseModel):
     model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
 
-    id: str = Field(min_length=1)
+    id: str = Field(pattern=r"^proj_[a-f0-9]{24}$")
     name: str = Field(min_length=1)
     budget_limit: float = Field(gt=0, allow_inf_nan=False)
     budget_period: BudgetPeriod
     budget_mode: BudgetMode
     created_at: AwareDatetime
-    key_prefix: str = Field(pattern=r"^sk_proj_[a-f0-9]{16}$")
-    scope: ProjectKeyScope
+    dedicated_keys_only: bool
+    key_id: str = Field(min_length=1)
+    key_prefix: str = Field(pattern=API_KEY_PREFIX_PATTERN.pattern)
+    scope: ApiKeyScope
+    created_via: Literal["dashboard", "cli"]
+    expires_at: AwareDatetime
 
 
 class _ProjectCreateResponse(_CreatedProject):
@@ -107,14 +119,14 @@ class _ProjectCreateResponse(_CreatedProject):
     @field_validator("key")
     @classmethod
     def validate_key(cls, value: SecretStr) -> SecretStr:
-        validate_project_key_format(value.get_secret_value())
+        validate_api_key_format(value.get_secret_value())
         return value
 
     @model_validator(mode="after")
     def validate_key_prefix(self) -> "_ProjectCreateResponse":
         raw_key = self.key.get_secret_value()
-        if self.key_prefix != raw_key[:24]:
-            raise ValueError("Invalid project key prefix")
+        if self.key_prefix != raw_key[:API_KEY_PREFIX_LENGTH]:
+            raise ValueError("Invalid API key prefix")
         return self
 
 
@@ -164,7 +176,7 @@ class _ProjectDeleteData(BaseModel):
 
     project_id: str
     archived: bool = True
-    api_keys_revoked: bool = True
+    removed_stored_key: bool = False
 
 
 def _date_time(value: AwareDatetime) -> str:
@@ -212,8 +224,10 @@ def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableDat
         ("Budget period", project.budget_period),
         ("Budget mode", project.budget_mode),
         ("Created", _date_time(project.created_at)),
+        ("Key ID", project.key_id),
         ("Key prefix", project.key_prefix),
         ("Scope", project.scope.value),
+        ("Key expires", _date_time(project.expires_at)),
     )
     if stored:
         rows = (*rows, ("Stored", "true"))
@@ -230,7 +244,7 @@ def _delete_table(data: _ProjectDeleteData) -> TableData:
         rows=(
             ("Project", data.project_id),
             ("Archived", "true"),
-            ("API keys revoked", "true"),
+            ("Removed stored key", "yes" if data.removed_stored_key else "no"),
         ),
         right_align=("Value",),
     )
@@ -238,7 +252,7 @@ def _delete_table(data: _ProjectDeleteData) -> TableData:
 
 def _login_credential_for_create(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = "Run solwyn login, then retry projects create."
         exit_with_error(
             context,
@@ -256,7 +270,7 @@ def _login_credential_for_mutation(
     context: typer.Context, *, operation: str
 ) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = f"Run solwyn login, then retry projects {operation}."
         exit_with_error(
             context,
@@ -268,6 +282,13 @@ def _login_credential_for_mutation(
             semantic=ErrorSemantic.AUTH,
         )
     return credential
+
+
+def _login_account_id(api_url: str, credential: LoginCredential) -> str:
+    """The login's account id: stored with the login, else /accounts/me."""
+    from solwyn_cli.project_resolver import _Reads
+
+    return _Reads(api_url=api_url, login=credential).account()[0]
 
 
 def _validated_project_id(context: typer.Context, project_id: str) -> str:
@@ -282,6 +303,15 @@ def _validated_project_id(context: typer.Context, project_id: str) -> str:
             semantic=ErrorSemantic.USAGE,
         )
     return normalized
+
+
+def _stored_entry(api_url: str, project_id: str) -> str | None:
+    """The name this computer stored with the project's key, if any."""
+    try:
+        entry = auth.stored_api_keys(api_url).get(project_id)
+    except AuthError:
+        return None
+    return None if entry is None else entry.project_name
 
 
 def _stdin_is_tty() -> bool:
@@ -306,7 +336,9 @@ def _invalid_projects_response(context: typer.Context) -> None:
         exits="0 success; 1 generic/API; 2 usage; 3 auth",
         schema="solwyn.projects-create.v1",
         guidance=(
-            "The new project key is shown exactly once or stored directly in the credential store (--store-key).",
+            "The new project's API key holds only this project. It is shown "
+            "exactly once with export lines, or stored on this computer for the "
+            "project (--store-key).",
         ),
     ),
 )
@@ -326,7 +358,7 @@ def create_project(
         typer.Option("--mode", help="Initial budget enforcement mode."),
     ] = BudgetMode.ALERT_ONLY,
     scope: Annotated[
-        ProjectKeyScope | None,
+        ApiKeyScope | None,
         typer.Option(
             "--scope",
             help="Scope for the project's first key; omit for the API default.",
@@ -369,8 +401,17 @@ def create_project(
             semantic=ErrorSemantic.USAGE,
         )
 
+    if store_key:
+        legacy_keys_note(context)
     credential = _login_credential_for_create(context)
     runtime = command_context(context)
+    account_id: str | None = None
+    if store_key:
+        # The account a stored key records is known before anything is created.
+        try:
+            account_id = _login_account_id(runtime.api_url, credential)
+        except (ProjectResolutionError, ApiError, AuthError) as error:
+            exit_for_resolution(context, error)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             created = request_project_creation(client=client, request=request)
@@ -394,7 +435,14 @@ def create_project(
     raw_key = created.key.get_secret_value()
     if store_key:
         try:
-            stored_key = store_project_key(raw_key)
+            stored_key = auth.store_api_key(
+                project_id=created.id,
+                key=raw_key,
+                key_id=created.key_id,
+                account_id=account_id or "",
+                project_name=created.name,
+                api_url=runtime.api_url,
+            )
         except CredentialStorageError as error:
             exit_with_error(
                 context,
@@ -405,7 +453,7 @@ def create_project(
                 ),
                 semantic=ErrorSemantic.AUTH,
             )
-        if isinstance(stored_key, ProjectKeyCredential):
+        if isinstance(stored_key, ApiKeyCredential):
             if note := credential_saved_note(stored_key):
                 typer.echo(_terminal_safe(note), err=True)
         stored_data = _ProjectCreateStoredData.model_validate(created.model_dump())
@@ -422,10 +470,11 @@ def create_project(
         data=display_data,
         table=_create_table(display_data),
         one_time_secret=OneTimeSecretPanel(
-            title="One-time project key",
+            title="One-time API key",
             value=created.key,
-            footer=export_line(raw_key, command_context(context).api_url),
+            footer=export_lines(raw_key, created.name, runtime.api_url)[0],
         ),
+        reveal={"key": created.key},
     )
 
 
@@ -441,7 +490,7 @@ def create_project(
 def list_projects(context: typer.Context) -> None:
     """List projects available to the logged-in user."""
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = "Run solwyn login, then retry projects list."
         exit_with_error(
             context,
@@ -500,15 +549,15 @@ def show_project(context: typer.Context) -> None:
                 code="project_required",
                 message="A project is required.",
                 hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
+                    "Choose a project with --project or SOLWYN_PROJECT (a project "
+                    "name or proj_ id)."
                 ),
             ),
             semantic=ErrorSemantic.USAGE,
         )
 
     credential = required_credential(context, resolve=resolve_credential)
-    project_id = runtime.project
+    project_id = command_project(context, credential)
     project_path = quote(project_id, safe="")
     try:
         with SolwynClient(
@@ -517,7 +566,7 @@ def show_project(context: typer.Context) -> None:
         ) as client:
             response = client.request("GET", f"/api/v1/projects/{project_path}")
         project = _Project.model_validate(response.json())
-        if isinstance(credential, ProjectKeyCredential) and project.id != project_id:
+        if isinstance(credential, ApiKeyCredential) and project.id != project_id:
             raise ValueError("Key-scoped project response did not match the request.")
     except ApiError as error:
         exit_with_error(context, error)
@@ -584,6 +633,7 @@ def rename_project(
         if response.status_code != 200:
             raise ValueError("Project rename did not return 200")
         project = _Project.model_validate(response.json())
+        previous = _stored_entry(runtime.api_url, project.id)
     except ApiError as error:
         semantic = (
             ErrorSemantic.USAGE
@@ -600,6 +650,18 @@ def rename_project(
     except (ValidationError, ValueError, TypeError):
         _invalid_projects_response(context)
 
+    old = (
+        f"SOLWYN_PROJECT={previous}"
+        if previous is not None and previous != project.name
+        else "SOLWYN_PROJECT to the old name"
+    )
+    typer.echo(
+        _terminal_safe(
+            f"Apps that set {old} will fail at their next start. Update "
+            "SOLWYN_PROJECT or use the proj_ id."
+        ),
+        err=True,
+    )
     output_engine(context).write_success(
         schema="solwyn.projects-rename.v1",
         data=project,
@@ -618,7 +680,10 @@ def rename_project(
         ),
         schema="solwyn.projects-delete.v1 (CLI output after bodyless 204)",
         guidance=(
-            "Irreversible: archives the project, revokes every project key in the same transaction, and the project immediately becomes unavailable.",
+            "Irreversible: archives the project; keys stop reaching it in the same "
+            "transaction (a key left with no project is revoked), and the project "
+            "immediately becomes unavailable.",
+            "Deletes this computer's stored key for the project.",
             "Pass --yes; an interactive terminal must also type the exact project name.",
         ),
     ),
@@ -639,7 +704,7 @@ def delete_project(
             OutputError(
                 code="confirmation_required",
                 message="Project deletion requires --yes.",
-                hint="This action is irreversible and revokes every project key.",
+                hint="This action is irreversible; keys stop reaching the project.",
             ),
             semantic=ErrorSemantic.USAGE,
         )
@@ -696,6 +761,24 @@ def delete_project(
     except (ValidationError, ValueError, TypeError):
         _invalid_projects_response(context)
 
+    removed_stored_key = False
+    try:
+        if validated_project_id in auth.stored_api_keys(runtime.api_url):
+            auth.delete_stored_api_keys((validated_project_id,), runtime.api_url)
+            removed_stored_key = True
+    except AuthError as error:
+        exit_with_error(
+            context,
+            OutputError(
+                code="credential_storage_failed",
+                message=(
+                    "The project was archived, but its stored API key could not be "
+                    f"deleted: {error}"
+                ),
+                hint=error.hint,
+            ),
+            semantic=ErrorSemantic.AUTH,
+        )
     try:
         clear_default_project(validated_project_id)
     except (ConfigLoadError, ConfigWriteError):
@@ -704,8 +787,8 @@ def delete_project(
             OutputError(
                 code="project_deleted_config_update_failed",
                 message=(
-                    "The project was archived and its keys were revoked, but the "
-                    "matching local default_project could not be cleared."
+                    "The project was archived, but the matching local "
+                    "default_project could not be cleared."
                 ),
                 hint=(
                     "Repair config.toml or select a live project with "
@@ -714,7 +797,9 @@ def delete_project(
             ),
         )
 
-    data = _ProjectDeleteData(project_id=validated_project_id)
+    data = _ProjectDeleteData(
+        project_id=validated_project_id, removed_stored_key=removed_stored_key
+    )
     output_engine(context).write_success(
         schema="solwyn.projects-delete.v1",
         data=data,

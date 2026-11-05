@@ -16,11 +16,20 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from key_fixtures import (
+    PROJECT_ID,
+    FakeCore,
+    auth_key_body,
+    key_index,
+    key_item,
+    stored_keychain,
+)
 from keyring.errors import PasswordDeleteError
+from login_fixtures import LOGIN_TOKEN, login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.main import app
@@ -30,7 +39,7 @@ PROD = "https://api.solwyn.ai"
 if os.name != "nt":  # Windows has no fcntl; its tests skip below.
     import fcntl
 
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 NEW = "solwyn_cli_" + "2b" * 32
 SERVICE = "solwyn-cli"
 # Captured at import, before tests/conftest.py points these at temp dirs.
@@ -56,8 +65,10 @@ class Backend:
 
 @pytest.fixture
 def env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_core: FakeCore
 ) -> tuple[Backend, list[str], Path]:
+    # login --with-key checks the key with GET /api/v1/auth/key first.
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     for name in ("SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL"):
         monkeypatch.delenv(name, raising=False)
     config_path = tmp_path / "config" / "config.toml"
@@ -106,7 +117,9 @@ def test_a_key_split_by_invisible_characters_never_reaches_the_error(
 
     monkeypatch.setattr(backend, "set_password", denied)
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
 
     assert result.exit_code == 3, result.stderr
     error = json.loads(result.stderr)
@@ -164,7 +177,7 @@ def test_a_kwallet_write_it_did_not_keep_fails_and_revokes_the_login(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _, revoked, _ = env
-    entries = {(SERVICE, f"{PROD}/api_key"): KEY}
+    entries = stored_keychain(PROD, key=KEY)
     _kwallet(monkeypatch, entries)
     _issue(monkeypatch)
 
@@ -175,7 +188,7 @@ def test_a_kwallet_write_it_did_not_keep_fails_and_revokes_the_login(
     assert error["code"] == "credential_storage_failed"
     assert "did not keep the new value" in error["message"]
     assert revoked == [NEW]
-    assert entries == {(SERVICE, f"{PROD}/api_key"): KEY}
+    assert entries == stored_keychain(PROD, key=KEY)
 
 
 def test_a_write_that_returns_but_keeps_nothing_is_a_failed_write(
@@ -184,7 +197,9 @@ def test_a_write_that_returns_but_keeps_nothing_is_a_failed_write(
     backend, _, _ = env
     monkeypatch.setattr(backend, "set_password", lambda *args: None)
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
 
     assert result.exit_code == 3
     error = json.loads(result.stderr)
@@ -200,7 +215,7 @@ def test_a_delete_that_returns_but_keeps_the_entry_is_unreachable(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     backend, _, _ = env
-    backend.entries[(SERVICE, f"{PROD}/api_key")] = KEY
+    backend.entries.update(stored_keychain(PROD, key=KEY))
     monkeypatch.setattr(backend, "delete_password", lambda service, username: None)
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -210,21 +225,22 @@ def test_a_delete_that_returns_but_keeps_the_entry_is_unreachable(
     assert detail["cleared"] is False
     keychain = detail["stores"][1]
     assert keychain["status"] == "unreachable"
-    assert "api_key" in keychain["kept"]
-    assert backend.entries[(SERVICE, f"{PROD}/api_key")] == KEY
+    assert "api_keys" in keychain["kept"]
+    assert (SERVICE, key_item(PROD)) in backend.entries
+    assert (SERVICE, key_index(PROD)) in backend.entries
 
 
 def test_a_kwallet_delete_it_refused_is_never_reported_cleared(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entries = {(SERVICE, f"{PROD}/api_key"): KEY}
+    entries = stored_keychain(PROD, key=KEY)
     _kwallet(monkeypatch, entries)
 
     result = runner.invoke(app, ["--json", "logout"])
 
     assert result.exit_code == 3, result.stdout
     assert json.loads(result.stderr)["detail"]["stores"][1]["status"] == "unreachable"
-    assert entries[(SERVICE, f"{PROD}/api_key")] == KEY
+    assert (SERVICE, key_item(PROD)) in entries
 
 
 # --- 4. The selector and legacy helpers hold the credential lock ------------
@@ -248,7 +264,9 @@ def test_config_set_credential_store_waits_for_a_reader(
     holder = _hold(shared=True)  # A credential read is in progress.
     try:
         selector = runner.invoke(app, ["config", "set", "credential_store", "file"])
-        other = runner.invoke(app, ["config", "set", "default_project", "proj_x"])
+        other = runner.invoke(
+            app, ["config", "set", "default_project", "proj_11f6ad8ec52a2984abaafd7c"]
+        )
     finally:
         os.close(holder)
 
@@ -322,7 +340,7 @@ def test_a_selector_change_during_the_browser_wait_fails_and_revokes(
     switch_to: str,
 ) -> None:
     backend, revoked, _ = env
-    backend.entries[(SERVICE, f"{PROD}/api_key")] = KEY
+    backend.entries.update(stored_keychain(PROD, key=KEY))
     _issue(monkeypatch, before=lambda: auth.save_store_mode(switch_to))  # type: ignore[arg-type]
 
     result = runner.invoke(app, argv)
@@ -394,7 +412,9 @@ def test_a_timed_out_write_says_the_outcome_is_unknown(
     _issue(monkeypatch)
     try:
         result = (
-            runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+            runner.invoke(
+                app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+            )
             if kind == "key"
             else runner.invoke(app, ["--json", "login"])
         )
@@ -436,7 +456,9 @@ def test_a_write_whose_read_back_fails_says_the_outcome_is_unknown(
     _issue(monkeypatch)
 
     result = (
-        runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+        runner.invoke(
+            app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+        )
         if kind == "key"
         else runner.invoke(app, ["--json", "login"])
     )
@@ -479,7 +501,7 @@ def _commit_then_raise(
 
 def _login_args(kind: str) -> list[str]:
     return {
-        "key": ["--json", "login", "--with-key"],
+        "key": ["--json", "-p", PROJECT_ID, "login", "--with-key"],
         "login": ["--json", "login"],
         "pending": ["--json", "login", "--wait", "0"],
     }[kind]

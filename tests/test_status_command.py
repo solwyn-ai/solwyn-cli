@@ -7,26 +7,24 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
-from solwyn_cli import auth
-from solwyn_cli import runtime
+from solwyn_cli import auth, runtime
 from solwyn_cli.commands import status as status_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "b2" * 32
+VALID_KEY = "solwyn_sk_" + "b2" * 32
 ACCESS_TOKEN = "status-access-token"
 REFRESH_TOKEN = "status-refresh-token"
 
 BUDGET_RESPONSE = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "budget_limit": 100.0,
     "current_usage": 37.5,
     "remaining_budget": 62.5,
@@ -178,7 +176,7 @@ def test_status_command_is_registered() -> None:
 def test_status_supports_project_key_with_two_read_only_gets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -186,16 +184,18 @@ def test_status_supports_project_key_with_two_read_only_gets(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "status"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "status"],
     )
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
-    assert client.credential is credential
+    # The key is sent bound to the selected project (Solwyn-Project).
+    assert client.credential.api_key == credential.api_key
+    assert client.credential.project == "proj_be76331b95dfc399cd776d2f"
     assert client.api_url == "https://api.solwyn.ai"
     assert client.requests == [
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
-        ("GET", "/api/v1/projects/proj_alpha/providers", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers", {}),
     ]
     assert all(method == "GET" for method, _, _ in client.requests)
     assert_matches_golden(result.stdout, GOLDEN_DIR / "status.json")
@@ -225,13 +225,20 @@ def test_status_jwt_adds_one_account_savings_summary(
 
     result = runner.invoke(
         app,
-        ["--format", output_format, "--no-color", "-p", "proj_alpha", "status"],
+        [
+            "--format",
+            output_format,
+            "--no-color",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "status",
+        ],
     )
 
     assert result.exit_code == 0, result.stderr
     assert FakeClient.instances[0].requests == [
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
-        ("GET", "/api/v1/projects/proj_alpha/providers", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers", {}),
         ("GET", "/api/v1/overview", {}),
     ]
     suffix = "json" if output_format == "json" else "txt"
@@ -245,7 +252,7 @@ def test_status_jwt_adds_one_account_savings_summary(
 def test_status_non_tty_table_and_no_color_match_golden(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -253,7 +260,7 @@ def test_status_non_tty_table_and_no_color_match_golden(
 
     result = runner.invoke(
         app,
-        ["--no-color", "--project", "proj_alpha", "status"],
+        ["--no-color", "--project", "proj_be76331b95dfc399cd776d2f", "status"],
     )
 
     assert result.exit_code == 0
@@ -265,7 +272,7 @@ def test_status_non_tty_table_and_no_color_match_golden(
 def test_status_honors_environment_json_format(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="keyring")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="keyring")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -273,7 +280,7 @@ def test_status_honors_environment_json_format(
 
     result = runner.invoke(
         app,
-        ["--project", "proj_alpha", "status"],
+        ["--project", "proj_be76331b95dfc399cd776d2f", "status"],
         env={"SOLWYN_FORMAT": "json"},
     )
 
@@ -284,7 +291,7 @@ def test_status_honors_environment_json_format(
 def test_status_optional_forecast_and_failover_shortcuts_add_reads_and_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -297,21 +304,28 @@ def test_status_optional_forecast_and_failover_shortcuts_add_reads_and_rows(
 
     result = runner.invoke(
         app,
-        ["--no-color", "-p", "proj_alpha", "status", "--forecast", "--failovers"],
+        [
+            "--no-color",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "status",
+            "--forecast",
+            "--failovers",
+        ],
     )
 
     assert result.exit_code == 0
     assert FakeClient.instances[0].requests == [
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
-        ("GET", "/api/v1/projects/proj_alpha/providers", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers", {}),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/forecast",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/forecast",
             {"params": {"period": "mtd"}},
         ),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/providers/failovers",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers/failovers",
             {"params": {"range": "7d"}},
         ),
     ]
@@ -338,7 +352,14 @@ def test_status_optional_sections_are_schema_bearing_json(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "status", "--forecast", "--failovers"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "status",
+            "--forecast",
+            "--failovers",
+        ],
     )
 
     assert result.exit_code == 0
@@ -349,9 +370,19 @@ def test_status_optional_sections_are_schema_bearing_json(
 @pytest.mark.parametrize(
     ("options", "environment_project", "configured_project", "expected_project"),
     [
-        (["--project", "proj_flag"], "proj_environment", "proj_config", "proj_flag"),
-        ([], "proj_environment", "proj_config", "proj_environment"),
-        ([], "", "proj_config", "proj_config"),
+        (
+            ["--project", "proj_112f3a99b283a4e1788dedd8"],
+            "proj_c6e454d960df4845f9d69eb1",
+            "proj_dfba7aade0868074c2861c98",
+            "proj_112f3a99b283a4e1788dedd8",
+        ),
+        (
+            [],
+            "proj_c6e454d960df4845f9d69eb1",
+            "proj_dfba7aade0868074c2861c98",
+            "proj_c6e454d960df4845f9d69eb1",
+        ),
+        ([], "", "proj_dfba7aade0868074c2861c98", "proj_dfba7aade0868074c2861c98"),
     ],
 )
 def test_status_project_precedence_is_flag_environment_then_config(
@@ -361,7 +392,7 @@ def test_status_project_precedence_is_flag_environment_then_config(
     configured_project: str,
     expected_project: str,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -424,7 +455,9 @@ def test_status_missing_credentials_is_auth_error_without_api_calls(
         status_module, "resolve_credential", lambda **_: None, raising=False
     )
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "status"]
+    )
 
     assert result.exit_code == 3
     assert result.stdout == ""
@@ -437,7 +470,7 @@ def test_status_missing_credentials_is_auth_error_without_api_calls(
 def test_status_preserves_structured_api_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         status_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -451,9 +484,12 @@ def test_status_preserves_structured_api_errors(
         )
     ]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_missing", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_5a013c49508291c6816ac388", "status"]
+    )
 
-    assert result.exit_code == 5
+    # project_not_found names a selector problem (Core spec 2.4): a usage error.
+    assert result.exit_code == 2
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "project_not_found"
     assert len(FakeClient.instances[0].requests) == 1
@@ -470,7 +506,9 @@ def test_status_rejects_invalid_response_without_leaking_credentials(
     invalid_budget.pop("remaining_budget")
     _queue_status_responses(budget=invalid_budget)
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "status"]
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""

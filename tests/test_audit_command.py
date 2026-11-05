@@ -7,19 +7,19 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import audit as audit_module
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "a1" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
 ACCESS_TOKEN = "audit-access-token"
 REFRESH_TOKEN = "audit-refresh-token"
 
@@ -41,7 +41,7 @@ AUDIT_RESPONSE = {
             "actor_user_id": "user_owner",
             "action": "project.updated",
             "target_type": "project",
-            "target_id": "proj_alpha",
+            "target_id": "proj_be76331b95dfc399cd776d2f",
             "created_at": "2026-08-29T12:00:00Z",
         },
     ],
@@ -90,8 +90,8 @@ def _jwt(**_: object) -> auth.LoginCredential:
     return login_credential(ACCESS_TOKEN)
 
 
-def _key(source: str) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
+def _key(source: str) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source=source)
 
 
 def test_root_registers_audit_alongside_customer_team_commands() -> None:
@@ -139,7 +139,7 @@ def test_audit_sends_exact_filters_and_matches_golden(
     )
 
     assert result.exit_code == 0, result.stderr
-    assert FakeClient.instances[0].credential is credential
+    assert same_credential(FakeClient.instances[0].credential, credential)
     assert FakeClient.instances[0].requests == [
         (
             "GET",

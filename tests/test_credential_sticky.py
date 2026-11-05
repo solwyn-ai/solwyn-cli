@@ -16,10 +16,20 @@ from typing import Any
 
 import httpx
 import pytest
+from key_fixtures import (
+    PROJECT_ID,
+    FakeCore,
+    auth_key_body,
+    key_document,
+    key_index,
+    key_item,
+    store_key,
+    stored_keychain,
+)
 from keyring.errors import NoKeyringError, PasswordDeleteError
+from login_fixtures import LOGIN_TOKEN, login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
@@ -28,8 +38,8 @@ from solwyn_cli.main import app
 
 runner = CliRunner()
 PROD = "https://api.solwyn.ai"
-KEY = "sk_proj_" + "a1" * 32
-NEW_KEY = "sk_proj_" + "b2" * 32
+KEY = "solwyn_sk_" + "a1" * 32
+NEW_KEY = "solwyn_sk_" + "b2" * 32
 NEW = "solwyn_cli_" + "2b" * 32
 SERVICE = "solwyn-cli"
 posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
@@ -67,7 +77,11 @@ class Backend:
 
 
 @pytest.fixture
-def config_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def config_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_core: FakeCore
+) -> Path:
+    # login --with-key checks the key with GET /api/v1/auth/key first.
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     path = tmp_path / "config" / "config.toml"
     monkeypatch.setattr(config, "get_config_path", lambda: path)
     for name in ("SOLWYN_API_KEY", "SOLWYN_AUTH", "SOLWYN_API_URL"):
@@ -167,7 +181,9 @@ def test_a_failed_keychain_write_fails_and_stores_nothing(
     _platform(monkeypatch, family)
     backend.refuse_writes = True  # A read then proves the value is absent.
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
 
     assert result.exit_code == 3
     error = json.loads(result.stderr)
@@ -191,9 +207,13 @@ def test_a_failed_keychain_write_fails_and_stores_nothing(
 def test_a_wholly_locked_keychain_cannot_confirm_a_refused_write(
     monkeypatch: pytest.MonkeyPatch, backend: Backend, credentials_file: Path
 ) -> None:
-    backend.locked = True  # Writes and the read that checks them both fail.
+    # Writes and the read that checks the key's item both fail.
+    backend.refuse_writes = True
+    backend.fail_get.update({key_item(PROD), key_index(PROD)})
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
 
     assert result.exit_code == 3
     error = json.loads(result.stderr)
@@ -263,7 +283,9 @@ def test_an_environment_store_never_falls_back(
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", forced)
     backend.locked = True
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
 
     assert result.exit_code == 3
     assert json.loads(result.stderr)["code"] == "credential_storage_failed"
@@ -280,14 +302,16 @@ def test_store_only_saves_the_mode_and_copies_nothing(
     _keyring_login(backend, LOGIN_TOKEN)
 
     to_file = runner.invoke(
-        app, ["--json", "login", "--with-key", "--store", "file"], input=KEY
+        app,
+        ["--json", "-p", PROJECT_ID, "login", "--with-key", "--store", "file"],
+        input=KEY,
     )
 
     assert to_file.exit_code == 0, to_file.stderr
     assert json.loads(to_file.stdout)["store"] == "file"
     assert 'credential_store = "file"' in config_path.read_text()
     section = FileStore().section(credential_origin(PROD))
-    assert set(section) == {auth.API_KEY_ENTRY}  # The keychain login stayed put.
+    assert set(section) == {auth.API_KEYS_ENTRY}  # The keychain login stayed put.
     assert json.loads(backend.entries[(SERVICE, f"{PROD}/login")])["token"] == (
         LOGIN_TOKEN
     )
@@ -299,7 +323,7 @@ def test_store_only_saves_the_mode_and_copies_nothing(
     assert back.exit_code == 0, back.stderr
     assert json.loads(back.stdout)["store"] == "keyring"
     assert "credential_store" not in config_path.read_text()  # auto is the default.
-    assert (SERVICE, f"{PROD}/api_key") not in backend.entries  # Not copied back.
+    assert (SERVICE, key_item(PROD)) not in backend.entries  # Not copied back.
     assert FileStore().section(credential_origin(PROD)) == section  # Untouched.
     assert "Copied" not in back.stderr
     found = auth.resolve_credential({}, api_url=PROD)
@@ -315,7 +339,9 @@ def test_a_mode_that_cannot_be_saved_fails_before_any_login(
     monkeypatch.setattr(config, "update_config_values", refuse)
 
     result = runner.invoke(
-        app, ["--json", "login", "--with-key", "--store", "file"], input=KEY
+        app,
+        ["--json", "-p", PROJECT_ID, "login", "--with-key", "--store", "file"],
+        input=KEY,
     )
 
     assert result.exit_code == 3
@@ -336,10 +362,12 @@ def test_a_failed_keychain_write_keeps_the_existing_keychain_login(
     # r7 repro: a failed key write with an unreadable pending entry must not
     # lose the only login.
     _keyring_login(backend, LOGIN_TOKEN)
-    backend.fail_set.add(f"{PROD}/api_key")
+    backend.fail_set.add(key_item(PROD))
     backend.fail_get.add(f"{PROD}/pending_device")
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
 
     assert result.exit_code == 3
     assert json.loads(result.stderr)["code"] == "credential_storage_failed"
@@ -354,13 +382,14 @@ def test_a_copy_in_the_store_not_in_use_is_never_read(
     backend: Backend, credentials_file: Path
 ) -> None:
     # r7 repro (cleanup failure): a stale file key never shadows a keychain login.
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
+    FileStore().set_api_key(credential_origin(PROD), PROJECT_ID, key_document(key=KEY))
 
     auth.store_login(NEW, login_meta(), api_url=PROD)
 
     found = auth.resolve_credential({}, api_url=PROD)
     assert isinstance(found, auth.LoginCredential) and found.bearer_value() == NEW
-    assert auth.stored_project_key(api_url=PROD) is None  # The file is not read.
+    # The file is not read.
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is None
     assert FileStore().section(credential_origin(PROD))  # And not deleted either.
 
 
@@ -368,7 +397,7 @@ def test_a_copy_in_the_store_not_in_use_is_never_read(
 def test_a_read_only_credentials_directory_cannot_promote_a_key(
     backend: Backend, credentials_file: Path
 ) -> None:
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
+    FileStore().set_api_key(credential_origin(PROD), PROJECT_ID, key_document(key=KEY))
     credentials_file.parent.chmod(0o500)
     try:
         written = auth.store_login(NEW, login_meta(), api_url=PROD)
@@ -404,10 +433,10 @@ def test_whoami_and_doctor_point_at_credentials_in_the_store_not_in_use(
 ) -> None:
     from solwyn_cli.commands import doctor as doctor_module
 
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
-    backend.entries[(SERVICE, f"{PROD}/api_key")] = NEW_KEY
+    FileStore().set_api_key(credential_origin(PROD), PROJECT_ID, key_document(key=KEY))
+    backend.entries.update(stored_keychain(PROD, key=NEW_KEY))
 
-    result = runner.invoke(app, ["--json", "whoami"])
+    result = runner.invoke(app, ["--json", "-p", PROJECT_ID, "whoami"])
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["auth_source"] == "keyring"
@@ -447,7 +476,9 @@ def test_a_clean_store_not_in_use_adds_no_note(
 ) -> None:
     _keyring_login(backend, LOGIN_TOKEN)
     assert auth.unused_store_holdings(api_url=PROD) is None
-    FileStore().set_many(credential_origin("https://other.example"), {"api_key": KEY})
+    FileStore().set_api_key(
+        credential_origin("https://other.example"), PROJECT_ID, key_document(key=KEY)
+    )
     assert auth.unused_store_holdings(api_url=PROD) is None  # Another API's entry.
 
 
@@ -476,7 +507,7 @@ def test_the_lock_times_out_with_a_clear_storage_error(
     try:
         result = runner.invoke(
             app,
-            ["--json", "login", "--with-key"],
+            ["--json", "-p", PROJECT_ID, "login", "--with-key"],
             input=KEY,
             env={"SOLWYN_CREDENTIAL_STORE": "file"},
         )
@@ -558,7 +589,9 @@ def _mode_switch_then_pause(entries: Any, ready: Any, release: Any) -> None:
 
     config.update_config_values = paused  # type: ignore[assignment]
     result = runner.invoke(
-        app, ["--json", "login", "--with-key", "--store", "file"], input=KEY
+        app,
+        ["--json", "-p", PROJECT_ID, "login", "--with-key", "--store", "file"],
+        input=KEY,
     )
     os._exit(result.exit_code)
 
@@ -600,7 +633,7 @@ def test_a_pending_login_written_during_a_peer_mode_switch_lands_where_reads_loo
         _platform(monkeypatch, "macos")
         assert auth.load_pending_device(api_url=PROD) is not None
         section = FileStore().section(credential_origin(PROD))
-        assert section[auth.API_KEY_ENTRY] == KEY
+        assert json.loads(section[auth.API_KEYS_ENTRY])[PROJECT_ID]["key"] == KEY
         assert auth.PENDING_DEVICE_ENTRY in section
 
 
@@ -665,7 +698,9 @@ def _killed_after_mode_switch(entries: Any, ready: Any) -> None:
 
     config.update_config_values = then_hang  # type: ignore[assignment]
     runner.invoke(
-        app, ["--json", "login", "--with-key", "--store", "file"], input=NEW_KEY
+        app,
+        ["--json", "-p", PROJECT_ID, "login", "--with-key", "--store", "file"],
+        input=NEW_KEY,
     )
 
 
@@ -694,7 +729,7 @@ def test_a_kill_after_the_mode_switch_leaves_one_consistent_store(
         assert 'credential_store = "file"' in config_path.read_text()
         assert auth.resolve_credential({}, api_url=PROD) is None
         assert auth.where_stored().kind == "file"
-        auth.store_project_key(KEY, api_url=PROD)
+        store_key(key=KEY, api_url=PROD)
         assert (SERVICE, f"{PROD}/login") in entries  # Never deleted.
         assert NEW_KEY not in str(dict(entries))  # Nothing half-written anywhere.
         assert (
@@ -772,7 +807,7 @@ def test_no_usable_keyring_is_unavailable_when_the_file_is_in_use(
     cause: str,
 ) -> None:
     _file_in_use(monkeypatch, config_path, how)
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
+    FileStore().set_api_key(credential_origin(PROD), PROJECT_ID, key_document(key=KEY))
     _no_backend(monkeypatch, backend, cause)
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -815,7 +850,9 @@ def test_no_usable_keyring_is_unreachable_when_it_is_the_store_in_use(
     _no_backend(monkeypatch, backend, cause)
 
     logout = runner.invoke(app, ["--json", "logout"])
-    stored = runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+    stored = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=KEY
+    )
     whoami = runner.invoke(app, ["--json", "whoami"])
 
     assert logout.exit_code == 3
@@ -943,7 +980,7 @@ def test_logout_keeps_a_keychain_login_it_could_not_read(
 ) -> None:
     revoked = _device(monkeypatch)
     _keyring_login(backend, LOGIN_TOKEN)
-    backend.entries[(SERVICE, f"{PROD}/api_key")] = KEY
+    backend.entries.update(stored_keychain(PROD, key=KEY))
     backend.fail_get.add(f"{PROD}/login")
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -956,7 +993,9 @@ def test_logout_keeps_a_keychain_login_it_could_not_read(
     assert keyring["kept"] == ["login"]
     assert revoked == []
     assert (SERVICE, f"{PROD}/login") in backend.entries  # Kept.
-    assert (SERVICE, f"{PROD}/api_key") not in backend.entries  # The rest cleared.
+    # The rest cleared: the key's item and the index.
+    assert (SERVICE, key_item(PROD)) not in backend.entries
+    assert (SERVICE, key_index(PROD)) not in backend.entries
 
 
 def test_logout_keeps_an_unparsable_keychain_login(
@@ -1013,7 +1052,11 @@ MALFORMED = [
     {"version": 1, "origins": {PROD: {"login": {"token": 1, "meta": {}}}}},
     {"version": 1, "origins": {PROD: {"api_key": ["x"]}}},
     {"version": 1, "origins": {PROD: {"surprise": "x"}}},
-    {"version": 2, "origins": {}},
+    {"version": 3, "origins": {}},
+    # Version 2: the 0.4.x slot is gone, and every stored key is complete.
+    {"version": 2, "origins": {PROD: {"api_key": "x"}}},
+    {"version": 2, "origins": {PROD: {"api_keys": {PROJECT_ID: {"key": "x"}}}}},
+    {"version": 2, "origins": {PROD: {"api_keys": {"checkout": key_document()}}}},
     [],
 ]
 
@@ -1027,13 +1070,13 @@ def _write_raw(path: Path, content: bytes) -> None:
 
 @pytest.mark.parametrize("document", MALFORMED)
 def test_a_malformed_document_is_a_structured_error_naming_the_file(
-    credentials_file: Path, document: Any
+    credentials_file: Path, document: Any, fake_core: FakeCore
 ) -> None:
     _write_raw(credentials_file, json.dumps(document).encode())
 
     result = runner.invoke(
         app,
-        ["--json", "login", "--with-key"],
+        ["--json", "-p", PROJECT_ID, "login", "--with-key"],
         input=KEY,
         env={"SOLWYN_CREDENTIAL_STORE": "file"},
     )
@@ -1113,38 +1156,24 @@ def test_a_new_browser_login_that_cannot_be_stored_is_revoked(
 
 @posix_only
 def test_an_unwritable_lock_file_is_a_structured_error(
-    tmp_path: Path, credentials_file: Path
+    tmp_path: Path, credentials_file: Path, fake_core: FakeCore
 ) -> None:
-    FileStore().set_many(credential_origin(PROD), {auth.API_KEY_ENTRY: KEY})
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
+    FileStore().set_api_key(credential_origin(PROD), PROJECT_ID, key_document(key=KEY))
     credential_store.lock_path().chmod(0o400)
     credentials_file.parent.chmod(0o500)
-    environment = dict(
-        os.environ,
-        SOLWYN_CREDENTIAL_STORE="file",
-        XDG_CONFIG_HOME=str(tmp_path / "config"),
-        TERM="dumb",
-    )
     try:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "from solwyn_cli.main import app; app()",
-                "--json",
-                "login",
-                "--with-key",
-            ],
+        result = runner.invoke(
+            app,
+            ["--json", "-p", PROJECT_ID, "login", "--with-key"],
             input=NEW_KEY,
-            text=True,
-            capture_output=True,
-            env=environment,
-            timeout=30,
+            env={"SOLWYN_CREDENTIAL_STORE": "file", "TERM": "dumb"},
         )
     finally:
         credentials_file.parent.chmod(0o700)
 
     assert NEW_KEY not in result.stdout + result.stderr
-    assert result.returncode == 3
+    assert result.exit_code == 3
     assert json.loads(result.stderr)["code"] == "credential_storage_failed"
 
 

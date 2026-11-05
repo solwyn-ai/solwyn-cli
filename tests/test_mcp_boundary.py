@@ -3,20 +3,14 @@
 import asyncio
 import json
 import logging
+from typing import ClassVar
 
 import anyio
 import httpx
 import pytest
-from mcp import MCPError, types
-from mcp import Client
-from typing import ClassVar
-
-from pydantic import BaseModel
-
-from solwyn_cli import auth
-from solwyn_cli.commands import _record, budget
-from solwyn_cli.mcp import server as mcp_server
+from mcp import Client, MCPError, types
 from mcp_batch_fixtures import ID, journal
+from pydantic import BaseModel
 from test_mcp_conformance import (
     CHECK_RESPONSE,
     VALID_KEY,
@@ -25,6 +19,9 @@ from test_mcp_conformance import (
     _listed_tool_contract,
 )
 
+from solwyn_cli import auth
+from solwyn_cli.commands import _record, budget
+from solwyn_cli.mcp import server as mcp_server
 
 CANARY = "SYNTHETIC_PRIVATE_BOUNDARY_91a5"
 CHECK = {"estimated_input_tokens": 12, "model": "gpt-4o", "provider": "openai"}
@@ -34,7 +31,7 @@ CONFIRM.pop("estimated_input_tokens")
 
 
 def _key():
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 def _assert_private(result, caplog, capsys):

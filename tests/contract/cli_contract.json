@@ -4951,20 +4951,224 @@
       "path": [
         "keys"
       ],
-      "summary": "Recover from leaked or expired project keys, and hand a key to an SDK."
+      "summary": "List, create, rotate and revoke API keys, and hand a stored key to an SDK."
+    },
+    {
+      "hidden": true,
+      "is_group": false,
+      "json_schema": "solwyn.error.v1",
+      "name": "add-project",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "key_id"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--project",
+            "-p"
+          ],
+          "default": null,
+          "help": null,
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project",
+          "required": false,
+          "type": "text"
+        }
+      ],
+      "path": [
+        "keys",
+        "add-project"
+      ],
+      "summary": "Point at the dashboard: only a person there can widen a key."
     },
     {
       "hidden": false,
       "is_group": false,
-      "json_schema": "solwyn.keys-env.v1",
+      "json_schema": "solwyn.keys-create.v1",
+      "name": "create",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "--project",
+            "-p"
+          ],
+          "default": null,
+          "help": "Project name or proj_ id for the key.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--name"
+          ],
+          "default": null,
+          "help": "Key name; defaults to the project's name.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "full",
+            "read_only"
+          ],
+          "cli_names": [
+            "--scope"
+          ],
+          "default": null,
+          "help": "Key scope; omit for full.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "scope",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "cli_names": [
+            "--store-key"
+          ],
+          "default": false,
+          "help": "Store the new key on this computer.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "store_key",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "keys",
+        "create"
+      ],
+      "summary": "Create an API key for one project and capture it exactly once."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-env.v2",
       "name": "env",
       "output_kind": "json-envelope",
-      "params": [],
+      "params": [
+        {
+          "cli_names": [
+            "--project",
+            "-p"
+          ],
+          "default": null,
+          "help": "Project name or proj_ id.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project",
+          "required": false,
+          "type": "text"
+        }
+      ],
       "path": [
         "keys",
         "env"
       ],
-      "summary": "Print export lines for the stored project key and its API URL."
+      "summary": "Print export lines for the stored key of the selected project."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-list.v1",
+      "name": "list",
+      "output_kind": "json-envelope",
+      "params": [],
+      "path": [
+        "keys",
+        "list"
+      ],
+      "summary": "List the account's live API keys, marking the ones stored here."
+    },
+    {
+      "hidden": false,
+      "is_group": false,
+      "json_schema": "solwyn.keys-remove-project.v1",
+      "name": "remove-project",
+      "output_kind": "json-envelope",
+      "params": [
+        {
+          "cli_names": [
+            "key_id"
+          ],
+          "default": null,
+          "help": "Id of the key (solwyn keys list).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--project",
+            "-p"
+          ],
+          "default": null,
+          "help": "Project name or proj_ id to remove.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "project",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
+            "--yes"
+          ],
+          "default": false,
+          "help": "Acknowledge the displayed effects without prompting.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "keys",
+        "remove-project"
+      ],
+      "summary": "Take a project away from a key; the key keeps its other projects."
     },
     {
       "hidden": false,
@@ -4975,10 +5179,10 @@
       "params": [
         {
           "cli_names": [
-            "--key-id"
+            "key_id"
           ],
           "default": null,
-          "help": "Identifier of the key to hard-revoke.",
+          "help": "Id of the key to revoke (solwyn keys list).",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
@@ -5006,7 +5210,7 @@
         "keys",
         "revoke"
       ],
-      "summary": "Hard-revoke a project key without minting a replacement."
+      "summary": "Revoke a key now, without a replacement."
     },
     {
       "hidden": false,
@@ -5017,10 +5221,24 @@
       "params": [
         {
           "cli_names": [
+            "key_id"
+          ],
+          "default": null,
+          "help": "Id of the key to rotate (solwyn keys list).",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "key_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "cli_names": [
             "--grace-seconds"
           ],
           "default": null,
-          "help": "Seconds the old key remains valid (0 through 604800).",
+          "help": "Seconds the old key keeps working (0 through 604800).",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
@@ -5038,7 +5256,7 @@
             "--scope"
           ],
           "default": null,
-          "help": "Scope for the replacement key; omit to keep the current scope.",
+          "help": "Scope for the replacement; omit to keep the current scope.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
@@ -5066,20 +5284,7 @@
         "keys",
         "rotate"
       ],
-      "summary": "Rotate the active key and reveal its replacement exactly once."
-    },
-    {
-      "hidden": false,
-      "is_group": false,
-      "json_schema": "solwyn.keys-show.v1",
-      "name": "show",
-      "output_kind": "json-envelope",
-      "params": [],
-      "path": [
-        "keys",
-        "show"
-      ],
-      "summary": "Show active project-key metadata without revealing key material."
+      "summary": "Rotate a key; the replacement holds the same projects."
     },
     {
       "hidden": false,
@@ -5097,7 +5302,7 @@
             "--with-key"
           ],
           "default": false,
-          "help": "Read and store a project API key from a hidden prompt or stdin.",
+          "help": "Check an API key from a hidden prompt or stdin and store it for the project.",
           "hidden": false,
           "is_flag": true,
           "kind": "option",
@@ -5196,7 +5401,7 @@
       "path": [
         "login"
       ],
-      "summary": "Log in through the browser, or store a project key with --with-key."
+      "summary": "Log in through the browser, or store an API key with --with-key."
     },
     {
       "hidden": false,
@@ -8188,9 +8393,11 @@
     {
       "keys": [
         "call_count",
+        "estimated_receipt_cost",
         "local_call_count",
         "project_id",
         "range",
+        "receipt_cost",
         "schema",
         "total_cost",
         "total_input_tokens",
@@ -8352,19 +8559,79 @@
     },
     {
       "keys": [
+        "approval_id",
+        "created_at",
+        "created_by",
+        "created_via",
+        "expires_at",
+        "id",
+        "key",
+        "key_prefix",
+        "last_used_at",
+        "name",
+        "projects",
+        "rotation_grace_until",
+        "schema",
+        "scope",
+        "status",
+        "stored"
+      ],
+      "optional_keys": [
+        "key"
+      ],
+      "schema": "solwyn.keys-create.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
         "api_url",
         "export",
-        "name",
+        "names",
+        "project",
         "schema"
       ],
       "optional_keys": [],
-      "schema": "solwyn.keys-env.v1",
+      "schema": "solwyn.keys-env.v2",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "keys",
+        "limit",
+        "schema",
+        "used"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.keys-list.v1",
+      "universal_error_envelope": false
+    },
+    {
+      "keys": [
+        "approval_id",
+        "created_at",
+        "created_by",
+        "created_via",
+        "expires_at",
+        "id",
+        "key_prefix",
+        "last_used_at",
+        "name",
+        "projects",
+        "removed_project_id",
+        "removed_stored_project",
+        "rotation_grace_until",
+        "schema",
+        "scope",
+        "status"
+      ],
+      "optional_keys": [],
+      "schema": "solwyn.keys-remove-project.v1",
       "universal_error_envelope": false
     },
     {
       "keys": [
         "key_id",
-        "project_id",
+        "removed_stored_projects",
         "revoked",
         "schema"
       ],
@@ -8374,31 +8641,28 @@
     },
     {
       "keys": [
+        "approval_id",
+        "created_at",
+        "created_by",
+        "created_via",
+        "expires_at",
         "id",
         "key",
         "key_prefix",
+        "last_used_at",
+        "name",
+        "projects",
+        "replaced_key_id",
+        "replaced_key_rotation_grace_until",
         "rotation_grace_until",
         "schema",
-        "scope"
+        "scope",
+        "status",
+        "stored",
+        "stored_projects"
       ],
       "optional_keys": [],
       "schema": "solwyn.keys-rotate.v1",
-      "universal_error_envelope": false
-    },
-    {
-      "keys": [
-        "created_at",
-        "expires_at",
-        "id",
-        "key_prefix",
-        "last_used_at",
-        "name",
-        "rotation_grace_until",
-        "schema",
-        "scope"
-      ],
-      "optional_keys": [],
-      "schema": "solwyn.keys-show.v1",
       "universal_error_envelope": false
     },
     {
@@ -8428,6 +8692,8 @@
         "expires_at",
         "label",
         "location",
+        "project_id",
+        "project_name",
         "role",
         "schema",
         "scope",
@@ -8615,8 +8881,12 @@
         "budget_mode",
         "budget_period",
         "created_at",
+        "created_via",
+        "dedicated_keys_only",
+        "expires_at",
         "id",
         "key",
+        "key_id",
         "key_prefix",
         "name",
         "schema",
@@ -8632,9 +8902,9 @@
     },
     {
       "keys": [
-        "api_keys_revoked",
         "archived",
         "project_id",
+        "removed_stored_key",
         "schema"
       ],
       "optional_keys": [],

@@ -6,12 +6,12 @@ import pytest
 from pydantic import ValidationError
 
 from solwyn_cli._vendor.wire import (
+    ApiKeyRotateRequest,
     BudgetCheckRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
     MediaUsage,
     ProjectCreateRequest,
-    ProjectKeyRotateRequest,
 )
 
 
@@ -24,7 +24,7 @@ from solwyn_cli._vendor.wire import (
             {"name"},
         ),
         (
-            ProjectKeyRotateRequest,
+            ApiKeyRotateRequest,
             {"grace_seconds", "scope"},
             set(),
         ),

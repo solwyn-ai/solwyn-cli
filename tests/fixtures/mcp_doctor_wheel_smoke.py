@@ -1,19 +1,19 @@
 """Run with the wheel's Python from outside the checkout; only synthetic HTTP."""
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import sysconfig
 import tempfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 
 from solwyn_cli import __version__
 from solwyn_cli._mcp_doctor_ipc import isolated_environment
 
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 PROJECT = "proj_" + "ab" * 12
 IDENTITY = PROJECT
 SCOPE = "read_only"
