@@ -6,15 +6,14 @@ from pathlib import Path
 import anyio
 import httpx
 import pytest
+from mcp_batch_fixtures import ID, journal
+from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
 from solwyn_cli.commands import budget
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server as mcp_server
-from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
-from mcp_batch_fixtures import ID, journal
-
 
 CHECK = {"model": "gpt-4o", "provider": "openai", "estimated_input_tokens": 21}
 ALLOWED = {
@@ -25,7 +24,7 @@ ALLOWED = {
     "budget_limit": 100,
     "current_usage": 10,
     "denied_by_period": None,
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "price_hints": None,
     "run_control": None,
 }
@@ -49,7 +48,7 @@ def item(result):
 def invoke(
     monkeypatch, interface, checks, responses, *, no_record=False, fmt="json", extra=()
 ):
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, clients, remaining = _install_http(
         monkeypatch, responses=responses, credentials=[credential]
     )
@@ -358,7 +357,7 @@ def test_batch_rejects_ambiguous_single_check_flags(monkeypatch, extra):
 def test_batch_file_input_and_environment_run_opt_in(monkeypatch, tmp_path):
     source = tmp_path / "checks.json"
     source.write_text(json.dumps([CHECK]))
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[httpx.Response(200, json={"results": [item(ALLOWED)]})],

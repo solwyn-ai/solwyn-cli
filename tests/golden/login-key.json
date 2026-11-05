@@ -1,1 +1,1 @@
-{"schema":"solwyn.login.v2","auth_type":"project_key","store":"keyring","location":null,"credential_id":null,"label":null,"scope":null,"expires_at":null,"account_id":null,"account_name":null,"email":null,"role":null}
+{"schema":"solwyn.login.v2","auth_type":"project_key","store":"keyring","location":null,"credential_id":"6f1d0c9e-0000-4000-8000-000000000001","label":null,"scope":null,"expires_at":null,"account_id":"acct_synthetic","account_name":null,"email":null,"role":null,"project_id":"proj_8a8a8a8a8a8a8a8a8a8a8a8a","project_name":"checkout-bot"}

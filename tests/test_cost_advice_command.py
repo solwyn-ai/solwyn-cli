@@ -6,17 +6,16 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import cost_analysis, cost_pricing
 from solwyn_cli.main import app
 
-
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "c8" * 32
+VALID_KEY = "solwyn_sk_" + "c8" * 32
 WINDOW = {
     "requested_from": "2026-08-29T00:00:00Z",
     "requested_to": "2026-09-05T00:00:00Z",
@@ -25,7 +24,7 @@ WINDOW = {
     "retention_clamped": False,
 }
 BASELINE = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "lookback_days": 7,
     "days_with_data": 6,
     "mean_daily_spend": 1.25,
@@ -70,7 +69,7 @@ UNIT_ECONOMICS = {
     },
 }
 DRIFT = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "range": "7d",
     "window": WINDOW,
     "actual_total": 12.5,
@@ -96,7 +95,7 @@ DRIFT = {
     },
 }
 PRICED_MODELS = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "pricing_version": "2026-08-06",
     "provenance": "first_party_vendored_dataset",
     "models": [
@@ -109,7 +108,7 @@ PRICED_MODELS = {
     ],
 }
 SIMULATION = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "range": "7d",
     "window": WINDOW,
     "target": {
@@ -168,7 +167,7 @@ class FakeClient:
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     FakeClient.instances = []
     FakeClient.responses = []
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     for module in (cost_analysis, cost_pricing):
         monkeypatch.setattr(module, "SolwynClient", FakeClient, raising=False)
         monkeypatch.setattr(
@@ -216,7 +215,7 @@ def test_cost_advice_commands_match_goldens(
     options = ["--json"] if output_format == "json" else ["--no-color"]
 
     result = runner.invoke(
-        app, [*options, "--project", "proj_alpha", "costs", *command]
+        app, [*options, "--project", "proj_be76331b95dfc399cd776d2f", "costs", *command]
     )
 
     assert result.exit_code == 0, result.stderr
@@ -264,7 +263,8 @@ def test_cost_advice_requests_use_exact_paths_params_and_body() -> None:
 
     for command in commands:
         result = runner.invoke(
-            app, ["--json", "--project", "proj_alpha", "costs", *command]
+            app,
+            ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "costs", *command],
         )
         assert result.exit_code == 0, result.stderr
 
@@ -273,17 +273,17 @@ def test_cost_advice_requests_use_exact_paths_params_and_body() -> None:
     ] == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/spend-baseline",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/spend-baseline",
             {"params": {"days": 7}},
         ),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/unit-economics",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/unit-economics",
             {"params": {"range": "30d", "vs_prev": False, "cause": True}},
         ),
         (
             "GET",
-            "/api/v1/projects/proj_alpha/costs/drift",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/drift",
             {
                 "params": {
                     "from": "2026-09-01T00:00:00Z",
@@ -291,10 +291,14 @@ def test_cost_advice_requests_use_exact_paths_params_and_body() -> None:
                 }
             },
         ),
-        ("GET", "/api/v1/projects/proj_alpha/costs/priced-models", {}),
+        (
+            "GET",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/priced-models",
+            {},
+        ),
         (
             "POST",
-            "/api/v1/projects/proj_alpha/costs/simulate",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/simulate",
             {
                 "params": {
                     "from": "2026-09-01T00:00:00Z",
@@ -336,7 +340,14 @@ def test_simulate_rejects_invalid_provider_context_before_http(
 ) -> None:
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "costs", "simulate", *options],
+        [
+            "--json",
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            "simulate",
+            *options,
+        ],
     )
 
     assert result.exit_code == 2
@@ -351,7 +362,13 @@ def test_unit_economics_omits_null_optional_rows_without_rendering_zero() -> Non
 
     result = runner.invoke(
         app,
-        ["--no-color", "--project", "proj_alpha", "costs", "unit-economics"],
+        [
+            "--no-color",
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            "unit-economics",
+        ],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -385,7 +402,7 @@ def test_simulation_table_explains_unequal_baseline_and_repricing_populations() 
         [
             "--no-color",
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "simulate",
             "--provider",
@@ -449,7 +466,7 @@ def test_simulation_table_marks_equal_baseline_and_repricing_populations() -> No
         [
             "--no-color",
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "costs",
             "simulate",
             "--provider",
@@ -476,7 +493,7 @@ def test_drift_human_output_explains_estimate_heuristic_and_coverage() -> None:
 
     result = runner.invoke(
         app,
-        ["--no-color", "--project", "proj_alpha", "costs", "drift"],
+        ["--no-color", "--project", "proj_be76331b95dfc399cd776d2f", "costs", "drift"],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -488,7 +505,14 @@ def test_drift_human_output_explains_estimate_heuristic_and_coverage() -> None:
 def test_baseline_rejects_days_outside_core_bounds_without_http(days: int) -> None:
     result = runner.invoke(
         app,
-        ["--project", "proj_alpha", "costs", "baseline", "--days", str(days)],
+        [
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "costs",
+            "baseline",
+            "--days",
+            str(days),
+        ],
     )
 
     assert result.exit_code == 2

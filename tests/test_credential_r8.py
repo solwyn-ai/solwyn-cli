@@ -16,10 +16,18 @@ from typing import Any
 
 import httpx
 import pytest
+from key_fixtures import (
+    PROJECT_ID,
+    key_document,
+    key_index,
+    key_item,
+    store_key,
+    stored_keychain,
+)
 from keyring.errors import PasswordDeleteError
+from login_fixtures import LOGIN_TOKEN, login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
@@ -28,8 +36,8 @@ from solwyn_cli.main import app
 
 runner = CliRunner()
 PROD = "https://api.solwyn.ai"
-KEY = "sk_proj_" + "a1" * 32
-NEW_KEY = "sk_proj_" + "b2" * 32
+KEY = "solwyn_sk_" + "a1" * 32
+NEW_KEY = "solwyn_sk_" + "b2" * 32
 NEW = "solwyn_cli_" + "2b" * 32
 DEVICE_CODE = "solwyn_dc_" + "4d" * 32
 SERVICE = "solwyn-cli"
@@ -107,7 +115,7 @@ def _hold_shared(ready: Any, release: Any) -> None:
 
 
 def _resolve(queue: Any) -> None:
-    found = auth.resolve_credential({}, api_url=PROD)
+    found = auth.resolve_credential({}, api_url=PROD, project_id=PROJECT_ID)
     queue.put(type(found).__name__)  # Return normally: the queue must flush.
 
 
@@ -117,7 +125,7 @@ def test_a_read_waits_while_another_process_writes(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(credential_store.STORE_ENV, "file")
-    auth.store_project_key(KEY, api_url=PROD)
+    store_key(key=KEY, api_url=PROD)
     context = mp.get_context("fork")
     ready, release, queue = context.Event(), context.Event(), context.Queue()
     holder = context.Process(target=_hold_exclusive, args=(ready, release))
@@ -130,14 +138,14 @@ def test_a_read_waits_while_another_process_writes(
     release.set()
     holder.join(8)
     reader.join(8)
-    assert queue.get(timeout=3) == "ProjectKeyCredential"
+    assert queue.get(timeout=3) == "ApiKeyCredential"
 
 
 @forking
 @posix_only
 def test_reads_share_the_lock(env: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(credential_store.STORE_ENV, "file")
-    auth.store_project_key(KEY, api_url=PROD)
+    store_key(key=KEY, api_url=PROD)
     context = mp.get_context("fork")
     ready, release, queue = context.Event(), context.Event(), context.Queue()
     holder = context.Process(target=_hold_shared, args=(ready, release))
@@ -149,7 +157,7 @@ def test_reads_share_the_lock(env: Any, monkeypatch: pytest.MonkeyPatch) -> None
     assert not reader.is_alive()  # Another reader does not block it.
     release.set()
     holder.join(8)
-    assert queue.get(timeout=3) == "ProjectKeyCredential"
+    assert queue.get(timeout=3) == "ApiKeyCredential"
 
 
 def _split_reader(entries: Any, ready: Any, release: Any, queue: Any) -> None:
@@ -166,7 +174,7 @@ def _split_reader(entries: Any, ready: Any, release: Any, queue: Any) -> None:
         return found
 
     auth._read = paused  # type: ignore[assignment]
-    found = auth.resolve_credential({}, api_url=PROD)
+    found = auth.resolve_credential({}, api_url=PROD, project_id=PROJECT_ID)
     queue.put((seen, type(found).__name__))
 
 
@@ -182,7 +190,7 @@ def _switch_and_login(entries: Any) -> None:
 def test_one_resolution_reads_one_store(env: Any) -> None:
     context = mp.get_context("fork")
     with context.Manager() as manager:
-        entries = manager.dict({(SERVICE, f"{PROD}/api_key"): KEY})
+        entries = manager.dict(stored_keychain(PROD, key=KEY))
         ready, release, queue = context.Event(), context.Event(), context.Queue()
         reader = context.Process(
             target=_split_reader, args=(entries, ready, release, queue)
@@ -199,7 +207,7 @@ def test_one_resolution_reads_one_store(env: Any) -> None:
         assert reader.exitcode == writer.exitcode == 0
         seen, kind = queue.get(timeout=3)
         assert len(set(seen)) == 1, seen
-        assert kind == "ProjectKeyCredential"
+        assert kind == "ApiKeyCredential"
 
 
 # --- 5. A timed-out keyring write strands the process -----------------------
@@ -225,12 +233,12 @@ def test_a_timed_out_write_fails_and_no_later_write_in_the_process_continues(
     release = _slow_set(monkeypatch, backend)
     try:
         with pytest.raises(auth.CredentialStorageError) as first:
-            auth.store_project_key(KEY, mode="keyring", api_url=PROD)
+            store_key(key=KEY, mode="keyring", api_url=PROD)
         assert "did not answer" in str(first.value)
         assert credential_store.stranded()
         # No code path continues: the next transaction fails at once.
         with pytest.raises(auth.CredentialStorageError) as second:
-            auth.store_project_key(NEW_KEY, mode="keyring", api_url=PROD)
+            store_key(key=NEW_KEY, mode="keyring", api_url=PROD)
         assert str(second.value) == credential_store.STRANDED_MESSAGE
         with pytest.raises(auth.CredentialStorageError):
             auth.logout_everywhere(lambda token: True, api_url=PROD)
@@ -245,7 +253,7 @@ def test_a_timed_out_write_never_falls_back_in_auto(
     release = _slow_set(monkeypatch, backend)
     try:
         with pytest.raises(auth.CredentialStorageError):
-            auth.store_project_key(KEY, api_url=PROD)
+            store_key(key=KEY, api_url=PROD)
     finally:
         release.set()
     assert not credentials_file.exists()
@@ -262,7 +270,7 @@ def test_a_stranded_process_keeps_the_lock_until_it_exits(
     release = _slow_set(monkeypatch, backend)
     try:
         with pytest.raises(auth.CredentialStorageError):
-            auth.store_project_key(KEY, mode="keyring", api_url=PROD)
+            store_key(key=KEY, mode="keyring", api_url=PROD)
         probe = os.open(credential_store.lock_path(), os.O_RDWR)
         try:
             with pytest.raises(BlockingIOError):
@@ -422,7 +430,7 @@ def _logout_paused(entries: Any, ready: Any, release: Any) -> None:
 def _write_with_other_file(entries: Any, path: str) -> None:
     os.environ[credential_store.FILE_ENV] = path
     _shared_backend(entries)
-    auth.store_project_key(NEW_KEY, mode="keyring", api_url=PROD)
+    store_key(key=NEW_KEY, mode="keyring", api_url=PROD)
     os._exit(0)
 
 
@@ -458,7 +466,7 @@ def test_a_refused_delete_keeps_the_entry_and_fails_logout(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     backend, _ = env
-    backend.entries[(SERVICE, f"{PROD}/api_key")] = KEY
+    backend.entries.update(stored_keychain(PROD, key=KEY))
 
     def denied(service: str, username: str) -> None:
         raise PasswordDeleteError("permission denied")  # macOS maps denial here.
@@ -470,8 +478,9 @@ def test_a_refused_delete_keeps_the_entry_and_fails_logout(
     assert result.exit_code == 3
     keyring = json.loads(result.stderr)["detail"]["stores"][1]
     assert keyring["status"] == "unreachable"
-    assert "api_key" in keyring["kept"]
-    assert backend.entries[(SERVICE, f"{PROD}/api_key")] == KEY
+    assert "api_keys" in keyring["kept"]
+    assert (SERVICE, key_item(PROD)) in backend.entries
+    assert (SERVICE, key_index(PROD)) in backend.entries
 
 
 def test_a_delete_error_for_a_missing_entry_is_fine(env: Any) -> None:
@@ -548,7 +557,10 @@ def test_a_logout_killed_before_revoking_leaves_the_token_stored(env: Any) -> No
 @pytest.mark.parametrize(
     "section",
     [
-        {"login": {"token": LOGIN_TOKEN, "meta": {}}, "api_key": KEY},
+        {
+            "login": {"token": LOGIN_TOKEN, "meta": {}},
+            "api_keys": {PROJECT_ID: key_document(key=KEY)},
+        },
         {"login": {"token": LOGIN_TOKEN, "meta": {"id": 1}}},
         {
             "login": {
@@ -557,9 +569,16 @@ def test_a_logout_killed_before_revoking_leaves_the_token_stored(env: Any) -> No
             }
         },
         {"pending_device": {"device_code": DEVICE_CODE}},
-        {"login": None, "api_key": KEY},
-        {"api_key": None},
-        {"api_key": "sk_proj_short"},
+        {"login": None, "api_keys": {PROJECT_ID: key_document(key=KEY)}},
+        {"api_keys": None},
+        {"api_keys": {PROJECT_ID: key_document(key="sk_proj_short")}},
+        {"api_keys": {PROJECT_ID: key_document(key="sk_proj_" + "a1" * 32)}},
+        {"api_keys": {PROJECT_ID: {**key_document(key=KEY), "scope": "full"}}},
+        {"api_keys": {PROJECT_ID: {"key": KEY}}},
+        {"api_keys": {"checkout-bot": key_document(key=KEY)}},
+        {"api_keys": {PROJECT_ID: key_document(key=KEY, stored_at="yesterday")}},
+        # The 0.4.x slot is never valid in a version 2 file.
+        {"api_key": KEY},
     ],
 )
 def test_the_file_validates_every_credential_payload(
@@ -572,12 +591,12 @@ def test_the_file_validates_every_credential_payload(
     credentials_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(credentials_file, os.O_CREAT | os.O_WRONLY, 0o600)
     os.write(
-        descriptor, json.dumps({"version": 1, "origins": {PROD: section}}).encode()
+        descriptor, json.dumps({"version": 2, "origins": {PROD: section}}).encode()
     )
     os.close(descriptor)
 
     with pytest.raises(auth.MalformedCredentialFileError):
-        auth.resolve_credential({}, api_url=PROD)
+        auth.resolve_credential({}, api_url=PROD, project_id=PROJECT_ID)
 
 
 def test_a_malformed_keychain_login_never_falls_through_to_the_key(
@@ -587,7 +606,7 @@ def test_a_malformed_keychain_login_never_falls_through_to_the_key(
     backend.entries[(SERVICE, f"{PROD}/login")] = json.dumps(
         {"token": LOGIN_TOKEN, "meta": {}}
     )
-    backend.entries[(SERVICE, f"{PROD}/api_key")] = KEY
+    backend.entries.update(stored_keychain(PROD, key=KEY))
 
     with pytest.raises(auth.MalformedCredentialFileError) as caught:
         auth.resolve_credential({}, api_url=PROD)

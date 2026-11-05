@@ -2,22 +2,21 @@
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import anyio
 import httpx
+import pytest
 from mcp import Client
 from pydantic import ValidationError
-import pytest
+from test_mcp_conformance import BUDGET_RESPONSE, VALID_KEY, _install_http
+from test_mcp_sdk_migration import MODERN_META, raw_connection, synthetic_status
 
-from solwyn_cli.mcp import server as mcp_server
 from solwyn_cli import auth
 from solwyn_cli._vendor import wire
-from test_mcp_conformance import _install_http, BUDGET_RESPONSE, VALID_KEY
-from test_mcp_sdk_migration import raw_connection, MODERN_META, synthetic_status
-
+from solwyn_cli.mcp import server as mcp_server
 
 WRITERS = {"budget_check", "budget_check_batch", "budget_confirm", "record_call"}
 
@@ -120,7 +119,7 @@ def test_actual_stdio_profile_discovery_and_rejection(tmp_path, profile, count):
         [
             str(executable),
             "--project",
-            "proj_synthetic",
+            "proj_385fcd6760f6432fcdc51c5f",
             "--api-url",
             "http://127.0.0.1:1",
             "mcp",
@@ -306,7 +305,7 @@ def test_cached_discovery_does_not_cache_calls(monkeypatch):
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
 def test_discovery_cache_keeps_credentials_fresh(monkeypatch, mode):
-    rotated_key = "sk_proj_" + "c9" * 32
+    rotated_key = "solwyn_sk_" + "c9" * 32
     requests, _, _ = _install_http(
         monkeypatch,
         responses=[
@@ -314,8 +313,8 @@ def test_discovery_cache_keeps_credentials_fresh(monkeypatch, mode):
             httpx.Response(200, json=BUDGET_RESPONSE),
         ],
         credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
-            auth.ProjectKeyCredential(api_key=rotated_key, source="environment"),
+            auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
+            auth.ApiKeyCredential(api_key=rotated_key, source="environment"),
             None,
         ],
     )

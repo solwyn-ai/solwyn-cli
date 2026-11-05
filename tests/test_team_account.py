@@ -1,16 +1,10 @@
 """Customer team/account contracts; all HTTP and credentials are synthetic."""
 
-from copy import deepcopy
 import json
-import httpx
-from solwyn_cli import auth
-from solwyn_cli.client import SolwynClient
-from solwyn_cli.errors import APPROVAL_USED_HINT, ApiError
-from solwyn_cli.commands import _team, invite
+from copy import deepcopy
 
+import httpx
 import pytest
-from typer.testing import CliRunner
-from solwyn_cli.main import app
 from login_fixtures import (
     APPROVAL_ID,
     APPROVAL_URL,
@@ -20,6 +14,13 @@ from login_fixtures import (
     fake_keychain,
     login_credential,
 )
+from typer.testing import CliRunner
+
+from solwyn_cli import auth
+from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands import _team, invite
+from solwyn_cli.errors import APPROVAL_USED_HINT, ApiError
+from solwyn_cli.main import app
 
 runner = CliRunner()
 
@@ -398,9 +399,7 @@ def test_decline_eof_interrupt_never_write(mock_team, monkeypatch, answer):
     ],
 )
 def test_selected_project_key_never_bypassed(mock_team, monkeypatch, command):
-    key = auth.ProjectKeyCredential(
-        api_key="sk_proj_" + "ab" * 32, source="environment"
-    )
+    key = auth.ApiKeyCredential(api_key="solwyn_sk_" + "ab" * 32, source="environment")
     monkeypatch.setattr(_team, "resolve_credential", lambda **_: key)
     result = invoke(*command, input=TOKEN + "\n")
     assert result.exit_code == 3
@@ -501,6 +500,7 @@ def test_token_invalid_fixed_secret_free_error(mock_team, token):
 @pytest.mark.parametrize("json_output", [True, False])
 def test_team_command_golden(mock_team, args, payloads, name, input_value, json_output):
     from pathlib import Path
+
     from golden.harness import assert_matches_golden
 
     mock_team[0].extend(

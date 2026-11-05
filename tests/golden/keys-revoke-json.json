@@ -1,1 +1,1 @@
-{"schema":"solwyn.keys-revoke.v1","project_id":"proj/recovery","key_id":"key/old","revoked":true}
+{"schema":"solwyn.keys-revoke.v1","key_id":"6f1d0c9e-0000-4000-8000-000000000001","revoked":true,"removed_stored_projects":["proj_8a8a8a8a8a8a8a8a8a8a8a8a"]}

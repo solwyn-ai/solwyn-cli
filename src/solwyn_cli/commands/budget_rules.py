@@ -25,7 +25,11 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.approvals import pin_retry_value
 from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands.budget import (
     _AlertRouting,
     _ThresholdState,
@@ -159,9 +163,10 @@ def _client(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-            yield client, runtime.project
+            yield client, runtime.project or ""
     except ApiError as error:
         if (
             error.status_code == 422

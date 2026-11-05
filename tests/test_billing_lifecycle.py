@@ -1,23 +1,23 @@
 """Deliberate billing lifecycle commands against synthetic Core responses only."""
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from uuid import UUID
 
 import httpx
 import pytest
+from login_fixtures import (
+    APPROVAL_ID,
+    fake_keychain,
+    login_credential,
+)
+from test_plan_command import BILLING_STATUS
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import plan
 from solwyn_cli.main import app
-from test_plan_command import BILLING_STATUS
-from login_fixtures import (
-    APPROVAL_ID,
-    fake_keychain,
-    login_credential,
-)
 
 runner = CliRunner()
 JWT = login_credential("synthetic-access")
@@ -345,11 +345,11 @@ def test_browser_failure_keeps_created_url_success(billing, monkeypatch):
 )
 def test_selected_key_is_masked_and_never_falls_back_to_jwt(billing, monkeypatch, args):
     _, calls = billing
-    key = "sk_proj_" + "a1" * 32
+    key = "solwyn_sk_" + "a1" * 32
     monkeypatch.setattr(
         plan,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(api_key=key, source="environment"),
+        lambda **_: auth.ApiKeyCredential(api_key=key, source="environment"),
     )
     result = invoke(*args, "--yes")
     assert result.exit_code == 3
@@ -402,6 +402,7 @@ def test_help_never_resolves_credentials_or_calls_api(billing, monkeypatch, args
 )
 def test_new_billing_json_golden_contract(billing, args, payload, name, needs_status):
     from pathlib import Path
+
     from golden.harness import assert_matches_golden
 
     queue, _ = billing

@@ -8,28 +8,27 @@ from typing import Any
 import httpx
 import pytest
 from click import unstyle
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
-from solwyn_cli import auth
 from solwyn_cli import artifacts as agent_artifacts
+from solwyn_cli import auth
 from solwyn_cli import config as config_module
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.commands import init as init_module
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.commands import projects as projects_module
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "ab" * 32
-CREATED_KEY = "sk_proj_" + "cd" * 32
+VALID_KEY = "solwyn_sk_" + "ab" * 32
+CREATED_KEY = "solwyn_sk_" + "cd" * 32
 ACCESS_TOKEN = "init-access-token"
 REFRESH_TOKEN = "init-refresh-token"
 PROJECT = {
-    "id": "proj_alpha",
+    "id": "proj_be76331b95dfc399cd776d2f",
     "name": "Alpha",
     "budget_limit": 100.0,
     "budget_period": "monthly",
@@ -37,7 +36,7 @@ PROJECT = {
     "created_at": "2026-07-10T12:00:00Z",
 }
 BUDGET = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "budget_limit": 100.0,
     "current_usage": 25.0,
     "remaining_budget": 75.0,
@@ -54,6 +53,27 @@ BUDGET = {
         "max_thresholds": 50,
     },
 }
+
+
+# What a project create response adds for its first key (spec 3.5).
+CREATED_KEY_FIELDS = {
+    "dedicated_keys_only": False,
+    "key_id": "6f1d0c9e-0000-4000-8000-0000000000d1",
+    "created_via": "cli",
+    "expires_at": "2027-07-10T12:00:00Z",
+}
+
+
+def _store_fields(stored: list[dict[str, Any]]) -> Any:
+    """A stand-in for auth.store_api_key that records the stored fields."""
+
+    def store(**fields: Any) -> auth.ApiKeyCredential:
+        stored.append(fields)
+        return auth.ApiKeyCredential(
+            api_key=fields["key"], source="keyring", project=fields["project_id"]
+        )
+
+    return store
 
 
 class FakeClient:
@@ -108,8 +128,8 @@ def isolated_init(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     yield repository
 
 
-def _key(**_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+def _key(**_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 def _jwt(**_: object) -> auth.LoginCredential:
@@ -140,7 +160,7 @@ def test_init_agents_writes_artifacts_after_successful_safe_onboarding(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "init", "--agents"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "init", "--agents"],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -161,7 +181,7 @@ def test_init_without_agents_preserves_existing_source_tree_behavior(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     after = {
@@ -186,7 +206,7 @@ def test_init_agents_reports_artifact_write_failure_without_traceback(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "init", "--agents"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "init", "--agents"],
     )
 
     assert result.exit_code == 1
@@ -213,7 +233,7 @@ def test_init_agents_reports_retained_backup_for_manual_recovery(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "init", "--agents"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "init", "--agents"],
     )
 
     assert result.exit_code == 1
@@ -253,7 +273,7 @@ def test_non_tty_without_credentials_runs_the_browser_login(
 
     assert result.exit_code == 0, result.stderr
     assert logins == [{"continue_command": INIT_CONTINUE}]
-    assert json.loads(result.stdout)["project_id"] == "proj_alpha"
+    assert json.loads(result.stdout)["project_id"] == "proj_be76331b95dfc399cd776d2f"
 
 
 def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
@@ -270,26 +290,25 @@ def test_tty_can_paste_hidden_key_and_it_is_stored_without_echo(
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(init_module.typer, "prompt", prompt)
     stored: list[str] = []
+    # The pasted key is checked with /auth/key and stored by login's helper.
     monkeypatch.setattr(
         init_module,
-        "authenticate_with_project_key",
-        lambda value: stored.append(value) or _key(),
-    )
-    monkeypatch.setattr(
-        login_module,
-        "store_project_key",
-        lambda _value: (_ for _ in ()).throw(
-            AssertionError("test must not call the real keyring storage path")
+        "store_supplied_key",
+        lambda context, value, store: (
+            stored.append(value)
+            or _key().model_copy(
+                update={"project": "proj_be76331b95dfc399cd776d2f", "source": "keyring"}
+            )
         ),
     )
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert prompt_calls == [
         ("Authentication method (login/key)", False),
-        ("Project key", True),
+        ("API key", True),
     ]
     assert stored == [VALID_KEY]
     assert VALID_KEY not in result.stdout + result.stderr + repr(result.exception)
@@ -328,7 +347,7 @@ def test_tty_login_is_the_default_choice_and_runs_the_device_flow(
     ]
     assert [request[0:2] for request in requests] == [
         ("GET", "/api/v1/projects"),
-        ("GET", "/api/v1/projects/proj_alpha/budget"),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget"),
     ]
     rendered = result.stdout + result.stderr + repr(result.exception)
     assert ACCESS_TOKEN not in rendered
@@ -418,7 +437,7 @@ def test_provider_detection_drives_placeholder_only_snippets(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -431,7 +450,7 @@ def test_provider_detection_drives_placeholder_only_snippets(
     assert source_path.read_bytes() == before
     assert [
         request for client in FakeClient.instances for request in client.requests
-    ] == [("GET", "/api/v1/projects/proj_alpha/budget", {})]
+    ] == [("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {})]
     assert "/budgets/check" not in repr(FakeClient.instances[0].requests)
 
 
@@ -457,7 +476,7 @@ def test_init_leaves_entire_source_tree_byte_for_byte_unchanged(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     after = {
@@ -487,7 +506,7 @@ def test_snippet_matches_detected_client_import_style(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert expected_fragment in json.loads(result.stdout)["snippets"][0]["code"]
@@ -514,7 +533,7 @@ def test_snippets_read_provider_keys_from_the_environment(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     code = json.loads(result.stdout)["snippets"][0]["code"]
@@ -530,7 +549,7 @@ def test_no_provider_uses_deterministic_generic_snippet(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -552,7 +571,7 @@ def test_init_matches_stable_goldens(
 
     result = runner.invoke(
         app,
-        [*options, "--project", "proj_alpha", "init"],
+        [*options, "--project", "proj_be76331b95dfc399cd776d2f", "init"],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -581,7 +600,7 @@ def test_detection_ignores_generated_invalid_binary_and_non_python_files(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -597,7 +616,7 @@ def test_provider_detection_does_not_follow_source_symlinks_outside_repository(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -614,7 +633,7 @@ def test_provider_detection_prunes_arbitrarily_named_virtualenv_roots(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -631,7 +650,7 @@ def test_provider_detection_uses_git_root_from_nested_invocation(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -647,7 +666,7 @@ def test_provider_detection_from_fallback_root_prunes_nested_repositories(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -666,7 +685,7 @@ def test_provider_detection_prunes_nested_repository_inside_outer_git_root(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -684,7 +703,7 @@ def test_provider_detection_skips_oversized_python_sources(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -699,7 +718,7 @@ def test_provider_detection_stops_at_deterministic_python_file_limit(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -714,7 +733,7 @@ def test_provider_detection_stops_at_deterministic_total_byte_limit(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["detected_providers"] == ["openai"]
@@ -733,7 +752,7 @@ def test_provider_environment_values_are_never_read_or_rendered(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
 
@@ -746,18 +765,18 @@ def test_existing_config_is_preserved_and_nondefault_api_url_is_persisted(
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         'api_url = "https://staging.example.test"\n'
-        'default_project = "proj_old"\n'
+        'default_project = "proj_c00dbbc9dadfbe1e232e93a7"\n'
         'format = "json"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     saved = config_module.load_config()
-    assert saved.default_project == "proj_alpha"
+    assert saved.default_project == "proj_be76331b95dfc399cd776d2f"
     assert saved.api_url == "https://staging.example.test"
     assert saved.format == "json"
     assert "api_key" not in config_path.read_text(encoding="utf-8")
@@ -770,11 +789,11 @@ def test_default_api_url_is_not_written_to_new_config(
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [httpx.Response(200, json=BUDGET)]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 0, result.stderr
     content = init_module.get_config_path().read_text(encoding="utf-8")
-    assert 'default_project = "proj_alpha"' in content
+    assert 'default_project = "proj_be76331b95dfc399cd776d2f"' in content
     assert "api_url" not in content
     assert "api_key" not in content
 
@@ -801,7 +820,7 @@ def test_init_config_failures_are_structured_and_safe(
         lambda *args, **kwargs: (_ for _ in ()).throw(failure),
     )
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -820,7 +839,7 @@ def test_init_invalid_existing_config_is_structured_before_context_resolution(
     path.write_text('api_url = "unterminated-sensitive-value', encoding="utf-8")
     monkeypatch.setattr(init_module, "resolve_credential", _key)
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -875,7 +894,7 @@ def test_jwt_single_project_is_selected_and_validated_before_final_get(
         request for client in FakeClient.instances for request in client.requests
     ] == [
         ("GET", "/api/v1/projects", {}),
-        ("GET", "/api/v1/projects/proj_alpha/budget", {}),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {}),
     ]
 
 
@@ -885,7 +904,9 @@ def test_non_tty_jwt_project_ambiguity_is_usage_error(
     monkeypatch.setattr(init_module, "resolve_credential", _jwt)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: False)
     FakeClient.responses = [
-        httpx.Response(200, json=[PROJECT, {**PROJECT, "id": "proj_beta"}])
+        httpx.Response(
+            200, json=[PROJECT, {**PROJECT, "id": "proj_a295e0bdde1938d1fbfd343e"}]
+        )
     ]
 
     result = _invoke()
@@ -941,7 +962,7 @@ def test_explicit_jwt_project_is_validated_against_project_list(
     monkeypatch.setattr(init_module, "resolve_credential", _jwt)
     FakeClient.responses = [httpx.Response(200, json=[PROJECT])]
 
-    result = _invoke("--project", "proj_missing")
+    result = _invoke("--project", "proj_5a013c49508291c6816ac388")
 
     assert result.exit_code == 2
     assert result.stdout == ""
@@ -957,17 +978,23 @@ def test_tty_jwt_multiple_projects_can_be_selected(
     monkeypatch.setattr(init_module, "resolve_credential", _jwt)
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(
-        init_module.typer, "prompt", lambda *args, **kwargs: "proj_beta"
+        init_module.typer,
+        "prompt",
+        lambda *args, **kwargs: "proj_a295e0bdde1938d1fbfd343e",
     )
     FakeClient.responses = [
-        httpx.Response(200, json=[PROJECT, {**PROJECT, "id": "proj_beta"}]),
-        httpx.Response(200, json={**BUDGET, "project_id": "proj_beta"}),
+        httpx.Response(
+            200, json=[PROJECT, {**PROJECT, "id": "proj_a295e0bdde1938d1fbfd343e"}]
+        ),
+        httpx.Response(
+            200, json={**BUDGET, "project_id": "proj_a295e0bdde1938d1fbfd343e"}
+        ),
     ]
 
     result = _invoke()
 
     assert result.exit_code == 0, result.stderr
-    assert json.loads(result.stdout)["project_id"] == "proj_beta"
+    assert json.loads(result.stdout)["project_id"] == "proj_a295e0bdde1938d1fbfd343e"
 
 
 @pytest.mark.parametrize(
@@ -982,20 +1009,29 @@ def test_tty_project_prompt_redacts_tokens_in_project_ids(
     monkeypatch.setattr(
         init_module.typer,
         "prompt",
-        lambda label, **kwargs: prompts.append(label) or "proj_beta",
+        lambda label, **kwargs: (
+            prompts.append(label) or "proj_a295e0bdde1938d1fbfd343e"
+        ),
     )
     FakeClient.responses = [
         httpx.Response(
             200,
-            json=[{**PROJECT, "id": f"id_{secret}_x"}, {**PROJECT, "id": "proj_beta"}],
+            json=[
+                {**PROJECT, "id": f"id_{secret}_x"},
+                {**PROJECT, "id": "proj_a295e0bdde1938d1fbfd343e"},
+            ],
         ),
-        httpx.Response(200, json={**BUDGET, "project_id": "proj_beta"}),
+        httpx.Response(
+            200, json={**BUDGET, "project_id": "proj_a295e0bdde1938d1fbfd343e"}
+        ),
     ]
 
     result = _invoke()
 
     assert result.exit_code == 0, result.stderr
-    assert prompts == ["Project (id_[REDACTED]_x, proj_beta, or create)"]
+    assert prompts == [
+        "Project (id_[REDACTED]_x, proj_a295e0bdde1938d1fbfd343e, or create)"
+    ]
     assert secret not in result.stdout + result.stderr
 
 
@@ -1008,14 +1044,15 @@ def test_tty_no_projects_creates_and_stores_key_without_displaying_secret(
     monkeypatch.setattr(
         init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
     )
-    stored: list[str] = []
-    monkeypatch.setattr(init_module, "store_project_key", stored.append)
+    stored: list[dict[str, Any]] = []
+    monkeypatch.setattr(init_module.auth, "store_api_key", _store_fields(stored))
     created = {
         **PROJECT,
         "name": "Created project",
         "key": CREATED_KEY,
-        "key_prefix": CREATED_KEY[:24],
+        "key_prefix": CREATED_KEY[:26],
         "scope": "full",
+        **CREATED_KEY_FIELDS,
     }
     FakeClient.responses = [
         httpx.Response(200, json=[]),
@@ -1026,7 +1063,11 @@ def test_tty_no_projects_creates_and_stores_key_without_displaying_secret(
     result = _invoke()
 
     assert result.exit_code == 0, result.stderr
-    assert stored == [CREATED_KEY]
+    # Stored under the new project's id with the login's account.
+    assert [
+        (item["project_id"], item["key"], item["account_id"]) for item in stored
+    ] == [(PROJECT["id"], CREATED_KEY, "acct_synthetic")]
+    assert stored[0]["key_id"] == CREATED_KEY_FIELDS["key_id"]
     assert CREATED_KEY not in result.stdout + result.stderr + repr(result.exception)
     project_requests = FakeClient.instances[0].requests
     assert project_requests[0] == ("GET", "/api/v1/projects", {})
@@ -1044,9 +1085,9 @@ def test_created_key_storage_failure_never_leaks_secret(
         init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
     )
     monkeypatch.setattr(
-        init_module,
-        "store_project_key",
-        lambda _value: (_ for _ in ()).throw(
+        init_module.auth,
+        "store_api_key",
+        lambda **_fields: (_ for _ in ()).throw(
             auth.CredentialStorageError("no keychain")
         ),
     )
@@ -1057,8 +1098,9 @@ def test_created_key_storage_failure_never_leaks_secret(
             json={
                 **PROJECT,
                 "key": CREATED_KEY,
-                "key_prefix": CREATED_KEY[:24],
+                "key_prefix": CREATED_KEY[:26],
                 "scope": "full",
+                **CREATED_KEY_FIELDS,
             },
         ),
     ]
@@ -1075,10 +1117,12 @@ def test_final_budget_response_must_match_project_and_be_finite(
 ) -> None:
     monkeypatch.setattr(init_module, "resolve_credential", _key)
     FakeClient.responses = [
-        httpx.Response(200, json={**BUDGET, "project_id": "proj_other"})
+        httpx.Response(
+            200, json={**BUDGET, "project_id": "proj_d0941e68da8f38151ff86a61"}
+        )
     ]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -1089,9 +1133,11 @@ def test_live_budget_failure_is_safe_and_contains_no_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(init_module, "resolve_credential", _key)
-    FakeClient.responses = [httpx.Response(200, json={"project_id": "proj_alpha"})]
+    FakeClient.responses = [
+        httpx.Response(200, json={"project_id": "proj_be76331b95dfc399cd776d2f"})
+    ]
 
-    result = _invoke("--project", "proj_alpha")
+    result = _invoke("--project", "proj_be76331b95dfc399cd776d2f")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -1106,12 +1152,13 @@ def test_init_run_cap_created_immediately_with_jwt(monkeypatch):
     monkeypatch.setattr(
         init_module.typer, "prompt", lambda *a, **kw: next(prompt_values)
     )
-    monkeypatch.setattr(init_module, "store_project_key", lambda key: None)
+    monkeypatch.setattr(init_module.auth, "store_api_key", _store_fields([]))
     created = {
         **PROJECT,
         "key": CREATED_KEY,
-        "key_prefix": CREATED_KEY[:24],
+        "key_prefix": CREATED_KEY[:26],
         "scope": "full",
+        **CREATED_KEY_FIELDS,
     }
     rule = {
         "type": "runaway_run",
@@ -1174,12 +1221,13 @@ def test_init_run_cap_auth_failure_reports_created_project(
     monkeypatch.setattr(
         init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
     )
-    monkeypatch.setattr(init_module, "store_project_key", lambda key: None)
+    monkeypatch.setattr(init_module.auth, "store_api_key", _store_fields([]))
     created = {
         **PROJECT,
         "key": CREATED_KEY,
-        "key_prefix": CREATED_KEY[:24],
+        "key_prefix": CREATED_KEY[:26],
         "scope": "full",
+        **CREATED_KEY_FIELDS,
     }
     FakeClient.responses = [
         httpx.Response(200, json=[]),
@@ -1192,7 +1240,7 @@ def test_init_run_cap_auth_failure_reports_created_project(
     assert result.exit_code == 3
     assert result.stdout == ""
     assert (
-        "Project proj_alpha was created; review its budget rules before retrying "
+        "Project proj_be76331b95dfc399cd776d2f was created; review its budget rules before retrying "
         "the run-cap setup."
     ) in result.stderr
     assert json.loads(result.stderr.splitlines()[-1])["code"] == code
@@ -1202,7 +1250,7 @@ def test_init_run_cap_auth_failure_reports_created_project(
     assert [(method, path) for method, path, _ in requests] == [
         ("GET", "/api/v1/projects"),
         ("POST", "/api/v1/projects"),
-        ("GET", "/api/v1/projects/proj_alpha/budget"),
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget"),
     ]
     assert not config_module.get_config_path().exists()
     for secret in (CREATED_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
@@ -1247,7 +1295,11 @@ def test_solwyn_auth_project_key_in_a_terminal_only_asks_for_a_key(
     monkeypatch.setattr(init_module, "_stdin_is_tty", lambda: True)
     monkeypatch.setattr(init_module.typer, "prompt", prompt)
     monkeypatch.setattr(
-        init_module, "authenticate_with_project_key", lambda value: _key()
+        init_module,
+        "store_supplied_key",
+        lambda context, value, store: _key().model_copy(
+            update={"project": "proj_be76331b95dfc399cd776d2f", "source": "keyring"}
+        ),
     )
     monkeypatch.setattr(
         init_module,
@@ -1260,12 +1312,12 @@ def test_solwyn_auth_project_key_in_a_terminal_only_asks_for_a_key(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "init"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "init"],
         env={"SOLWYN_AUTH": "project_key"},
     )
 
     assert result.exit_code == 0, result.stderr
-    assert labels == ["Project key"]
+    assert labels == ["API key"]
 
 
 def test_solwyn_auth_login_in_a_terminal_never_offers_a_key(
@@ -1281,8 +1333,8 @@ def test_solwyn_auth_login_in_a_terminal_never_offers_a_key(
     )
     monkeypatch.setattr(
         init_module,
-        "authenticate_with_project_key",
-        lambda value: pytest.fail("SOLWYN_AUTH=login must not store a key"),
+        "store_supplied_key",
+        lambda *args: pytest.fail("SOLWYN_AUTH=login must not store a key"),
     )
     monkeypatch.setattr(
         init_module,
@@ -1309,17 +1361,14 @@ def test_project_created_with_a_login_keeps_using_the_login(
     monkeypatch.setattr(
         init_module.typer, "prompt", lambda *args, **kwargs: next(prompt_values)
     )
-    monkeypatch.setattr(
-        init_module,
-        "store_project_key",
-        lambda value: auth.ProjectKeyCredential(api_key=value, source="keyring"),
-    )
+    monkeypatch.setattr(init_module.auth, "store_api_key", _store_fields([]))
     created = {
         **PROJECT,
         "name": "Created project",
         "key": CREATED_KEY,
-        "key_prefix": CREATED_KEY[:24],
+        "key_prefix": CREATED_KEY[:26],
         "scope": "full",
+        **CREATED_KEY_FIELDS,
     }
     FakeClient.responses = [
         httpx.Response(200, json=[]),

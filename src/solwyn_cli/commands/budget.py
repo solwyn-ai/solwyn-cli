@@ -44,7 +44,7 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.auth import (
     AuthError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -56,7 +56,11 @@ from solwyn_cli.commands._record import (
     validate_call_id,
 )
 from solwyn_cli.commands._tags import parse_tags, validate_tags
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.errors import ApiError, LEGACY_BATCH_BUSY_HINT, is_budget_admission_busy
 from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
 from solwyn_cli.help import help_contract
@@ -224,7 +228,7 @@ BudgetStatusData = _BudgetStatusData
 
 
 def fetch_budget_status(
-    *, api_url: str, credential: LoginCredential | ProjectKeyCredential, project_id: str
+    *, api_url: str, credential: LoginCredential | ApiKeyCredential, project_id: str
 ) -> BudgetStatusData:
     """Fetch and validate one project's pure-read budget status."""
     with SolwynClient(api_url=api_url, credential=credential) as client:
@@ -2031,7 +2035,7 @@ def set_budget(
         )
 
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = "Run solwyn login, then retry budget set."
         exit_with_error(
             context,
@@ -2043,7 +2047,7 @@ def set_budget(
             semantic=ErrorSemantic.AUTH,
         )
 
-    project_id = runtime.project
+    project_id = with_project(context, credential).project or ""
     project_path = quote(project_id, safe="")
     endpoint = f"/api/v1/projects/{project_path}/budget"
     try:
@@ -2145,6 +2149,7 @@ def status(
         )
 
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         data = fetch_budget_status(
             api_url=runtime.api_url,
@@ -2213,6 +2218,7 @@ def uncounted(context: typer.Context) -> None:
             semantic=ErrorSemantic.USAGE,
         )
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             data = fetch_uncounted(client=client, project_id=runtime.project)

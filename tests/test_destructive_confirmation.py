@@ -6,23 +6,41 @@ import json
 import click
 import httpx
 import pytest
-from typer.testing import CliRunner
-
 from help_options import assert_public_bool_flag
-from solwyn_cli.client import SolwynClient
-from solwyn_cli.main import app
-from test_keys_command import ROTATE_RESPONSE as KEY_ROTATION
+from login_fixtures import login_credential
 from test_runs_command import RUN, STORAGE_ID, _list_response
 from test_webhooks_command import ROTATE_RESPONSE as WEBHOOK_ROTATION
-from login_fixtures import login_credential
+from typer.testing import CliRunner
+
+from solwyn_cli.client import SolwynClient
+from solwyn_cli.main import app
 
 runner = CliRunner()
+ROTATED_KEY = "solwyn_sk_" + "cd" * 32
+KEY_ROTATION = {
+    "id": "key-new",
+    "name": "checkout-bot",
+    "key_prefix": ROTATED_KEY[:26],
+    "scope": "full",
+    "created_via": "cli",
+    "created_by": None,
+    "approval_id": None,
+    "created_at": "2026-10-14T12:00:00Z",
+    "expires_at": "2027-10-14T12:00:00Z",
+    "last_used_at": None,
+    "rotation_grace_until": None,
+    "status": "active",
+    "projects": [],
+    "key": ROTATED_KEY,
+    "replaced_key_id": "key/old",
+    "replaced_key_rotation_grace_until": "2026-10-14T12:00:00Z",
+}
 CASES = [
     (
         "runs",
         ["stop", STORAGE_ID],
         "POST",
-        f"/api/v1/projects/proj%2Fone/agent-runs/{STORAGE_ID}/stop",
+        f"/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/agent-runs/{STORAGE_ID}/stop",
         "future checks and lease renewals",
         "solwyn.runs.stop.v1",
     ),
@@ -36,17 +54,17 @@ CASES = [
     ),
     (
         "keys",
-        ["revoke", "--key-id", "key/old"],
+        ["revoke", "key/old"],
         "DELETE",
-        "/api/v1/projects/proj%2Fone/key/key%2Fold",
-        "without a replacement",
+        "/api/v1/keys/key%2Fold",
+        "with no replacement",
         "solwyn.keys-revoke.v1",
     ),
     (
         "webhooks",
         ["delete", "wh/one"],
         "DELETE",
-        "/api/v1/projects/proj%2Fone/webhooks/wh%2Fone",
+        "/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/webhooks/wh%2Fone",
         "Deactivate",
         "solwyn.webhooks-delete.v1",
     ),
@@ -60,9 +78,9 @@ CASES = [
     ),
     (
         "keys",
-        ["rotate", "--grace-seconds", "0"],
+        ["rotate", "key/old", "--grace-seconds", "0"],
         "POST",
-        "/api/v1/projects/proj%2Fone/key/rotate",
+        "/api/v1/keys/key%2Fold/rotate",
         "immediately",
         "solwyn.keys-rotate.v1",
     ),
@@ -70,7 +88,7 @@ CASES = [
         "webhooks",
         ["rotate", "wh/one"],
         "POST",
-        "/api/v1/projects/proj%2Fone/webhooks/wh%2Fone/rotate",
+        "/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/webhooks/wh%2Fone/rotate",
         "immediately",
         "solwyn.webhooks-rotate.v1",
     ),
@@ -79,14 +97,21 @@ CASES = [
 
 def argv(case, *extra):
     group, args, *_ = case
-    return ["--json", "--project", "proj/one", group, *args, *extra]
+    return [
+        "--json",
+        "--project",
+        "proj_fe05bcdcdc4928012781a5f1",
+        group,
+        *args,
+        *extra,
+    ]
 
 
 def payload(case):
     group, args, *_ = case
     if group == "runs":
         return {
-            "project_id": "proj/one",
+            "project_id": "proj_fe05bcdcdc4928012781a5f1",
             "run_id": STORAGE_ID,
             "run_name": "agent",
             "stopped_at": "2026-10-14T12:00:00Z",
@@ -163,8 +188,10 @@ def test_yes_previews_then_performs_exact_mutation_once(transport, case):
     assert len(result.stdout.splitlines()) == 1
     assert case[4] in result.stderr
     assert (
-        "proj/one" in result.stderr
-        if case[0] not in ("tags", "channels")
+        "proj_fe05bcdcdc4928012781a5f1" in result.stderr
+        if case[0] not in ("tags", "channels", "keys")
+        else "key/old" in result.stderr
+        if case[0] == "keys"
         else "authenticated account" in result.stderr
     )
     if case[0] == "tags":
@@ -284,7 +311,10 @@ def test_raw_run_is_resolved_before_confirmation_and_decline_never_stops(
     calls, replies, _, _ = transport
     replies.append(
         httpx.Response(
-            200, json=_list_response(runs=[{**RUN, "project_id": "proj/one"}])
+            200,
+            json=_list_response(
+                runs=[{**RUN, "project_id": "proj_fe05bcdcdc4928012781a5f1"}]
+            ),
         )
     )
     case = ("runs", ["stop", RUN["name"]], *CASES[0][2:])
@@ -358,8 +388,12 @@ def test_stop_raw_name_not_found_or_ambiguous_never_confirms_or_mutates(
     calls, replies, _, _ = transport
     entries = (
         [
-            {**RUN, "project_id": "proj/one"},
-            {**RUN, "project_id": "proj/one", "id": "run_" + "2b" * 16},
+            {**RUN, "project_id": "proj_fe05bcdcdc4928012781a5f1"},
+            {
+                **RUN,
+                "project_id": "proj_fe05bcdcdc4928012781a5f1",
+                "id": "run_" + "2b" * 16,
+            },
         ]
         if ambiguous
         else []
@@ -394,7 +428,7 @@ def test_effects_are_written_before_destructive_http(transport, monkeypatch, cas
                 (
                     "Stop run ",
                     "Retire tag ",
-                    "Hard-revoke ",
+                    "Revoke key ",
                     "Rotate ",
                     "Deactivate ",
                     "Delete channel ",
@@ -426,12 +460,12 @@ def test_key_rotation_grace_still_requires_confirmation_before_credentials(
     monkeypatch.setattr(
         keys, "resolve_credential", lambda **_: pytest.fail("credentials resolved")
     )
-    args = ["rotate"] + (["--grace-seconds", grace] if grace else [])
+    args = ["rotate", "key/old"] + (["--grace-seconds", grace] if grace else [])
     result = runner.invoke(app, argv(("keys", args)))
     assert result.exit_code == 2
     error = json.loads(result.stderr)
     assert error["code"] == "confirmation_required"
-    assert ("3600 seconds" if grace else "Core default grace period") in error[
+    assert ("3600 seconds" if grace else "the API's default grace period") in error[
         "message"
     ]
     assert calls == []

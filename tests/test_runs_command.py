@@ -8,19 +8,19 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import runs as runs_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "a4" * 32
+VALID_KEY = "solwyn_sk_" + "a4" * 32
 STORAGE_ID = "run_" + "1a" * 16
 SECOND_STORAGE_ID = "run_" + "2b" * 16
 JWT = login_credential("runs-access")
@@ -29,7 +29,7 @@ RUN = {
     "id": STORAGE_ID,
     "name": "checkout-agent",
     "parent_run_id": None,
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "started_at": "2026-08-01T10:00:00Z",
     "last_seen_at": "2026-08-07T12:30:00Z",
     "total_calls": 42,
@@ -98,15 +98,15 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _key(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
+def _key(source: str = "environment", **_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source=source)
 
 
 def _run_args(*args: str, json_output: bool = False) -> list[str]:
     return [
         *(["--json"] if json_output else ["--no-color"]),
         "--project",
-        "proj_alpha",
+        "proj_be76331b95dfc399cd776d2f",
         "runs",
         *args,
         *(["--yes"] if args and args[0] == "stop" else []),
@@ -159,11 +159,11 @@ def test_runs_list_supports_key_and_jwt_with_exact_filters_and_goldens(
     assert result.exit_code == 0
     assert_matches_golden(result.stdout, GOLDEN_DIR / golden)
     assert result.stderr == ("window: 2026-08-01T00:00:00Z to 2026-08-08T00:00:00Z\n")
-    assert FakeClient.instances[0].credential is credential
+    assert same_credential(FakeClient.instances[0].credential, credential)
     assert FakeClient.instances[0].requests == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/agent-runs",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs",
             {
                 "params": {
                     "range": "30d",
@@ -369,7 +369,7 @@ def test_runs_show_storage_id_uses_detail_endpoint_and_goldens(
     assert FakeClient.instances[0].requests == [
         (
             "GET",
-            f"/api/v1/projects/proj_alpha/agent-runs/{STORAGE_ID}",
+            f"/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs/{STORAGE_ID}",
             {},
         )
     ]
@@ -542,7 +542,7 @@ def test_runs_stop_resolves_raw_name_and_emits_honest_stop_result(
 ) -> None:
     monkeypatch.setattr(runs_module, "resolve_credential", lambda **_: JWT)
     stop_response = {
-        "project_id": "proj_alpha",
+        "project_id": "proj_be76331b95dfc399cd776d2f",
         "run_id": STORAGE_ID,
         "run_name": "checkout-agent",
         "stopped_at": "2026-08-08T12:00:00Z",
@@ -564,13 +564,13 @@ def test_runs_stop_resolves_raw_name_and_emits_honest_stop_result(
     suffix = "json.json" if json_output else "table.txt"
     assert_matches_golden(result.stdout, GOLDEN_DIR / f"runs-stop-{suffix}")
     assert result.stderr == (
-        f"Stop run 'checkout-agent' (resolved target {STORAGE_ID}) in project 'proj_alpha': blocks future checks and lease renewals; in-flight requests finish.\n"
+        f"Stop run 'checkout-agent' (resolved target {STORAGE_ID}) in project 'proj_be76331b95dfc399cd776d2f': blocks future checks and lease renewals; in-flight requests finish.\n"
         "stops future checks and lease renewals; in-flight requests finish; "
         "fully effective by 2026-08-08T12:00:30Z\n"
     )
     assert FakeClient.instances[0].requests[-1] == (
         "POST",
-        f"/api/v1/projects/proj_alpha/agent-runs/{STORAGE_ID}/stop",
+        f"/api/v1/projects/proj_be76331b95dfc399cd776d2f/agent-runs/{STORAGE_ID}/stop",
         {"retry_rate_limit": False},
     )
 

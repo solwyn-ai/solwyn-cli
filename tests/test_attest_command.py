@@ -1,27 +1,27 @@
 """Spend-control attestation command contract tests."""
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
-import json
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import attest as attest_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "d4" * 32
+VALID_KEY = "solwyn_sk_" + "d4" * 32
 
 
 class FakeClient:
@@ -54,8 +54,8 @@ class FakeClient:
             result.close()
 
 
-def _key(**_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+def _key(**_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 def _jwt() -> auth.LoginCredential:
@@ -100,7 +100,7 @@ def test_project_attestation_streams_exact_json_and_reports_window_headers(
 
     result = runner.invoke(
         app,
-        ["--project", "project /alpha", "attest", "--format", "json"],
+        ["--project", "proj_be76331b95dfc399cd776d2f", "attest", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.exception
@@ -114,7 +114,7 @@ def test_project_attestation_streams_exact_json_and_reports_window_headers(
     assert FakeClient.instances[0].requests == [
         (
             "GET",
-            "/api/v1/projects/project%20%2Falpha/spend-control-attestation",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/spend-control-attestation",
             {"params": {"range": "30d", "format": "json"}},
         )
     ]
@@ -133,7 +133,7 @@ def test_account_attestation_requires_jwt_and_streams_csv_golden(
     assert result.exit_code == 0, result.exception
     assert_matches_golden(result.stdout, GOLDEN_DIR / "attest-account-csv.txt")
     assert result.stdout_bytes == expected
-    assert FakeClient.instances[0].credential is credential
+    assert same_credential(FakeClient.instances[0].credential, credential)
     assert FakeClient.instances[0].requests == [
         (
             "GET",
@@ -153,7 +153,7 @@ def test_custom_window_replaces_range_in_attestation_request(
         app,
         [
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "attest",
             "--range",
             "365d",
@@ -198,7 +198,9 @@ def test_attest_rejects_invalid_export_options_before_request(
 ) -> None:
     monkeypatch.setattr(attest_module, "resolve_credential", _key)
 
-    result = runner.invoke(app, ["-p", "proj_alpha", "attest", *options])
+    result = runner.invoke(
+        app, ["-p", "proj_be76331b95dfc399cd776d2f", "attest", *options]
+    )
 
     assert result.exit_code == 2
     assert FakeClient.instances == []
@@ -265,7 +267,7 @@ def test_free_tier_402_is_preserved_for_both_attestation_formats(
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "attest",
             "--format",
             export_format,
@@ -300,7 +302,7 @@ def test_attestation_range_402_preserves_allowed_values_separately(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "attest", "--range", "90d"],
+        ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "attest", "--range", "90d"],
     )
 
     assert result.exit_code == 1

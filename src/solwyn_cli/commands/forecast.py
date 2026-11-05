@@ -7,7 +7,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -108,6 +112,7 @@ def forecast(context: typer.Context) -> None:
         )
 
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(
             api_url=runtime.api_url,

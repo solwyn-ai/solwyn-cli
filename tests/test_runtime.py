@@ -21,15 +21,15 @@ from solwyn_cli.output import OutputFormat
     [
         (
             "https://explicit.example",
-            "proj_explicit",
+            "proj_a45c2264b8cab0f1e0637f6c",
             "table",
             {
                 "SOLWYN_API_URL": "https://environment.example",
-                "SOLWYN_PROJECT_ID": "proj_environment",
+                "SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1",
                 "SOLWYN_FORMAT": "json",
             },
             "https://explicit.example",
-            "proj_explicit",
+            "proj_a45c2264b8cab0f1e0637f6c",
             OutputFormat.TABLE,
             "cli",
         ),
@@ -39,11 +39,11 @@ from solwyn_cli.output import OutputFormat
             None,
             {
                 "SOLWYN_API_URL": "https://environment.example",
-                "SOLWYN_PROJECT_ID": "proj_environment",
+                "SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1",
                 "SOLWYN_FORMAT": "json",
             },
             "https://environment.example",
-            "proj_environment",
+            "proj_c6e454d960df4845f9d69eb1",
             OutputFormat.JSON,
             "environment",
         ),
@@ -53,7 +53,7 @@ from solwyn_cli.output import OutputFormat
             None,
             {},
             "https://configured.example",
-            "proj_configured",
+            "proj_3be9f957f29f905f10f7b652",
             OutputFormat.TABLE,
             "config",
         ),
@@ -75,7 +75,7 @@ def test_global_context_uses_explicit_environment_config_precedence(
         "load_config",
         lambda: Config(
             api_url="https://configured.example",
-            default_project="proj_configured",
+            default_project="proj_3be9f957f29f905f10f7b652",
             format="table",
         ),
     )

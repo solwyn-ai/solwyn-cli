@@ -4558,6 +4558,18 @@
               "default": null,
               "title": "Current Period Cost"
             },
+            "current_period_estimated_cost": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Period Estimated Cost"
+            },
             "daily": {
               "anyOf": [
                 {
@@ -5423,6 +5435,16 @@
             "local_call_count": {
               "title": "Local Call Count",
               "type": "integer"
+            },
+            "receipt_cost": {
+              "default": 0.0,
+              "title": "Receipt Cost",
+              "type": "number"
+            },
+            "estimated_receipt_cost": {
+              "default": 0.0,
+              "title": "Estimated Receipt Cost",
+              "type": "number"
             },
             "savings": {
               "anyOf": [
@@ -12548,6 +12570,16 @@
               ],
               "default": null,
               "title": "Trace Url"
+            },
+            "receipt_cost": {
+              "default": 0.0,
+              "title": "Receipt Cost",
+              "type": "number"
+            },
+            "receipt_is_estimated": {
+              "default": false,
+              "title": "Receipt Is Estimated",
+              "type": "boolean"
             },
             "created_at": {
               "title": "Created At",

@@ -12,10 +12,19 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from key_fixtures import (
+    PROJECT_ID,
+    FakeCore,
+    auth_key_body,
+    key_index,
+    key_item,
+    store_key,
+)
+from login_fixtures import LOGIN_TOKEN, OTHER_LOGIN_TOKEN, login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, OTHER_LOGIN_TOKEN, login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.commands import _shared
 from solwyn_cli.credential_store import (
@@ -28,8 +37,8 @@ from solwyn_cli.credential_store import (
 from solwyn_cli.main import app
 
 runner = CliRunner()
-VALID_KEY = "sk_proj_" + "a1" * 32
-OTHER_KEY = "sk_proj_" + "b2" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
+OTHER_KEY = "solwyn_sk_" + "b2" * 32
 PROD = "https://api.solwyn.ai"
 LOCAL = "http://localhost:8080"
 posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
@@ -96,7 +105,7 @@ def test_each_api_keeps_its_own_login_and_key(
     _platform(monkeypatch, "linux")  # auto reads the file.
     auth.store_login(LOGIN_TOKEN, login_meta(), mode="file", api_url=LOCAL)
     auth.store_login(OTHER_LOGIN_TOKEN, login_meta(), mode="file", api_url=PROD)
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
+    store_key(key=VALID_KEY, mode="file", api_url=PROD)
 
     local = auth.resolve_credential({}, api_url=LOCAL)
     prod = auth.resolve_credential({}, api_url=PROD)
@@ -104,22 +113,40 @@ def test_each_api_keeps_its_own_login_and_key(
     assert prod is not None and prod.bearer_value() == OTHER_LOGIN_TOKEN
     assert auth.resolve_credential({}, purpose="metering", api_url=LOCAL) is None
 
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=LOCAL) is None
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is not None
+
     auth.logout_everywhere(lambda token: True, api_url=LOCAL)
     assert set(_read_file(credentials_file)["origins"]) == {PROD}
 
 
 def test_cli_api_url_selects_which_stored_key_is_used(
-    credentials_file: Path,
+    credentials_file: Path, fake_core: FakeCore
 ) -> None:
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     stored = runner.invoke(
         app,
-        ["--json", "--api-url", LOCAL, "login", "--with-key", "--store", "file"],
+        [
+            "--json",
+            "--api-url",
+            LOCAL,
+            "--project",
+            PROJECT_ID,
+            "login",
+            "--with-key",
+            "--store",
+            "file",
+        ],
         input=VALID_KEY,
     )
     assert stored.exit_code == 0, stored.stderr
 
-    local = runner.invoke(app, ["--json", "--api-url", LOCAL, "keys", "env"])
-    prod = runner.invoke(app, ["--json", "--api-url", PROD, "keys", "env"])
+    local = runner.invoke(
+        app, ["--json", "--api-url", LOCAL, "--project", PROJECT_ID, "keys", "env"]
+    )
+    prod = runner.invoke(
+        app, ["--json", "--api-url", PROD, "--project", PROJECT_ID, "keys", "env"]
+    )
 
     assert local.exit_code == 0, local.stderr
     assert VALID_KEY in local.stdout
@@ -178,7 +205,7 @@ def test_file_and_directory_are_private_and_versioned(
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     document = _read_file(path)
-    assert document["version"] == 1
+    assert document["version"] == 2
     # One login document: the token and its metadata together.
     login = document["origins"][PROD]["login"]
     assert login["token"] == LOGIN_TOKEN
@@ -199,7 +226,7 @@ def test_writes_are_atomic_with_0600_from_creation(
 
     monkeypatch.setattr(credential_store.os, "open", recording_open)
 
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
+    store_key(key=VALID_KEY, mode="file", api_url=PROD)
 
     assert len(opened) == 1
     flags, mode = opened[0]
@@ -211,7 +238,7 @@ def test_writes_are_atomic_with_0600_from_creation(
 def test_a_failed_replace_keeps_the_previous_file_intact(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path
 ) -> None:
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
+    store_key(key=VALID_KEY, mode="file", api_url=PROD)
     before = credentials_file.read_bytes()
 
     def failing_replace(*args: Any) -> None:
@@ -220,7 +247,7 @@ def test_a_failed_replace_keeps_the_previous_file_intact(
     monkeypatch.setattr(credential_store.os, "replace", failing_replace)
 
     with pytest.raises(auth.CredentialStorageError):
-        auth.store_project_key(OTHER_KEY, mode="file", api_url=PROD)
+        store_key(key=OTHER_KEY, mode="file", api_url=PROD)
 
     assert credentials_file.read_bytes() == before
     assert [p for p in credentials_file.parent.iterdir() if ".tmp" in p.name] == []
@@ -249,12 +276,12 @@ def test_a_file_other_users_can_read_is_refused(
 def test_a_file_owned_by_another_user_is_refused(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path
 ) -> None:
-    auth.store_project_key(VALID_KEY, mode="file", api_url=PROD)
+    store_key(key=VALID_KEY, mode="file", api_url=PROD)
     other_uid = os.getuid() + 1
     monkeypatch.setattr(credential_store.os, "getuid", lambda: other_uid)
 
     with pytest.raises(InsecureFileError, match="owned by another user"):
-        FileStore(credentials_file).get(credential_origin(PROD), auth.API_KEY_ENTRY)
+        FileStore(credentials_file).get(credential_origin(PROD), auth.API_KEYS_ENTRY)
 
 
 @posix_only
@@ -276,7 +303,7 @@ def test_clearing_the_last_entry_removes_the_file(
     monkeypatch: pytest.MonkeyPatch, credentials_file: Path
 ) -> None:
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
-    auth.store_project_key(VALID_KEY, api_url=PROD)
+    store_key(key=VALID_KEY, api_url=PROD)
     assert credentials_file.exists()
 
     FileStore().delete(credential_origin(PROD))
@@ -326,8 +353,9 @@ def test_file_mode_never_touches_the_keyring(
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
 
     auth.store_login(LOGIN_TOKEN, login_meta(), api_url=PROD)
-    auth.store_project_key(VALID_KEY, api_url=PROD)
+    store_key(key=VALID_KEY, api_url=PROD)
     assert auth.resolve_credential({}, api_url=PROD) is not None
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is not None
     assert auth.legacy_entries_note() is None
     # Logout is the one exception: it looks in both stores (see the logout tests).
 
@@ -393,7 +421,7 @@ def test_keyring_mode_refuses_plaintext_and_placeholder_backends(
     monkeypatch.setattr(credential_store, "backend_factory", impostor)
 
     with pytest.raises(StoreUnavailableError):
-        KeyringStore().get(credential_origin(PROD), auth.API_KEY_ENTRY)
+        KeyringStore().get(credential_origin(PROD), auth.API_KEYS_ENTRY)
 
 
 def test_platform_backend_ignores_global_keyring_configuration(
@@ -448,7 +476,7 @@ def test_every_keyring_call_times_out_after_five_seconds(
 
     started = time.monotonic()
     with pytest.raises(StoreUnavailableError, match="did not answer"):
-        KeyringStore().get(credential_origin(PROD), auth.API_KEY_ENTRY)
+        KeyringStore().get(credential_origin(PROD), auth.API_KEYS_ENTRY)
     assert time.monotonic() - started < 1
 
 
@@ -561,7 +589,7 @@ def test_a_locked_or_denied_keychain_in_use_is_never_read_as_empty(
 
 
 def test_a_backend_reason_never_carries_anything_token_like() -> None:
-    secret = "sk_proj_" + "c3" * 32
+    secret = "solwyn_sk_" + "c3" * 32
     token = "solwyn_cli_" + "4d" * 32
     error = RuntimeError(f"denied for {secret} and {token}\nsecond line {secret}")
 
@@ -577,21 +605,28 @@ def test_a_backend_reason_never_carries_anything_token_like() -> None:
 
 
 def test_login_store_flag_is_saved_to_config(
-    monkeypatch: pytest.MonkeyPatch, isolated_config: Path, memory_keyring: Any
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config: Path,
+    memory_keyring: Any,
+    fake_core: FakeCore,
 ) -> None:
     _platform(monkeypatch, "linux")
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
 
     result = runner.invoke(
-        app, ["--json", "login", "--with-key", "--store", "keyring"], input=VALID_KEY
+        app,
+        ["--json", "-p", PROJECT_ID, "login", "--with-key", "--store", "keyring"],
+        input=VALID_KEY,
     )
 
     assert result.exit_code == 0, result.stderr
     assert 'credential_store = "keyring"' in isolated_config.read_text()
-    assert ("solwyn-cli", f"{PROD}/api_key") in memory_keyring.values
+    assert ("solwyn-cli", key_item(PROD)) in memory_keyring.values
+    assert ("solwyn-cli", key_index(PROD)) in memory_keyring.values
     data = json.loads(result.stdout)
     assert data["store"] == "keyring"
     # The next plain read finds it, because config now says keyring.
-    assert auth.stored_project_key(api_url=PROD) is not None
+    assert auth.stored_key_for_project(PROJECT_ID, api_url=PROD) is not None
 
 
 def test_login_store_flag_conflicting_with_the_env_var_is_a_usage_error(
@@ -608,16 +643,20 @@ def test_login_store_flag_conflicting_with_the_env_var_is_a_usage_error(
     assert not isolated_config.exists()
 
 
-def test_saving_a_project_key_to_the_file_steers_to_env_vars(
-    monkeypatch: pytest.MonkeyPatch, credentials_file: Path
+def test_saving_an_api_key_to_the_file_steers_to_env_vars(
+    monkeypatch: pytest.MonkeyPatch, credentials_file: Path, fake_core: FakeCore
 ) -> None:
     _platform(monkeypatch, "linux")
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
 
-    result = runner.invoke(app, ["--json", "login", "--with-key"], input=VALID_KEY)
+    result = runner.invoke(
+        app, ["--json", "-p", PROJECT_ID, "login", "--with-key"], input=VALID_KEY
+    )
 
     assert result.exit_code == 0, result.stderr
-    assert f"Stored the project key in {credentials_file}." in result.stderr
-    assert "full project access and does not expire" in result.stderr
+    assert (
+        f"Stored the API key for checkout-bot in {credentials_file}." in result.stderr
+    )
     assert "prefer SOLWYN_API_KEY from a secret manager" in result.stderr
     assert VALID_KEY not in result.stdout + result.stderr
 
@@ -694,7 +733,7 @@ def test_metering_never_uses_solwyn_token() -> None:
     assert key is not None and key.bearer_value() == VALID_KEY
 
 
-@pytest.mark.parametrize("value", ["", "sk_proj_" + "a1" * 32, "solwyn_cli_short"])
+@pytest.mark.parametrize("value", ["", "solwyn_sk_" + "a1" * 32, "solwyn_cli_short"])
 def test_an_invalid_solwyn_token_fails_without_echoing_it(value: str) -> None:
     with pytest.raises(auth.AuthError) as caught:
         auth.resolve_credential({"SOLWYN_TOKEN": value})

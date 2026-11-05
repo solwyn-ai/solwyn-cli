@@ -3,15 +3,15 @@
 import anyio
 import httpx
 import pytest
+from login_fixtures import login_credential
 from mcp import Client
+from test_alerts_command import ACCOUNT, EVENT, WINDOW
+from test_mcp_conformance import _install_http
+from test_plan_command import BILLING_STATUS
+from test_read_gaps import catalog
 
 from solwyn_cli import auth
 from solwyn_cli.mcp import server
-from test_mcp_conformance import _install_http
-from test_read_gaps import catalog
-from test_alerts_command import EVENT, WINDOW, ACCOUNT
-from test_plan_command import BILLING_STATUS
-from login_fixtures import login_credential
 
 NEW_READS = {
     "list_cost_events",
@@ -55,9 +55,9 @@ def test_all_new_reads_in_both_profiles_with_policy():
         ("plan_status", "/api/v1/billing/status", BILLING_STATUS, {}),
         (
             "budget_uncounted",
-            "/api/v1/projects/proj_alpha/budget/uncounted",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget/uncounted",
             dict(
-                project_id="proj_alpha",
+                project_id="proj_be76331b95dfc399cd776d2f",
                 uncounted_calls=0,
                 uncounted_tokens=0,
                 last_reported_at=None,
@@ -80,15 +80,19 @@ def test_all_new_reads_in_both_profiles_with_policy():
         ("get_account_phone", "/api/v1/account/phone", dict(state="none"), {}),
         (
             "list_priced_models",
-            "/api/v1/projects/proj_alpha/costs/priced-models",
-            dict(project_id="proj_alpha", pricing_version="synthetic", models=[]),
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/priced-models",
+            dict(
+                project_id="proj_be76331b95dfc399cd776d2f",
+                pricing_version="synthetic",
+                models=[],
+            ),
             {},
         ),
         (
             "get_cost_baseline",
-            "/api/v1/projects/proj_alpha/spend-baseline",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/spend-baseline",
             dict(
-                project_id="proj_alpha",
+                project_id="proj_be76331b95dfc399cd776d2f",
                 lookback_days=7,
                 days_with_data=0,
                 mean_daily_spend=0,
@@ -99,7 +103,7 @@ def test_all_new_reads_in_both_profiles_with_policy():
         ),
         (
             "list_provider_failovers",
-            "/api/v1/projects/proj_alpha/providers/failovers",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/providers/failovers",
             [],
             {},
         ),
@@ -126,7 +130,9 @@ def test_new_reads_endpoint_and_strict_errors(monkeypatch, name, path, payload, 
     async def exercise():
         async with Client(
             server.create_server(
-                launch_options=server.McpLaunchOptions(project_id="proj_alpha")
+                launch_options=server.McpLaunchOptions(
+                    project_id="proj_be76331b95dfc399cd776d2f"
+                )
             ),
             cache=None,
         ) as client:
@@ -224,9 +230,7 @@ def test_later_page_503_retains_truthful_continuation(monkeypatch, name, payload
     ],
 )
 def test_jwt_reads_key_gate_and_privacy(monkeypatch, name):
-    key = auth.ProjectKeyCredential(
-        api_key="sk_proj_" + "a1" * 32, source="environment"
-    )
+    key = auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment")
     result, requests = call(monkeypatch, name, [], credential=key)
     assert result.is_error
     assert result.structured_content["error"]["code"] == "authentication_required"
@@ -235,9 +239,7 @@ def test_jwt_reads_key_gate_and_privacy(monkeypatch, name):
 
 
 def test_key_identity_is_local_without_invented_user(monkeypatch):
-    key = auth.ProjectKeyCredential(
-        api_key="sk_proj_" + "a1" * 32, source="environment"
-    )
+    key = auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment")
     result, requests = call(monkeypatch, "get_whoami", [], credential=key)
     assert not result.is_error
     assert result.structured_content["data"]["user"] is None
@@ -291,7 +293,7 @@ def test_account_costs_mutually_exclusive_and_key_gate(monkeypatch):
         "get_costs",
         [],
         {"account": True},
-        auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment"),
+        auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment"),
     )
     assert (
         result.is_error
@@ -338,7 +340,8 @@ def test_simulation_503_never_automatically_retries(monkeypatch):
 
 def test_diagnostic_ipc_supports_complete_catalog_and_rejects_overflow():
     from pydantic import ValidationError
-    from solwyn_cli._mcp_doctor_ipc import PrivateRequest, HelperResult
+
+    from solwyn_cli._mcp_doctor_ipc import HelperResult, PrivateRequest
 
     names = [tool.definition.name for tool in server.get_tool_catalog()]
     request = PrivateRequest(
@@ -359,19 +362,19 @@ def test_diagnostic_ipc_supports_complete_catalog_and_rejects_overflow():
     [
         (
             "get_unit_economics",
-            "/api/v1/projects/proj_alpha/unit-economics",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/unit-economics",
             __import__("test_cost_advice_command").UNIT_ECONOMICS,
             {"vs_prev": False, "cause": True},
         ),
         (
             "get_cost_drift",
-            "/api/v1/projects/proj_alpha/costs/drift",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/drift",
             __import__("test_cost_advice_command").DRIFT,
             {"from_": "2026-09-01T00:00:00Z", "to": "2026-09-02T00:00:00Z"},
         ),
         (
             "simulate_costs",
-            "/api/v1/projects/proj_alpha/costs/simulate",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/simulate",
             __import__("test_cost_advice_command").SIMULATION,
             {
                 "provider": "bedrock",
@@ -382,7 +385,7 @@ def test_diagnostic_ipc_supports_complete_catalog_and_rejects_overflow():
         ),
         (
             "list_cost_events",
-            "/api/v1/projects/proj_alpha/costs/events",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/costs/events",
             dict(items=[], next_cursor=None, has_more=False, window=WINDOW),
             {
                 "tag": ["team="],
@@ -431,7 +434,10 @@ def test_untracked_read_includes_retention_metadata(monkeypatch):
     data = result.structured_content["data"]
     assert data["effective_window_days"] == 90
     assert data["data_retention_days"] == 180
-    assert requests[-1][1] == "/api/v1/projects/proj_alpha/untracked-surfaces"
+    assert (
+        requests[-1][1]
+        == "/api/v1/projects/proj_be76331b95dfc399cd776d2f/untracked-surfaces"
+    )
     assert requests[-1][2]["query"] == {"range": "90d"}
 
 
@@ -539,8 +545,10 @@ def test_new_reads_503_or_invalid_response_private(monkeypatch, name):
 )
 def test_native_stream_size_cap_preserves_first_unread_page(monkeypatch, name):
     from contextlib import asynccontextmanager
-    from solwyn_cli import _mcp_operation as operation
+
     from test_mcp_operation import Body
+
+    from solwyn_cli import _mcp_operation as operation
 
     calls = []
     page = (
@@ -577,7 +585,9 @@ def test_native_stream_size_cap_preserves_first_unread_page(monkeypatch, name):
     async def exercise():
         async with Client(
             server.create_server(
-                launch_options=server.McpLaunchOptions(project_id="proj_alpha")
+                launch_options=server.McpLaunchOptions(
+                    project_id="proj_be76331b95dfc399cd776d2f"
+                )
             ),
             cache=None,
         ) as client:
@@ -596,6 +606,7 @@ def test_native_stream_size_cap_preserves_first_unread_page(monkeypatch, name):
 
 def test_native_deadline_applies_to_new_read(monkeypatch):
     from contextlib import asynccontextmanager
+
     from solwyn_cli import _mcp_operation as operation
 
     calls = []
@@ -768,7 +779,7 @@ def test_account_latest_tool_retains_both_firing_and_lifecycle(monkeypatch):
     "mutate",
     [
         {"rule_key": "unassociated"},
-        {"project_id": "proj_other"},
+        {"project_id": "proj_d0941e68da8f38151ff86a61"},
         {"rule_key": "account-one", "account_id": "other-account"},
     ],
 )

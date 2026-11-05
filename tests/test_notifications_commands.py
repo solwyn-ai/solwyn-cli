@@ -6,16 +6,16 @@ from pathlib import Path
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
 
 runner = CliRunner()
-BASE = "/api/v1/projects/proj%2Fone/notifications"
+BASE = "/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/notifications"
 CHANNELS = "/api/v1/account/notification-channels"
 EMAIL = "/api/v1/account/alert-email"
 SECRET = "synthetic-secret-abcd"
@@ -80,7 +80,12 @@ def api(monkeypatch):
 def invoke(args, *, input=None, json_output=True):
     return runner.invoke(
         app,
-        ["--project", "proj/one", "--json" if json_output else "--no-color", *args],
+        [
+            "--project",
+            "proj_fe05bcdcdc4928012781a5f1",
+            "--json" if json_output else "--no-color",
+            *args,
+        ],
         input=input,
     )
 
@@ -324,8 +329,8 @@ def test_jwt_only_routes_reject_project_keys(api, monkeypatch, args):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(
-            api_key="sk_proj_" + "ab" * 32, source="environment"
+        lambda **_: auth.ApiKeyCredential(
+            api_key="solwyn_sk_" + "ab" * 32, source="environment"
         ),
     )
     result = invoke(args)
@@ -346,8 +351,8 @@ def test_project_routes_allow_keys(api, monkeypatch, args):
     monkeypatch.setattr(
         module,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(
-            api_key="sk_proj_" + "ab" * 32, source="environment"
+        lambda **_: auth.ApiKeyCredential(
+            api_key="solwyn_sk_" + "ab" * 32, source="environment"
         ),
     )
     responses.append(

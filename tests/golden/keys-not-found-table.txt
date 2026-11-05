@@ -1,2 +1,0 @@
-Error [not_found]: Project or key was not found.
-Hint: Verify the project or key identifier and retry.

@@ -1,0 +1,1 @@
+{"schema":"solwyn.keys-env.v2","names":["SOLWYN_API_KEY","SOLWYN_PROJECT"],"export":"export SOLWYN_API_KEY='solwyn_sk_a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1'\nexport SOLWYN_PROJECT='Checkout-Bot'","api_url":null,"project":{"selector":"Checkout-Bot","id":"proj_8a8a8a8a8a8a8a8a8a8a8a8a"}}

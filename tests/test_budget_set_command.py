@@ -7,22 +7,22 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
 JWT_ACCESS = "budget-set-access-token"
 JWT_REFRESH = "budget-set-refresh-token"
-VALID_KEY = "sk_proj_" + "a7" * 32
+VALID_KEY = "solwyn_sk_" + "a7" * 32
 ROUTING = {
     "will_send": False,
     "email": None,
@@ -98,7 +98,7 @@ THRESHOLDS = [
     },
 ]
 BUDGET_RESPONSE = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "budget_limit": 100.0,
     "current_usage": 25.0,
     "remaining_budget": 75.0,
@@ -225,7 +225,7 @@ def test_budget_set_partial_limit_preserves_every_untouched_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = _jwt()
-    project_id = "team/alpha beta"
+    project_id = "proj_d25187dc137f35c88bc80ec8"
     monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json=_response(project_id=project_id)),
@@ -247,12 +247,12 @@ def test_budget_set_partial_limit_preserves_every_untouched_configuration(
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
-    assert client.credential is credential
+    assert same_credential(client.credential, credential)
     assert client.requests == [
-        ("GET", "/api/v1/projects/team%2Falpha%20beta/budget", {}),
+        ("GET", "/api/v1/projects/proj_d25187dc137f35c88bc80ec8/budget", {}),
         (
             "PUT",
-            "/api/v1/projects/team%2Falpha%20beta/budget",
+            "/api/v1/projects/proj_d25187dc137f35c88bc80ec8/budget",
             {
                 "json": {
                     "limit_usd": 250.0,
@@ -301,7 +301,15 @@ def test_budget_set_period_or_mode_only_changes_its_matching_field(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "budget", "set", flag, value],
+        [
+            "--json",
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            flag,
+            value,
+        ],
     )
 
     assert result.exit_code == 0
@@ -329,7 +337,7 @@ def test_budget_set_no_changes_is_usage_error_before_auth_or_network(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "budget", "set"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "budget", "set"],
     )
 
     assert result.exit_code == 2
@@ -354,7 +362,7 @@ def test_budget_set_refuses_each_project_key_source_without_requests(
     source: str,
     expected_hint: str,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source=source)
     monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: credential)
 
     result = runner.invoke(
@@ -362,7 +370,7 @@ def test_budget_set_refuses_each_project_key_source_without_requests(
         [
             "--json",
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "budget",
             "set",
             "--limit",
@@ -392,7 +400,15 @@ def test_budget_set_requires_login_and_project_before_requests(
     )
     missing_auth = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "budget", "set", "--limit", "125"],
+        [
+            "--json",
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            "--limit",
+            "125",
+        ],
         env={},
     )
 
@@ -423,13 +439,22 @@ def test_budget_set_get_failure_is_preserved_and_never_puts(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "missing", "budget", "set", "--mode", "alert_only"],
+        [
+            "--json",
+            "-p",
+            "proj_5a013c49508291c6816ac388",
+            "budget",
+            "set",
+            "--mode",
+            "alert_only",
+        ],
     )
 
-    assert result.exit_code == 5
+    # project_not_found names a selector problem (Core spec 2.4): a usage error.
+    assert result.exit_code == 2
     assert json.loads(result.stderr)["code"] == "project_not_found"
     assert FakeClient.instances[0].requests == [
-        ("GET", "/api/v1/projects/missing/budget", {})
+        ("GET", "/api/v1/projects/proj_5a013c49508291c6816ac388/budget", {})
     ]
 
 
@@ -454,7 +479,15 @@ def test_budget_set_put_failure_is_preserved_after_one_get(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            "--limit",
+            "125",
+        ],
     )
 
     assert result.exit_code == 1
@@ -488,7 +521,15 @@ def test_budget_set_rejects_malformed_current_state_without_put(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            "--limit",
+            "125",
+        ],
     )
 
     assert result.exit_code == 1
@@ -500,7 +541,7 @@ def test_budget_set_rejects_malformed_current_state_without_put(
 @pytest.mark.parametrize(
     "invalid_put",
     [
-        _response(project_id="proj_other"),
+        _response(project_id="proj_d0941e68da8f38151ff86a61"),
         _response(budget_limit="NaN"),
         _response(thresholds=[{**THRESHOLDS[1], "routing": {}}]),
     ],
@@ -517,7 +558,15 @@ def test_budget_set_rejects_malformed_or_mismatched_put_response(
 
     result = runner.invoke(
         app,
-        ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"],
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            "--limit",
+            "125",
+        ],
     )
 
     assert result.exit_code == 1
@@ -553,7 +602,7 @@ def test_budget_set_success_matches_stable_goldens(
         [
             *output_options,
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "budget",
             "set",
             "--limit",
@@ -577,23 +626,23 @@ def test_budget_set_uses_global_project_precedence(
     monkeypatch.setattr(
         runtime,
         "load_config",
-        lambda: Config(default_project="proj_config"),
+        lambda: Config(default_project="proj_dfba7aade0868074c2861c98"),
     )
     FakeClient.responses = [
-        httpx.Response(200, json=_response(project_id="proj_environment")),
-        httpx.Response(200, json=_response(project_id="proj_environment")),
+        httpx.Response(200, json=_response(project_id="proj_c6e454d960df4845f9d69eb1")),
+        httpx.Response(200, json=_response(project_id="proj_c6e454d960df4845f9d69eb1")),
     ]
 
     result = runner.invoke(
         app,
         ["--json", "budget", "set", "--mode", "alert_only"],
-        env={"SOLWYN_PROJECT_ID": "proj_environment"},
+        env={"SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1"},
     )
 
     assert result.exit_code == 0
     assert [request[1] for request in FakeClient.instances[0].requests] == [
-        "/api/v1/projects/proj_environment/budget",
-        "/api/v1/projects/proj_environment/budget",
+        "/api/v1/projects/proj_c6e454d960df4845f9d69eb1/budget",
+        "/api/v1/projects/proj_c6e454d960df4845f9d69eb1/budget",
     ]
 
 
@@ -639,7 +688,16 @@ def test_budget_set_reconciles_post_commit_503_without_replaying_put(
         httpx.Response(200, json=reconciled),
     ]
     result = runner.invoke(
-        app, ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"]
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            "--limit",
+            "125",
+        ],
     )
     assert result.exit_code == 0
     assert json.loads(result.stdout)["budget_limit"] == 125.0
@@ -701,7 +759,16 @@ def test_budget_set_503_unreconciled_is_explicitly_indeterminate(
         reconciled,
     ]
     result = runner.invoke(
-        app, ["--json", "-p", "proj_alpha", "budget", "set", "--limit", "125"]
+        app,
+        [
+            "--json",
+            "-p",
+            "proj_be76331b95dfc399cd776d2f",
+            "budget",
+            "set",
+            "--limit",
+            "125",
+        ],
     )
     assert result.exit_code == 1
     assert result.stdout == ""

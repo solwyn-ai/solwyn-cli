@@ -7,13 +7,12 @@ from typing import Any
 
 import httpx
 import pytest
-
 from login_fixtures import login_credential
+
 from solwyn_cli.approvals import ApprovalSettings, approval_settings
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.errors import APPROVAL_USED_HINT, ApiError
 from solwyn_cli.exit_codes import ExitCode, exit_code_for_error
-
 
 API_URL = "https://api.solwyn.ai"
 APPROVAL_ID = "0b7d2c4e-0000-4000-8000-000000000001"

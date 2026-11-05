@@ -238,3 +238,28 @@ def test_approval_url_accepts_every_core_origin_shape(
     url: str, expected: str | None
 ) -> None:
     assert approval_url_from({"approval_url": url}) == expected
+
+
+def test_shared_keys_409_points_at_the_dashboard_and_never_at_the_cli() -> None:
+    response = httpx.Response(
+        409,
+        json={
+            "detail": {
+                "code": "shared_keys_reach_project",
+                "message": (
+                    "Shared keys can spend from this project. Remove the project "
+                    "from them to continue."
+                ),
+                "keys": [{"id": "key-1", "name": "shared", "projects": []}],
+            }
+        },
+    )
+
+    error = error_from_response(response)
+
+    assert error.code == "shared_keys_reach_project"
+    assert error.hint is not None
+    assert "https://app.solwyn.ai/settings/keys" in error.hint
+    assert "Budget & Alerts" in error.hint
+    assert "solwyn keys" not in error.hint
+    assert isinstance(error.detail, dict) and error.detail["keys"][0]["id"] == "key-1"

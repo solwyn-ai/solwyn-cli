@@ -1,0 +1,11 @@
+Field                                                Value
+ID                    6f1d0c9e-0000-4000-8000-0000000000f1
+Name                                          checkout-bot
+Key prefix                      solwyn_sk_cdcdcdcdcdcdcdcd
+Scope                                                 full
+Status                                              active
+Projects                                      checkout-bot
+Created via                                            cli
+Expires                               2027-11-04T10:12:00Z
+Rotation grace until                                     -
+Stored                                                 yes

@@ -177,6 +177,33 @@ class DictStore:
         for entry in entries:
             self.values.pop(entry, None)
 
+    # API keys live in one JSON entry, as the real file keeps one object.
+
+    def api_keys(self, origin: str) -> dict[str, dict[str, str]]:
+        self._check_read(auth.API_KEYS_ENTRY)
+        raw = self.values.get(auth.API_KEYS_ENTRY)
+        return {} if raw is None else json.loads(raw)
+
+    def set_api_key(self, origin: str, project_id: str, entry: dict[str, str]) -> None:
+        self._check_write()
+        keys = self.api_keys(origin)
+        keys[project_id] = dict(entry)
+        self.values[auth.API_KEYS_ENTRY] = json.dumps(keys)
+
+    def delete_api_keys(self, origin: str, project_ids: Any) -> None:
+        self._check_write()
+        keys = self.api_keys(origin)
+        for project_id in project_ids:
+            keys.pop(project_id, None)
+        if keys:
+            self.values[auth.API_KEYS_ENTRY] = json.dumps(keys)
+        else:
+            self.values.pop(auth.API_KEYS_ENTRY, None)
+
+    def migrate(self) -> bool:
+        """A dict store has no 0.4.x file version to migrate."""
+        return False
+
 
 def install_store(monkeypatch: Any, store: DictStore) -> DictStore:
     """Make ``store`` the only credential store for one test (file mode)."""

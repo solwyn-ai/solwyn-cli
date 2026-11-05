@@ -8,24 +8,22 @@ import anyio
 import httpx
 import pytest
 from click.utils import strip_ansi
+from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
+from test_mcp_sdk_migration import raw_connection
 from typer.testing import CliRunner
 
-from solwyn_cli import auth
 from solwyn_cli import _mcp_operation as operation
+from solwyn_cli import auth
 from solwyn_cli._vendor.wire import (
     BudgetConfirmRequest,
     IngestMetadataEvent,
     TokenDetails,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands import budget
-from solwyn_cli.commands import _record
+from solwyn_cli.commands import _record, budget
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server as mcp_server
-from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
-from test_mcp_sdk_migration import raw_connection
-
 
 CALL_ID = "12345678-1234-4000-8000-123456789abc"
 CONFIRM = {
@@ -34,7 +32,7 @@ CONFIRM = {
     "model": "whisper-1",
     "provider": "openai",
 }
-KEY = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+KEY = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 @pytest.mark.parametrize(

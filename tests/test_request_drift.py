@@ -10,50 +10,48 @@ from typing import Any
 import pytest
 
 from solwyn_cli._vendor.notification_wire import (
-    NotificationConfigUpdate,
+    AlertEmailUpdate,
     NotificationChannelCreate,
     NotificationChannelUpdate,
-    AlertEmailUpdate,
-    SlackTestRequest,
+    NotificationConfigUpdate,
     PagerDutyTestRequest,
+    SlackTestRequest,
 )
 from solwyn_cli._vendor.wire import (
-    AccountAlertUpdateRequest,
     AccountAlertPreviewRequest,
     AccountAlertSnoozeRequest,
-    BudgetCheckRequest,
+    AccountAlertUpdateRequest,
+    ApiKeyCreateRequest,
+    ApiKeyRotateRequest,
     BudgetCheckBatchRequest,
+    BudgetCheckRequest,
     BudgetConfirmRequest,
     BudgetUpdateRequest,
     CostSimulationRequest,
     IngestMetadataEvent,
+    ProjectAlertsPreviewRequest,
     ProjectCreateRequest,
-    ProjectKeyRotateRequest,
     ProjectUpdateRequest,
     SnoozeRequest,
     TokenDetails,
-    ProjectAlertsPreviewRequest,
     WebhookCreateRequest,
 )
-from solwyn_cli.commands._alert_reads import AlertLatestRequest, AlertRuleLookup
 from solwyn_cli.commands import init as init_command
 from solwyn_cli.commands import login, projects
-from solwyn_cli.commands.costs import CostRange
-from solwyn_cli.commands.providers import FailoverRange, UntrackedRange
-from solwyn_cli.commands.audit import AuditRange
-
-
+from solwyn_cli.commands._alert_reads import AlertLatestRequest, AlertRuleLookup
 from solwyn_cli.commands._billing import (
     CheckoutRequest,
-    PlanPreviewRequest,
     PlanChangeRequest,
+    PlanPreviewRequest,
 )
-
 from solwyn_cli.commands._team import (
     AccountUpdateRequest,
-    RoleUpdateRequest,
     InviteRequest,
+    RoleUpdateRequest,
 )
+from solwyn_cli.commands.audit import AuditRange
+from solwyn_cli.commands.costs import CostRange
+from solwyn_cli.commands.providers import FailoverRange, UntrackedRange
 
 SNAPSHOT_PATH = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 
@@ -77,7 +75,8 @@ REQUEST_MIRRORS = {
     AccountAlertPreviewRequest: "AccountAlertPreviewRequest",
     AccountAlertSnoozeRequest: "AccountAlertSnoozeRequest",
     ProjectCreateRequest: "ProjectCreateRequest",
-    ProjectKeyRotateRequest: "ProjectKeyRotateRequest",
+    ApiKeyCreateRequest: "ApiKeyCreateRequest",
+    ApiKeyRotateRequest: "ApiKeyRotateRequest",
     WebhookCreateRequest: "WebhookCreateRequest",
     ProjectUpdateRequest: "ProjectUpdateRequest",
     BudgetUpdateRequest: "BudgetUpdateRequest",
@@ -98,7 +97,10 @@ DECLARED_DEFAULT_FIELDS = {
         # defaults together is what makes the omission behavior-preserving.
         "scope",
     ),
-    "ProjectKeyRotateRequest": ("grace_seconds",),
+    "ApiKeyRotateRequest": ("grace_seconds",),
+    # Sent with exclude_unset: an unset scope is omitted and the API applies
+    # this same default.
+    "ApiKeyCreateRequest": ("scope",),
     "WebhookCreateRequest": ("events",),
     "BudgetCheckRequest": ("uncounted_calls", "uncounted_tokens"),
 }
@@ -110,6 +112,9 @@ DECLARED_DEFAULT_FIELDS = {
 UNADOPTED_OPTIONAL_FIELDS = {
     # Override changes are owned by the dedicated account alert-email commands.
     "AccountUpdateRequest": ("alert_email_override",),
+    # Declined for 14d-1: removing shared keys while switching to hard_deny is
+    # a deliberate, approved budget change the CLI does not offer yet.
+    "BudgetUpdateRequest": ("shared_keys_action", "shared_keys_expected"),
     "IngestMetadataEvent": (
         # SDK-internal velocity observation and aggregate receipt accounting.
         "velocity_flags",
@@ -129,6 +134,9 @@ UNADOPTED_OPTIONAL_FIELDS = {
         "trace_sampled",
     ),
     "BudgetCheckRequest": (
+        # Declined for now: an output-token bound tightens the reservation;
+        # the CLI's check keeps Core's default estimate until it offers a flag.
+        "estimated_output_bound",
         # Declined: the directive it requests only tunes SDK-side retry and
         # circuit-breaker behavior, which the CLI does not perform; opting in
         # would also switch the check response to null-omitting encoding.
@@ -175,6 +183,7 @@ UNADOPTED_FIELD_OWNERS = {
     "BudgetConfirmRequest": BudgetConfirmRequest,
     "TokenDetails": TokenDetails,
     "ProjectUpdateRequest": ProjectUpdateRequest,
+    "BudgetUpdateRequest": BudgetUpdateRequest,
 }
 _FINITE_ALTERNATION = re.compile(r"\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)*)\)\$")
 
@@ -641,15 +650,15 @@ def assert_project_key_rotate_operation_request_binding(
     snapshot: dict[str, Any],
 ) -> None:
     """Bind key rotation to its exact required request component and bounds."""
-    path = "/api/v1/projects/{project_id}/key/rotate"
+    path = "/api/v1/keys/{key_id}/rotate"
     request_body = snapshot["paths"][path]["post"]["requestBody"]
     assert request_body.get("required") is True
     schema = request_body["content"]["application/json"]["schema"]
-    assert schema.get("$ref") == "#/components/schemas/ProjectKeyRotateRequest"
-    remote = _schema(snapshot, "ProjectKeyRotateRequest")["properties"][
-        "grace_seconds"
-    ]["anyOf"][0]
-    local = ProjectKeyRotateRequest.model_json_schema()["properties"]["grace_seconds"][
+    assert schema.get("$ref") == "#/components/schemas/ApiKeyRotateRequest"
+    remote = _schema(snapshot, "ApiKeyRotateRequest")["properties"]["grace_seconds"][
+        "anyOf"
+    ][0]
+    local = ApiKeyRotateRequest.model_json_schema()["properties"]["grace_seconds"][
         "anyOf"
     ][0]
     assert local.get("minimum") == remote.get("minimum") == 0
@@ -995,7 +1004,7 @@ def test_webhook_create_request_drift_trips_guard(mutation: str) -> None:
 @pytest.mark.parametrize("mutation", ["field", "default", "bounds", "binding"])
 def test_project_key_rotate_request_drift_trips_guard(mutation: str) -> None:
     mutated = copy.deepcopy(_snapshot())
-    schema = mutated["components"]["schemas"]["ProjectKeyRotateRequest"]
+    schema = mutated["components"]["schemas"]["ApiKeyRotateRequest"]
     if mutation == "field":
         schema["properties"]["delay_seconds"] = schema["properties"].pop(
             "grace_seconds"
@@ -1005,9 +1014,9 @@ def test_project_key_rotate_request_drift_trips_guard(mutation: str) -> None:
     elif mutation == "bounds":
         schema["properties"]["grace_seconds"]["anyOf"][0]["maximum"] = 60
     else:
-        mutated["paths"]["/api/v1/projects/{project_id}/key/rotate"]["post"][
-            "requestBody"
-        ]["content"]["application/json"]["schema"][
+        mutated["paths"]["/api/v1/keys/{key_id}/rotate"]["post"]["requestBody"][
+            "content"
+        ]["application/json"]["schema"][
             "$ref"
         ] = "#/components/schemas/ProjectCreateRequest"
 

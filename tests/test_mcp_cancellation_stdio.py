@@ -10,10 +10,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-
-from test_mcp_conformance import VALID_KEY, CHECK_RESPONSE
 from test_alerts_command import WINDOW
-
+from test_mcp_conformance import CHECK_RESPONSE, VALID_KEY
 
 CHILD = """import sys, time
 from pathlib import Path
@@ -119,7 +117,7 @@ def test_stdio_stop_prevents_later_effects(tmp_path, legacy, ending, scenario):
             "--api-url",
             f"http://127.0.0.1:{http.server_port}",
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "mcp",
         ],
         stdin=subprocess.PIPE,

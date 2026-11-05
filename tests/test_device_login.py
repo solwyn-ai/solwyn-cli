@@ -11,27 +11,27 @@ from urllib.parse import parse_qs
 
 import httpx
 import pytest
-from typer.testing import CliRunner
-
 from golden.harness import assert_matches_golden
+from key_fixtures import PROJECT_ID, keys_entry
 from login_fixtures import (
-    fake_keychain,
     LOGIN_TOKEN,
     expired_login_entries,
+    fake_keychain,
     login_entries,
 )
+from typer.testing import CliRunner
+
 from solwyn_cli import approvals, auth, oauth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.main import app
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
 START = datetime(2026, 10, 30, 14, 0, tzinfo=UTC)
 DEVICE_CODE = "solwyn_dc_" + "4f" * 32
 ISSUED_TOKEN = "solwyn_cli_" + "9a" * 32
-VALID_KEY = "sk_proj_" + "e5" * 32
+VALID_KEY = "solwyn_sk_" + "e5" * 32
 USER_CODE = "BCDF-GHJK"
 DEVICE_AUTHORIZATION = {
     "device_code": DEVICE_CODE,
@@ -167,6 +167,8 @@ def test_login_polls_with_interval_and_slow_down_then_stores_the_credential(
         "account_name": "Acme",
         "email": "ada@example.com",
         "role": "owner",
+        "project_id": None,
+        "project_name": None,
     }
     login = json.loads(keychain[auth.LOGIN_ENTRY])
     assert login["token"] == ISSUED_TOKEN
@@ -519,7 +521,7 @@ def test_logout_revokes_the_stored_login_with_the_exact_form_then_clears(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     keychain.update(login_entries())
-    keychain.update(api_key=VALID_KEY)
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
     requests = _revocation(monkeypatch, lambda request: httpx.Response(200))
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -608,7 +610,7 @@ def test_logout_revokes_an_expired_login_too(
 def test_logout_without_a_login_makes_no_request(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    keychain.update(api_key=VALID_KEY)
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
     requests = _revocation(monkeypatch, lambda request: httpx.Response(200))
 
     result = runner.invoke(app, ["--json", "logout"])
@@ -619,55 +621,62 @@ def test_logout_without_a_login_makes_no_request(
     assert keychain == {}
 
 
-def test_keys_env_prints_one_export_line_and_nothing_else(
+def test_keys_env_prints_the_export_lines_and_nothing_else(
     keychain: dict[str, str],
 ) -> None:
-    keychain.update(api_key=VALID_KEY)
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
 
-    result = runner.invoke(app, ["keys", "env"])
+    result = runner.invoke(app, ["-p", PROJECT_ID, "keys", "env"])
 
-    assert result.exit_code == 0
-    assert result.stdout == f"export SOLWYN_API_KEY={VALID_KEY}\n"
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == (
+        f"export SOLWYN_API_KEY='{VALID_KEY}'\nexport SOLWYN_PROJECT='{PROJECT_ID}'\n"
+    )
     assert result.stderr == ""
 
 
-def test_keys_env_reads_only_the_keychain_key(keychain: dict[str, str]) -> None:
+def test_keys_env_reads_only_the_stored_key(keychain: dict[str, str]) -> None:
     keychain.update(login_entries())
 
     result = runner.invoke(
-        app, ["--json", "keys", "env"], env={"SOLWYN_API_KEY": VALID_KEY}
+        app,
+        ["--json", "-p", PROJECT_ID, "keys", "env"],
+        env={"SOLWYN_API_KEY": VALID_KEY},
     )
 
     assert result.exit_code == 3
     assert result.stdout == ""
     error = json.loads(result.stderr)
-    assert error["code"] == "authentication_required"
+    assert error["code"] == "api_key_not_stored"
     assert VALID_KEY not in result.stderr
 
 
 def test_keys_env_json_mode(keychain: dict[str, str]) -> None:
-    keychain.update(api_key=VALID_KEY)
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
 
-    result = runner.invoke(app, ["--json", "keys", "env"])
+    result = runner.invoke(app, ["--json", "-p", PROJECT_ID, "keys", "env"])
 
-    assert result.exit_code == 0
-    assert_matches_golden(result.stdout, GOLDEN_DIR / "keys-env.json")
+    assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout) == {
-        "schema": "solwyn.keys-env.v1",
-        "name": "SOLWYN_API_KEY",
-        "export": f"export SOLWYN_API_KEY={VALID_KEY}",
+        "schema": "solwyn.keys-env.v2",
+        "names": ["SOLWYN_API_KEY", "SOLWYN_PROJECT"],
+        "export": (
+            f"export SOLWYN_API_KEY='{VALID_KEY}'\nexport SOLWYN_PROJECT='{PROJECT_ID}'"
+        ),
         "api_url": None,
+        "project": {"selector": PROJECT_ID, "id": PROJECT_ID},
     }
 
 
 def test_keys_env_never_writes_files(
     keychain: dict[str, str], tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    keychain.update(api_key=VALID_KEY)
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
     monkeypatch.chdir(tmp_path)
 
-    runner.invoke(app, ["keys", "env"])
+    result = runner.invoke(app, ["-p", PROJECT_ID, "keys", "env"])
 
+    assert result.exit_code == 0, result.stderr
     assert list(tmp_path.iterdir()) == []
 
 
@@ -698,7 +707,7 @@ def test_expired_login_with_no_fallback_says_when_it_expired(
 def test_solwyn_auth_login_without_a_login_is_explained(
     keychain: dict[str, str],
 ) -> None:
-    keychain.update(api_key=VALID_KEY)
+    keychain[auth.API_KEYS_ENTRY] = keys_entry(key=VALID_KEY)
 
     result = runner.invoke(
         app, ["--json", "projects", "list"], env={"SOLWYN_AUTH": "login"}

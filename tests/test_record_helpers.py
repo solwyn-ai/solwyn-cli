@@ -6,10 +6,10 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from solwyn_cli.auth import ProjectKeyCredential
+from solwyn_cli.auth import ApiKeyCredential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._tags import parse_tags, validate_tags
 from solwyn_cli.commands._record import build_event, request_ingest
+from solwyn_cli.commands._tags import parse_tags, validate_tags
 
 
 @pytest.mark.parametrize(
@@ -245,8 +245,8 @@ def test_ingest_429_uses_existing_bounded_retry():
 
     with SolwynClient(
         api_url="https://api.example.test",
-        credential=ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        credential=ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
         transport=httpx.MockTransport(handler),
         sleeper=lambda _: None,

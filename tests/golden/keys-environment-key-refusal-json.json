@@ -1,1 +1,0 @@
-{"schema":"solwyn.error.v1","code":"authentication_required","message":"User login is required to manage project keys.","hint":"Run solwyn login, then retry keys show.","detail":null}

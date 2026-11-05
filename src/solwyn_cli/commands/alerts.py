@@ -33,7 +33,11 @@ from solwyn_cli.commands._alert_models import (
 )
 
 from solwyn_cli.commands._cost_filters import window_params
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands.budget import _AlertRouting
 from solwyn_cli.commands.budget_rules import parse_until
 from solwyn_cli.commands.costs import report_window, stream_export
@@ -199,7 +203,9 @@ def request_alert_events(
 
 
 @contextmanager
-def _client(context: typer.Context, *, account: bool = False) -> Iterator[SolwynClient]:
+def _client(
+    context: typer.Context, *, account: bool = False, project: bool = False
+) -> Iterator[SolwynClient]:
     credential = required_credential(context, resolve=resolve_credential)
     if account and not isinstance(credential, LoginCredential):
         exit_with_error(
@@ -211,6 +217,8 @@ def _client(context: typer.Context, *, account: bool = False) -> Iterator[Solwyn
             ),
             semantic=ErrorSemantic.AUTH,
         )
+    if project and not account:
+        with_project(context, credential)
     runtime = command_context(context)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -304,10 +312,10 @@ def _history(
             ),
             semantic=ErrorSemantic.USAGE,
         )
-    with _client(context, account=account) as client:
+    with _client(context, account=account, project=True) as client:
         data = request_alert_events(
             client=client,
-            project_id=runtime.project,
+            project_id=command_context(context).project,
             account=account,
             event_id=event_id,
             **options,
@@ -448,7 +456,8 @@ def export_events(
         raise typer.BadParameter(str(error)) from None
     params["format"] = export_format
     typer.echo("Alert exports exclude delivery receipts.", err=True)
-    with _client(context, account=account) as client:
+    with _client(context, account=account, project=True) as client:
+        path = history_path(command_context(context).project, account)
         stream_export(client=client, path=path + "/export", params=params)
 
 

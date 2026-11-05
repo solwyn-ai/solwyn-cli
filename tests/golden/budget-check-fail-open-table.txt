@@ -1,11 +1,11 @@
-Field                     Value  rel. price
-Allowed                     yes           -
-Reservation ID                -           -
-Project           proj_from_key           -
-Budget mode           hard_deny           -
-Budget limit             100.00           -
-Current usage             18.75           -
-Remaining budget          81.25           -
-Denied by period              -           -
-Provider              anthropic        1.15
-Provider                 openai           1
+Field                                     Value  rel. price
+Allowed                                     yes           -
+Reservation ID                                -           -
+Project           proj_52f2908c222d2665b628ea26           -
+Budget mode                           hard_deny           -
+Budget limit                             100.00           -
+Current usage                             18.75           -
+Remaining budget                          81.25           -
+Denied by period                              -           -
+Provider                              anthropic        1.15
+Provider                                 openai           1

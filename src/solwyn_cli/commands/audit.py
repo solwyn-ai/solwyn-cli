@@ -19,7 +19,7 @@ from solwyn_cli.auth import (
     AuthError,
     LoginRequiredError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -118,7 +118,7 @@ class AuditEventListResponse(BaseModel):
 
 def _login_credential(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = "Run solwyn login, then retry audit."
         exit_with_error(
             context,

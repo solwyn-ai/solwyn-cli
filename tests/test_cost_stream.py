@@ -2,16 +2,15 @@
 
 from contextlib import contextmanager
 
-from typer.testing import CliRunner
-from solwyn_cli.commands import costs
-from solwyn_cli.main import app
-
 import httpx
 import pytest
-from solwyn_cli.errors import ApiError
+from typer.testing import CliRunner
 
-from solwyn_cli.auth import ProjectKeyCredential
+from solwyn_cli.auth import ApiKeyCredential
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands import costs
+from solwyn_cli.errors import ApiError
+from solwyn_cli.main import app
 
 
 class Body(httpx.SyncByteStream):
@@ -39,8 +38,8 @@ def test_stream_does_not_buffer_before_first_byte():
 
     with SolwynClient(
         api_url="https://api.solwyn.ai",
-        credential=ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        credential=ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
         transport=httpx.MockTransport(handle),
     ) as client:
@@ -51,7 +50,7 @@ def test_stream_does_not_buffer_before_first_byte():
             assert body.reads == 1
             assert next(iterator) == b"'=SUM(A1),2\n"
     assert body.closed
-    assert requests[0].headers["authorization"].startswith("Bearer sk_proj_")
+    assert requests[0].headers["authorization"].startswith("Bearer solwyn_sk_")
 
 
 def test_export_command_preserves_bytes_and_reports_headers(monkeypatch):
@@ -90,12 +89,12 @@ def test_export_command_preserves_bytes_and_reports_headers(monkeypatch):
     monkeypatch.setattr(
         costs,
         "resolve_credential",
-        lambda **_: ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        lambda **_: ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
     )
     result = CliRunner().invoke(
-        app, ["-p", "project", "costs", "export", "--format", "csv"]
+        app, ["-p", "proj_" + "ab" * 12, "costs", "export", "--format", "csv"]
     )
     assert result.exit_code == 0, result.exception
     assert result.stdout == "name,cost\n'=SUM(A1),2\n"
@@ -105,7 +104,7 @@ def test_export_command_preserves_bytes_and_reports_headers(monkeypatch):
     assert captured == [
         (
             "GET",
-            "/api/v1/projects/project/costs/export",
+            "/api/v1/projects/" + "proj_" + "ab" * 12 + "/costs/export",
             {"params": {"range": "30d", "format": "csv"}},
         )
     ]
@@ -125,8 +124,8 @@ def test_stream_errors_are_structured_and_close_before_retry():
 
     with SolwynClient(
         api_url="https://api.solwyn.ai",
-        credential=ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        credential=ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
         transport=httpx.MockTransport(handle),
         sleeper=lambda _: None,
@@ -154,8 +153,8 @@ def test_stream_interruption_does_not_replay_partial_body():
 
     with SolwynClient(
         api_url="https://api.solwyn.ai",
-        credential=ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        credential=ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
         transport=httpx.MockTransport(handle),
     ) as client:
@@ -183,8 +182,8 @@ def test_stream_busy_retries_before_yielding_any_export_bytes():
 
     with SolwynClient(
         api_url="https://example.test",
-        credential=ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        credential=ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
         transport=httpx.MockTransport(handle),
         sleeper=lambda _: None,
@@ -232,13 +231,13 @@ def test_export_body_stays_byte_exact_while_header_notices_are_redacted(
     monkeypatch.setattr(
         costs,
         "resolve_credential",
-        lambda **_: ProjectKeyCredential(
-            api_key="sk_proj_" + "a1" * 32, source="environment"
+        lambda **_: ApiKeyCredential(
+            api_key="solwyn_sk_" + "a1" * 32, source="environment"
         ),
     )
 
     result = CliRunner().invoke(
-        app, ["-p", "project", "costs", "export", "--format", fmt]
+        app, ["-p", "proj_" + "ab" * 12, "costs", "export", "--format", fmt]
     )
 
     assert result.exit_code == 0, result.exception

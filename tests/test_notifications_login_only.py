@@ -15,15 +15,17 @@ import json
 
 import httpx
 import pytest
+from key_fixtures import store_key
+from login_fixtures import LOGIN_TOKEN, login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, login_meta
 from solwyn_cli import auth
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
 
 runner = CliRunner()
-KEY = "sk_proj_" + "ab" * 32
+KEY = "solwyn_sk_" + "ab" * 32
+PROJECT = "proj_fe05bcdcdc4928012781a5f1"
 CONFIG = {
     "channel_ids": [],
     "channels": [],
@@ -56,7 +58,9 @@ def sent(monkeypatch):
 
 
 def invoke(*args):
-    return runner.invoke(app, ["--project", "proj_one", "--json", *args])
+    return runner.invoke(
+        app, ["--project", "proj_fe05bcdcdc4928012781a5f1", "--json", *args]
+    )
 
 
 def error_of(result):
@@ -64,7 +68,7 @@ def error_of(result):
 
 
 def test_set_refuses_the_stored_project_key_without_a_request(sent):
-    auth.store_project_key(KEY)
+    store_key(key=KEY, project_id=PROJECT)
 
     result = invoke("notifications", "set", "--no-email")
 
@@ -102,19 +106,22 @@ def test_set_with_no_credential_names_the_login_not_a_key(sent):
 
 
 def test_set_uses_the_login_even_when_a_key_is_also_stored(sent):
-    auth.store_project_key(KEY)
+    store_key(key=KEY, project_id=PROJECT)
     auth.store_login(LOGIN_TOKEN, login_meta())
 
     result = invoke("notifications", "set", "--no-email")
 
     assert result.exit_code == 0, result.output
     [(method, path, credential)] = sent
-    assert (method, path) == ("PUT", "/api/v1/projects/proj_one/notifications")
+    assert (method, path) == (
+        "PUT",
+        "/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/notifications",
+    )
     assert isinstance(credential, auth.LoginCredential)
 
 
 def test_set_refuses_a_key_forced_by_solwyn_auth_and_says_so(sent, monkeypatch):
-    auth.store_project_key(KEY)
+    store_key(key=KEY, project_id=PROJECT)
     auth.store_login(LOGIN_TOKEN, login_meta())
     monkeypatch.setenv(auth.AUTH_SELECTION_ENV, "project_key")
 
@@ -126,7 +133,7 @@ def test_set_refuses_a_key_forced_by_solwyn_auth_and_says_so(sent, monkeypatch):
 
 
 def test_set_with_solwyn_auth_login_and_no_login_fails_on_auth(sent, monkeypatch):
-    auth.store_project_key(KEY)
+    store_key(key=KEY, project_id=PROJECT)
     monkeypatch.setenv(auth.AUTH_SELECTION_ENV, "login")
 
     result = invoke("notifications", "set", "--no-email")
@@ -139,11 +146,15 @@ def test_set_with_solwyn_auth_login_and_no_login_fails_on_auth(sent, monkeypatch
 @pytest.mark.parametrize(
     "args,method,path",
     [
-        (("notifications", "show"), "GET", "/api/v1/projects/proj_one/notifications"),
+        (
+            ("notifications", "show"),
+            "GET",
+            "/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/notifications",
+        ),
         (
             ("notifications", "test", "sms"),
             "POST",
-            "/api/v1/projects/proj_one/notifications/test-sms",
+            "/api/v1/projects/proj_fe05bcdcdc4928012781a5f1/notifications/test-sms",
         ),
     ],
 )
@@ -164,14 +175,16 @@ def test_reads_and_sms_test_still_fall_back_to_the_stored_key(
             )
         ),
     )
-    auth.store_project_key(KEY)
+    store_key(key=KEY, project_id=PROJECT)
 
     result = invoke(*args)
 
     assert result.exit_code == 0, result.output
     [(sent_method, sent_path, credential)] = sent
     assert (sent_method, sent_path) == (method, path)
-    assert isinstance(credential, auth.ProjectKeyCredential)
+    assert isinstance(credential, auth.ApiKeyCredential)
+    # The key stored for that exact project, bound to it for Solwyn-Project.
+    assert credential.project == PROJECT
 
 
 def test_core_api_key_not_allowed_403_is_an_auth_error_with_a_login_hint(

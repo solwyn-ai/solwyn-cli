@@ -5,6 +5,10 @@ import json
 import anyio
 import httpx
 import pytest
+from test_budget_batch import CHECK, DENIED, invoke, item
+from test_mcp_conformance import _call_tool, _install_http
+from test_reliability import JWT, KEY
+from test_reliability_review import CALL_ID, busy_response
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
@@ -14,10 +18,6 @@ from solwyn_cli.commands._record import build_event, record_best_effort
 from solwyn_cli.errors import ApiError, is_ingest_unaccepted
 from solwyn_cli.main import app
 from solwyn_cli.mcp import server
-from test_budget_batch import CHECK, DENIED, invoke, item
-from test_mcp_conformance import _call_tool, _install_http
-from test_reliability import JWT, KEY
-from test_reliability_review import CALL_ID, busy_response
 
 
 def rejection(kind):

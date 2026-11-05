@@ -33,7 +33,10 @@ def _hold_lock_then_update(config_path: str, ready: Any, release: Any) -> None:
             raise TimeoutError("test did not release configuration lock")
         save_config(
             Config.model_validate(
-                {**current.model_dump(), "default_project": "proj_locked"}
+                {
+                    **current.model_dump(),
+                    "default_project": "proj_adec79fd87d0496004662853",
+                }
             )
         )
 
@@ -92,7 +95,7 @@ def test_save_intersects_subclass_fields_with_config_allowlist(
     save_config(
         ExtendedConfig(
             api_url="https://example.test",
-            default_project="proj_safe",
+            default_project="proj_bf31c52c32b0fcda1dc3e7c0",
             format="json",
             api_key="must-not-persist",
         )
@@ -101,7 +104,7 @@ def test_save_intersects_subclass_fields_with_config_allowlist(
     persisted = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert persisted == {
         "api_url": "https://example.test",
-        "default_project": "proj_safe",
+        "default_project": "proj_bf31c52c32b0fcda1dc3e7c0",
         "format": "json",
     }
 
@@ -110,9 +113,9 @@ def test_save_atomically_overwrites_without_temp_residue(config_path: Path) -> N
     config_path.parent.mkdir(parents=True)
     config_path.write_text('format = "table"\n', encoding="utf-8")
 
-    save_config(Config(default_project="proj_new", format="json"))
+    save_config(Config(default_project="proj_c2a6b03f190dfb2b4aa91f8a", format="json"))
 
-    assert load_config().default_project == "proj_new"
+    assert load_config().default_project == "proj_c2a6b03f190dfb2b4aa91f8a"
     assert load_config().format == "json"
     assert list(config_path.parent.iterdir()) == [config_path]
 
@@ -192,7 +195,7 @@ def test_replace_failure_preserves_old_file_and_removes_temporary_file(
     config_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path.parent.mkdir(parents=True)
-    original = 'default_project = "proj_old"\n'
+    original = 'default_project = "proj_c00dbbc9dadfbe1e232e93a7"\n'
     config_path.write_text(original, encoding="utf-8")
 
     def fail_replace(source: Path, destination: Path) -> None:
@@ -201,7 +204,7 @@ def test_replace_failure_preserves_old_file_and_removes_temporary_file(
     monkeypatch.setattr(config_module.os, "replace", fail_replace)
 
     with pytest.raises(ConfigWriteError) as exc_info:
-        save_config(Config(default_project="proj_new"))
+        save_config(Config(default_project="proj_c2a6b03f190dfb2b4aa91f8a"))
 
     assert "replace detail" not in str(exc_info.value)
     assert config_path.read_text(encoding="utf-8") == original
@@ -219,7 +222,7 @@ def test_save_fsyncs_file_and_parent_directory(
 
     monkeypatch.setattr(config_module.os, "fsync", record_fsync)
 
-    save_config(Config(default_project="proj_durable"))
+    save_config(Config(default_project="proj_6802cb5d70b48e54c03a8384"))
 
     assert any(stat.S_ISREG(mode) for mode in fsynced_modes)
     assert any(stat.S_ISDIR(mode) for mode in fsynced_modes)
@@ -261,7 +264,9 @@ def test_concurrent_different_key_updates_are_serialized(config_path: Path) -> N
         if second.pid is not None:
             second.join(timeout=1)
 
-    assert load_config() == Config(default_project="proj_locked", format="json")
+    assert load_config() == Config(
+        default_project="proj_adec79fd87d0496004662853", format="json"
+    )
 
 
 def test_multi_field_update_preserves_unrelated_config(config_path: Path) -> None:
@@ -269,13 +274,13 @@ def test_multi_field_update_preserves_unrelated_config(config_path: Path) -> Non
 
     updated = config_module.update_config_values(
         {
-            "default_project": "proj_init",
+            "default_project": "proj_fd62812fbd9ec4c7f99aa4f6",
             "api_url": "https://staging.example.test",
         }
     )
 
     assert updated == Config(
-        default_project="proj_init",
+        default_project="proj_fd62812fbd9ec4c7f99aa4f6",
         api_url="https://staging.example.test",
         format="json",
     )
@@ -288,12 +293,12 @@ def test_clear_default_project_removes_only_a_matching_default(
     save_config(
         Config(
             api_url="https://staging.example.test",
-            default_project="proj_deleted",
+            default_project="proj_b639f5cc719831458c839993",
             format="json",
         )
     )
 
-    cleared = config_module.clear_default_project("proj_deleted")
+    cleared = config_module.clear_default_project("proj_b639f5cc719831458c839993")
 
     assert cleared is True
     assert load_config() == Config(
@@ -308,14 +313,14 @@ def test_clear_default_project_preserves_a_different_default_without_writing(
     config_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    save_config(Config(default_project="proj_keep", format="json"))
+    save_config(Config(default_project="proj_1264bdfe5ff3215cf6abac21", format="json"))
     monkeypatch.setattr(
         config_module,
         "save_config",
         lambda *_args, **_kwargs: pytest.fail("must not rewrite unrelated config"),
     )
 
-    cleared = config_module.clear_default_project("proj_other")
+    cleared = config_module.clear_default_project("proj_d0941e68da8f38151ff86a61")
 
     assert cleared is False
 
@@ -367,7 +372,7 @@ def test_concurrent_init_update_preserves_other_update_field(
         name="init-update",
         args=(
             {
-                "default_project": "proj_init",
+                "default_project": "proj_fd62812fbd9ec4c7f99aa4f6",
                 "api_url": "https://staging.example.test",
             },
         ),
@@ -385,7 +390,7 @@ def test_concurrent_init_update_preserves_other_update_field(
     assert not init_thread.is_alive()
     assert errors == []
     assert state["config"] == Config(
-        default_project="proj_init",
+        default_project="proj_fd62812fbd9ec4c7f99aa4f6",
         api_url="https://staging.example.test",
         format="json",
     )

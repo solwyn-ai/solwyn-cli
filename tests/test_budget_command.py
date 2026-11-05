@@ -7,24 +7,24 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth, runtime
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.config import Config
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "d4" * 32
+VALID_KEY = "solwyn_sk_" + "d4" * 32
 ACCESS_TOKEN = "budget-access-token"
 REFRESH_TOKEN = "budget-refresh-token"
 BUDGET_RESPONSE = {
-    "project_id": "proj_alpha",
+    "project_id": "proj_be76331b95dfc399cd776d2f",
     "budget_limit": 100.0,
     "current_usage": 75.0,
     "remaining_budget": 25.0,
@@ -156,8 +156,8 @@ def _queue_budget_response(**overrides: object) -> None:
     FakeClient.responses = [httpx.Response(200, json={**BUDGET_RESPONSE, **overrides})]
 
 
-def _key(**_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+def _key(**_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 def test_budget_group_registers_status_check_confirm_and_set() -> None:
@@ -176,7 +176,7 @@ def test_budget_group_registers_status_check_confirm_and_set() -> None:
 @pytest.mark.parametrize(
     "credential",
     [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         login_credential(ACCESS_TOKEN),
     ],
 )
@@ -191,14 +191,16 @@ def test_budget_status_supports_both_auth_modes_with_one_get_and_no_reservation(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj_alpha", "budget", "status"],
+        ["--json", "--project", "proj_be76331b95dfc399cd776d2f", "budget", "status"],
     )
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
     assert client.api_url == "https://api.solwyn.ai"
-    assert client.credential is credential
-    assert client.requests == [("GET", "/api/v1/projects/proj_alpha/budget", {})]
+    assert same_credential(client.credential, credential)
+    assert client.requests == [
+        ("GET", "/api/v1/projects/proj_be76331b95dfc399cd776d2f/budget", {})
+    ]
     assert "/budgets/check" not in repr(client.requests)
     rendered = result.stdout + result.stderr + repr(result.exception)
     for secret in (VALID_KEY, ACCESS_TOKEN, REFRESH_TOKEN):
@@ -216,7 +218,9 @@ def test_budget_status_reads_every_threshold_rule_type(
     monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
     _queue_budget_response(thresholds=EVERY_RULE_TYPE_THRESHOLDS)
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
 
     assert result.exit_code == 0
     assert result.stderr == ""
@@ -232,7 +236,9 @@ def test_budget_status_still_rejects_an_undeclared_threshold_rule_type(
         thresholds=[{**EVERY_RULE_TYPE_THRESHOLDS[0], "type": "future_rule"}]
     )
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -250,7 +256,7 @@ def test_budget_status_matches_stable_goldens(
 
     result = runner.invoke(
         app,
-        [*output_options, "-p", "proj_alpha", "budget", "status"],
+        [*output_options, "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"],
     )
 
     assert result.exit_code == 0
@@ -284,7 +290,7 @@ def test_max_utilization_is_inclusive_and_always_renders_normal_output(
         [
             *output_options,
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "budget",
             "status",
             "--max-utilization",
@@ -307,7 +313,9 @@ def test_budget_status_without_threshold_exits_zero_at_full_utilization(
     monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
     _queue_budget_response(utilization_pct=100.0)
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["utilization_pct"] == 100.0
@@ -332,7 +340,7 @@ def test_invalid_max_utilization_is_rejected_before_auth_or_request(
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "budget",
             "status",
             "--max-utilization",
@@ -357,7 +365,7 @@ def test_boundary_max_utilization_values_are_valid(
         [
             "--json",
             "-p",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             "budget",
             "status",
             "--max-utilization",
@@ -372,9 +380,19 @@ def test_boundary_max_utilization_values_are_valid(
 @pytest.mark.parametrize(
     ("options", "environment_project", "configured_project", "expected_project"),
     [
-        (["--project", "proj_flag"], "proj_environment", "proj_config", "proj_flag"),
-        ([], "proj_environment", "proj_config", "proj_environment"),
-        ([], "", "proj_config", "proj_config"),
+        (
+            ["--project", "proj_112f3a99b283a4e1788dedd8"],
+            "proj_c6e454d960df4845f9d69eb1",
+            "proj_dfba7aade0868074c2861c98",
+            "proj_112f3a99b283a4e1788dedd8",
+        ),
+        (
+            [],
+            "proj_c6e454d960df4845f9d69eb1",
+            "proj_dfba7aade0868074c2861c98",
+            "proj_c6e454d960df4845f9d69eb1",
+        ),
+        ([], "", "proj_dfba7aade0868074c2861c98", "proj_dfba7aade0868074c2861c98"),
     ],
 )
 def test_budget_status_uses_global_project_precedence(
@@ -426,7 +444,9 @@ def test_budget_status_missing_credentials_is_auth_error_without_api_calls(
         budget_module, "resolve_credential", lambda **_: None, raising=False
     )
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
 
     assert result.exit_code == 3
     assert FakeClient.instances == []
@@ -446,9 +466,12 @@ def test_budget_status_preserves_structured_api_errors(
         )
     ]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_missing", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_5a013c49508291c6816ac388", "budget", "status"]
+    )
 
-    assert result.exit_code == 5
+    # project_not_found names a selector problem (Core spec 2.4): a usage error.
+    assert result.exit_code == 2
     assert result.stdout == ""
     assert json.loads(result.stderr)["code"] == "project_not_found"
 
@@ -464,7 +487,9 @@ def test_budget_status_rejects_invalid_response_without_leaking_credentials(
     invalid.pop("remaining_budget")
     FakeClient.responses = [httpx.Response(200, json=invalid)]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -477,7 +502,7 @@ def test_budget_status_rejects_invalid_response_without_leaking_credentials(
 @pytest.mark.parametrize(
     "response_override",
     [
-        {"project_id": "proj_other"},
+        {"project_id": "proj_d0941e68da8f38151ff86a61"},
         {"utilization_pct": "NaN"},
         {"utilization_pct": "Infinity"},
     ],
@@ -489,7 +514,9 @@ def test_budget_status_rejects_untrusted_project_or_non_finite_numbers(
     monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
     _queue_budget_response(**response_override)
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "budget", "status"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -515,7 +542,7 @@ def test_current_rules_render_and_round_trip(output_format, monkeypatch):
     monkeypatch.setattr(
         budget_module,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         raising=False,
     )
     response = {
@@ -538,7 +565,7 @@ def test_current_rules_render_and_round_trip(output_format, monkeypatch):
         app,
         [
             "--project",
-            "proj_alpha",
+            "proj_be76331b95dfc399cd776d2f",
             *(["--json"] if output_format == "json" else []),
             "budget",
             "status",

@@ -5,12 +5,12 @@ from functools import partial
 import anyio
 import httpx
 import pytest
+from test_alerts_command import WINDOW
+from test_runs_command import RUN, _list_response
 
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands import alerts, runs
 from solwyn_cli.errors import ApiError
-from test_alerts_command import WINDOW
-from test_runs_command import RUN, _list_response
 
 
 class Client:
@@ -48,7 +48,7 @@ def test_ten_empty_filtered_pages_stop_before_eleventh():
         partial(
             alerts.request_alert_events,
             client=client,
-            project_id="proj_alpha",
+            project_id="proj_be76331b95dfc399cd776d2f",
             all_pages=True,
             failed_only=True,
         )
@@ -66,7 +66,7 @@ def test_named_run_repeated_cursor_never_selects_apparent_unique_match():
             partial(
                 runs.resolve_agent_run_id,
                 client=client,
-                project_id="proj_alpha",
+                project_id="proj_be76331b95dfc399cd776d2f",
                 run=RUN["name"],
             )
         )
@@ -84,7 +84,7 @@ def test_response_limit_keeps_cursor_used_for_rejected_page():
         partial(
             alerts.request_alert_events,
             client=client,
-            project_id="proj_alpha",
+            project_id="proj_be76331b95dfc399cd776d2f",
             all_pages=True,
         )
     )
@@ -111,7 +111,7 @@ def test_entitlement_fallback_shares_the_same_ten_page_budget():
         partial(
             runs.resolve_agent_run_id,
             client=client,
-            project_id="proj_alpha",
+            project_id="proj_be76331b95dfc399cd776d2f",
             run=RUN["name"],
         )
     )

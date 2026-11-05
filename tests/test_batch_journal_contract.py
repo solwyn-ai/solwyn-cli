@@ -7,12 +7,11 @@ from pathlib import Path
 import pytest
 
 from solwyn_cli._vendor.batch import (
-    RecoverableBudgetCheckRequest,
     BudgetCheckOutcome,
+    RecoverableBudgetCheckRequest,
     RecoverableBudgetCheckResponse,
 )
 from solwyn_cli.commands.budget import BudgetCheckData
-
 
 SNAPSHOT = Path(__file__).parents[1] / "src/solwyn_cli/spec/openapi_snapshot.json"
 

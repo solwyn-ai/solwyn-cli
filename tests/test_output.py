@@ -6,9 +6,9 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from golden.harness import assert_matches_golden
 from pydantic import BaseModel
 
-from golden.harness import assert_matches_golden
 from solwyn_cli.errors import ApiError
 from solwyn_cli.output import (
     OutputEngine,
@@ -19,7 +19,6 @@ from solwyn_cli.output import (
     color_enabled,
     resolve_output_format,
 )
-
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
@@ -187,7 +186,7 @@ def test_color_requires_tty_and_respects_both_disable_controls(
 def test_success_json_matches_golden_and_accepts_pydantic_payload() -> None:
     engine, stdout, stderr = _engine(OutputFormat.JSON, stdout_is_tty=True)
     response = ResponseModel(
-        project="proj_alpha",
+        project="proj_be76331b95dfc399cd776d2f",
         observed_at=datetime(2026, 7, 10, 12, 30, tzinfo=UTC),
     )
 

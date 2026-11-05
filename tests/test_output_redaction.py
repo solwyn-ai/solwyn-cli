@@ -13,16 +13,15 @@ from pathlib import Path
 
 import httpx
 import pytest
+from login_fixtures import LOGIN_TOKEN, fake_keychain, login_entries
 from typer.testing import CliRunner
 
-from login_fixtures import LOGIN_TOKEN, fake_keychain, login_entries
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import credentials as credentials_module
 from solwyn_cli.commands import projects as projects_module
 from solwyn_cli.errors import ApiError
-from solwyn_cli.output import OutputEngine, OutputFormat, TableData
 from solwyn_cli.main import app
-
+from solwyn_cli.output import OutputEngine, OutputFormat, TableData
 
 runner = CliRunner()
 LEAKED_TOKEN = "solwyn_cli_" + "9a" * 32
@@ -188,7 +187,7 @@ def test_mcp_results_redact_tokens_in_text_and_structured_content(
     from test_mcp_read_gaps import call
 
     project = {
-        "id": "proj_alpha",
+        "id": "proj_be76331b95dfc399cd776d2f",
         "name": f"name_{secret}_suffix",
         "budget_limit": 100.0,
         "budget_period": "monthly",

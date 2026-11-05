@@ -18,20 +18,26 @@ from solwyn_cli.auth import (
     auth_selection,
     CredentialStorageError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     ResolvedCredential,
     resolve_credential,
-    store_project_key,
 )
+from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import credential_saved_note, exit_with_error
+from solwyn_cli.commands._shared import (
+    credential_saved_note,
+    exit_for_resolution,
+    exit_with_error,
+)
+from solwyn_cli.project_resolver import ProjectResolutionError
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
 from solwyn_cli.commands.budget_rules import build_rule, request_rule_add
 from solwyn_cli.commands.login import (
-    authenticate_with_project_key,
     device_login,
+    store_supplied_key,
 )
 from solwyn_cli.commands.projects import (
+    _login_account_id,
     fetch_projects,
     request_project_creation,
 )
@@ -46,7 +52,12 @@ from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData, _terminal_safe
-from solwyn_cli.runtime import command_context, output_engine
+from solwyn_cli.runtime import (
+    check_setup,
+    command_context,
+    output_engine,
+    resolve_project,
+)
 
 
 _DEFAULT_API_URL = Config().api_url
@@ -144,8 +155,11 @@ def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
                 context,
                 OutputError(
                     code="authentication_required",
-                    message="SOLWYN_AUTH=project_key needs a project key.",
-                    hint="Set SOLWYN_API_KEY, or pipe a key to solwyn login --with-key.",
+                    message="SOLWYN_AUTH=project_key needs an API key.",
+                    hint=(
+                        "Set SOLWYN_API_KEY and SOLWYN_PROJECT, or pipe a key to "
+                        "solwyn --project PROJECT login --with-key."
+                    ),
                 ),
                 semantic=ErrorSemantic.AUTH,
             )
@@ -178,24 +192,8 @@ def _prompt_for_credential(context: typer.Context) -> ResolvedCredential:
 
 
 def _prompt_for_key(context: typer.Context) -> ResolvedCredential:
-    project_key = typer.prompt("Project key", hide_input=True, err=True)
-    try:
-        return authenticate_with_project_key(project_key)
-    except CredentialStorageError as error:
-        exit_with_error(
-            context,
-            OutputError(code="credential_storage_failed", message=str(error)),
-            semantic=ErrorSemantic.AUTH,
-        )
-    except AuthError:
-        exit_with_error(
-            context,
-            OutputError(
-                code="invalid_project_key",
-                message="The project key is empty or malformed.",
-            ),
-            semantic=ErrorSemantic.AUTH,
-        )
+    api_key = typer.prompt("API key", hide_input=True, err=True)
+    return store_supplied_key(context, api_key, None)
 
 
 def _resolve_auth(context: typer.Context) -> ResolvedCredential:
@@ -230,6 +228,16 @@ def _create_project(
             ),
             semantic=ErrorSemantic.USAGE,
         )
+    login = client.current_credential
+    try:
+        # The account the stored key records is known before the project is.
+        account_id = (
+            _login_account_id(command_context(context).api_url, login)
+            if isinstance(login, LoginCredential)
+            else ""
+        )
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
     try:
         request = ProjectCreateRequest(
             name=name,
@@ -241,8 +249,15 @@ def _create_project(
             client=client,
             request=request,
         )
-        stored_credential = store_project_key(created.key.get_secret_value())
-        if isinstance(stored_credential, ProjectKeyCredential):
+        stored_credential = auth.store_api_key(
+            project_id=created.id,
+            key=created.key.get_secret_value(),
+            key_id=created.key_id,
+            account_id=account_id,
+            project_name=created.name,
+            api_url=command_context(context).api_url,
+        )
+        if isinstance(stored_credential, ApiKeyCredential):
             if note := credential_saved_note(stored_credential):
                 typer.echo(_terminal_safe(note), err=True)
         if run_cap is not None:
@@ -299,9 +314,7 @@ def _create_project(
             ),
         )
     return created.id, (
-        stored_credential
-        if isinstance(stored_credential, ProjectKeyCredential)
-        else None
+        stored_credential if isinstance(stored_credential, ApiKeyCredential) else None
     )
 
 
@@ -321,6 +334,10 @@ def _resolve_login_project(
             ):
                 _run_cap_requires_creation(context)
             if explicit_project is not None:
+                by_name = {project.name.casefold(): project.id for project in projects}
+                explicit_project = by_name.get(
+                    explicit_project.strip(" \t").casefold(), explicit_project
+                )
                 if explicit_project not in by_id:
                     exit_with_error(
                         context,
@@ -426,20 +443,27 @@ def _resolve_project(
     run_cap: float | None = None,
 ) -> tuple[str, ResolvedCredential]:
     selected = command_context(context).project
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         if run_cap is not None:
             _run_cap_requires_creation(context)
-        if selected is None:
+        if selected is None and credential.project is None:
             exit_with_error(
                 context,
                 OutputError(
                     code="project_required",
-                    message="A project key cannot discover its project yet.",
-                    hint="Choose the key's project with --project.",
+                    message="An API key cannot discover its project.",
+                    hint="Choose the key's project with --project or SOLWYN_PROJECT.",
                 ),
                 semantic=ErrorSemantic.USAGE,
             )
-        return selected, credential
+        if credential.project is None or credential.source == "environment":
+            try:
+                credential = resolve_project(
+                    context, purpose="read", credential=credential
+                ).credential  # type: ignore[assignment]
+            except (ProjectResolutionError, ApiError, AuthError) as error:
+                exit_for_resolution(context, error)
+        return credential.project or "", credential
     return _resolve_login_project(context, credential, selected, run_cap)
 
 
@@ -695,6 +719,12 @@ def init(
                 semantic=ErrorSemantic.USAGE,
             )
     credential = _resolve_auth(context)
+    # Before any project, key, config or agent file is created: the repo file
+    # agrees with --project and SOLWYN_PROJECT, and a login's account is known.
+    try:
+        check_setup(context, credential)
+    except (ProjectResolutionError, ApiError, AuthError) as error:
+        exit_for_resolution(context, error)
     project_id, credential = _resolve_project(context, credential, run_cap)
     runtime = command_context(context)
     config_path = _persist_config(context, runtime.api_url, project_id)

@@ -1,8 +1,8 @@
 """Fresh-process ambient exporter positive control for diagnostics."""
 
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import anyio
 from mcp import Client

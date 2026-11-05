@@ -6,6 +6,7 @@ Credentials: Stored credential found in file (/test/credentials.json).        ok
 Readiness — HTTP 503; service solwyn-api                                degraded
 Readiness database — connection refused                                 degraded
 Readiness redis — failover (non-gating)                                 degraded
-Authenticated project_key — Project budget readable.                          ok
+Authenticated project_key — API key accepted for project checkout-bot         ok
+(proj_be76331b95dfc399cd776d2f).                                                
 Snapshot — 2026-09-05 (0 days old)                                            ok
 Core ref — 690d61c0de1f11c6653f7a8a17800356f5009a8c                           ok

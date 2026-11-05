@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 from solwyn_cli import config as config_module
 from solwyn_cli.main import app
 
-
 runner = CliRunner()
 
 
@@ -32,7 +31,9 @@ def test_config_group_is_registered_on_real_app(config_path: Path) -> None:
 def test_config_get_set_and_list_stdout_stderr_discipline(
     config_path: Path,
 ) -> None:
-    set_result = runner.invoke(app, ["config", "set", "default_project", "proj_x"])
+    set_result = runner.invoke(
+        app, ["config", "set", "default_project", "proj_11f6ad8ec52a2984abaafd7c"]
+    )
     get_result = runner.invoke(app, ["config", "get", "default_project"])
     list_result = runner.invoke(app, ["config", "list"])
 
@@ -40,12 +41,12 @@ def test_config_get_set_and_list_stdout_stderr_discipline(
     assert set_result.stdout == ""
     assert set_result.stderr == "Set default_project.\n"
     assert get_result.exit_code == 0
-    assert get_result.stdout == "proj_x\n"
+    assert get_result.stdout == "proj_11f6ad8ec52a2984abaafd7c\n"
     assert get_result.stderr == ""
     assert list_result.exit_code == 0
     assert list_result.stdout == (
         "api_url=https://api.solwyn.ai (default)\ncredential_store=auto\n"
-        "default_project=proj_x\n"
+        "default_project=proj_11f6ad8ec52a2984abaafd7c\n"
         "format=table\n"
     )
     assert list_result.stderr == ""

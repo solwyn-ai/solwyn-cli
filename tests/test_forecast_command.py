@@ -7,19 +7,19 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
+from login_fixtures import login_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import forecast as forecast_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "f4" * 32
+VALID_KEY = "solwyn_sk_" + "f4" * 32
 ACCESS_TOKEN = "forecast-access-token"
 REFRESH_TOKEN = "forecast-refresh-token"
 
@@ -81,7 +81,7 @@ def test_forecast_command_is_registered() -> None:
 @pytest.mark.parametrize(
     "credential",
     [
-        auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         login_credential(ACCESS_TOKEN),
     ],
 )
@@ -94,15 +94,17 @@ def test_forecast_supports_key_and_jwt_with_one_mtd_get(
     )
     FakeClient.responses = [httpx.Response(200, json=FORECAST_RESPONSE)]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "forecast"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "forecast"]
+    )
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
-    assert client.credential is credential
+    assert same_credential(client.credential, credential)
     assert client.requests == [
         (
             "GET",
-            "/api/v1/projects/proj_alpha/forecast",
+            "/api/v1/projects/proj_be76331b95dfc399cd776d2f/forecast",
             {"params": {"period": "mtd"}},
         )
     ]
@@ -116,12 +118,14 @@ def test_forecast_table_shows_numbers_even_when_data_is_insufficient(
     monkeypatch.setattr(
         forecast_module,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment"),
+        lambda **_: auth.ApiKeyCredential(api_key=VALID_KEY, source="environment"),
         raising=False,
     )
     FakeClient.responses = [httpx.Response(200, json=FORECAST_RESPONSE)]
 
-    result = runner.invoke(app, ["--no-color", "-p", "proj_alpha", "forecast"])
+    result = runner.invoke(
+        app, ["--no-color", "-p", "proj_be76331b95dfc399cd776d2f", "forecast"]
+    )
 
     assert result.exit_code == 0
     assert_matches_golden(result.stdout, GOLDEN_DIR / "forecast-table.txt")
@@ -163,7 +167,9 @@ def test_forecast_invalid_or_extended_payload_fails_closed_without_secrets(
         httpx.Response(200, json={**FORECAST_RESPONSE, "future_field": "unsafe"})
     ]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_alpha", "forecast"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_be76331b95dfc399cd776d2f", "forecast"]
+    )
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -176,7 +182,7 @@ def test_forecast_invalid_or_extended_payload_fails_closed_without_secrets(
 def test_forecast_cross_project_key_403_has_an_actionable_project_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+    credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(
         forecast_module, "resolve_credential", lambda **_: credential, raising=False
     )
@@ -189,7 +195,9 @@ def test_forecast_cross_project_key_403_has_an_actionable_project_hint(
         )
     ]
 
-    result = runner.invoke(app, ["--json", "-p", "proj_other", "forecast"])
+    result = runner.invoke(
+        app, ["--json", "-p", "proj_d0941e68da8f38151ff86a61", "forecast"]
+    )
 
     assert result.exit_code == 3
     assert result.stdout == ""

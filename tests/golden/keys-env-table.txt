@@ -1,0 +1,2 @@
+export SOLWYN_API_KEY='solwyn_sk_a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1'
+export SOLWYN_PROJECT='Checkout-Bot'

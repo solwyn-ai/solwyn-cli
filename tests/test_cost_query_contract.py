@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 SNAPSHOT = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 QUERY_PARAMETER_MIRRORS = Path("tests/contract/cost_query_parameters.json")
 ACCOUNT_QUERY_PARAMETER_MIRROR = Path(

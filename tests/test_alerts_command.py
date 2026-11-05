@@ -1,21 +1,23 @@
 """Alert history and owner configuration behavior."""
 
 import copy
-from contextlib import contextmanager
 import json
 import shlex
+from contextlib import contextmanager
 from pathlib import Path
+
 import httpx
 import pytest
-from typer.testing import CliRunner
 from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
+from test_budget_set_command import ROUTING, FakeClient
+from typer.testing import CliRunner
+
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.errors import error_from_response
 from solwyn_cli.commands import alerts
+from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
-from test_budget_set_command import FakeClient, ROUTING
-from login_fixtures import login_credential
 
 runner = CliRunner()
 STAMP = "2026-09-01T00:00:00Z"
@@ -38,7 +40,7 @@ LEG = dict(
 )
 EVENT = dict(
     id="event-one",
-    project_id="proj_alpha",
+    project_id="proj_be76331b95dfc399cd776d2f",
     account_id="account-one",
     scope="project",
     rule_key="rule-one",
@@ -90,7 +92,15 @@ def fake(monkeypatch):
 
 def invoke(args, fmt="json"):
     return runner.invoke(
-        app, ["--format", fmt, "--project", "proj_alpha", "alerts", *args]
+        app,
+        [
+            "--format",
+            fmt,
+            "--project",
+            "proj_be76331b95dfc399cd776d2f",
+            "alerts",
+            *args,
+        ],
     )
 
 
@@ -220,8 +230,8 @@ def test_account_requires_jwt(monkeypatch, args):
     monkeypatch.setattr(
         alerts,
         "resolve_credential",
-        lambda **_: auth.ProjectKeyCredential(
-            api_key="sk_proj_" + "ab" * 32, source="environment"
+        lambda **_: auth.ApiKeyCredential(
+            api_key="solwyn_sk_" + "ab" * 32, source="environment"
         ),
     )
     result = invoke(args)
@@ -394,7 +404,7 @@ def test_stream_export_raw_bytes_headers_and_no_filters(monkeypatch, fmt, accoun
     assert path == (
         "/api/v1/account/alert-events/export"
         if account
-        else "/api/v1/projects/proj_alpha/alert-events/export"
+        else "/api/v1/projects/proj_be76331b95dfc399cd776d2f/alert-events/export"
     )
     assert kwargs["params"] == {"range": "30d", "format": fmt}
 
@@ -439,7 +449,9 @@ def test_documented_filtered_json_invocation():
         if line.startswith("solwyn ") and "--failed-only --all" in line
     )
     FakeClient.responses = [page()]
-    result = runner.invoke(app, ["--project", "proj_alpha", *shlex.split(command)[1:]])
+    result = runner.invoke(
+        app, ["--project", "proj_be76331b95dfc399cd776d2f", *shlex.split(command)[1:]]
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["events"][0]["id"] == "event-one"
     assert FakeClient.instances[0].requests[0][2]["params"] == {

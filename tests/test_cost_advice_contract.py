@@ -5,11 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
-
-from solwyn_cli._vendor.wire import CostSimulationRequest
 from test_request_drift import REQUEST_MIRRORS, assert_request_mirrors_match
 from test_response_subset import OPERATION_RESPONSE_BINDINGS, RESPONSE_READS
 
+from solwyn_cli._vendor.wire import CostSimulationRequest
 
 SNAPSHOT = Path("src/solwyn_cli/spec/openapi_snapshot.json")
 EXPECTED_RESPONSES = {

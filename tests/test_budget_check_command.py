@@ -7,18 +7,18 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import same_credential
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.main import app
 
-
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "e5" * 32
+VALID_KEY = "solwyn_sk_" + "e5" * 32
 JWT_ACCESS = "budget-check-access-token"
 JWT_REFRESH = "budget-check-refresh-token"
 BASE_ARGS = [
@@ -39,7 +39,7 @@ ALLOW_RESPONSE = {
     "budget_limit": 100.0,
     "current_usage": 18.75,
     "denied_by_period": None,
-    "project_id": "proj_from_key",
+    "project_id": "proj_52f2908c222d2665b628ea26",
     "price_hints": {"openai": 1.0, "anthropic": 1.15},
 }
 
@@ -81,8 +81,8 @@ def reset_fake_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _credential(source: str = "environment", **_: object) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
+def _credential(source: str = "environment", **_: object) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source=source)
 
 
 def _queue(**overrides: object) -> None:
@@ -130,7 +130,7 @@ def test_budget_check_posts_exact_call_shaped_request_with_project_key(
 
     assert result.exit_code == 0
     client = FakeClient.instances[0]
-    assert client.credential is credential
+    assert same_credential(client.credential, credential)
     assert client.requests == [
         (
             "POST",
@@ -221,7 +221,7 @@ def test_budget_check_accepts_null_omitting_directive_response(
                 "mode": "hard_deny",
                 "budget_limit": 100.0,
                 "current_usage": 18.75,
-                "project_id": "proj_from_key",
+                "project_id": "proj_52f2908c222d2665b628ea26",
             },
         )
     ]
@@ -251,7 +251,7 @@ def test_budget_check_run_stop_denial_emits_termination_directive_and_reason(
                 "budget_limit": 100.0,
                 "current_usage": 18.75,
                 "denied_by_period": "run_stopped",
-                "project_id": "proj_from_key",
+                "project_id": "proj_52f2908c222d2665b628ea26",
                 "run_control": {
                     "version": "1",
                     "action": "terminate",
@@ -311,7 +311,7 @@ def test_budget_check_rejects_missing_or_invalid_opted_in_stop_directive(
                 "budget_limit": 100.0,
                 "current_usage": 18.75,
                 "denied_by_period": "run_stopped",
-                "project_id": "proj_from_key",
+                "project_id": "proj_52f2908c222d2665b628ea26",
                 **({} if run_control is None else {"run_control": run_control}),
             },
         )

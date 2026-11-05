@@ -8,7 +8,11 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands.forecast import ForecastData, fetch_forecast
 from solwyn_cli.commands._cost_models import SavingsSummary
 from solwyn_cli.commands.overview import fetch_overview
@@ -226,6 +230,7 @@ def status(
         )
 
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(
             api_url=runtime.api_url,

@@ -31,4 +31,4 @@ Ingest/second                                      30
 Checks/minute                                   12000
 Failover entitlement                              yes
 Data retention                               180 days
-Upgrade in dashboard                         /billing
+Upgrade in dashboard                /settings/billing

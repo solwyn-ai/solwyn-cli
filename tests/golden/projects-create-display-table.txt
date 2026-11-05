@@ -1,13 +1,16 @@
-Field                             Value
-ID                         proj_created
-Name                    Created project
-Budget limit                     125.50
-Budget period                    weekly
-Budget mode                   hard_deny
-Created            2026-07-10T12:30:00Z
-Key prefix     sk_proj_abababababababab
-Scope                              full
-╭────────────────────────── One-time project key ──────────────────────────╮
-│ sk_proj_abababababababababababababababababababababababababababababababab │
-╰──────────────────────────────────────────────────────────────────────────╯
-export SOLWYN_API_KEY=sk_proj_abababababababababababababababababababababababababababababababab
+Field                                         Value
+ID                    proj_21c50805b553b7a40e48394a
+Name                                Created project
+Budget limit                                 125.50
+Budget period                                weekly
+Budget mode                               hard_deny
+Created                        2026-07-10T12:30:00Z
+Key ID         6f1d0c9e-0000-4000-8000-0000000000c1
+Key prefix               solwyn_sk_abababababababab
+Scope                                          full
+Key expires                    2027-07-10T12:30:00Z
+╭───────────────────────────── One-time API key ─────────────────────────────╮
+│ solwyn_sk_abababababababababababababababababababababababababababababababab │
+╰────────────────────────────────────────────────────────────────────────────╯
+export SOLWYN_API_KEY='solwyn_sk_abababababababababababababababababababababababababababababababab'
+export SOLWYN_PROJECT='Created project'

@@ -1,18 +1,17 @@
 """Behavioral contracts for the standalone, installable adoption examples."""
 
 import importlib.util
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
 import httpx
 import pytest
+from test_mcp_conformance import BUDGET_RESPONSE, VALID_KEY, _install_http
 
 from solwyn_cli import auth
 from solwyn_cli.mcp import server as mcp_server
-from test_mcp_conformance import BUDGET_RESPONSE, VALID_KEY, _install_http
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -199,9 +198,7 @@ def test_delivered_client_discovers_expanded_server_before_budget_read(
         responses=[
             httpx.Response(200, json={**BUDGET_RESPONSE, "project_id": project})
         ],
-        credentials=[
-            auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
-        ],
+        credentials=[auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")],
         project=project,
     )
     server = mcp_server.create_server(

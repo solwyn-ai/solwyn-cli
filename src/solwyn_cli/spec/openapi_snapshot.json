@@ -112,7 +112,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -344,7 +344,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -449,7 +449,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -1570,7 +1570,7 @@
           "auth"
         ],
         "summary": "Get Authenticated Key",
-        "description": "Read the supplied full or read-only key's project and scope; JWT is rejected.\n\nNo project selector or budget operation is involved. Authentication may\nperform its normal last-used bookkeeping. Scope is not a promise that a\nlater write will pass its own authorization, entitlement or budget checks.",
+        "description": "Read the supplied key and the project named in Solwyn-Project.\n\nAPI keys only (sessions and CLI logins get 403 ``api_key_required``), and,\nlike every key request, the ``Solwyn-Project`` header is required. SDKs pin\nthe returned ``project_id``. Authentication may perform its normal\nlast-used bookkeeping. Scope is not a promise that a later write will pass\nits own authorization, entitlement or budget checks.",
         "operationId": "get_authenticated_key_api_v1_auth_key_get",
         "responses": {
           "200": {
@@ -1586,7 +1586,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthenticatedKeyResponse"
+                  "$ref": "#/components/schemas/AuthKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyErrorResponse"
                 }
               }
             }
@@ -1596,7 +1606,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                  "$ref": "#/components/schemas/ApiKeyErrorResponse"
                 }
               }
             }
@@ -1606,7 +1616,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StringDetailErrorResponse"
+                  "$ref": "#/components/schemas/ApiKeyErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyErrorResponse"
                 }
               }
             }
@@ -1655,7 +1675,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -1730,7 +1750,7 @@
           "budgets"
         ],
         "summary": "Budget Confirm",
-        "description": "Confirm actual cost for the authority that funded one served call.\n\nThe body names EXACTLY ONE funding source (wire-enforced): a\n``reservation_id`` from the legacy per-call check, or the ``lease_id`` the\ncall drew its tokens from. A lease-funded confirm has no reservation to look\nup — the lease itself is the ownership proof, bound to the caller's project\ninside the settlement — so it skips the reservation choreography entirely.\n\n``body.provider`` and ``body.is_provider_fallback`` are the *served*\nfailover attribution. They are accepted but **not persisted here** — the\ndurable served attribution is written via the metadata-ingest path onto\n``cost_events`` (see ``metadata_ingest._store_cost_event``). Confirm only\nsettles the Redis budget counter, so it has nothing to attribute them to.",
+        "description": "Confirm actual cost for the authority that funded one served call.\n\nThe body names EXACTLY ONE funding source (wire-enforced): a\n``reservation_id`` from the legacy per-call check, or the ``lease_id`` the\ncall drew its tokens from. A lease-funded confirm has no reservation to look\nup — the lease itself is the ownership proof, bound to the caller's project\ninside the settlement — so it skips the reservation choreography entirely.\n\n``body.provider`` and ``body.is_provider_fallback`` are the *served*\nfailover attribution. The durable served attribution is written via the\nmetadata-ingest path onto ``cost_events`` (see\n``metadata_ingest._store_cost_event``). An ordinary per-call confirm only\nsettles the Redis budget counter. Two per-call confirms also write a\ndurable receipt (migration 0036), which nets against the call's events as\nmax(receipt, events): one whose ``token_details.is_estimated`` is set (an\nSDK hard-deny floor for a call it could not measure), and one arriving\nafter its reservation's 300 s hold, which is charged instead of 404ing for\nup to ``LATE_CONFIRM_WINDOW_SECONDS`` after the check. A reservation id\nnever issued to this project is still 404.",
         "operationId": "budget_confirm_api_v1_budgets_confirm_post",
         "requestBody": {
           "content": {
@@ -1753,7 +1773,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -1839,7 +1859,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -1933,7 +1953,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -2055,7 +2075,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -2158,7 +2178,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -2327,6 +2347,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Switching to hard_deny while shared keys reach the project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedKeysReachProjectResponse"
                 }
               }
             }
@@ -3146,7 +3176,7 @@
           "projects"
         ],
         "summary": "Create Project",
-        "description": "Create a project and auto-generate the first API key (D14).",
+        "description": "Create a project and mint an API key that holds only it (D14, WS-14).",
         "operationId": "create_project_api_v1_projects_post",
         "requestBody": {
           "content": {
@@ -3170,11 +3200,21 @@
             }
           },
           "402": {
-            "description": "Project limit or tier gate",
+            "description": "Project or API key limit, or tier gate",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Project name already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNameTakenResponse"
                 }
               }
             }
@@ -3291,6 +3331,16 @@
               }
             }
           },
+          "409": {
+            "description": "Project name already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectNameTakenResponse"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3308,7 +3358,7 @@
           "projects"
         ],
         "summary": "Delete Project",
-        "description": "Soft-delete a project and deactivate all its API keys.",
+        "description": "Archive a project, remove it from every key, revoke keys left with none.",
         "operationId": "delete_project_api_v1_projects__project_id__delete",
         "security": [
           {
@@ -3329,6 +3379,77 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/key-policy": {
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Put Key Policy",
+        "description": "Choose whether the project accepts only keys dedicated to it (§3.6, Q2).\n\nSigned-in browser sessions only: a CLI login gets ``session_required``.",
+        "operationId": "put_key_policy_api_v1_projects__project_id__key_policy_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectKeyPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Keys that also hold other projects reach this project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedKeysReachProjectResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many key changes"
           },
           "422": {
             "description": "Validation Error",
@@ -3391,120 +3512,137 @@
         }
       }
     },
-    "/api/v1/projects/{project_id}/key": {
+    "/api/v1/keys": {
       "get": {
         "tags": [
-          "projects"
+          "keys"
         ],
-        "summary": "Get Project Key",
-        "description": "Return the current active project key metadata.",
-        "operationId": "get_project_key_api_v1_projects__project_id__key_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Project Id"
-            }
-          }
-        ],
+        "summary": "List Keys",
+        "description": "The account's live keys (not revoked), newest first, with the plan limit.",
+        "operationId": "list_keys_api_v1_keys_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectKeyResponse"
+                  "$ref": "#/components/schemas/ApiKeyListResponse"
                 }
-              }
-            }
-          },
-          "404": {
-            "description": "Project or current key not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{project_id}/key/rotate": {
-      "post": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Rotate Project Key",
-        "description": "Rotate the current project key and leave the old key in grace.",
-        "operationId": "rotate_project_key_api_v1_projects__project_id__key_rotate_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Project Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProjectKeyRotateRequest"
               }
             }
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Create Key",
+        "description": "Create a key holding exactly one project (§3.3).",
+        "operationId": "create_key_api_v1_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreateResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "API key limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyLimitReachedResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "429": {
+            "description": "Too many key changes"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/keys/{key_id}": {
+      "get": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Get Key",
+        "operationId": "get_key_api_v1_keys__key_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectKeyRotateResponse"
+                  "$ref": "#/components/schemas/ApiKeySummary"
                 }
               }
             }
           },
           "404": {
-            "description": "Project or current key not found"
-          },
-          "409": {
-            "description": "Project key rotation conflict",
+            "description": "No live key with that id",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectKeyConflictResponse"
+                  "$ref": "#/components/schemas/KeyErrorResponse"
                 }
               }
             }
-          },
-          "410": {
-            "description": "Project key is no longer active"
-          },
-          "429": {
-            "description": "Rate limit exceeded for key rotation"
           },
           "422": {
             "description": "Validation Error",
@@ -3517,31 +3655,20 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/projects/{project_id}/key/{key_id}": {
+      },
       "delete": {
         "tags": [
-          "projects"
+          "keys"
         ],
-        "summary": "Delete Project Key",
-        "description": "Hard-revoke a project key without minting a replacement.",
-        "operationId": "delete_project_key_api_v1_projects__project_id__key__key_id__delete",
+        "summary": "Revoke Key",
+        "description": "Revoke a key at once. Its grants stay (the refusal still names the project's mode).",
+        "operationId": "revoke_key_api_v1_keys__key_id__delete",
         "security": [
           {
             "HTTPBearer": []
           }
         ],
         "parameters": [
-          {
-            "name": "project_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Project Id"
-            }
-          },
           {
             "name": "key_id",
             "in": "path",
@@ -3557,7 +3684,259 @@
             "description": "Successful Response"
           },
           "404": {
-            "description": "Project or key not found"
+            "description": "No live key with that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many key changes"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys/{key_id}/projects": {
+      "post": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Add Key Project",
+        "description": "Give a key one more project (§3.4). Signed-in browser sessions only.",
+        "operationId": "add_key_project_api_v1_keys__key_id__projects_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyAddProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeySummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Key or project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A dedicated-keys project is involved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many key changes"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys/{key_id}/projects/{project_id}": {
+      "delete": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Remove Key Project",
+        "description": "Take one project off a key (§3.4). A key keeps at least one project.",
+        "operationId": "remove_key_project_api_v1_keys__key_id__projects__project_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeySummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Key not found, or project not on it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is the key's only project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many key changes"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys/{key_id}/rotate": {
+      "post": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Rotate Key",
+        "description": "Replace a key: same name and projects, a fresh year; the old key keeps\nworking for the grace window. Rotation does not count against the limit.",
+        "operationId": "rotate_key_api_v1_keys__key_id__rotate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyRotateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRotateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No live key with that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Key is already in rotation grace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many key changes"
           },
           "422": {
             "description": "Validation Error",
@@ -5672,7 +6051,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ReadOnlyKeyErrorResponse"
+                      "$ref": "#/components/schemas/ApiKeyErrorResponse"
                     },
                     {
                       "$ref": "#/components/schemas/StringDetailErrorResponse"
@@ -6008,7 +6387,7 @@
           "notifications"
         ],
         "summary": "Put Notification Config",
-        "description": "Persist the notification config for the project with partial/merge semantics.\n\nOmitted fields keep their existing values. ``channel_ids`` replaces the\nstored channel references when provided; every supplied id MUST belong to\nthe caller's account or the request is rejected with 422 (save-time\nreconciliation — silent dispatch-time drops become explicit errors). SMS\nremains tier-gated (402) and consent-gated (422) when enabling.\n\nThe reference itself is NOT tier-gated — channel creation was tier-gated at\ncreation time, and a tier downgrade is enforced at dispatch.",
+        "description": "Persist the notification config for the project with partial/merge semantics.\n\nOmitted fields keep their existing values. ``channel_ids`` replaces the\nstored channel references when provided; every supplied id MUST belong to\nthe caller's account or the request is rejected with 422 (save-time\nreconciliation — silent dispatch-time drops become explicit errors). SMS\nremains tier-gated (402) and consent-gated (422) when enabling.\n\nThe reference itself is NOT tier-gated — channel creation was tier-gated at\ncreation time, and a tier downgrade is enforced at dispatch.\n\nAPI keys are refused (403 ``api_key_not_allowed``) whatever their\nscope, so an app or agent holding its project's key cannot silence that\nproject's alerts. A CLI login reaches this route only through a browser\nstep-up approval (``security/cli_route_policy.py``).",
         "operationId": "put_notification_config_api_v1_projects__project_id__notifications_put",
         "security": [
           {
@@ -6053,6 +6432,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error402Response"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An API key (api_key_not_allowed), or a signed-in user whose role lacks project.write (permission_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiKeyNotAllowedErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StringDetailErrorResponse"
+                    }
+                  ],
+                  "title": "Response 403 Put Notification Config Api V1 Projects  Project Id  Notifications Put"
                 }
               }
             }
@@ -11276,6 +11673,17 @@
             ],
             "title": "Current Period Cost"
           },
+          "current_period_estimated_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period Estimated Cost"
+          },
           "daily": {
             "anyOf": [
               {
@@ -12535,6 +12943,21 @@
         ],
         "title": "AnalyticsCapabilities"
       },
+      "ApiKeyAddProjectRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "pattern": "^proj_[a-f0-9]{24}$",
+            "title": "Project Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "ApiKeyAddProjectRequest"
+      },
       "ApiKeyCapabilities": {
         "properties": {
           "expiry_configurable": {
@@ -12547,6 +12970,782 @@
           "expiry_configurable"
         ],
         "title": "ApiKeyCapabilities"
+      },
+      "ApiKeyCreateRequest": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "pattern": "^proj_[a-f0-9]{24}$",
+            "title": "Project Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Defaults to the project's name."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope",
+            "default": "full"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "ApiKeyCreateRequest"
+      },
+      "ApiKeyCreateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope"
+          },
+          "created_via": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "cli"
+            ],
+            "title": "Created Via"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeyCreator"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when the person who created the key was deleted"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "rotation_grace_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Grace Until"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "grace",
+              "expired"
+            ],
+            "title": "Status",
+            "description": "Revoked keys are never listed."
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyProject"
+            },
+            "type": "array",
+            "title": "Projects",
+            "description": "Ordered by name."
+          },
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "The raw key. Shown once; only its hash is stored."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "scope",
+          "created_via",
+          "created_by",
+          "approval_id",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "rotation_grace_until",
+          "status",
+          "projects",
+          "key"
+        ],
+        "title": "ApiKeyCreateResponse"
+      },
+      "ApiKeyCreator": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name",
+            "description": "null when the person has no name on file"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name"
+        ],
+        "title": "ApiKeyCreator"
+      },
+      "ApiKeyErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "api_key_invalid",
+              "api_key_expired",
+              "api_key_not_allowed",
+              "project_selector_required",
+              "project_not_found",
+              "project_selector_conflict",
+              "key_not_dedicated",
+              "read_only_key"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "project_budget_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "hard_deny",
+                  "alert_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Budget Mode",
+            "description": "401 only: whether the named project promises to block anything (hard_deny when its mode, or any unpaused hard rule on it, is hard_deny). null when there is no key, no selector, or no matching project."
+          },
+          "expired_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expired At"
+          },
+          "api_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "url_mismatch",
+                  "multiple_headers"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiKeyErrorDetail",
+        "description": "Every refusal on the API-key path (``detail`` of the error body)."
+      },
+      "ApiKeyErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ApiKeyErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ApiKeyErrorResponse"
+      },
+      "ApiKeyLimitReachedDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "api_key_limit_reached",
+            "title": "Code",
+            "default": "api_key_limit_reached"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "current_tier": {
+            "type": "string",
+            "title": "Current Tier"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "cta_path": {
+            "type": "string",
+            "title": "Cta Path",
+            "default": "/settings/billing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "current_tier",
+          "limit"
+        ],
+        "title": "ApiKeyLimitReachedDetail"
+      },
+      "ApiKeyLimitReachedResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ApiKeyLimitReachedDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ApiKeyLimitReachedResponse"
+      },
+      "ApiKeyListResponse": {
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKeySummary"
+            },
+            "type": "array",
+            "title": "Keys"
+          },
+          "used": {
+            "type": "integer",
+            "title": "Used",
+            "description": "Live keys the plan limit counts (not in rotation grace)."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "description": "The plan's api_keys_per_account; -1 is unlimited."
+          }
+        },
+        "type": "object",
+        "required": [
+          "keys",
+          "used",
+          "limit"
+        ],
+        "title": "ApiKeyListResponse"
+      },
+      "ApiKeyNotAllowedErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "api_key_not_allowed",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiKeyNotAllowedErrorDetail"
+      },
+      "ApiKeyNotAllowedErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ApiKeyNotAllowedErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ApiKeyNotAllowedErrorResponse"
+      },
+      "ApiKeyProject": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "budget_mode": {
+            "type": "string",
+            "enum": [
+              "alert_only",
+              "hard_deny"
+            ],
+            "title": "Budget Mode"
+          },
+          "dedicated_keys_only": {
+            "type": "boolean",
+            "title": "Dedicated Keys Only"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "budget_mode",
+          "dedicated_keys_only"
+        ],
+        "title": "ApiKeyProject"
+      },
+      "ApiKeyRotateRequest": {
+        "properties": {
+          "grace_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 604800.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Seconds",
+            "description": "How long the old key keeps working; default 259200."
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "read_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ApiKeyRotateRequest"
+      },
+      "ApiKeyRotateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope"
+          },
+          "created_via": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "cli"
+            ],
+            "title": "Created Via"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeyCreator"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when the person who created the key was deleted"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "rotation_grace_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Grace Until"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "grace",
+              "expired"
+            ],
+            "title": "Status",
+            "description": "Revoked keys are never listed."
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyProject"
+            },
+            "type": "array",
+            "title": "Projects",
+            "description": "Ordered by name."
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "replaced_key_id": {
+            "type": "string",
+            "title": "Replaced Key Id"
+          },
+          "replaced_key_rotation_grace_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Replaced Key Rotation Grace Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "scope",
+          "created_via",
+          "created_by",
+          "approval_id",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "rotation_grace_until",
+          "status",
+          "projects",
+          "key",
+          "replaced_key_id",
+          "replaced_key_rotation_grace_until"
+        ],
+        "title": "ApiKeyRotateResponse"
+      },
+      "ApiKeySummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "title": "Scope"
+          },
+          "created_via": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "cli"
+            ],
+            "title": "Created Via"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeyCreator"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when the person who created the key was deleted"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "rotation_grace_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Grace Until"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "grace",
+              "expired"
+            ],
+            "title": "Status",
+            "description": "Revoked keys are never listed."
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyProject"
+            },
+            "type": "array",
+            "title": "Projects",
+            "description": "Ordered by name."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "scope",
+          "created_via",
+          "created_by",
+          "approval_id",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "rotation_grace_until",
+          "status",
+          "projects"
+        ],
+        "title": "ApiKeySummary"
       },
       "ApprovalNotPendingDetail": {
         "properties": {
@@ -13337,12 +14536,25 @@
         ],
         "title": "AuditEventListResponse"
       },
-      "AuthenticatedKeyResponse": {
+      "AuthKeyResponse": {
         "properties": {
-          "project_id": {
+          "account_id": {
             "type": "string",
-            "title": "Project Id",
-            "description": "Project authenticated by the supplied API key."
+            "title": "Account Id",
+            "description": "Account that owns the key."
+          },
+          "key_id": {
+            "type": "string",
+            "title": "Key Id"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix",
+            "description": "First 26 characters of the key, for display."
+          },
+          "key_name": {
+            "type": "string",
+            "title": "Key Name"
           },
           "scope": {
             "type": "string",
@@ -13351,17 +14563,68 @@
               "read_only"
             ],
             "title": "Scope",
-            "description": "Scope of the supplied key, not its replacement."
+            "description": "Scope of the supplied key, not of its replacement."
+          },
+          "created_via": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "cli"
+            ],
+            "title": "Created Via"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "rotation_grace_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotation Grace Until"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "description": "Project resolved from Solwyn-Project."
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "budget_mode": {
+            "type": "string",
+            "enum": [
+              "alert_only",
+              "hard_deny"
+            ],
+            "title": "Budget Mode"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "account_id",
+          "key_id",
+          "key_prefix",
+          "key_name",
+          "scope",
+          "created_via",
+          "expires_at",
+          "rotation_grace_until",
           "project_id",
-          "scope"
+          "project_name",
+          "budget_mode"
         ],
-        "title": "AuthenticatedKeyResponse",
-        "description": "Minimal identity of the supplied key, including an accepted grace key."
+        "title": "AuthKeyResponse",
+        "description": "``GET /api/v1/auth/key``: the supplied API key and the project it resolved.\n\nThe project is the one the request named in ``Solwyn-Project``; an SDK pins\n``project_id`` from this response and sends it on every later request, so a\nproject rename never breaks a running client."
       },
       "AuthorizationServerMetadata": {
         "properties": {
@@ -14264,6 +15527,20 @@
             ],
             "description": "Estimated non-text billing quantities for the pending call (image/video/audio/TTS). None for text-only calls; each quantity inside is None when unobservable pre-flight. The media analog of estimated_input_tokens — the server prices the reservation off it."
           },
+          "estimated_output_bound": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Output Bound",
+            "description": "Maximum number of output tokens the pending call can produce. When present, the server reserves input cost plus this bound at the model's output rate. When omitted, the reservation keeps the legacy estimate, which prices output as equal to input."
+          },
           "fallback_providers": {
             "items": {
               "$ref": "#/components/schemas/ProviderName"
@@ -14408,7 +15685,7 @@
           },
           "mode": {
             "$ref": "#/components/schemas/BudgetMode",
-            "description": "Current budget enforcement mode"
+            "description": "Effective enforcement mode for this call: hard_deny when any counter that applies to it enforces (a hard_deny project, or an applicable scoped hard_deny rule or hard run cap on an alert_only project), alert_only otherwise. SDKs cap an uncapped call's output only under hard_deny."
           },
           "budget_limit": {
             "type": "number",
@@ -14435,7 +15712,7 @@
           "project_id": {
             "type": "string",
             "title": "Project Id",
-            "description": "Project identifier resolved from the API key"
+            "description": "Project identifier resolved from Solwyn-Project"
           },
           "price_hints": {
             "anyOf": [
@@ -14854,6 +16131,7 @@
         "properties": {
           "limit_usd": {
             "type": "number",
+            "maximum": 999999.999999,
             "exclusiveMinimum": 0.0,
             "title": "Limit Usd"
           },
@@ -14877,6 +16155,7 @@
             "anyOf": [
               {
                 "type": "number",
+                "maximum": 999999.999999,
                 "minimum": 0.0
               },
               {
@@ -14911,6 +16190,37 @@
             "type": "array",
             "maxItems": 50,
             "title": "Thresholds"
+          },
+          "shared_keys_action": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "remove"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared Keys Action",
+            "description": "Only read when mode changes from alert_only to hard_deny: 'remove' takes this project off every live key that also holds another project."
+          },
+          "shared_keys_expected": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared Keys Expected",
+            "description": "Required with shared_keys_action 'remove': the ids of the shared keys the person confirmed removing this project from (the keys a 409 shared_keys_reach_project listed). Only these keys are ever removed: if another key shares the project when the change is applied, it is refused with 409 shared_keys_reach_project and the current list, and nothing is removed. A listed key that no longer shares it is left alone."
           }
         },
         "additionalProperties": false,
@@ -15353,6 +16663,26 @@
             "type": "array",
             "title": "Changes"
           },
+          "statements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Statements",
+            "description": "What approving does, in plain sentences (one paragraph each)."
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning",
+            "description": "Shown in a red callout: AI calls this change will block, if any."
+          },
           "request": {
             "$ref": "#/components/schemas/CliApprovalRequest"
           },
@@ -15392,6 +16722,8 @@
           "title",
           "reasons",
           "changes",
+          "statements",
+          "warning",
           "request",
           "credential",
           "project",
@@ -16062,6 +17394,16 @@
             "title": "Is Estimated",
             "default": false
           },
+          "receipt_cost": {
+            "type": "number",
+            "title": "Receipt Cost",
+            "default": 0.0
+          },
+          "receipt_is_estimated": {
+            "type": "boolean",
+            "title": "Receipt Is Estimated",
+            "default": false
+          },
           "media": {
             "anyOf": [
               {
@@ -16558,6 +17900,16 @@
           "total_cost": {
             "type": "number",
             "title": "Total Cost"
+          },
+          "receipt_cost": {
+            "type": "number",
+            "title": "Receipt Cost",
+            "default": 0.0
+          },
+          "estimated_receipt_cost": {
+            "type": "number",
+            "title": "Estimated Receipt Cost",
+            "default": 0.0
           },
           "total_input_tokens": {
             "type": "integer",
@@ -17189,12 +18541,16 @@
               },
               {
                 "$ref": "#/components/schemas/ProjectLimitReachedDetail"
+              },
+              {
+                "$ref": "#/components/schemas/ApiKeyLimitReachedDetail"
               }
             ],
             "title": "Detail",
             "discriminator": {
               "propertyName": "code",
               "mapping": {
+                "api_key_limit_reached": "#/components/schemas/ApiKeyLimitReachedDetail",
                 "project_limit_reached": "#/components/schemas/ProjectLimitReachedDetail",
                 "quota_exceeded": "#/components/schemas/QuotaExceededDetail",
                 "upgrade_required": "#/components/schemas/UpgradeRequiredDetail"
@@ -18278,6 +19634,45 @@
           "status"
         ],
         "title": "InvoiceSummary"
+      },
+      "KeyErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "api_key_not_found",
+              "api_key_project_not_found",
+              "key_would_have_no_projects",
+              "project_requires_dedicated_key",
+              "key_has_dedicated_project",
+              "nested_rotation",
+              "key_projects_changed"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "KeyErrorDetail"
+      },
+      "KeyErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/KeyErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "KeyErrorResponse"
       },
       "LeaseErrorDetail": {
         "properties": {
@@ -20365,10 +21760,12 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 1,
-            "title": "Name"
+            "title": "Name",
+            "description": "1 to 100 characters: letters, digits, spaces, '.', '_' or '-', with no leading or trailing space, and never shaped like a proj_ id. Unique among the account's active projects, case-insensitively."
           },
           "budget_limit": {
             "type": "number",
+            "maximum": 999999.999999,
             "exclusiveMinimum": 0.0,
             "title": "Budget Limit",
             "default": 100.0
@@ -20440,9 +21837,17 @@
             ],
             "title": "Trace Url Template"
           },
+          "dedicated_keys_only": {
+            "type": "boolean",
+            "title": "Dedicated Keys Only"
+          },
           "key": {
             "type": "string",
             "title": "Key"
+          },
+          "key_id": {
+            "type": "string",
+            "title": "Key Id"
           },
           "key_prefix": {
             "type": "string",
@@ -20455,6 +21860,19 @@
               "read_only"
             ],
             "title": "Scope"
+          },
+          "created_via": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "cli"
+            ],
+            "title": "Created Via"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
           }
         },
         "type": "object",
@@ -20465,196 +21883,62 @@
           "budget_period",
           "budget_mode",
           "created_at",
+          "dedicated_keys_only",
           "key",
+          "key_id",
           "key_prefix",
-          "scope"
+          "scope",
+          "created_via",
+          "expires_at"
         ],
         "title": "ProjectCreateResponse",
-        "description": "Includes the raw API key — shown only once."
+        "description": "Includes the raw API key, shown only once. The key holds only this project."
       },
-      "ProjectKeyConflictDetail": {
+      "ProjectKeyPolicyRequest": {
         "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "self_rotation",
-              "nested_rotation"
-            ],
-            "title": "Code"
+          "dedicated_keys_only": {
+            "type": "boolean",
+            "title": "Dedicated Keys Only",
+            "description": "When true, keys that also hold other projects are refused on this project (403 key_not_dedicated)."
           },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "message"
-        ],
-        "title": "ProjectKeyConflictDetail"
-      },
-      "ProjectKeyConflictResponse": {
-        "properties": {
-          "detail": {
-            "$ref": "#/components/schemas/ProjectKeyConflictDetail"
-          }
-        },
-        "type": "object",
-        "required": [
-          "detail"
-        ],
-        "title": "ProjectKeyConflictResponse"
-      },
-      "ProjectKeyResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "key_prefix": {
-            "type": "string",
-            "title": "Key Prefix"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "last_used_at": {
+          "shared_keys_action": {
             "anyOf": [
               {
                 "type": "string",
-                "format": "date-time"
+                "const": "remove"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Last Used At"
+            "title": "Shared Keys Action",
+            "description": "With dedicated_keys_only true: 'remove' takes this project off every live key that also holds another project. Without it, such keys answer 409 shared_keys_reach_project."
           },
-          "expires_at": {
+          "shared_keys_expected": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "items": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 1000
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Expires At"
-          },
-          "rotation_grace_until": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rotation Grace Until"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "full",
-              "read_only"
-            ],
-            "title": "Scope"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "key_prefix",
-          "name",
-          "last_used_at",
-          "expires_at",
-          "rotation_grace_until",
-          "created_at",
-          "scope"
-        ],
-        "title": "ProjectKeyResponse"
-      },
-      "ProjectKeyRotateRequest": {
-        "properties": {
-          "grace_seconds": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 604800.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grace Seconds"
-          },
-          "scope": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "full",
-                  "read_only"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scope"
+            "title": "Shared Keys Expected",
+            "description": "Required with shared_keys_action 'remove': the ids of the shared keys the person confirmed removing this project from (the keys a 409 shared_keys_reach_project listed). Only these keys are ever removed: if another key shares the project when the change is applied, it is refused with 409 shared_keys_reach_project and the current list, and nothing is removed. A listed key that no longer shares it is left alone."
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "ProjectKeyRotateRequest"
-      },
-      "ProjectKeyRotateResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
-          "key_prefix": {
-            "type": "string",
-            "title": "Key Prefix"
-          },
-          "rotation_grace_until": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Rotation Grace Until"
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "full",
-              "read_only"
-            ],
-            "title": "Scope"
-          }
-        },
-        "type": "object",
         "required": [
-          "id",
-          "key",
-          "key_prefix",
-          "rotation_grace_until",
-          "scope"
+          "dedicated_keys_only"
         ],
-        "title": "ProjectKeyRotateResponse"
+        "title": "ProjectKeyPolicyRequest"
       },
       "ProjectLimitReachedDetail": {
         "properties": {
@@ -20679,7 +21963,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -20689,6 +21973,37 @@
           "limit"
         ],
         "title": "ProjectLimitReachedDetail"
+      },
+      "ProjectNameTakenDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "project_name_taken",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProjectNameTakenDetail"
+      },
+      "ProjectNameTakenResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ProjectNameTakenDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ProjectNameTakenResponse"
       },
       "ProjectResponse": {
         "properties": {
@@ -20727,6 +22042,10 @@
               }
             ],
             "title": "Trace Url Template"
+          },
+          "dedicated_keys_only": {
+            "type": "boolean",
+            "title": "Dedicated Keys Only"
           }
         },
         "type": "object",
@@ -20736,7 +22055,8 @@
           "budget_limit",
           "budget_period",
           "budget_mode",
-          "created_at"
+          "created_at",
+          "dedicated_keys_only"
         ],
         "title": "ProjectResponse"
       },
@@ -21003,7 +22323,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -21034,37 +22354,6 @@
         ],
         "title": "RateLimitErrorResponse",
         "description": "429 body shared by ingest and budget-plane admission; the SDK parses it."
-      },
-      "ReadOnlyKeyErrorDetail": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "const": "read_only_key",
-            "title": "Code"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "message"
-        ],
-        "title": "ReadOnlyKeyErrorDetail"
-      },
-      "ReadOnlyKeyErrorResponse": {
-        "properties": {
-          "detail": {
-            "$ref": "#/components/schemas/ReadOnlyKeyErrorDetail"
-          }
-        },
-        "type": "object",
-        "required": [
-          "detail"
-        ],
-        "title": "ReadOnlyKeyErrorResponse"
       },
       "ReadinessCheck": {
         "properties": {
@@ -21814,6 +23103,94 @@
         "title": "ScopedBudgetStateResponse",
         "description": "Public response shape for a scoped_budget rule."
       },
+      "SharedKeyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/SharedKeyProjectOut"
+            },
+            "type": "array",
+            "title": "Projects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "projects"
+        ],
+        "title": "SharedKeyOut"
+      },
+      "SharedKeyProjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SharedKeyProjectOut"
+      },
+      "SharedKeysReachProjectDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "shared_keys_reach_project",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/SharedKeyOut"
+            },
+            "type": "array",
+            "title": "Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "keys"
+        ],
+        "title": "SharedKeysReachProjectDetail"
+      },
+      "SharedKeysReachProjectResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/SharedKeysReachProjectDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "SharedKeysReachProjectResponse"
+      },
       "SignupRequest": {
         "properties": {
           "email": {
@@ -22454,7 +23831,7 @@
               }
             ],
             "title": "Stripe Customer Id",
-            "description": "The account's Stripe customer. Always null for a project API key."
+            "description": "The account's Stripe customer. Always null for an API key."
           },
           "recent_invoices": {
             "items": {
@@ -22462,7 +23839,7 @@
             },
             "type": "array",
             "title": "Recent Invoices",
-            "description": "Recent Stripe invoices. Always empty for a project API key."
+            "description": "Recent Stripe invoices. Always empty for an API key."
           },
           "pending_plan": {
             "anyOf": [
@@ -23700,7 +25077,7 @@
           "cta_path": {
             "type": "string",
             "title": "Cta Path",
-            "default": "/billing"
+            "default": "/settings/billing"
           }
         },
         "type": "object",
@@ -24164,7 +25541,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "Authorization",
-        "description": "Project API key in the format 'Bearer sk_proj_<64 lowercase hex>'"
+        "description": "API key: 'Bearer solwyn_sk_<64 lowercase hex>'. Send 'Solwyn-Project: <project name or proj_ id>' with every request."
       },
       "PendingVerificationAuth": {
         "type": "http",
@@ -24174,6 +25551,6 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-10-31",
-  "x-solwyn-core-ref": "f8f993aaf9a4e43c6d1970d3d19932c61d08d844"
+  "x-solwyn-snapshot-date": "2026-11-05",
+  "x-solwyn-core-ref": "ac5a5df31b011d932bfb28f4e2fc2676e82cc95f"
 }

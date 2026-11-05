@@ -1,1 +1,0 @@
-{"schema":"solwyn.error.v1","code":"not_found","message":"Project or key was not found.","hint":"Verify the project or key identifier and retry.","detail":{"code":"not_found","message":"Project or key was not found."}}

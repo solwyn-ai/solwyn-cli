@@ -56,6 +56,8 @@ class AccountCostDailyPoint(_Response):
 class AccountCostGroup(CostGroup):
     project_name: str | None = None
     current_period_cost: float | None = None
+    # Added by Core after the 2026-10-31 snapshot; passed through as is.
+    current_period_estimated_cost: float | None = None
     daily: list[AccountCostDailyPoint] | None = None
 
 
@@ -121,6 +123,9 @@ class CostEventResponse(_Response):
     span_id: str | None = None
     trace_sampled: bool | None = None
     trace_url: str | None = None
+    # Added by Core after the 2026-10-31 snapshot; passed through as is.
+    receipt_cost: float = 0.0
+    receipt_is_estimated: bool = False
     created_at: str
 
 
@@ -140,5 +145,8 @@ class CostTotalResponse(_Response):
     call_count: int
     unpriced_call_count: int
     local_call_count: int
+    # Added by Core after the 2026-10-31 snapshot; passed through as is.
+    receipt_cost: float = 0.0
+    estimated_receipt_cost: float = 0.0
     savings: SavingsSummary | None = None
     window: CostWindow

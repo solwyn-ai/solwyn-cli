@@ -11,7 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._entitlement import get_capabilities
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -316,8 +320,9 @@ def failovers(
 ) -> None:
     """Show recent provider and model failover groups."""
     runtime = command_context(context)
-    project_id = _project_required(context)
+    _project_required(context)
     credential = required_credential(context, resolve=resolve_credential)
+    project_id = with_project(context, credential).project or ""
     try:
         with SolwynClient(
             api_url=runtime.api_url,
@@ -363,8 +368,9 @@ def untracked(
 ) -> None:
     """Show advisory observations for unmetered provider surfaces."""
     runtime = command_context(context)
-    project_id = _project_required(context)
+    _project_required(context)
     credential = required_credential(context, resolve=resolve_credential)
+    project_id = with_project(context, credential).project or ""
     try:
         with SolwynClient(
             api_url=runtime.api_url,

@@ -10,12 +10,16 @@ from pydantic import BaseModel, ConfigDict
 
 from solwyn_cli.auth import (
     AuthError,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._cost_filters import window_params
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands.costs import stream_export
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -241,7 +245,7 @@ def attest(
     params["format"] = export_format.value
 
     credential = required_credential(context, resolve=resolve_credential)
-    if account and isinstance(credential, ProjectKeyCredential):
+    if account and isinstance(credential, ApiKeyCredential):
         hint = "Run solwyn login, then retry attest --account."
         exit_with_error(
             context,
@@ -252,6 +256,8 @@ def attest(
             ),
             semantic=ErrorSemantic.AUTH,
         )
+    if not account:
+        runtime = with_project(context, credential)
 
     path = (
         "/api/v1/account/spend-control-attestation"

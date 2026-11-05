@@ -6,20 +6,19 @@ from typing import Any
 
 import httpx
 import pytest
-
 from login_fixtures import login_credential
+
 from solwyn_cli import auth
 from solwyn_cli import client as client_module
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.errors import ApiError
 
-
-VALID_KEY = "sk_proj_" + "a1" * 32
+VALID_KEY = "solwyn_sk_" + "a1" * 32
 API_URL = "https://api.solwyn.ai/prefix"
 
 
-def _project_key() -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+def _project_key() -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 
 
 @pytest.fixture
@@ -173,9 +172,9 @@ def test_context_manager_and_explicit_close_close_the_underlying_client() -> Non
 def test_credentials_are_resolved_at_each_logical_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    resolved: list[auth.ProjectKeyCredential] = []
+    resolved: list[auth.ApiKeyCredential] = []
 
-    def resolve() -> auth.ProjectKeyCredential:
+    def resolve() -> auth.ApiKeyCredential:
         credential = _project_key()
         resolved.append(credential)
         return credential
@@ -244,7 +243,7 @@ def test_traversal_paths_are_rejected_before_credentials_or_transport(
     resolver_calls = 0
     transport_calls = 0
 
-    def resolve() -> auth.ProjectKeyCredential:
+    def resolve() -> auth.ApiKeyCredential:
         nonlocal resolver_calls
         resolver_calls += 1
         return _project_key()
@@ -318,7 +317,7 @@ def test_timeout_overrides_are_rejected_before_credentials_or_transport(
     resolver_calls = 0
     transport_calls = 0
 
-    def resolve() -> auth.ProjectKeyCredential:
+    def resolve() -> auth.ApiKeyCredential:
         nonlocal resolver_calls
         resolver_calls += 1
         return _project_key()

@@ -2,11 +2,11 @@
 
 import json
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import anyio
 from mcp.server import Server
@@ -15,7 +15,7 @@ from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 ROOT = Path(__file__).parent
 CONFIG = json.loads((ROOT / "fixture.json").read_text())
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 CANARY = "PRIVATE_DIAGNOSTIC_CANARY"
 
 

@@ -1,0 +1,12 @@
+Field                                                      Value
+ID                          6f1d0c9e-0000-4000-8000-000000000002
+Name                                                      shared
+Key prefix                            solwyn_sk_b2b2b2b2b2b2b2b2
+Scope                                                       full
+Status                                                     grace
+Projects                                            checkout-bot
+Created via                                            dashboard
+Expires                                     2027-11-04T10:12:00Z
+Rotation grace until                        2026-11-08T10:12:00Z
+Removed project                    proj_9b9b9b9b9b9b9b9b9b9b9b9b
+Removed from this computer                                   yes

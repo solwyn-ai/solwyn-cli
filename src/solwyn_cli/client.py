@@ -24,7 +24,9 @@ from solwyn_cli.approvals import (
     retry_argv,
     retry_command,
 )
+from solwyn_cli._vendor.validation import PROJECT_HEADER
 from solwyn_cli.auth import (
+    ApiKeyCredential,
     AuthError,
     ResolvedCredential,
     resolve_credential,
@@ -60,6 +62,8 @@ _UNSET = object()
 _EXPLAINED_UNAUTHORIZED_CODES = frozenset(
     {
         "account_membership_revoked",
+        "api_key_invalid",
+        "api_key_expired",
         "cli_credential_invalid",
         "cli_credential_expired",
         "cli_credential_revoked",
@@ -512,6 +516,11 @@ class SolwynClient:
         settings = current_settings()
         is_change = may_need_approval(method, relative_path)
         request_headers["Authorization"] = f"Bearer {credential.bearer_value()}"
+        # Every request with an API key names its project; a login never does
+        # (Core takes a login's project from the URL).
+        request_headers.pop(PROJECT_HEADER, None)
+        if isinstance(credential, ApiKeyCredential) and credential.project:
+            request_headers[PROJECT_HEADER] = credential.project
         attached = (
             settings.take_approval_id() if is_change and settings is not None else None
         )

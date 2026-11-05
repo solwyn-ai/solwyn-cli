@@ -8,7 +8,8 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from solwyn_cli import _mcp_operation as operation, mcp
+from solwyn_cli import _mcp_operation as operation
+from solwyn_cli import mcp
 from solwyn_cli.commands import budget
 
 

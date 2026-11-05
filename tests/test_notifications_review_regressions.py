@@ -4,15 +4,14 @@ import json
 
 import httpx
 import pytest
+from login_fixtures import login_credential
+from test_notifications_commands import ALERT_EMAIL, CHANNEL, CONFIG
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import _notifications_common as common
 from solwyn_cli.main import app
-
-from test_notifications_commands import ALERT_EMAIL, CHANNEL, CONFIG
-from login_fixtures import login_credential
 
 runner = CliRunner()
 SMS_RESULT = {
@@ -56,7 +55,7 @@ def invoke(args: list[str], *, input: str | None = None):
         [
             "--json",
             "--project",
-            "proj_one",
+            "proj_fe05bcdcdc4928012781a5f1",
             "--api-url",
             "https://api.example.com",
             *args,

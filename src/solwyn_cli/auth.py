@@ -17,6 +17,10 @@ lock, so concurrent processes never interleave.
 
 Everything stored is keyed by API origin (see ``credential_store``), so a login
 made against one API is never sent to another.
+
+API keys are stored per (API origin, project id) and only ever selected by an
+exact ``proj_`` id. Turning a project name into an id is the resolver's job
+(``runtime.resolve_project``), never the store's.
 """
 
 import json
@@ -41,10 +45,15 @@ from pydantic import (
 )
 
 from solwyn_cli import credential_store
-from solwyn_cli._vendor.validation import validate_project_key_format
+from solwyn_cli._vendor.validation import (
+    PROJECT_ID_PATTERN,
+    validate_api_key_format,
+)
 from solwyn_cli.credential_store import (
-    API_KEY_ENTRY,
+    API_KEYS_ENTRY,
+    IndexIncompleteError,
     ENTRIES,
+    LEGACY_API_KEY_ENTRY,
     LOGIN_ENTRY,
     PENDING_DEVICE_ENTRY,
     STORE_ENV,
@@ -125,7 +134,7 @@ class LoginRequiredError(AuthError):
 
 
 class MeteringKeyRequiredError(AuthError):
-    """A metering operation found no project key; the login is never used."""
+    """A metering operation found no API key; the login is never used."""
 
 
 LOGIN_REQUIRED_HINT = (
@@ -133,13 +142,19 @@ LOGIN_REQUIRED_HINT = (
     "If SOLWYN_AUTH=project_key is set, unset it."
 )
 METERING_KEY_HINT = (
-    "Metering needs a project key. Run solwyn login --with-key or set SOLWYN_API_KEY."
+    "Metering needs an API key for the project. Set SOLWYN_API_KEY and "
+    "SOLWYN_PROJECT, or run solwyn keys create --project PROJECT --store-key."
 )
 FILE_STORE_HINT = "Run solwyn login --store file, or set SOLWYN_CREDENTIAL_STORE=file."
 
 
-class ProjectKeyCredential(BaseModel):
-    """A validated project API key with an explicitly retrievable secret."""
+class ApiKeyCredential(BaseModel):
+    """A validated API key with an explicitly retrievable secret.
+
+    ``project`` is what every request with this key sends as Solwyn-Project:
+    the project's ``proj_`` id once the resolver knows it. A stored key also
+    carries what was stored with it (key id, owning account, project name).
+    """
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
@@ -147,17 +162,50 @@ class ProjectKeyCredential(BaseModel):
     source: CredentialSource
     # Where it came from: a file path, the keychain's name, or the env var.
     location: str | None = None
+    project: str | None = None
+    key_id: str | None = None
+    account_id: str | None = None
+    project_name: str | None = None
 
     @field_validator("api_key")
     @classmethod
     def validate_api_key(cls, value: SecretStr) -> SecretStr:
-        """Keep direct model construction inside the project-key invariant."""
-        validate_project_key_format(value.get_secret_value())
+        """Keep direct model construction inside the API-key invariant."""
+        validate_api_key_format(value.get_secret_value())
         return value
 
     def bearer_value(self) -> str:
         """Return the key for an Authorization header at the request boundary."""
         return self.api_key.get_secret_value()
+
+
+class StoredApiKey(BaseModel):
+    """One stored API key: the five stored fields plus its project id."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    project_id: str = Field(pattern=PROJECT_ID_PATTERN.pattern)
+    key: SecretStr
+    key_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    project_name: str = Field(min_length=1)
+    stored_at: AwareDatetime
+
+    @field_validator("key")
+    @classmethod
+    def validate_key(cls, value: SecretStr) -> SecretStr:
+        validate_api_key_format(value.get_secret_value())
+        return value
+
+    def document(self) -> dict[str, str]:
+        """The stored form: exactly the five fields, the key revealed."""
+        return {
+            "key": self.key.get_secret_value(),
+            "key_id": self.key_id,
+            "account_id": self.account_id,
+            "project_name": self.project_name,
+            "stored_at": self.stored_at.isoformat().replace("+00:00", "Z"),
+        }
 
 
 class LoginMetadata(BaseModel):
@@ -232,7 +280,7 @@ class PendingDevice(BaseModel):
         return value.get_secret_value()
 
 
-ResolvedCredential: TypeAlias = ProjectKeyCredential | LoginCredential
+ResolvedCredential: TypeAlias = ApiKeyCredential | LoginCredential
 
 
 def _now() -> datetime:
@@ -448,7 +496,7 @@ def _complete(entry: str, value: str) -> bool:
         elif entry == PENDING_DEVICE_ENTRY:
             PendingDevice.model_validate_json(value)
         else:
-            validate_project_key_format(value)
+            return False
     except (ValidationError, ValueError, TypeError):
         return False
     return True
@@ -590,7 +638,7 @@ def unused_store_holdings(api_url: str | None = None) -> Lookup | None:
             section = file.section(origin)
     except (AuthError, *_FILE_ERRORS):
         return None
-    if LOGIN_ENTRY in section or API_KEY_ENTRY in section:
+    if LOGIN_ENTRY in section or API_KEYS_ENTRY in section:
         return Lookup(mode, "file", file.describe())
     return None
 
@@ -638,14 +686,33 @@ def _keyring_in_use(mode: StoreMode) -> bool:
 # --- Resolution -------------------------------------------------------------
 
 
-def _project_key_credential(
-    value: str, source: CredentialSource, location: str | None = None
-) -> ProjectKeyCredential:
+def _environment_key_credential(value: str) -> ApiKeyCredential:
     try:
-        validated = validate_project_key_format(value)
+        validated = validate_api_key_format(value)
     except ValueError:
-        raise AuthError("Configured project key is invalid.") from None
-    return ProjectKeyCredential(api_key=validated, source=source, location=location)
+        raise AuthError(
+            f"{API_KEY_ENV} is not a valid Solwyn API key (solwyn_sk_ followed by "
+            "64 hex characters). Keys from Solwyn CLI 0.4 and earlier (sk_proj_) "
+            "stopped working; create a new one with solwyn keys create."
+        ) from None
+    return ApiKeyCredential(
+        api_key=validated, source="environment", location=API_KEY_ENV
+    )
+
+
+def stored_key_credential(
+    stored: StoredApiKey, source: CredentialSource, location: str | None
+) -> ApiKeyCredential:
+    """A credential for one stored key, bound to its project id."""
+    return ApiKeyCredential(
+        api_key=stored.key,
+        source=source,
+        location=location,
+        project=stored.project_id,
+        key_id=stored.key_id,
+        account_id=stored.account_id,
+        project_name=stored.project_name,
+    )
 
 
 def auth_selection(environ: Mapping[str, str] | None = None) -> AuthSelection | None:
@@ -717,26 +784,125 @@ def expired_login_date(api_url: str | None = None) -> datetime | None:
     return login.meta.expires_at
 
 
-def stored_project_key(api_url: str | None = None) -> ProjectKeyCredential | None:
-    """Return the stored project key only, never the environment key."""
+def _stored_key_from(
+    project_id: str, raw: Any, kind: StoreKind, location: str
+) -> StoredApiKey:
+    """Parse one stored key; a malformed one is an error, never skipped."""
+    try:
+        document = json.loads(raw) if isinstance(raw, str) else raw
+        if not credential_store.valid_api_key_entry(document):
+            raise ValueError("not a stored API key")
+        return StoredApiKey(project_id=project_id, **document)
+    except (ValidationError, ValueError, TypeError):
+        where = (
+            f"the {credential_store.KEYRING_SERVICE!r} entry "
+            f"{KeyringStore.api_key_username('<origin>', project_id)} in {location}"
+            if kind == "keyring"
+            else location
+        )
+        raise MalformedCredentialFileError(
+            f"The API key stored for {project_id} in {where} is not valid. "
+            f"Run solwyn keys revoke for it, or remove it, then store a new key."
+        ) from None
+
+
+def stored_api_keys(api_url: str | None = None) -> dict[str, StoredApiKey]:
+    """Every API key stored for this API, by project id (store in use only)."""
+    origin = current_origin(api_url)
     with _locked(shared=True):
-        found = _read(
-            (API_KEY_ENTRY,), origin=current_origin(api_url), mode=store_mode()
-        )
-    stored_key = found.values[API_KEY_ENTRY]
-    if stored_key is None or found.kind is None:
+        mode = store_mode()
+        if primary_kind(mode) == "file":
+            file = _file_store()
+            try:
+                entries = file.api_keys(origin)
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+            _LAST_LOOKUP.set(Lookup(mode, "file", file.describe()))
+            return {
+                project_id: _stored_key_from(project_id, entry, "file", file.describe())
+                for project_id, entry in sorted(entries.items())
+            }
+        keyring_store = _keyring_store()
+        try:
+            index = keyring_store.api_key_index(origin)
+            raw = {
+                project_id: keyring_store.get_api_key(origin, project_id)
+                for project_id in index
+            }
+        except StoreUnavailableError as error:
+            raise _keyring_error(error) from None
+        _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe()))
+        return {
+            project_id: _stored_key_from(
+                project_id, value, "keyring", keyring_store.describe()
+            )
+            for project_id, value in sorted(raw.items())
+            # An id the index still lists after its item went: not stored.
+            if value is not None
+        }
+
+
+def stored_api_key(
+    project_id: str, api_url: str | None = None
+) -> tuple[StoredApiKey, StoreKind, str] | None:
+    """The key stored for one exact project id, with where it was read."""
+    origin = current_origin(api_url)
+    with _locked(shared=True):
+        mode = store_mode()
+        if primary_kind(mode) == "file":
+            file = _file_store()
+            try:
+                entry = file.api_keys(origin).get(project_id)
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+            _LAST_LOOKUP.set(Lookup(mode, "file", file.describe()))
+            if entry is None:
+                return None
+            return (
+                _stored_key_from(project_id, entry, "file", file.describe()),
+                "file",
+                file.describe(),
+            )
+        keyring_store = _keyring_store()
+        try:
+            raw = keyring_store.get_api_key(origin, project_id)
+        except StoreUnavailableError as error:
+            raise _keyring_error(error) from None
+        _LAST_LOOKUP.set(Lookup(mode, "keyring", keyring_store.describe()))
+        if raw is None:
+            return None
+        where = keyring_store.describe()
+        return _stored_key_from(project_id, raw, "keyring", where), "keyring", where
+
+
+def stored_key_for_project(
+    project_id: str, api_url: str | None = None
+) -> ApiKeyCredential | None:
+    """The stored key for one exact project id, as a bound credential."""
+    found = stored_api_key(project_id, api_url)
+    if found is None:
         return None
-    return _project_key_credential(stored_key, found.kind, found.location)
+    stored, kind, location = found
+    return stored_key_credential(stored, kind, location)
 
 
-def _project_key(
-    environment: Mapping[str, str], api_url: str | None
-) -> ProjectKeyCredential | None:
-    if API_KEY_ENV in environment:
-        return _project_key_credential(
-            environment[API_KEY_ENV], "environment", API_KEY_ENV
-        )
-    return stored_project_key(api_url)
+def environment_api_key(
+    environ: Mapping[str, str] | None = None,
+) -> ApiKeyCredential | None:
+    """SOLWYN_API_KEY as a credential (no project bound yet), or None."""
+    environment = os.environ if environ is None else environ
+    if API_KEY_ENV not in environment:
+        return None
+    return _environment_key_credential(environment[API_KEY_ENV])
+
+
+def current_login(
+    environ: Mapping[str, str] | None = None, *, api_url: str | None = None
+) -> LoginCredential | None:
+    """SOLWYN_TOKEN, else the stored, locally unexpired login (today's order)."""
+    environment = os.environ if environ is None else environ
+    with _locked(shared=True):
+        return _environment_login(environment) or stored_login(api_url=api_url)
 
 
 def resolve_credential(
@@ -744,29 +910,36 @@ def resolve_credential(
     *,
     purpose: CredentialClass = "user",
     api_url: str | None = None,
+    project_id: str | None = None,
 ) -> ResolvedCredential | None:
     """Resolve one credential for a command class.
 
     Metering never uses a login: SOLWYN_API_KEY, then the stored key. User
     commands: SOLWYN_TOKEN, the stored login, SOLWYN_API_KEY, the stored key.
     SOLWYN_AUTH=project_key skips both logins; SOLWYN_AUTH=login requires one.
+    A stored key is considered only for an exact ``project_id``: the caller
+    (``runtime.resolve_project``) turns a name into an id first.
     """
     environment = os.environ if environ is None else environ
     _LAST_LOOKUP.set(None)
     # The store choice and every read (login, then key) see one consistent
     # state: no switch or write can land between them.
     with _locked(shared=True):
-        if purpose == "metering":
-            return _project_key(environment, api_url)
-        try:
-            selection = auth_selection(environment)
-        except ValueError as error:
-            raise AuthError(str(error)) from None
-        if selection != "project_key":
-            login = _environment_login(environment) or stored_login(api_url=api_url)
-            if login is not None or selection == "login":
-                return login
-        return _project_key(environment, api_url)
+        if purpose != "metering":
+            try:
+                selection = auth_selection(environment)
+            except ValueError as error:
+                raise AuthError(str(error)) from None
+            if selection != "project_key":
+                login = _environment_login(environment) or stored_login(api_url=api_url)
+                if login is not None or selection == "login":
+                    return login
+        environment_key = environment_api_key(environment)
+        if environment_key is not None:
+            return environment_key
+        if project_id is None:
+            return None
+        return stored_key_for_project(project_id, api_url)
 
 
 def missing_credential_hint(purpose: CredentialClass = "user") -> str:
@@ -781,7 +954,7 @@ def missing_credential_hint(purpose: CredentialClass = "user") -> str:
         return METERING_KEY_HINT + looked
     return (
         "Run solwyn login, or set SOLWYN_TOKEN (a login) or SOLWYN_API_KEY "
-        "(a project key) in the environment." + looked
+        "(an API key) in the environment." + looked
     )
 
 
@@ -805,19 +978,113 @@ def _parse_login(raw: str, kind: StoreKind, location: str) -> LoginCredential:
     )
 
 
-def store_project_key(
-    project_key: str, *, mode: StoreMode | None = None, api_url: str | None = None
-) -> ProjectKeyCredential:
-    """Validate and store a project key; ``last_write()`` says where."""
-    credential = _project_key_credential(project_key, "keyring")
-    written = _store(
-        {API_KEY_ENTRY: credential.bearer_value()},
-        origin=current_origin(api_url),
-        mode=mode,
-    )
-    return credential.model_copy(
-        update={"source": written.kind, "location": written.location}
-    )
+def store_api_key(
+    *,
+    project_id: str,
+    key: str,
+    key_id: str,
+    account_id: str,
+    project_name: str,
+    mode: StoreMode | None = None,
+    api_url: str | None = None,
+) -> ApiKeyCredential:
+    """Store one key under (API origin, project id); ``last_write()`` says where.
+
+    Replaces any key stored for that project id. Never falls back to another
+    store. In the keyring the key's item is written first, then the index;
+    each write is read back.
+    """
+    try:
+        stored = StoredApiKey(
+            project_id=project_id,
+            key=key,
+            key_id=key_id,
+            account_id=account_id,
+            project_name=project_name,
+            stored_at=_now().replace(microsecond=0),
+        )
+    except ValidationError:
+        raise CredentialStorageError("Received an invalid API key.") from None
+    origin = current_origin(api_url)
+    with _locked():
+        if mode is None:
+            mode = store_mode()
+        if primary_kind(mode) == "file":
+            file = _file_store()
+            try:
+                file.set_api_key(origin, project_id, stored.document())
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+            written = Written("file", file.describe())
+        else:
+            keyring_store = _keyring_store()
+            try:
+                keyring_store.set_api_key(
+                    origin, project_id, json.dumps(stored.document())
+                )
+            except StoreUnavailableError as error:
+                raise _keyring_write_error(error) from None
+            written = Written("keyring", keyring_store.describe())
+    _LAST_WRITE.set(written)
+    return stored_key_credential(stored, written.kind, written.location)
+
+
+def delete_stored_api_keys(
+    project_ids: tuple[str, ...], api_url: str | None = None
+) -> None:
+    """Delete the keys stored for these project ids from the store in use."""
+    if not project_ids:
+        return
+    origin = current_origin(api_url)
+    with _locked():
+        mode = store_mode()
+        if primary_kind(mode) == "file":
+            try:
+                _file_store().delete_api_keys(origin, project_ids)
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+            return
+        keyring_store = _keyring_store()
+        try:
+            for project_id in project_ids:
+                keyring_store.delete_api_key(origin, project_id)
+        except StoreUnavailableError as error:
+            raise _keyring_write_error(error) from None
+
+
+LEGACY_KEYS_REMOVED_NOTE = (
+    "Removed an old project key (sk_proj_...). Old keys stopped working; run "
+    "solwyn keys create --store-key for each repo."
+)
+
+
+def migrate_legacy_keys(api_url: str | None = None) -> bool:
+    """Drop 0.4.x project keys from the store in use; True when one went.
+
+    The file: a version 1 document is rewritten as version 2 (every origin's
+    ``api_key`` dropped, logins kept). The keyring: this API's
+    ``<origin>/api_key`` item is deleted. Nothing is read from either slot.
+    """
+    origin = current_origin(api_url)
+    with _locked():
+        mode = store_mode()
+        if primary_kind(mode) == "file":
+            try:
+                return _file_store().migrate()
+            except _FILE_ERRORS as error:
+                raise _file_error(error) from None
+        keyring_store = _keyring_store()
+        try:
+            if keyring_store.get(origin, LEGACY_API_KEY_ENTRY) is None:
+                return False
+        except StoreUnavailableError as error:
+            # Only the presence check ran: a read failure, nothing changed.
+            raise _keyring_error(error) from None
+        try:
+            keyring_store.delete(origin, LEGACY_API_KEY_ENTRY)
+        except StoreUnavailableError as error:
+            raise _keyring_write_error(error) from None
+        return True
 
 
 def store_login(
@@ -970,12 +1237,21 @@ def _scan_keyring(origin: str, *, in_use: bool) -> _Scan:
         )
     except StoreUnavailableError:
         return _Scan("keyring", where, [], [LOGIN_ENTRY], "unread")
-    if raw is None:
-        return _Scan("keyring", where, [], [])
+    kept: list[str] = []
     try:
-        return _Scan("keyring", where, [_parse_login(raw, "keyring", where)], [])
+        keyring_store.api_key_index(origin)
+    except StoreUnavailableError:
+        # An index that cannot be read names keys logout cannot find: keep it.
+        kept.append(API_KEYS_ENTRY)
+    status: Literal["cleared", "unread"] = "unread" if kept else "cleared"
+    if raw is None:
+        return _Scan("keyring", where, [], kept, status)
+    try:
+        return _Scan(
+            "keyring", where, [_parse_login(raw, "keyring", where)], kept, status
+        )
     except (ValidationError, ValueError, TypeError):
-        return _Scan("keyring", where, [], [LOGIN_ENTRY], "unread")
+        return _Scan("keyring", where, [], [LOGIN_ENTRY, *kept], "unread")
 
 
 def _delete_file(origin: str, scan: _Scan) -> Cleared:
@@ -994,7 +1270,34 @@ def _delete_keyring(origin: str, scan: _Scan) -> Cleared:
     keyring_store = _keyring_store()
     kept = list(scan.kept)
     failed = False
-    for entry in ENTRIES:
+    # Every key item is listed (see KeyringStore.set_api_key), so deleting
+    # what a complete index lists, each delete confirmed by a read, and then
+    # finding the index empty is proof no key of this API is left. With an
+    # incomplete index, the keys it does list are deleted, but the index and
+    # anything it may no longer list are kept, and logout says so.
+    complete = True
+    try:
+        listed = keyring_store.api_key_index(origin)
+    except IndexIncompleteError as error:
+        listed, complete = error.ids, False
+    except StoreUnavailableError:
+        listed, complete = [], False
+    try:
+        for project_id in listed:
+            if complete:
+                keyring_store.delete_api_key(origin, project_id)
+            else:
+                keyring_store.delete_raw(
+                    keyring_store.api_key_username(origin, project_id)
+                )
+        if complete and keyring_store.api_key_index(origin):
+            raise StoreUnavailableError("API keys are still listed.")
+    except StoreUnavailableError:
+        failed = True
+        complete = False
+    if not complete and API_KEYS_ENTRY not in kept:
+        kept.append(API_KEYS_ENTRY)
+    for entry in (*ENTRIES, LEGACY_API_KEY_ENTRY):
         if entry in kept:
             continue  # Never delete what could not be read (or revoked).
         try:
@@ -1099,7 +1402,7 @@ def stored_entry_status(
     try:
         with _locked(shared=True):
             found = _read(
-                (API_KEY_ENTRY, LOGIN_ENTRY),
+                (API_KEYS_ENTRY, LOGIN_ENTRY),
                 origin=current_origin(api_url),
                 mode=store_mode(),
             )
@@ -1108,7 +1411,7 @@ def stored_entry_status(
     raw = found.values[LOGIN_ENTRY]
     if raw is not None and not _complete(LOGIN_ENTRY, raw):
         return "incomplete"
-    return "found" if found.values[API_KEY_ENTRY] or raw else "missing"
+    return "found" if found.values[API_KEYS_ENTRY] or raw else "missing"
 
 
 # --- Entries from 0.3 and earlier -------------------------------------------
@@ -1147,7 +1450,8 @@ LEGACY_LOGIN_NOTICE = (
 )
 LEGACY_KEY_NOTICE = (
     "A project key saved by Solwyn CLI 0.3 is in the system keyring and is no "
-    "longer read. Run solwyn login --with-key again, or set SOLWYN_API_KEY."
+    "longer read. Run solwyn keys create --project PROJECT --store-key, or set "
+    "SOLWYN_API_KEY and SOLWYN_PROJECT."
 )
 
 

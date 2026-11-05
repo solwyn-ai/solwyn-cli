@@ -80,8 +80,8 @@ class BudgetMode(StrEnum):
     HARD_DENY = "hard_deny"
 
 
-class ProjectKeyScope(StrEnum):
-    """Capability scope granted to a single project API key."""
+class ApiKeyScope(StrEnum):
+    """Capability scope of an API key."""
 
     FULL = "full"
     READ_ONLY = "read_only"
@@ -220,18 +220,28 @@ class ProjectCreateRequest(_WireModel):
     # Declared, never posted unless chosen: the request is serialized with
     # exclude_unset, so an unset scope is omitted and the API applies this same
     # default. The drift guard pins the two defaults together.
-    scope: ProjectKeyScope = ProjectKeyScope.FULL
+    scope: ApiKeyScope = ApiKeyScope.FULL
 
 
 class ProjectUpdateRequest(_WireModel):
     name: Annotated[str, Field(min_length=1, max_length=100)] | None = None
 
 
-class ProjectKeyRotateRequest(_WireModel):
+class ApiKeyCreateRequest(_WireModel):
+    """``POST /api/v1/keys``: a key for exactly one project."""
+
+    project_id: Annotated[str, Field(pattern=r"^proj_[a-f0-9]{24}$")]
+    # Unset fields are omitted (exclude_unset): the API names the key after
+    # the project and makes it full scope, the defaults declared here.
+    name: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    scope: ApiKeyScope = ApiKeyScope.FULL
+
+
+class ApiKeyRotateRequest(_WireModel):
     grace_seconds: Annotated[int, Field(ge=0, le=604800)] | None = None
     # No default on the wire: a null scope asks the API to carry the replaced
     # key's scope over to the replacement.
-    scope: ProjectKeyScope | None = None
+    scope: ApiKeyScope | None = None
 
 
 class WebhookCreateRequest(_WireModel):

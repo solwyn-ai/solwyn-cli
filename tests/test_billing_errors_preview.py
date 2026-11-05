@@ -1,25 +1,26 @@
 """Billing conflict adoption, conservative retries and the sole new MCP read."""
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 
 import anyio
 import httpx
-from mcp import Client
 import pytest
+from mcp import Client
+from test_billing_lifecycle import (
+    JWT,
+    PREVIEW,
+    TARGET,
+    invoke,
+)
+from test_billing_lifecycle import (
+    billing as billing_fixture,
+)
+from test_mcp_conformance import _install_http
 
 from solwyn_cli import auth
 from solwyn_cli.errors import error_from_response
 from solwyn_cli.mcp import server
-from test_billing_lifecycle import (
-    PREVIEW,
-    TARGET,
-    JWT,
-    billing as billing_fixture,
-    invoke,
-)
-
-from test_mcp_conformance import _install_http
 
 billing = billing_fixture
 
@@ -293,8 +294,8 @@ def test_mcp_selected_key_preview_refusal_before_http(monkeypatch):
         monkeypatch,
         responses=[],
         credentials=[
-            auth.ProjectKeyCredential(
-                api_key="sk_proj_" + "a1" * 32, source="environment"
+            auth.ApiKeyCredential(
+                api_key="solwyn_sk_" + "a1" * 32, source="environment"
             )
         ],
         project=None,
@@ -355,6 +356,7 @@ def test_native_mcp_preview_uses_existing_response_result_and_deadline_fences(
     monkeypatch, fence
 ):
     from contextlib import asynccontextmanager
+
     from solwyn_cli import _mcp_operation as operation
 
     calls = []

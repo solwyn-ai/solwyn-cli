@@ -10,4 +10,4 @@ Tier                                                                team
 Account ID                                                      acct_123
 Role                                                               admin
 Seats                                                                3/5
-Project                                               proj_alpha (Alpha)
+Project                            proj_be76331b95dfc399cd776d2f (Alpha)

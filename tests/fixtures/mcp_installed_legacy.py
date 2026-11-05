@@ -13,7 +13,6 @@ from mcp.client.stdio import (
     stdio_client,
 )
 
-
 READ_TOOL_NAMES = frozenset(
     {
         "budget_status",

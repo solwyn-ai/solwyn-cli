@@ -7,19 +7,20 @@ from typing import Any
 
 import httpx
 import pytest
+from key_fixtures import PROJECT_ID, FakeCore, auth_key_body, store_key
+from login_fixtures import login_meta
 from typer.testing import CliRunner
 
-from login_fixtures import login_meta
 from solwyn_cli import auth, config, credential_store
 from solwyn_cli.commands import doctor as doctor_module
 from solwyn_cli.commands import login as login_module
-from solwyn_cli.commands.keys import export_line
+from solwyn_cli.commands.keys import export_lines
 from solwyn_cli.main import app
 
 runner = CliRunner()
 PROD = "https://api.solwyn.ai"
 STAGING = "https://api.staging.example.test"
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 LEGACY_KEY = "sk_proj_" + "c3" * 32
 NEW = "solwyn_cli_" + "2b" * 32
 SERVICE = "solwyn-cli"
@@ -53,47 +54,57 @@ def test_keys_env_exports_a_non_default_api_url(
     monkeypatch: pytest.MonkeyPatch, config_path: Path, how: str
 ) -> None:
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
-    auth.store_project_key(KEY, api_url=STAGING)
-    flags = _staging(how, monkeypatch)
+    store_key(api_url=STAGING)
+    flags = [*_staging(how, monkeypatch), "--project", PROJECT_ID]
 
     text = runner.invoke(app, [*flags, "keys", "env"])
     as_json = runner.invoke(app, [*flags, "--json", "keys", "env"])
 
-    expected = f"export SOLWYN_API_KEY={KEY}\nexport SOLWYN_API_URL={STAGING}"
+    expected = (
+        f"export SOLWYN_API_KEY='{KEY}'\n"
+        f"export SOLWYN_PROJECT='{PROJECT_ID}'\n"
+        f"export SOLWYN_API_URL='{STAGING}'"
+    )
     assert text.exit_code == 0, text.stderr
     assert text.stdout == expected + "\n"
     assert text.stderr == ""
     assert as_json.exit_code == 0, as_json.stderr
     assert json.loads(as_json.stdout) == {
-        "schema": "solwyn.keys-env.v1",
-        "name": "SOLWYN_API_KEY",
+        "schema": "solwyn.keys-env.v2",
+        "names": ["SOLWYN_API_KEY", "SOLWYN_PROJECT", "SOLWYN_API_URL"],
         "export": expected,
         "api_url": STAGING,
+        "project": {"selector": PROJECT_ID, "id": PROJECT_ID},
     }
 
 
-def test_keys_env_on_the_default_api_exports_only_the_key(
+def test_keys_env_on_the_default_api_exports_no_url(
     monkeypatch: pytest.MonkeyPatch, config_path: Path
 ) -> None:
     monkeypatch.setenv("SOLWYN_CREDENTIAL_STORE", "file")
-    auth.store_project_key(KEY, api_url=PROD)
+    store_key(api_url=PROD)
 
-    text = runner.invoke(app, ["keys", "env"])
-    as_json = runner.invoke(app, ["--json", "keys", "env"])
+    text = runner.invoke(app, ["--project", PROJECT_ID, "keys", "env"])
+    as_json = runner.invoke(app, ["--project", PROJECT_ID, "--json", "keys", "env"])
 
-    assert text.stdout == f"export SOLWYN_API_KEY={KEY}\n"
+    assert text.stdout == (
+        f"export SOLWYN_API_KEY='{KEY}'\nexport SOLWYN_PROJECT='{PROJECT_ID}'\n"
+    )
     assert json.loads(as_json.stdout)["api_url"] is None
     assert "SOLWYN_API_URL" not in as_json.stdout
 
 
 def test_the_one_time_export_footer_names_a_non_default_api_url() -> None:
-    assert export_line(KEY, PROD) == f"export SOLWYN_API_KEY={KEY}"
-    assert export_line(KEY, STAGING) == (
-        f"export SOLWYN_API_KEY={KEY}\nexport SOLWYN_API_URL={STAGING}"
+    assert export_lines(KEY, "checkout-bot", PROD)[0] == (
+        f"export SOLWYN_API_KEY='{KEY}'\nexport SOLWYN_PROJECT='checkout-bot'"
+    )
+    assert export_lines(KEY, "checkout-bot", STAGING)[0] == (
+        f"export SOLWYN_API_KEY='{KEY}'\nexport SOLWYN_PROJECT='checkout-bot'\n"
+        f"export SOLWYN_API_URL='{STAGING}'"
     )
 
 
-def test_a_two_line_export_footer_keeps_its_line_break() -> None:
+def test_a_multi_line_export_footer_keeps_its_line_breaks() -> None:
     import io
 
     from solwyn_cli.output import (
@@ -119,15 +130,16 @@ def test_a_two_line_export_footer_keeps_its_line_break() -> None:
         data={"ok": True},
         table=TableData(columns=("Field", "Value"), rows=(("ok", "yes"),)),
         one_time_secret=OneTimeSecretPanel(
-            title="One-time project key",
+            title="One-time API key",
             value=KEY,
-            footer=export_line(KEY, STAGING),
+            footer=export_lines(KEY, "checkout-bot", STAGING)[0],
         ),
     )
 
-    assert f"export SOLWYN_API_KEY={KEY}\nexport SOLWYN_API_URL={STAGING}\n" in (
-        stdout.getvalue()
-    )
+    assert (
+        f"export SOLWYN_API_KEY='{KEY}'\nexport SOLWYN_PROJECT='checkout-bot'\n"
+        f"export SOLWYN_API_URL='{STAGING}'\n"
+    ) in stdout.getvalue()
     assert "\N{REPLACEMENT CHARACTER}" not in stdout.getvalue()
 
 
@@ -155,15 +167,18 @@ LEGACY_NOTE = (
 
 @pytest.mark.parametrize("how", ["browser", "with-key"])
 def test_login_keeps_0_3_credentials_and_says_so(
-    monkeypatch: pytest.MonkeyPatch, macos_keychain: Any, how: str
+    monkeypatch: pytest.MonkeyPatch, macos_keychain: Any, how: str, fake_core: FakeCore
 ) -> None:
     monkeypatch.setattr(
         login_module, "_device_token", lambda *a, **kw: (NEW, login_meta())
     )
+    fake_core.on("GET", "/api/v1/auth/key", httpx.Response(200, json=auth_key_body()))
     result = (
         runner.invoke(app, ["--json", "login"])
         if how == "browser"
-        else runner.invoke(app, ["--json", "login", "--with-key"], input=KEY)
+        else runner.invoke(
+            app, ["--json", "--project", PROJECT_ID, "login", "--with-key"], input=KEY
+        )
     )
 
     assert result.exit_code == 0, result.stderr

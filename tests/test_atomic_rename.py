@@ -1,7 +1,7 @@
 """Platform dispatch tests for artifact atomic rename operations."""
 
-import errno
 import ctypes
+import errno
 import importlib.util
 
 import pytest

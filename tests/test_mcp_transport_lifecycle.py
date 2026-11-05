@@ -9,20 +9,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import anyio
 import httpx
 import pytest
-
-from login_fixtures import DictStore, install_store
-
-from solwyn_cli import auth, _mcp_operation as operation
-from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands import budget
-from solwyn_cli._vendor.batch import RecoverableBudgetCheckRequest, new_operation_id
+from login_fixtures import DictStore, install_store, login_credential
 from test_budget_batch import CHECK
 from test_mcp_conformance import VALID_KEY
 from test_mcp_operation import Body
-from login_fixtures import login_credential
 
+from solwyn_cli import _mcp_operation as operation
+from solwyn_cli import auth
+from solwyn_cli._vendor.batch import RecoverableBudgetCheckRequest, new_operation_id
+from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands import budget
 
-KEY = auth.ProjectKeyCredential(api_key=VALID_KEY, source="environment")
+KEY = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
 JWT = login_credential("synthetic-old-access")
 
 

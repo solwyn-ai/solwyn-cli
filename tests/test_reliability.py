@@ -7,19 +7,19 @@ from email.utils import format_datetime
 import anyio
 import httpx
 import pytest
+from login_fixtures import login_credential
+from test_mcp_conformance import _call_tool, _install_http
 from typer.testing import CliRunner
 
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import account
-from solwyn_cli.commands._record import build_event, record_best_effort
 from solwyn_cli.commands._cost_advice_models import SimulationCaveats
+from solwyn_cli.commands._record import build_event, record_best_effort
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
-from test_mcp_conformance import _call_tool, _install_http
-from login_fixtures import login_credential
 
-KEY = auth.ProjectKeyCredential(api_key="sk_proj_" + "a1" * 32, source="environment")
+KEY = auth.ApiKeyCredential(api_key="solwyn_sk_" + "a1" * 32, source="environment")
 JWT = login_credential("synthetic-access")
 BUSY = "Budget admission is busy; retry shortly"
 NOW = datetime(2026, 10, 14, tzinfo=UTC)
@@ -210,7 +210,7 @@ def test_simulation_fallback_matches_core_pricing():
 @pytest.mark.parametrize(
     "tool,args,detail,guarantee",
     [
-        ("get_cost_total", {"project_id": "p"}, "busy", None),
+        ("get_cost_total", {"project_id": "proj_" + "ab" * 12}, "busy", None),
         (
             "budget_check",
             {"model": "gpt-4o", "provider": "openai", "estimated_input_tokens": 1},
@@ -254,8 +254,9 @@ def test_mcp_busy_is_fixed_safe_code_with_retry_hint(
 @pytest.mark.parametrize("status,recording", [(503, "unknown"), (None, "unknown")])
 def test_mcp_recording_preserves_transport_uncertainty(monkeypatch, status, recording):
     if status is None:
-        from solwyn_cli.mcp import server
         from contextlib import contextmanager
+
+        from solwyn_cli.mcp import server
 
         def disconnect(_request):
             raise httpx.ReadError("private")
@@ -436,7 +437,7 @@ def test_tally_busy_has_no_absence_guarantee():
 def test_oversized_export_and_simulation_stay_usage_errors_without_partial_output(
     monkeypatch, command
 ):
-    from solwyn_cli.commands import costs, cost_pricing
+    from solwyn_cli.commands import cost_pricing, costs
 
     requests = []
 
@@ -456,7 +457,9 @@ def test_oversized_export_and_simulation_stay_usage_errors_without_partial_outpu
         monkeypatch.setattr(module, "SolwynClient", factory)
         monkeypatch.setattr(module, "resolve_credential", lambda **_: KEY)
     monkeypatch.setattr(costs, "get_capabilities", lambda **kwargs: None)
-    result = CliRunner().invoke(app, ["--json", "--project", "p", *command])
+    result = CliRunner().invoke(
+        app, ["--json", "--project", "proj_" + "ab" * 12, *command]
+    )
     assert result.exit_code == 2, result.exception
     assert result.stdout == ""
     assert "No partial financial result" in json.loads(result.stderr)["message"]

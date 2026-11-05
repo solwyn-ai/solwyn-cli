@@ -22,11 +22,15 @@ from solwyn_cli._vendor.wire import WebhookCreateRequest
 from solwyn_cli.auth import (
     AuthError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -171,7 +175,7 @@ def _validated_identifier(
 
 def _login_credential(context: typer.Context, *, operation: str) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = f"Run solwyn login, then retry webhooks {operation}."
         exit_with_error(
             context,
@@ -288,6 +292,7 @@ def list_webhooks(context: typer.Context) -> None:
     runtime = command_context(context)
     project_id = _validated_identifier(context, runtime.project, label="project")
     credential = _login_credential(context, operation="list")
+    project_id = with_project(context, credential).project or project_id
     project_path = quote(project_id, safe="")
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -358,6 +363,7 @@ def create_webhook(
             semantic=ErrorSemantic.USAGE,
         )
     credential = _login_credential(context, operation="create")
+    project_id = with_project(context, credential).project or project_id
     project_path = quote(project_id, safe="")
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
@@ -424,6 +430,7 @@ def rotate_webhook(
     effect = f"Rotate webhook {validated_webhook_id!r} in project {project_id!r}: the old signing secret becomes invalid immediately; its replacement is shown once."
     check_confirmation(context, yes=yes, effect=effect)
     credential = _login_credential(context, operation="rotate")
+    project_id = with_project(context, credential).project or project_id
     confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     webhook_path = quote(validated_webhook_id, safe="")
@@ -490,6 +497,7 @@ def delete_webhook(
     effect = f"Deactivate webhook {validated_webhook_id!r} in project {project_id!r}: disables this delivery target."
     check_confirmation(context, yes=yes, effect=effect)
     credential = _login_credential(context, operation="delete")
+    project_id = with_project(context, credential).project or project_id
     confirm_effects(context, yes=yes, effect=effect)
     project_path = quote(project_id, safe="")
     webhook_path = quote(validated_webhook_id, safe="")

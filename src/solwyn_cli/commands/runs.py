@@ -22,13 +22,17 @@ from pydantic import (
 from solwyn_cli.auth import (
     AuthError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli import _mcp_operation as operation
 from solwyn_cli.commands._pagination import read_pages
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
@@ -571,6 +575,7 @@ def list_runs(
     runtime = command_context(context)
     project_id = _project_id(context)
     credential = required_credential(context, resolve=resolve_credential)
+    project_id = with_project(context, credential).project or project_id
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             data = read_pages(
@@ -621,6 +626,7 @@ def show_run(
     runtime = command_context(context)
     project_id = _project_id(context)
     credential = required_credential(context, resolve=resolve_credential)
+    project_id = with_project(context, credential).project or project_id
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             storage_run_id = resolve_agent_run_id(
@@ -648,7 +654,7 @@ def show_run(
 
 def _login_credential(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         hint = "Run solwyn login, then retry runs stop."
         exit_with_error(
             context,
@@ -698,6 +704,7 @@ def stop_run(
     )
     check_confirmation(context, yes=yes, effect=effect)
     credential = _login_credential(context)
+    project_id = with_project(context, credential).project or project_id
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             storage_run_id = resolve_agent_run_id(

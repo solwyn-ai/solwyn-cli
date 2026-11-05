@@ -24,12 +24,13 @@ from solwyn_cli._vendor.notification_wire import (
     Severity,
 )
 from solwyn_cli.approvals import add_retry_note
-from solwyn_cli.auth import AuthError, resolve_credential
+from solwyn_cli.auth import AuthError, ResolvedCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
     exit_with_error,
     required_credential,
     required_login,
+    with_project,
 )
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -188,6 +189,21 @@ def project_path(context: typer.Context) -> str:
     return f"/api/v1/projects/{quote(project, safe='')}/notifications"
 
 
+def _resolved_project_path(
+    context: typer.Context, credential: ResolvedCredential, path: str
+) -> str:
+    """Swap the selector built into a project path for the resolved proj_ id."""
+    resolved = command_context(context)
+    selector = resolved.project_selector
+    if selector is None:
+        return path
+    prefix = f"/api/v1/projects/{quote(selector, safe='')}/"
+    if not path.startswith(prefix):
+        return path
+    project_id = with_project(context, credential).project or selector
+    return f"/api/v1/projects/{quote(project_id, safe='')}/" + path[len(prefix) :]
+
+
 def redact(value: Any, secrets: tuple[str, ...]) -> Any:
     if isinstance(value, str):
         for secret in secrets:
@@ -221,6 +237,7 @@ def request(
         if login
         else required_credential(context, resolve=resolve_credential)
     )
+    path = _resolved_project_path(context, credential, path)
     try:
         options: dict[str, Any] = {}
         if body is not None:

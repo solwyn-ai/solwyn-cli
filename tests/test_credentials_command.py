@@ -9,19 +9,19 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from key_fixtures import keys_entry
+from login_fixtures import LOGIN_TOKEN, fake_keychain, login_entries
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
-from login_fixtures import fake_keychain, LOGIN_TOKEN, login_entries
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands import approvals as approvals_module
 from solwyn_cli.commands import credentials as credentials_module
 from solwyn_cli.main import app
 
-
 runner = CliRunner()
-VALID_KEY = "sk_proj_" + "ab" * 32
+VALID_KEY = "solwyn_sk_" + "ab" * 32
 CURRENT_ID = "6c1f2a90-0000-4000-8000-000000000001"
 OTHER_ID = "91be7d03-0000-4000-8000-000000000002"
 APPROVAL_ID = "0b7d2c4e-0000-4000-8000-000000000003"
@@ -174,7 +174,7 @@ def test_revoke_by_prefix_deletes_that_login_and_keeps_the_local_one(
 def test_revoke_current_clears_the_keychain_login(
     keychain: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    keychain[auth.API_KEY_ENTRY] = VALID_KEY
+    keychain[auth.API_KEYS_ENTRY] = keys_entry()
     requests = _serve(monkeypatch, credentials_module, _credentials_server)
 
     result = runner.invoke(app, ["--json", "credentials", "revoke", "--current"])
@@ -182,7 +182,8 @@ def test_revoke_current_clears_the_keychain_login(
     assert result.exit_code == 0
     assert requests[-1].url.path == f"/api/v1/cli/credentials/{CURRENT_ID}"
     assert json.loads(result.stdout)["cleared_local_login"] is True
-    assert keychain == {auth.API_KEY_ENTRY: VALID_KEY}
+    # Revoking the login keeps the stored API keys.
+    assert keychain == {auth.API_KEYS_ENTRY: keys_entry()}
 
 
 @pytest.mark.parametrize(

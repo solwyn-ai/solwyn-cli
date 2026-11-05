@@ -10,23 +10,22 @@ from typing import Any
 
 import httpx
 import pytest
+from golden.harness import assert_matches_golden
+from login_fixtures import login_credential
 from typer.main import get_command
 from typer.testing import CliRunner
 
-from golden.harness import assert_matches_golden
 from solwyn_cli import auth
 from solwyn_cli.client import SolwynClient as RealSolwynClient
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
-from login_fixtures import login_credential
-
 
 runner = CliRunner()
 GOLDEN_DIR = Path(__file__).parent / "golden"
-VALID_KEY = "sk_proj_" + "d4" * 32
+VALID_KEY = "solwyn_sk_" + "d4" * 32
 ACCESS_TOKEN = "webhooks-access-token"
 REFRESH_TOKEN = "webhooks-refresh-token"
-PROJECT_ID = "proj/webhooks"
+PROJECT_ID = "proj_c1f7e99ccecef1fd29a9f8a3"
 WEBHOOK_ID = "wh/alpha"
 SIGNING_SECRET = "ab" * 32
 ROTATED_SECRET = "cd" * 32
@@ -90,8 +89,8 @@ def _jwt(**_: object) -> auth.LoginCredential:
     return login_credential(ACCESS_TOKEN)
 
 
-def _key(source: str) -> auth.ProjectKeyCredential:
-    return auth.ProjectKeyCredential(api_key=VALID_KEY, source=source)
+def _key(source: str) -> auth.ApiKeyCredential:
+    return auth.ApiKeyCredential(api_key=VALID_KEY, source=source)
 
 
 def _module() -> Any:
@@ -136,7 +135,7 @@ def test_webhooks_list_is_jwt_only_quotes_project_and_matches_golden(
     assert result.exit_code == 0, result.stderr
     assert FakeClient.instances[0].credential is credential
     assert FakeClient.instances[0].requests == [
-        ("GET", "/api/v1/projects/proj%2Fwebhooks/webhooks", {})
+        ("GET", "/api/v1/projects/proj_c1f7e99ccecef1fd29a9f8a3/webhooks", {})
     ]
     rendered = result.stdout + result.stderr + repr(result.exception)
     assert SIGNING_SECRET not in rendered
@@ -182,7 +181,7 @@ def test_webhooks_create_posts_open_event_string_and_reveals_secret_once(
     assert FakeClient.instances[0].requests == [
         (
             "POST",
-            "/api/v1/projects/proj%2Fwebhooks/webhooks",
+            "/api/v1/projects/proj_c1f7e99ccecef1fd29a9f8a3/webhooks",
             {
                 "json": {
                     "url": "https://hooks.example.com/solwyn",
@@ -217,7 +216,7 @@ def test_webhooks_create_uses_star_default_without_closing_event_domain(
         [
             "--json",
             "--project",
-            "proj",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
             "webhooks",
             "create",
             "--url",
@@ -264,7 +263,7 @@ def test_webhooks_create_relays_free_tier_402_before_local_ssrf_rejection(
         [
             "--json",
             "--project",
-            "proj",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
             "webhooks",
             "create",
             "--url",
@@ -303,7 +302,7 @@ def test_webhooks_create_relays_core_ssrf_400_message(
         [
             "--json",
             "--project",
-            "proj",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
             "webhooks",
             "create",
             "--url",
@@ -348,7 +347,7 @@ def test_webhooks_rotate_quotes_ids_posts_no_body_and_reveals_secret_once(
     assert FakeClient.instances[0].requests == [
         (
             "POST",
-            "/api/v1/projects/proj%2Fwebhooks/webhooks/wh%2Falpha/rotate",
+            "/api/v1/projects/proj_c1f7e99ccecef1fd29a9f8a3/webhooks/wh%2Falpha/rotate",
             {},
         )
     ]
@@ -356,7 +355,7 @@ def test_webhooks_rotate_quotes_ids_posts_no_body_and_reveals_secret_once(
     assert rendered.count(ROTATED_SECRET) == 1
     assert (
         result.stderr
-        == "Rotate webhook 'wh/alpha' in project 'proj/webhooks': the old signing secret becomes invalid immediately; its replacement is shown once.\n"
+        == "Rotate webhook 'wh/alpha' in project 'proj_c1f7e99ccecef1fd29a9f8a3': the old signing secret becomes invalid immediately; its replacement is shown once.\n"
     )
     suffix = "json" if output_format == "json" else "txt"
     assert_matches_golden(
@@ -393,13 +392,13 @@ def test_webhooks_delete_requires_bodyless_204_and_matches_golden(
     assert FakeClient.instances[0].requests == [
         (
             "DELETE",
-            "/api/v1/projects/proj%2Fwebhooks/webhooks/wh%2Falpha",
+            "/api/v1/projects/proj_c1f7e99ccecef1fd29a9f8a3/webhooks/wh%2Falpha",
             {},
         )
     ]
     assert (
         result.stderr
-        == "Deactivate webhook 'wh/alpha' in project 'proj/webhooks': disables this delivery target.\n"
+        == "Deactivate webhook 'wh/alpha' in project 'proj_c1f7e99ccecef1fd29a9f8a3': disables this delivery target.\n"
     )
     suffix = "json" if output_format == "json" else "txt"
     assert_matches_golden(
@@ -440,7 +439,7 @@ def test_webhooks_commands_are_jwt_only_without_network(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", *command],
+        ["--json", "--project", "proj_c1f7e99ccecef1fd29a9f8a3", "webhooks", *command],
     )
 
     assert result.exit_code == 3
@@ -467,7 +466,7 @@ def test_webhooks_commands_require_login_without_network(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", *command],
+        ["--json", "--project", "proj_c1f7e99ccecef1fd29a9f8a3", "webhooks", *command],
     )
 
     assert result.exit_code == 3
@@ -482,9 +481,30 @@ def test_webhooks_commands_require_login_without_network(
     "args",
     [
         ["--project", "   ", "webhooks", "list"],
-        ["--project", "proj", "webhooks", "rotate", "--yes", "   "],
-        ["--project", "proj", "webhooks", "delete", "--yes", "   "],
-        ["--project", "proj", "webhooks", "create", "--url", "not-a-url"],
+        [
+            "--project",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
+            "webhooks",
+            "rotate",
+            "--yes",
+            "   ",
+        ],
+        [
+            "--project",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
+            "webhooks",
+            "delete",
+            "--yes",
+            "   ",
+        ],
+        [
+            "--project",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
+            "webhooks",
+            "create",
+            "--url",
+            "not-a-url",
+        ],
     ],
 )
 def test_webhooks_validate_local_identifiers_and_uri_before_auth(
@@ -557,7 +577,13 @@ def test_webhooks_reject_malformed_or_wrong_status_responses_without_leaks(
     with caplog.at_level(logging.DEBUG):
         result = runner.invoke(
             app,
-            ["--json", "--project", "proj", "webhooks", *command],
+            [
+                "--json",
+                "--project",
+                "proj_c1f7e99ccecef1fd29a9f8a3",
+                "webhooks",
+                *command,
+            ],
         )
 
     assert result.exit_code == 1
@@ -597,7 +623,7 @@ def test_webhooks_ignore_benign_additive_response_fields(
 
     result = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", *command],
+        ["--json", "--project", "proj_c1f7e99ccecef1fd29a9f8a3", "webhooks", *command],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -628,11 +654,27 @@ def test_webhooks_not_found_and_deactivated_errors_are_actionable(
 
     missing = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", "delete", "--yes", "missing"],
+        [
+            "--json",
+            "--project",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
+            "webhooks",
+            "delete",
+            "--yes",
+            "missing",
+        ],
     )
     inactive = runner.invoke(
         app,
-        ["--json", "--project", "proj", "webhooks", "rotate", "--yes", "inactive"],
+        [
+            "--json",
+            "--project",
+            "proj_c1f7e99ccecef1fd29a9f8a3",
+            "webhooks",
+            "rotate",
+            "--yes",
+            "inactive",
+        ],
     )
 
     assert missing.exit_code == 5

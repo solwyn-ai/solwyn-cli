@@ -2,21 +2,19 @@
 
 import json
 import os
-from pathlib import Path
+import signal
 import subprocess
 import sys
 import sysconfig
-
-import signal
 import time
+from pathlib import Path
 
 import anyio
 import pytest
 
+from solwyn_cli import __version__
 from solwyn_cli._mcp_doctor_ipc import PrivateRequest, isolated_environment
 from solwyn_cli._mcp_doctor_process import run_helper
-
-from solwyn_cli import __version__
 from solwyn_cli.mcp.server import get_tool_catalog
 
 
@@ -68,7 +66,7 @@ def test_leaf_helper_discovers_with_parent_pipe_still_open():
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mcp_doctor_server.py"
-KEY = "sk_proj_" + "a1" * 32
+KEY = "solwyn_sk_" + "a1" * 32
 CANARY = "PRIVATE_DIAGNOSTIC_CANARY"
 
 

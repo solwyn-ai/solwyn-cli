@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from solwyn_cli.commands.attest import SpendControlAttestation
 
-
 GOLDEN = Path(__file__).parent / "golden" / "attest-project-json.json"
 
 

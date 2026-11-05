@@ -17,7 +17,11 @@ from solwyn_cli.commands._cost_advice_models import (
     CostSimulationResponse,
 )
 from solwyn_cli.commands._cost_filters import window_params
-from solwyn_cli.commands._shared import exit_with_error, required_credential
+from solwyn_cli.commands._shared import (
+    exit_with_error,
+    required_credential,
+    with_project,
+)
 from solwyn_cli.commands.costs import report_window
 from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
@@ -110,6 +114,7 @@ def priced_models(context: typer.Context) -> None:
     """List exact models available to the current pricing catalog."""
     runtime, _ = _runtime_project(context)
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             from solwyn_cli.commands._cost_reads import fetch_priced_models
@@ -199,6 +204,7 @@ def simulate(
         )
     runtime, _ = _runtime_project(context)
     credential = required_credential(context, resolve=resolve_credential)
+    runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
             from solwyn_cli.commands._cost_reads import fetch_project_read

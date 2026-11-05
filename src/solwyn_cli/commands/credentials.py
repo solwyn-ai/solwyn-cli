@@ -12,7 +12,7 @@ from solwyn_cli.auth import (
     AuthError,
     CredentialStorageError,
     LoginCredential,
-    ProjectKeyCredential,
+    ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
@@ -74,7 +74,7 @@ class _RevokeData(BaseModel):
 
 def _login(context: typer.Context) -> LoginCredential:
     credential = required_credential(context, resolve=resolve_credential)
-    if isinstance(credential, ProjectKeyCredential):
+    if isinstance(credential, ApiKeyCredential):
         exit_with_error(
             context,
             OutputError(

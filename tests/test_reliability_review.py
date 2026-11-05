@@ -5,6 +5,9 @@ import json
 import anyio
 import httpx
 import pytest
+from test_budget_batch import ALLOWED, CHECK, invoke, item
+from test_mcp_conformance import _call_tool, _install_http
+from test_reliability import BUSY, KEY
 from typer.testing import CliRunner
 
 from solwyn_cli.client import SolwynClient
@@ -12,9 +15,6 @@ from solwyn_cli.commands import record
 from solwyn_cli.commands._record import build_event, record_best_effort
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
-from test_budget_batch import ALLOWED, CHECK, invoke, item
-from test_mcp_conformance import _call_tool, _install_http
-from test_reliability import BUSY, KEY
 
 INGEST_DETAILS = [
     BUSY,

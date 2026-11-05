@@ -1,4 +1,4 @@
-Field            Value
-Project  proj/recovery
-Key ID         key/old
-Revoked           true
+Field                                                      Value
+Key ID                      6f1d0c9e-0000-4000-8000-000000000001
+Revoked                                                     true
+Removed from this computer         proj_8a8a8a8a8a8a8a8a8a8a8a8a
