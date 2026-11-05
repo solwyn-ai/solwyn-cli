@@ -113,7 +113,7 @@ def set_role(
                 shared._TEAM_HINTS["owner_change_not_supported"],
             )
         shared.effects(
-            f"Account {account.display_name} ({account.id}): change {target.email} ({target.user_id}) from {target.role} to {role.value}. A changed role invalidates existing access tokens; the member must refresh or log in for current permissions. Refresh sessions and project keys are not revoked by a role change."
+            f"Account {account.display_name} ({account.id}): change {target.email} ({target.user_id}) from {target.role} to {role.value}. A changed role invalidates existing access tokens; the member must refresh or log in for current permissions. Refresh sessions and API keys are not revoked by a role change."
         )
         shared.confirm(context, yes)
         with shared.write_response(context):
@@ -133,7 +133,7 @@ def set_role(
 
 def _remove(context, client, account, target, *, self_leave, yes):
     shared.effects(
-        f"Account {account.display_name} ({account.id}): remove {target.email} ({target.user_id}, {target.role}){' — your current membership' if self_leave else ''}. The member's sessions AND project keys they created in this account are revoked. Existing access tokens are invalidated.{' You lose current account access. Log in again; use solwyn account recover deliberately if you need a personal account.' if self_leave else ''}"
+        f"Account {account.display_name} ({account.id}): remove {target.email} ({target.user_id}, {target.role}){' (your current membership)' if self_leave else ''}. The member's sessions are revoked and existing access tokens are invalidated. API keys belong to the account and keep working.{' You lose current account access. Log in again; use solwyn account recover deliberately if you need a personal account.' if self_leave else ''}"
     )
     shared.confirm(context, yes)
     with shared.write_response(context):
@@ -166,7 +166,7 @@ def _remove(context, client, account, target, *, self_leave, yes):
 def remove(
     context: typer.Context, user_id: Annotated[str, typer.Argument()], yes: Yes = False
 ):
-    """Remove a member, revoking their sessions and created project keys."""
+    """Remove a member and revoke their sessions; API keys keep working."""
     shared.preflight(context, yes)
     shared.segment(context, user_id)
     with shared.team_client(context) as client:

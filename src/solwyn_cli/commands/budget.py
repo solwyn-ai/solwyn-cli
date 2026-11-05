@@ -57,6 +57,7 @@ from solwyn_cli.commands._record import (
 )
 from solwyn_cli.commands._tags import parse_tags, validate_tags
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -88,28 +89,11 @@ _CONFIRM_NOT_FOUND_HINT = (
     "identity and usage; inspect settlement and attribution separately. Do not reserve "
     "again for a completed provider call."
 )
+
+
 # Budget check and confirm are the only CLI surfaces the API can reject for key
 # scope, so the hint lives with them rather than in the shared error machinery.
 # The server message already states the key is read-only; the hint is remedy only.
-_READ_ONLY_KEY_HINT = (
-    "Set SOLWYN_API_KEY to a write-scoped key, or run solwyn login and "
-    "solwyn keys rotate --scope full to replace this project's key with one."
-)
-
-
-def _read_only_key_hinted(error: ApiError) -> ApiError:
-    """Make a read-only-key rejection actionable without altering other errors."""
-    if error.status_code != 403 or error.code != "read_only_key":
-        return error
-    return ApiError(
-        status_code=error.status_code,
-        code=error.code,
-        message=error.message,
-        hint=_READ_ONLY_KEY_HINT,
-        detail=error.detail,
-    )
-
-
 class _RoutingChannel(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
@@ -836,7 +820,7 @@ def _check_batch_command(
             err=True,
         )
         if isinstance(error.cause, ApiError):
-            exit_with_error(context, _read_only_key_hinted(error.cause))
+            exit_with_error(context, error.cause)
         if isinstance(error.cause, AuthError):
             exit_with_error(
                 context,
@@ -851,7 +835,7 @@ def _check_batch_command(
             ),
         )
     except ApiError as error:
-        exit_with_error(context, _read_only_key_hinted(error))
+        exit_with_error(context, error)
     except AuthError as error:
         exit_with_error(
             context,
@@ -1555,7 +1539,7 @@ def check(
                 no_record=no_record,
             )
     except ApiError as error:
-        exit_with_error(context, _read_only_key_hinted(error))
+        exit_with_error(context, error)
     except AuthError as error:
         exit_with_error(
             context,
@@ -1950,7 +1934,7 @@ def confirm(
                 hint=_CONFIRM_NOT_FOUND_HINT,
                 detail=error.detail,
             )
-        exit_with_error(context, _read_only_key_hinted(error))
+        exit_with_error(context, error)
     except AuthError as error:
         exit_with_error(
             context,
@@ -2021,18 +2005,7 @@ def set_budget(
 
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
 
     credential = required_credential(context, resolve=resolve_credential)
     if isinstance(credential, ApiKeyCredential):
@@ -2135,18 +2108,7 @@ def status(
 
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
 
     credential = required_credential(context, resolve=resolve_credential)
     runtime = with_project(context, credential)
@@ -2209,14 +2171,7 @@ def uncounted(context: typer.Context) -> None:
 
     runtime = command_context(context)
     if not runtime.project:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="Select a project with --project or SOLWYN_PROJECT_ID.",
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     credential = required_credential(context, resolve=resolve_credential)
     runtime = with_project(context, credential)
     try:

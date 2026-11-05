@@ -45,15 +45,18 @@ scopes, expiry, account, email, role) in the credential store described below,
 and says where. In this default flow only the user code is printed; the device code and the
 credential never are.
 
-`--with-key` reads a project key from a hidden prompt or stdin and stores it in
-the same credential store. It validates the key shape and makes no remote probe.
-Keys never belong in command-line arguments. Use `solwyn keys env` to hand a
-stored key to an SDK.
+`--with-key` reads an API key (`solwyn_sk_...`) from a hidden prompt or stdin,
+checks it with `GET /api/v1/auth/key` for the selected project (`--project`,
+`SOLWYN_PROJECT` or the repo's `.solwyn.env`, before `login`), and stores it for
+that project with the account that owns it. A project that disagrees with
+`.solwyn.env`, or that the key does not hold, stores nothing. Keys never belong
+in command-line arguments. Use `solwyn keys env` to hand a stored key to an SDK
+(see [API keys](keys.mdx)).
 
 ## Where credentials are stored
 
-Everything stored (the login, a pending login code and a project key) lives in
-one credential store, keyed by API URL. A login made with
+Everything stored (the login, a pending login code and API keys, one per
+project) lives in one credential store, keyed by API URL. A login made with
 `--api-url http://localhost:8080` is never sent to `https://api.solwyn.ai`, and
 each API keeps its own login and key.
 
@@ -73,9 +76,9 @@ refuses to read a file that other users can read, or that another user owns, and
 says how to fix it (`chmod 600 <path>`). It refuses anything that is not a
 regular file (a FIFO or device is refused without waiting on it), and a file
 that is not a valid Solwyn credentials document, naming the file; every login, pending login
-and project key in it must be complete. A stored login that is not valid, in
+and API key in it must be complete. A stored login that is not valid, in
 the file or the keychain, is an error, never skipped in favor of a stored
-project key.
+API key.
 
 Every read and change of stored credentials holds one per-user lock,
 `credentials.lock` in the user state directory (`~/.local/state/solwyn/` on
@@ -95,7 +98,7 @@ tools, and it is copied into unencrypted backups. A login is scoped, expires
 after 30 days and can be revoked. A system keyring encrypts secrets at rest and
 a locked one blocks retrieval, but an unlocked one serves any program running as
 you. Linux defaults to the file because agent hosts and headless sessions often
-cannot reach or unlock a keyring. A project key has full project access and does not
+cannot reach or unlock a keyring. An API key has full project access and does not
 expire, so storing one in the file prints a warning steering you to
 `SOLWYN_API_KEY` from a secret manager instead. Keep the credentials directory
 out of dotfile sync and unencrypted backups.
@@ -158,8 +161,9 @@ CLI 0.3.0 stored a session login (`access_token` and `refresh_token`) and a
 project key (`api_key`) in the system keyring under the service `solwyn-cli`.
 0.4.0 never reads or sends them. At a terminal, when a command finds no
 credential, it checks whether they are still there and says so once: run
-`solwyn login` again for the login, and `solwyn login --with-key` again (or set
-`SOLWYN_API_KEY`) for the key. Nothing is checked in `file` mode or without a
+`solwyn login` again for the login, and
+`solwyn keys create --project PROJECT --store-key` (or set `SOLWYN_API_KEY` and
+`SOLWYN_PROJECT`) for a key. Nothing is checked in `file` mode or without a
 terminal. Only `solwyn logout` deletes them: a 0.3 project key is not tied to
 an API URL and was shown only once, so no other command removes it. After a
 login where the keychain is the store in use, `solwyn login` says when one is
@@ -170,7 +174,7 @@ API)."
 ## Logins in CI and cloud agents: `SOLWYN_TOKEN`
 
 `SOLWYN_TOKEN` carries a scoped `solwyn_cli_` login in the environment, so CI
-and cloud agents never need a full-scope project key for reads. Mint one with:
+and cloud agents never need a full-scope API key for reads. Mint one with:
 
 ```sh
 solwyn login --label ci --scope read --no-store
@@ -189,8 +193,16 @@ Credential selection depends on the command:
 
 | Commands | Order |
 | --- | --- |
-| Metering: `budget check` (and `--batch`), `budget confirm`, `record`, and the matching MCP tools | `SOLWYN_API_KEY`, then the stored project key. Never a login. |
-| Every other command that calls the API | `SOLWYN_TOKEN`, then the stored login, then `SOLWYN_API_KEY`, then the stored project key. |
+| Metering: `budget check` (and `--batch`), `budget confirm`, `record`, and the matching MCP tools | `SOLWYN_API_KEY`, then the API key stored for the selected project. Never a login. |
+| Every other command that calls the API | `SOLWYN_TOKEN`, then the stored login, then `SOLWYN_API_KEY`, then the API key stored for the selected project. |
+
+A stored key is chosen by its project id. With a login present (even under
+`SOLWYN_AUTH=project_key`), a project name is turned into an id through the
+login's own projects; only without a login is it matched against the names of
+stored keys, and a name that keys of two accounts share is refused
+(`project_ambiguous`). Project keys stored by CLI 0.4 (`sk_proj_...`) stopped
+working and are removed from the store, with a one-time note, the first time
+`login`, `logout` or a key command runs.
 
 `SOLWYN_AUTH=project_key` makes user commands skip both logins.
 
@@ -268,7 +280,7 @@ store except an `unavailable` one is `cleared`, and an `unavailable` store's own
 why, and carries the same report in `detail`; fix that store and run
 `solwyn logout` again. If a login was read but its revoke fails, logout says so,
 still clears it, and exits 0; revoke the login in the dashboard under Settings,
-CLI logins. Logout does not revoke project keys or a `SOLWYN_TOKEN` login. See
+CLI logins. Logout does not revoke API keys or a `SOLWYN_TOKEN` login. See
 [CLI logins](credentials.mdx) to list and revoke logins from the CLI.
 
 Global `--project`, `--api-url` and output flags precede the command.
@@ -276,7 +288,7 @@ Use `--json` for the schema named below unless the command emits plain text.
 
 ## `solwyn login`
 
-Log in through the browser, or store a project key with --with-key.
+Log in through the browser, or store an API key with --with-key.
 
 ```console
 Usage: solwyn login [OPTIONS]
@@ -284,16 +296,16 @@ Usage: solwyn login [OPTIONS]
 
 | Argument or option | Meaning | Default |
 | --- | --- | --- |
-| `--with-key` | `Read and store a project API key from a hidden prompt or stdin. (BOOL)` | `False` |
+| `--with-key` | `Check an API key from a hidden prompt or stdin and store it for the project. (BOOL)` | `False` |
 | `--scope` | `Scopes to request: read, or read,contain. (STRING)` | `read,contain` |
 | `--label` | `Name for this login in the dashboard. Defaults to the short hostname. (STRING)` | `None` |
-| `--wait` | `Seconds to wait for browser approval. 0 starts and returns. (<IntRange x>=0>)` | `None` |
+| `--wait` | `Seconds to wait for browser approval. 0 starts and returns. (INTEGER RANGE)` | `None` |
 | `--continue` | `Resume waiting for the login started earlier. (BOOL)` | `False` |
 | `--store` | `Where to store credentials: auto, keyring or file. Saved to config; nothing is copied between stores. (STRING)` | `None` |
 | `--no-store` | `Print the new login token once for SOLWYN_TOKEN; store nothing. (BOOL)` | `False` |
 
 ```text
-Endpoint: POST /oauth/device_authorization and POST /oauth/token, or a local credential store write with --with-key
+Endpoint: POST /oauth/device_authorization and POST /oauth/token, or with --with-key GET /api/v1/auth/key and a local credential store write
 Auth: none
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth, denied, expired or credential storage; 6 still waiting for browser approval
 JSON schema: solwyn.login.v2; with --no-store --json: solwyn.login.token.v1
@@ -302,6 +314,7 @@ The CLI never opens a browser, so SSH and agent sandboxes work the same way.
 Default --wait is 600 s with a terminal, else 90 s; --wait 0 starts and returns.
 Exit 6 is error code login_pending; its detail (solwyn.login.pending.v1) has user_code, verification_uri, verification_uri_complete and expires_at.
 Keys are never accepted as command-line arguments or echoed.
+--with-key needs a project (--project, SOLWYN_PROJECT or .solwyn.env): the key is checked with GET /api/v1/auth/key and stored for that project.
 Stores in the OS keychain on macOS and Windows and in a private 0600 credentials file on Linux; --store auto|keyring|file chooses and is saved to config. SOLWYN_CREDENTIAL_STORE overrides config.
 A failed keychain write stores nothing and exits 3; there is no fallback to the file, and nothing is copied between stores.
 --no-store finishes the login and prints the token once on stdout for SOLWYN_TOKEN (CI, cloud agents); nothing is stored.
@@ -321,3 +334,4 @@ Auth: local (none)
 Exit codes: 0 success; 2 usage; 3 credential storage
 JSON schema: solwyn.logout.v1
 ```
+

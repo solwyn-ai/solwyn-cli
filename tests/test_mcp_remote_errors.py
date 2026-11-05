@@ -222,7 +222,7 @@ QUOTA_MESSAGE = (
                 "hint": (
                     "The configured project key is read-only; set SOLWYN_API_KEY to a "
                     "write-scoped key, then retry. Confirm a key's scope with "
-                    "solwyn keys show."
+                    "solwyn keys list."
                 ),
                 "status_code": 403,
             },

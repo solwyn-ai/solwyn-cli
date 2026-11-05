@@ -113,12 +113,12 @@ async def probe(request: PrivateRequest, result: HelperResult) -> None:
             result.status = "ok"
             if request.api_key is not None and request.project:
                 result.read = "failed"
-                read = await client.call_tool(
-                    "budget_status", {"project_id": request.project}
-                )
+                # No project argument: the read uses the launch project.
+                read = await client.call_tool("budget_status", {})
+                expected = request.expected_project_id or request.project
                 if not read.is_error:
                     envelope = _ReadEnvelope.model_validate(read.structured_content)
-                    if envelope.data.project_id == request.project:
+                    if envelope.data.project_id == expected:
                         result.read = "ok"
 
 

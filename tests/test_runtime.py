@@ -25,7 +25,7 @@ from solwyn_cli.output import OutputFormat
             "table",
             {
                 "SOLWYN_API_URL": "https://environment.example",
-                "SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1",
+                "SOLWYN_PROJECT": "proj_c6e454d960df4845f9d69eb1",
                 "SOLWYN_FORMAT": "json",
             },
             "https://explicit.example",
@@ -39,7 +39,7 @@ from solwyn_cli.output import OutputFormat
             None,
             {
                 "SOLWYN_API_URL": "https://environment.example",
-                "SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1",
+                "SOLWYN_PROJECT": "proj_c6e454d960df4845f9d69eb1",
                 "SOLWYN_FORMAT": "json",
             },
             "https://environment.example",
@@ -53,7 +53,8 @@ from solwyn_cli.output import OutputFormat
             None,
             {},
             "https://configured.example",
-            "proj_3be9f957f29f905f10f7b652",
+            # No computer-wide default project any more.
+            None,
             OutputFormat.TABLE,
             "config",
         ),
@@ -66,7 +67,7 @@ def test_global_context_uses_explicit_environment_config_precedence(
     output_format: str | None,
     environment: dict[str, str],
     expected_url: str,
-    expected_project: str,
+    expected_project: str | None,
     expected_format: OutputFormat,
     expected_url_source: str,
 ) -> None:
@@ -75,7 +76,6 @@ def test_global_context_uses_explicit_environment_config_precedence(
         "load_config",
         lambda: Config(
             api_url="https://configured.example",
-            default_project="proj_3be9f957f29f905f10f7b652",
             format="table",
         ),
     )
@@ -139,3 +139,21 @@ def test_allowed_config_error_preserves_api_url_provenance(
     assert resolved.api_url == expected_url
     assert resolved.api_url_source == expected_url_source
     assert resolved.config_load_failed is True
+
+
+def test_a_leftover_solwyn_project_id_selects_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runtime, "load_config", lambda: Config())
+
+    resolved = runtime.resolve_command_context(
+        api_url=None,
+        project=None,
+        output_format=None,
+        json_flag=False,
+        no_color=False,
+        environ={"SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1"},
+    )
+
+    assert resolved.project is None
+    assert resolved.project_source == "none"

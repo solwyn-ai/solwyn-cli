@@ -374,7 +374,7 @@ def test_whoami_project_key_uses_configured_project_without_http(
     result = runner.invoke(
         app,
         ["--json", "--project", "proj_a45c2264b8cab0f1e0637f6c", "whoami"],
-        env={"SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1"},
+        env={"SOLWYN_PROJECT": "proj_c6e454d960df4845f9d69eb1"},
     )
 
     assert result.exit_code == 0

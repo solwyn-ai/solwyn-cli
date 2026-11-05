@@ -1,6 +1,6 @@
 # Command reference
 
-These references describe solwyn-cli 0.4.3. Earlier releases lack some of these commands,
+These references describe solwyn-cli 0.5.0. Earlier releases lack some of these commands,
 and 0.3.0 and older log in with a terminal password. Use installed `--help` and MCP
 discovery for an installed version's exact surface.
 Global selection/output flags precede commands. Core authorizes every request.
@@ -20,7 +20,7 @@ for a browser [approval](approvals.mdx) and exit 6 when it is not given.
 - [Forecast](forecast.mdx)
 - [Repository setup](init.mdx)
 - [Invitation preview](invite.mdx)
-- [Project keys](keys.mdx)
+- [API keys](keys.mdx)
 - [Login and logout](login.mdx)
 - [Project notifications](notifications.mdx)
 - [Overview](overview.mdx)

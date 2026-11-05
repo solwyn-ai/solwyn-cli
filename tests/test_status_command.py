@@ -382,10 +382,9 @@ def test_status_optional_sections_are_schema_bearing_json(
             "proj_dfba7aade0868074c2861c98",
             "proj_c6e454d960df4845f9d69eb1",
         ),
-        ([], "", "proj_dfba7aade0868074c2861c98", "proj_dfba7aade0868074c2861c98"),
     ],
 )
-def test_status_project_precedence_is_flag_environment_then_config(
+def test_status_project_precedence_is_flag_then_environment(
     monkeypatch: pytest.MonkeyPatch,
     options: list[str],
     environment_project: str,
@@ -399,14 +398,14 @@ def test_status_project_precedence_is_flag_environment_then_config(
     monkeypatch.setattr(
         runtime,
         "load_config",
-        lambda: Config(default_project=configured_project),
+        lambda: Config(),
     )
     _queue_status_responses(budget={**BUDGET_RESPONSE, "project_id": expected_project})
 
     result = runner.invoke(
         app,
         ["--json", *options, "status"],
-        env={"SOLWYN_PROJECT_ID": environment_project},
+        env={"SOLWYN_PROJECT": environment_project},
     )
 
     assert result.exit_code == 0
@@ -422,7 +421,7 @@ def test_status_missing_project_is_safe_usage_error_without_api_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resolution_calls: list[None] = []
-    monkeypatch.setattr(runtime, "load_config", lambda: Config(default_project=None))
+    monkeypatch.setattr(runtime, "load_config", lambda: Config())
     monkeypatch.setattr(
         status_module,
         "resolve_credential",
@@ -442,8 +441,8 @@ def test_status_missing_project_is_safe_usage_error_without_api_calls(
     assert error["schema"] == "solwyn.error.v1"
     assert error["code"] == "project_required"
     assert "--project" in error["hint"]
-    assert "SOLWYN_PROJECT_ID" in error["hint"]
-    assert "config" in error["hint"]
+    assert "SOLWYN_PROJECT" in error["hint"]
+    assert ".solwyn.env" in error["hint"]
     assert resolution_calls == []
     assert FakeClient.instances == []
 

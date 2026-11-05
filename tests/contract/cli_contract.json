@@ -27,7 +27,7 @@
             "-p"
           ],
           "default": null,
-          "help": "Project ID for this invocation.",
+          "help": "Project name or proj_ id for this invocation.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
@@ -4865,7 +4865,7 @@
     {
       "hidden": false,
       "is_group": false,
-      "json_schema": "solwyn.init.v1",
+      "json_schema": "solwyn.init.v2",
       "name": "init",
       "output_kind": "json-envelope",
       "params": [
@@ -4896,6 +4896,57 @@
           "name": "run_cap",
           "required": false,
           "type": "float"
+        },
+        {
+          "cli_names": [
+            "--budget"
+          ],
+          "default": 100.0,
+          "help": "Budget in USD when init creates the project.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "budget",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "choices": [
+            "daily",
+            "weekly",
+            "monthly"
+          ],
+          "cli_names": [
+            "--period"
+          ],
+          "default": "monthly",
+          "help": "Budget period when init creates the project.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "period",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            "alert_only",
+            "hard_deny"
+          ],
+          "cli_names": [
+            "--mode"
+          ],
+          "default": "alert_only",
+          "help": "Enforcement mode when init creates the project.",
+          "hidden": false,
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "required": false,
+          "type": "choice"
         }
       ],
       "path": [
@@ -6113,13 +6164,13 @@
             "--name"
           ],
           "default": null,
-          "help": "Name for the new project.",
+          "help": "Name for the new project. Defaults to the git repo's name (with -2, -3, ... when taken); required outside a repo.",
           "hidden": false,
           "is_flag": false,
           "kind": "option",
           "multiple": false,
           "name": "name",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -7675,7 +7726,7 @@
         "members",
         "remove"
       ],
-      "summary": "Remove a member, revoking their sessions and created project keys."
+      "summary": "Remove a member and revoke their sessions; API keys keep working."
     },
     {
       "hidden": false,
@@ -8472,6 +8523,7 @@
         "executable",
         "http_read",
         "key_context",
+        "key_project",
         "mcp",
         "mcp_read",
         "profile",
@@ -8534,15 +8586,19 @@
     {
       "keys": [
         "api_url",
-        "config_path",
         "detected_providers",
+        "key_stored",
+        "project_created",
         "project_id",
+        "project_name",
+        "repo_file",
+        "repo_file_written",
         "schema",
         "snippets",
         "verification"
       ],
       "optional_keys": [],
-      "schema": "solwyn.init.v1",
+      "schema": "solwyn.init.v2",
       "universal_error_envelope": false
     },
     {
@@ -8889,12 +8945,14 @@
         "key_id",
         "key_prefix",
         "name",
+        "repo_file",
         "schema",
         "scope",
         "stored"
       ],
       "optional_keys": [
         "key",
+        "repo_file",
         "stored"
       ],
       "schema": "solwyn.projects-create.v1",

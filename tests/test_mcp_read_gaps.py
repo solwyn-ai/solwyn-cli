@@ -281,7 +281,7 @@ def test_unknown_input_is_rejected_before_auth(monkeypatch, name):
 
 def test_account_costs_mutually_exclusive_and_key_gate(monkeypatch):
     result, requests = call(
-        monkeypatch, "get_costs", [], {"account": True, "project_id": "explicit"}
+        monkeypatch, "get_costs", [], {"account": True, "project": "explicit"}
     )
     assert (
         result.is_error

@@ -2,32 +2,50 @@
 title: Repository setup
 ---
 
-Run from the repository to configure its Solwyn project, detect Python provider
+Run from the repository to set up its Solwyn project, detect Python provider
 SDK imports, print SDK wiring and read budget status. Provider credentials are
 never collected: the printed wiring reads each provider key from its environment
-variable, such as `OPENAI_API_KEY`. `--agents` additionally writes Claude, Cursor and AGENTS.md
-guidance; `--run-cap` applies only to newly created projects.
+variable, such as `OPENAI_API_KEY`. `--agents` additionally writes Claude, Cursor
+and AGENTS.md guidance; `--run-cap` applies only to a project init creates.
 
 ```sh
 solwyn init
 solwyn init --agents
+SOLWYN_PROJECT=checkout-bot solwyn init --agents
 ```
 
 With no stored credential, init runs the same browser login as `solwyn login`.
-In a terminal it first asks whether to log in or store a project key; without a
+In a terminal it first asks whether to log in or paste an API key; without a
 terminal it starts the browser login, so agents and SSH sessions are not stuck.
 If the approval wait ends first, it exits 6 with `login_pending`; approve in the
 browser, run `solwyn login --continue`, then run `solwyn init` again. Signup and
 email verification happen on that browser page.
 
-Init then lists and selects projects and can create one. Creating a project with
-a Solwyn login needs one browser approval (see [approvals](approvals.mdx)), and
-shows a one-time project key that init stores in the credential store (the
-keychain on macOS and Windows, the credentials file on Linux; see
-[login](login.mdx)). It writes local configuration and scans imports, then
-verifies the budget with a read. Stored credentials are readable only by the
-same OS account. The help contract below lists every
-conditional remote and local operation.
+## Which project
+
+Before it creates or writes anything, init checks that `--project` or
+`SOLWYN_PROJECT` agrees with the repo's `.solwyn.env` (otherwise it exits 2
+with `project_mismatch` and changes nothing) and, with a `SOLWYN_TOKEN` login,
+reads the login's account. Then:
+
+| What selects the project | What init does |
+| --- | --- |
+| The repo's `.solwyn.env` | Uses that project (it must exist). The file is left as it is. |
+| `--project` or `SOLWYN_PROJECT`, no `.solwyn.env` | Uses that project, which must already exist (init never creates a project from a flag or environment value), and writes `.solwyn.env` with the value as given. |
+| Nothing | Creates a project named after the git repo (`-2`, `-3`, ... when that name is taken) with `--budget`, `--period` and `--mode`, stores its API key on this computer and writes `.solwyn.env`. Creating needs a login and one browser approval (see [approvals](approvals.mdx)). |
+
+The repo file holds no secret and is meant to be committed:
+
+```text
+# Solwyn project for this repo. Not a secret: commit this file.
+SOLWYN_PROJECT="checkout-bot"
+```
+
+An existing `.solwyn.env` is never overwritten. Init writes no computer-wide
+configuration. Outside a git repo, init needs `--project` or `SOLWYN_PROJECT`.
+The generated agent guidance tells agents to hand keys to SDKs with
+`solwyn keys env`, to leave `.solwyn.env` alone, and never to switch projects or
+ask for a wider key to get past a budget limit.
 
 Global `--project`, `--api-url` and output flags precede the command.
 Use `--json` for the schema named below unless the command emits plain text.
@@ -44,13 +62,20 @@ Usage: solwyn init [OPTIONS]
 | --- | --- | --- |
 | `--agents` | `Write Claude, Cursor, and AGENTS.md guidance. (BOOL)` | `False` |
 | `--run-cap` | `Create a wildcard per-run hard cap after project creation; caps every run at min(caps).  (FLOAT)` | `None` |
+| `--budget` | `Budget in USD when init creates the project. (FLOAT)` | `100.0` |
+| `--period` | `Budget period when init creates the project. (Choice(['daily', 'weekly', 'monthly']))` | `monthly` |
+| `--mode` | `Enforcement mode when init creates the project. (Choice(['alert_only', 'hard_deny']))` | `alert_only` |
 
 ```text
 Endpoint: composite onboarding workflow
-Auth: any, or a browser login when none is stored
-Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 5 not found; 6 approval or login pending
-JSON schema: solwyn.init.v1
-Remote operations: conditional browser login (POST /oauth/device_authorization, POST /oauth/token); GET /api/v1/projects; optional POST /api/v1/projects; final GET /api/v1/projects/{project}/budget; --run-cap adds a rule with GET/GET/PUT /api/v1/projects/{project}/budget after creation.
-Local operations: write local configuration; scan Python imports; render SDK snippets; optionally write agent artifacts with --agents.
+Auth: a login (a browser login when none is stored); an API key only for an existing project
+Exit codes: 0 success; 1 generic/API; 2 usage or project mismatch; 3 auth; 5 not found; 6 approval or login pending
+JSON schema: solwyn.init.v2
+Project: the repo's .solwyn.env, else --project or SOLWYN_PROJECT (the project must exist), else a new project named after the git repo (-2, -3, ... when taken) whose key is stored on this computer.
+A --project or SOLWYN_PROJECT that disagrees with .solwyn.env exits 2 before anything is created or written.
+Writes .solwyn.env (SOLWYN_PROJECT, no secret, commit it) when there is none; never overwrites one. No computer-wide configuration is written.
+Remote operations: conditional browser login; GET /api/v1/projects; optional POST /api/v1/projects; final GET /api/v1/projects/{project}/budget; --run-cap adds a rule after creation.
+Local operations: scan Python imports; render SDK snippets; optionally write agent artifacts with --agents.
 Provider credentials are never collected; --agents writes safe agent guidance.
 ```
+

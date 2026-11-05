@@ -390,7 +390,7 @@ def test_budget_set_refuses_each_project_key_source_without_requests(
 def test_budget_set_requires_login_and_project_before_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(runtime, "load_config", lambda: Config(default_project=None))
+    monkeypatch.setattr(runtime, "load_config", lambda: Config())
     monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: None)
 
     missing_project = runner.invoke(
@@ -626,7 +626,7 @@ def test_budget_set_uses_global_project_precedence(
     monkeypatch.setattr(
         runtime,
         "load_config",
-        lambda: Config(default_project="proj_dfba7aade0868074c2861c98"),
+        lambda: Config(),
     )
     FakeClient.responses = [
         httpx.Response(200, json=_response(project_id="proj_c6e454d960df4845f9d69eb1")),
@@ -636,7 +636,7 @@ def test_budget_set_uses_global_project_precedence(
     result = runner.invoke(
         app,
         ["--json", "budget", "set", "--mode", "alert_only"],
-        env={"SOLWYN_PROJECT_ID": "proj_c6e454d960df4845f9d69eb1"},
+        env={"SOLWYN_PROJECT": "proj_c6e454d960df4845f9d69eb1"},
     )
 
     assert result.exit_code == 0

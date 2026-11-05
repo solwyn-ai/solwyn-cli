@@ -51,6 +51,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, TypeVar
 from urllib.parse import urlsplit
@@ -209,8 +210,27 @@ def platform_name(platform: str | None = None) -> Literal["macos", "windows", "l
     return "linux"
 
 
+# A credentials file chosen earlier (the MCP server's, at launch): while set,
+# credentials_path() returns it (or raises the error choosing it raised)
+# instead of reading SOLWYN_CREDENTIALS_FILE and the data dir again.
+_PINNED_PATH: ContextVar[Path | StoreUnavailableError | None] = ContextVar(
+    "solwyn_pinned_credentials_path", default=None
+)
+
+
+def pin_credentials_path(path: Path | StoreUnavailableError) -> Callable[[], None]:
+    """Use ``path`` as the credentials file in this context; return the reset."""
+    token = _PINNED_PATH.set(path)
+    return lambda: _PINNED_PATH.reset(token)
+
+
 def credentials_path() -> Path:
     """Return the credentials file: SOLWYN_CREDENTIALS_FILE, else the data dir."""
+    pinned = _PINNED_PATH.get()
+    if isinstance(pinned, StoreUnavailableError):
+        raise StoreUnavailableError(str(pinned))
+    if pinned is not None:
+        return pinned
     override = os.environ.get(FILE_ENV, "")
     if override:
         path = Path(override)

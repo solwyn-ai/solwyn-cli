@@ -119,7 +119,9 @@ def main(
     ] = False,
     project: Annotated[
         str | None,
-        typer.Option("--project", "-p", help="Project ID for this invocation."),
+        typer.Option(
+            "--project", "-p", help="Project name or proj_ id for this invocation."
+        ),
     ] = None,
     api_url: Annotated[
         str | None,

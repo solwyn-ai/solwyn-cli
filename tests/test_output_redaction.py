@@ -268,7 +268,6 @@ _EXEMPT_WRITES = {
         "costs.py",
         "f'Savings: ${savings.saved_cost:.6f}; upper {upper}; blocked calls {savings.blocked_call_count}.'",
     ),
-    ("init.py", "f'Project ({project_ids}, or create)'"),
     ("invite.py", "label"),
     ("keys.py", "line"),
     # login --no-store: the token itself, printed once on purpose.

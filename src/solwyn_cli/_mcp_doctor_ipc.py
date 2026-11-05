@@ -27,6 +27,10 @@ class PrivateRequest(BaseModel):
     profile: Profile
     expected_tools: list[Name] = Field(max_length=TOOL_INVENTORY_LIMIT)
     expected_version: str = Field(max_length=32)
+    # The launch project's id, as /auth/key resolved it in the parent.
+    expected_project_id: str | None = Field(
+        default=None, pattern=r"^proj_[a-f0-9]{24}$"
+    )
     api_key: SecretStr | None = None
 
     def to_private_bytes(self) -> bytes:

@@ -22,29 +22,44 @@ resolution or HTTP. A tool argument cannot switch profiles.
 | Tools | Profile | Credential requirement |
 | --- | --- | --- |
 | `budget_status`, `budget_uncounted`, `get_project_status`, `get_forecast`, `get_cost_total`, `list_tags`, `list_tag_values`, `list_agent_runs`, `get_agent_run`, `list_cost_events`, `get_cost_baseline`, `get_unit_economics`, `get_cost_drift`, `list_priced_models`, `simulate_costs`, `list_provider_failovers`, `list_untracked_surfaces` | Both | Project API key or Solwyn login with access to the selected project |
-| `get_costs` | Both | Project key or Solwyn login; `account=true` requires a Solwyn login and excludes explicit `project_id` |
-| `list_budget_rules` | Both | Project key or Solwyn login; `with_last_fired=true` requires a Solwyn login |
-| `plan_status`, `plan_catalog` | Both | Solwyn login or project key with account/user context; no selected project required |
+| `get_costs` | Both | API key or Solwyn login; `account=true` requires a Solwyn login and excludes explicit `project` |
+| `list_budget_rules` | Both | API key or Solwyn login; `with_last_fired=true` requires a Solwyn login |
+| `plan_status`, `plan_catalog` | Both | Solwyn login or API key with account/user context; no selected project required |
 | `plan_preview` | Both | Solwyn login at any account role; no selected project required |
 | `list_team_members` | Both | Solwyn login; any account member; no selected project required |
 | `list_team_invites` | Both | Solwyn login; owner/admin; no selected project required |
-| `get_whoami` | Both | A Solwyn login reads identity including email verification; project keys return local context with no invented user or raw key |
+| `get_whoami` | Both | A Solwyn login reads identity including email verification; API keys return local context with no invented user or raw key |
 | `list_alert_activity`, `list_open_alert_deliveries`, `get_account_alert`, `get_account_phone`, `list_audit_events` | Both | Solwyn login; reads do not impose owner-only write gates |
-| `list_alert_events` | Both | Project key or Solwyn login for project history; `account=true` reads account-scope events, requires a Solwyn login and ignores `project_id` |
+| `list_alert_events` | Both | API key or Solwyn login for project history; `account=true` reads account-scope events, requires a Solwyn login and ignores `project` |
 | `list_projects`, `get_overview` | Both | Solwyn login |
 | `budget_check`, `budget_confirm`, `record_call` | `guardrails` | Write-scoped project API key |
-| `budget_check_batch` | `guardrails` | Project key; write scope for submit/record-only, read scope accepted for recovery-only |
+| `budget_check_batch` | `guardrails` | API key; write scope for submit/record-only, read scope accepted for recovery-only |
 
 Tag discovery requires the Team plan. Core still checks project access, plan
 entitlements and key scope. A profile only reduces the exposed tool surface; it
 never grants permission to spend. Writes use the project authenticated by the
-key. `project_id` on read tools overrides launch `--project`, then
-`SOLWYN_PROJECT_ID` and `default_project`; it cannot redirect writes to another
-project. Credentials are resolved fresh for every operation, by tool class.
-Metering tools (`budget_check`, `budget_check_batch`, `budget_confirm`,
-`record_call`) use only a project key: `SOLWYN_API_KEY`, then the stored
-project key, never a login. Every other tool uses `SOLWYN_TOKEN`, then the
-stored Solwyn login, then `SOLWYN_API_KEY`, then the stored project key.
+key. The launch project is global `--project` before `mcp`, then `SOLWYN_PROJECT`,
+then the repo's `.solwyn.env`. The server reads these, its environment, its
+working directory and which credential store to use (`SOLWYN_CREDENTIAL_STORE`
+or config `credential_store`, and `SOLWYN_CREDENTIALS_FILE`) once, when it
+starts; later edits to them change nothing until it restarts. It also notes
+which login a project name would be resolved through: `SOLWYN_TOKEN`, else the
+stored login, else none. If the stored login is replaced, removed or added
+before the reporting tools are bound (the first reporting call that gets
+past a busy or unreachable Core), every reporting call returns
+`credentials_changed` until the server restarts; once bound, the server keeps
+the key it chose even if the login changes. Reporting tools (`budget_check`,
+`budget_check_batch`, `budget_confirm`, `record_call`) always spend from it: they
+take no project argument, refuse one, and use only an API key (`SOLWYN_API_KEY`,
+then the key stored for the launch project, never a login and never another
+project's key). The first reporting call checks the pair with
+`GET /api/v1/auth/key`; after that every reporting request carries the project id
+as `Solwyn-Project`, and results include `project_id` as Core reports it. A launch
+project that cannot be used refuses every reporting call with the same error.
+Read tools take an optional `project` (a name or `proj_` id) that defaults to the
+launch project; it never redirects writes. Read credentials are resolved fresh
+for every operation: `SOLWYN_TOKEN`, then the stored Solwyn login, then
+`SOLWYN_API_KEY`, then the stored key for the selected project.
 `SOLWYN_AUTH=project_key` skips both logins for those tools and
 `SOLWYN_AUTH=login` requires one. A stored
 key therefore never hides the login from account tools. MCP tools never wait for
@@ -177,8 +192,8 @@ An error is never proof of a complete empty result. All reads also use the
 existing result-size and cancellation fences. See [bounded work](mcp-bounded-work.md).
 
 `get_costs(account=true)` defaults to project grouping and permits only model,
-provider, modality and paired custom-window/preset filters. Explicit `project_id`
-is mutually exclusive; configured default projects are irrelevant to the account
+provider, modality and paired custom-window/preset filters. Explicit `project`
+is mutually exclusive; the launch project is irrelevant to the account
 query. Core still enforces plan entitlements, account access and role permissions.
 Project mode defaults to model grouping. Pricing simulation is a read-only POST;
 it makes no admission or billing change. A definite 401 is an authentication
@@ -206,7 +221,7 @@ writes remain CLI-only; personal-account recovery is in the dashboard.
 `plan_preview(tier, interval)` is the only billing capability added beyond status
 and catalog. It appears in both profiles and reads Core's plan-change estimate
 with a Solwyn login at any account role, including member. No project selection
-is required; a project key is refused. The preview POST does
+is required; an API key is refused. The preview POST does
 not change the subscription, create an invoice, or charge the customer. It has
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, and
 `openWorldHint=true`.
@@ -239,7 +254,7 @@ fields fail closed and `delivery_status` is preserved verbatim.
 Both reads have `readOnlyHint=true`, `destructiveHint=false`,
 `idempotentHint=true`, and `openWorldHint=true`. They use the login selection,
 429 policy, operation deadline, HTTP/result fences and fixed safe errors. A
-project key fails with login guidance, without falling back to a different
+API key fails with login guidance, without falling back to a different
 identity. Team writes and account rename are CLI-only. Invitation preview uses the
 CLI's private token workflow and is not an MCP tool; acceptance happens from the
 emailed link. See [team](commands/team.mdx) and [invite](commands/invite.mdx).

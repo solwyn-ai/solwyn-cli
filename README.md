@@ -2,9 +2,9 @@
 
 <!-- mcp-name: ai.solwyn/solwyn -->
 
-Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and recover from leaked or expired project keys — from your terminal, your scripts, or your coding agent.
+Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and manage your account's API keys, from your terminal, your scripts, or your coding agent.
 
-This README describes solwyn-cli 0.4.3. The package is distributed on PyPI as `solwyn-cli`;
+This README describes solwyn-cli 0.5.0. The package is distributed on PyPI as `solwyn-cli`;
 run `solwyn --version` to see which version you have installed, and use `solwyn --help`
 and MCP discovery to inspect its exact surface.
 
@@ -25,14 +25,17 @@ Requires Python 3.11 or newer. The package installs two identical executables: `
 ## Getting started
 
 ```console
-solwyn login          # approve this CLI in your browser; --with-key stores a project key instead
-solwyn init           # configure Solwyn for the current repository
+solwyn login          # approve this CLI in your browser
+solwyn init           # set up this repo's Solwyn project and write .solwyn.env
+eval "$(solwyn keys env)"   # hand this repo's API key and project to the SDK
 solwyn status         # project budget and provider health at a glance
 ```
 
-`solwyn login` prints a URL and a code. Open the URL in any browser, sign in or sign up, and approve. It works over SSH and in agent sandboxes, and an agent can relay the code to you. The login is scoped: it can read, stop agent runs and lower caps. Raising a cap, changing enforcement mode, pausing rules, keys, billing and team changes ask for your approval in the browser each time, and the command waits for it (exit 6 if it is not given). `eval "$(solwyn keys env)"` hands the stored project key to the SDK in your shell. See [login](docs/commands/login.mdx) and [approvals](docs/commands/approvals.mdx).
+`solwyn login` prints a URL and a code. Open the URL in any browser, sign in or sign up, and approve. It works over SSH and in agent sandboxes, and an agent can relay the code to you. The login is scoped: it can read, stop agent runs and lower caps. Raising a cap, changing enforcement mode, pausing rules, keys, billing and team changes ask for your approval in the browser each time, and the command waits for it (exit 6 if it is not given). `eval "$(solwyn keys env)"` exports the API key stored for this repo's project as `SOLWYN_API_KEY`, with `SOLWYN_PROJECT`, for the SDK in your shell. See [login](docs/commands/login.mdx), [API keys](docs/commands/keys.mdx) and [approvals](docs/commands/approvals.mdx).
 
-`solwyn init` authenticates, selects a project, writes local configuration, detects the provider SDKs your code imports, prints the wiring for each, and verifies your budget end-to-end. Add `--agents` to also write guidance files for Claude, Cursor, and `AGENTS.md`.
+`solwyn init` authenticates and sets up the repo's project: the one its `.solwyn.env` names, else an existing project you select with `--project` or `SOLWYN_PROJECT`, else a new project named after the repo whose API key it stores on this computer. It writes `.solwyn.env` (the project name, no secret; commit it), detects the provider SDKs your code imports, prints the wiring for each, and verifies your budget end to end. Add `--agents` to also write guidance files for Claude, Cursor, and `AGENTS.md`. See [repository setup](docs/commands/init.mdx).
+
+An API key belongs to your account and holds one or more projects; every request with it names its project (`SOLWYN_PROJECT`, a project name or `proj_` id). The CLI creates a key for one project; giving a key another project is done only in the dashboard.
 
 ## Three ways to use it
 
@@ -40,11 +43,11 @@ Calls made through the Solwyn Python SDK are enforced and attributed automatical
 
 ### Give a coding agent a budget
 
-`solwyn mcp` serves read, guardrail, and attribution tools to any MCP client over local stdio, resolving configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
+`solwyn mcp` serves read, guardrail, and attribution tools to any MCP client over local stdio. The reporting tools spend from the project chosen once at launch (`--project`, `SOLWYN_PROJECT` or the repo's `.solwyn.env`), never from a per-call project; read tools resolve configuration and credentials fresh on every call. Standard MCP capability and schema discovery exposes the exact tools and input/output shapes in the running version. `solwyn agent-context` prints a compact capability contract suitable for pasting into an agent's context, and `solwyn init --agents` writes the equivalent guidance into the repository.
 
 ```console
-solwyn --project proj_0123456789abcdef01234567 mcp --profile read   # 33 read tools
-solwyn --project proj_0123456789abcdef01234567 mcp                  # default guardrails profile, all 37 tools
+solwyn --project checkout-bot mcp --profile read   # 33 read tools
+solwyn mcp                                         # project from .solwyn.env; all 37 tools
 solwyn doctor --mcp                                                 # verify the wiring
 ```
 
@@ -106,7 +109,7 @@ The published guide lives in the [CLI docs](https://docs.solwyn.ai/cli).
 
 ## Scripting
 
-API and setup commands support global `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, not-found, and approval (`6`) outcomes. The local `config` commands emit plain text. Global flags select the project (`--project`), API base URL (`--api-url`), and output format, and go before the subcommand.
+API and setup commands support global `--json` for schema-bearing JSON output (each payload names its schema, e.g. `solwyn.costs.v1`), and exit codes are stable and documented per command: `0` success, `2` usage, with distinct codes for API, auth, budget-denial, not-found, and approval (`6`) outcomes. The local `config` commands emit plain text. Global flags select the project (`--project`, a project name or `proj_` id; otherwise `SOLWYN_PROJECT`, then the repo's `.solwyn.env`), API base URL (`--api-url`), and output format, and go before the subcommand. There is no computer-wide default project.
 
 ## Trust posture
 
@@ -117,7 +120,7 @@ Solwyn CLI:
 - never collects, stores, or proxies provider API keys;
 - has no telemetry, update checks, or phone-home behavior;
 - stores Solwyn credentials in the operating system keychain on macOS and Windows and in a private `0600` file (`~/.local/share/solwyn/credentials.json`) on Linux, keyed by API URL, never in configuration files or command-line arguments. If a keychain write fails, the command fails and stores nothing; it never falls back to the file (`solwyn login --store file` chooses the file). See [login](docs/commands/login.mdx) for the stores, `SOLWYN_TOKEN` for CI, the tradeoffs, and how logout clears both stores; and
-- prints a secret only where that is the point of the command: `keys env` (the stored project key, as an export line, plus `SOLWYN_API_URL` when the API URL is not the default), `keys rotate` and `projects create` without `--store-key` (a newly issued project key, once), `webhooks create` and `webhooks rotate` (a one-time signing secret), and `login --no-store` (a newly issued login token, once). Raw data commands (`costs export`, `alerts export`, `attest`) return the server's data byte-for-byte. Everything else redacts CLI tokens and device codes.
+- prints a secret only where that is the point of the command: `keys env` (the API key stored for the selected project, as export lines with `SOLWYN_PROJECT`, plus `SOLWYN_API_URL` when the API URL is not the default), `keys create`, `keys rotate` and `projects create` when the new key is not stored on this computer (a newly issued API key, once), `webhooks create` and `webhooks rotate` (a one-time signing secret), and `login --no-store` (a newly issued login token, once). Raw data commands (`costs export`, `alerts export`, `attest`) return the server's data byte-for-byte. Everything else redacts CLI tokens, device codes and API keys.
 
 ## Development
 
@@ -135,7 +138,7 @@ uv run pytest
 Two test-suite properties worth knowing before contributing:
 
 - Any change to the CLI surface (commands, flags, help text, exit codes, JSON output) requires regenerating the machine-readable contract snapshot with `scripts/generate_contract.py`; `tests/test_contract_snapshot.py` fails until you do.
-- The vendored OpenAPI snapshot and its drift guards are self-invalidating by design — adopt fields properly or record a decline in the registry; never loosen a guard to make a test pass.
+- The vendored OpenAPI snapshot and its drift guards are self-invalidating by design: adopt fields properly or record a decline in the registry; never loosen a guard to make a test pass.
 
 The vendored snapshot has two independent safeguards: public CLI CI checks its age and the
 checked-in request/response contracts, while a proposed private monitor compares its content

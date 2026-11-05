@@ -76,9 +76,9 @@ def show(context: typer.Context) -> None:
     epilog=command_help(
         "PUT /api/v1/projects/{project}/notifications",
         SCHEMA,
-        auth="owner/admin login (project.write); project API keys refused",
+        auth="owner/admin login (project.write); API keys refused",
         guidance=(
-            "Project API keys cannot change notification settings; without a login this exits 3 before any request. Run solwyn login.",
+            "API keys cannot change notification settings; without a login this exits 3 before any request. Run solwyn login.",
             "Omitted options leave settings unchanged. Clear channel/event lists with []; reset email/SMS configs with null.",
             "Channel enablement follows Core capabilities; SMS requires Production, verified phone and consent.",
         ),
@@ -141,7 +141,7 @@ def set_config(
         body=NotificationConfigUpdate.model_validate(body),
         login_message=(
             "Changing notification settings requires a Solwyn login; "
-            "project API keys cannot change them."
+            "API keys cannot change them."
         ),
     )
     emit(context, SCHEMA, data, table=config_table(data))

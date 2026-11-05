@@ -11,7 +11,7 @@ from pydantic import BaseModel, create_model
 from solwyn_cli._vendor import wire
 from solwyn_cli.commands.budget import DenialRecordingRetry as _DenialRecordingRetry
 
-PROJECT = "Read project ID; non-empty when supplied. Overrides launch --project, then SOLWYN_PROJECT_ID/config default_project. A key must have access to this project; this never changes the authenticated write project."
+PROJECT = "Read project: a project name or proj_ id, non-empty when supplied. Defaults to the launch project (--project before mcp, then SOLWYN_PROJECT, then the repo's .solwyn.env). A key must hold this project. Reads only: budget_check, budget_check_batch, budget_confirm and record_call always use the launch project."
 TAGS = "Attribution tags; explicit keys override SOLWYN_TAGS. At most 10 merged keys, keys 1–64 characters, values at most 256, no NUL. Whitespace and case are preserved."
 RUN_ID = "Stable caller run ID (at most 256 characters); overrides SOLWYN_AGENT_RUN_ID. Reuse across this run; never replace it to evade a stopped run."
 TOKEN_COUNTS = {
@@ -32,7 +32,7 @@ TOKEN_COUNTS = {
 COMMON = {
     "tier": "Target paid plan tier: production, team or scale. Preview only; does not change the plan.",
     "interval": "Target billing interval, month or year. Preview only; does not create a charge.",
-    "project_id": PROJECT,
+    "project": PROJECT,
     "tags": TAGS,
     "agent_run_id": RUN_ID,
     "model": "Model used for this call, at most 2048 characters; use the actual served model when recording or confirming.",
@@ -61,7 +61,7 @@ COMMON = {
     "cursor": "Opaque cursor from a previous page of the same query; preserve filters and ordering when continuing.",
     "time_range": "Preset query window; paired custom start/end timestamps override this preset. Available values are declared by the schema.",
     "with_last_fired": "Include latest firing within Core's default 30d retention window; requires a Solwyn login even for project budget rules. Null means no matching history in that window.",
-    "account": "True reads account costs with a Solwyn login; mutually exclusive with explicit project_id. Supports only model/provider/modality/group_by and window filters.",
+    "account": "True reads account costs with a Solwyn login; mutually exclusive with an explicit project. Supports only model/provider/modality/group_by and window filters.",
     "event_type": "Exact activity event type: fired, snoozed, unsnoozed, paused or resumed; omit for all events.",
     "all_pages": "True follows at most 10 pages within the 30-second/1 MiB response budget, including empty continued pages; limits retain the first unread cursor. False returns one page.",
     "days": "Baseline lookback days from 3 through 30, excluding today; defaults to 7.",
@@ -159,7 +159,7 @@ SPECIFIC = {
         "run": "Run storage ID or exact raw caller run name, 1–255 characters; ambiguous names fail with guidance to list IDs.",
     },
     "list_alert_events": {
-        "account": "True reads account-scope history and requires a Solwyn login; project_id is ignored. False reads the selected project using a project key or a Solwyn login.",
+        "account": "True reads account-scope history and requires a Solwyn login; project is ignored. False reads the selected project using a project key or a Solwyn login.",
         "time_range": "Alert-history preset: 7d, 30d or 90d (default 30d); paired custom timestamps override it. Core may clamp retention.",
         "rule_type": "Filter by alert rule type, at most 32 characters and no NUL; omit to include all types.",
         "scope": "Filter by rule scope, at most 32 characters and no NUL; this is not project/account selection (use account).",

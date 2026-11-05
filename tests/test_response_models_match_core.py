@@ -321,6 +321,7 @@ CLASSIFIED_NOT_RESPONSES = {
     "solwyn_cli.commands.mcp_doctor:Check": _CLI_OUTPUT,
     "solwyn_cli.commands.mcp_doctor:CredentialCheck": _CLI_OUTPUT,
     "solwyn_cli.commands.mcp_doctor:KeyContext": _CLI_OUTPUT,
+    "solwyn_cli.commands.mcp_doctor:KeyProject": _CLI_OUTPUT,
     "solwyn_cli.commands.mcp_doctor:McpDoctorData": _CLI_OUTPUT,
     "solwyn_cli.commands.mcp_doctor:ToolConstraint": _CLI_OUTPUT,
     "solwyn_cli.commands.plan:_PlanChangeData": _CLI_OUTPUT,

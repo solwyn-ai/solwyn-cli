@@ -10,6 +10,7 @@ import pytest
 from click import unstyle
 from golden.harness import assert_matches_golden
 from key_fixtures import keys_entry
+from test_mcp_conformance import auth_key_answer
 from login_fixtures import LOGIN_TOKEN, DictStore, install_store, login_entries
 from typer.testing import CliRunner
 
@@ -29,6 +30,11 @@ def _store(values, *, fail_on=()):
 
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
+
+
+def _identity(project_id: object, scope: object) -> dict[str, object]:
+    """A GET /api/v1/auth/key body (Core spec 2.5) with these two fields."""
+    return {**auth_key_answer(None), "project_id": project_id, "scope": scope}
 
 
 @pytest.fixture(autouse=True)
@@ -170,7 +176,8 @@ def test_doctor_mcp_has_dedicated_schema():
         ("cli", {"SOLWYN_PROJECT_ID": "env"}, "cli"),
         (None, {"SOLWYN_PROJECT": "env"}, "environment"),
         # Read until 14d-2 removes it, after SOLWYN_PROJECT and .solwyn.env.
-        (None, {"SOLWYN_PROJECT_ID": "env"}, "legacy_environment"),
+        # SOLWYN_PROJECT_ID is gone: it selects nothing.
+        (None, {"SOLWYN_PROJECT_ID": "env"}, "none"),
         (None, {}, "none"),
     ],
 )
@@ -236,7 +243,7 @@ def test_actual_key_identity_is_separate_from_wrong_selected_project(
         [
             httpx.Response(
                 200,
-                json={"project_id": "proj_abababababababababababab", "scope": scope},
+                json=_identity("proj_abababababababababababab", scope),
             ),
             httpx.Response(403, json={"detail": "PRIVATE_REMOTE_CANARY"}),
         ]
@@ -369,17 +376,14 @@ def test_login_is_captured_once_and_mcp_read_is_skipped(
         (
             httpx.Response(
                 200,
-                json={
-                    "project_id": "proj_abababababababababababab",
-                    "scope": "PRIVATE_SCOPE",
-                },
+                json=_identity("proj_abababababababababababab", "PRIVATE_SCOPE"),
             ),
             "failed",
         ),
-        (httpx.Response(200, json={"project_id": KEY, "scope": "full"}), "failed"),
+        (httpx.Response(200, json=_identity(KEY, "full")), "failed"),
         *[
             (
-                httpx.Response(200, json={"project_id": value, "scope": "full"}),
+                httpx.Response(200, json=_identity(value, "full")),
                 "failed",
             )
             for value in (
@@ -434,7 +438,7 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
         )
         return httpx.Response(
             200,
-            json={"project_id": "proj_" + "ab" * 12, "scope": "full"},
+            json=_identity("proj_" + "ab" * 12, "full"),
         )
 
     class LifecycleClient(SolwynClient):
@@ -486,20 +490,20 @@ def test_http_client_lifecycle_failure_is_safe_and_preserves_known_identity(
     assert result.stderr == ""
 
 
-def test_key_without_selected_project_still_reports_identity(monkeypatch, probes):
+def test_key_without_selected_project_asks_for_one_and_sends_nothing(
+    monkeypatch, probes
+):
+    # Every key request names its project (Core spec 2.3): with none selected
+    # the key cannot be checked, so nothing is sent.
     monkeypatch.setenv("SOLWYN_API_KEY", KEY)
-    probes[1].append(
-        httpx.Response(
-            200,
-            json={"project_id": "proj_abababababababababababab", "scope": "read_only"},
-        )
-    )
     result = runner.invoke(app, ["--json", "doctor", "--mcp"])
     data = json.loads(result.stdout)
-    assert data["key_context"]["scope"] == "read_only"
+    assert data["key_context"]["status"] == "skipped"
+    assert data["key_project"]["status"] == "skipped"
+    assert "launch project" in data["key_project"]["detail"]
     assert data["http_read"]["status"] == "skipped"
     assert data["mcp_read"]["status"] == "skipped"
-    assert len(probes[0]) == 1
+    assert probes[0] == []
 
 
 def test_config_error_never_sends_key_to_fallback_api(monkeypatch, tmp_path, probes):
@@ -536,13 +540,10 @@ def test_windows_console_layout_and_no_path_fallback(monkeypatch, tmp_path):
         _mcp_launch.resolve_executable(scripts / "absent.exe")
 
 
-def test_successful_key_read_and_configured_project_source(
+def test_successful_key_read_and_environment_project_source(
     monkeypatch, tmp_path, probes
 ):
-    (tmp_path / "config.toml").write_text(
-        'default_project = "proj_abababababababababababab"\n'
-    )
-    monkeypatch.setenv("SOLWYN_PROJECT_ID", "")
+    monkeypatch.setenv("SOLWYN_PROJECT", "proj_abababababababababababab")
     install_store(
         monkeypatch,
         DictStore(
@@ -553,10 +554,7 @@ def test_successful_key_read_and_configured_project_source(
         [
             httpx.Response(
                 200,
-                json={
-                    "project_id": "proj_abababababababababababab",
-                    "scope": "read_only",
-                },
+                json=_identity("proj_abababababababababababab", "read_only"),
             ),
             httpx.Response(200, json={"project_id": "proj_abababababababababababab"}),
         ]
@@ -565,7 +563,7 @@ def test_successful_key_read_and_configured_project_source(
     data = json.loads(result.stdout)
     assert result.exit_code == 0, result.output
     assert data["status"] == "ok"
-    assert data["project_source"] == "config"
+    assert data["project_source"] == "environment"
     assert data["credential"]["source"] == "file"
     assert data["mcp_read"]["status"] == "ok"
 
@@ -588,10 +586,7 @@ def test_mcp_doctor_json_golden(monkeypatch, probes):
         [
             httpx.Response(
                 200,
-                json={
-                    "project_id": "proj_abababababababababababab",
-                    "scope": "read_only",
-                },
+                json=_identity("proj_abababababababababababab", "read_only"),
             ),
             httpx.Response(200, json={"project_id": "proj_abababababababababababab"}),
         ]

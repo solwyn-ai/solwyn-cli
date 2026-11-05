@@ -1,5 +1,5 @@
 Field                                       Value
-Credential              project key (environment)
+Credential                  API key (environment)
 Authentication                        project_key
 Source                                environment
 Stored in            environment (SOLWYN_API_KEY)

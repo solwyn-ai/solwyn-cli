@@ -12,6 +12,7 @@ from solwyn_cli.auth import AuthError, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._entitlement import get_capabilities
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -295,18 +296,7 @@ def untracked_table(data: UntrackedSurfacesData) -> TableData:
 def _project_required(context: typer.Context) -> str:
     runtime = command_context(context)
     if runtime.project is None:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="A project is required.",
-                hint=(
-                    "Choose a project with --project, SOLWYN_PROJECT_ID, "
-                    "or config default_project."
-                ),
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     return runtime.project
 
 

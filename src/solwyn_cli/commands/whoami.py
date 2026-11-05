@@ -22,6 +22,7 @@ from solwyn_cli.errors import ApiError
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData, _terminal_safe
+from solwyn_cli.project_resolver import PROJECT_HINT
 from solwyn_cli.runtime import command_context, output_engine
 
 
@@ -119,11 +120,7 @@ def _key_data(credential: ApiKeyCredential, project: str | None) -> _WhoamiData:
         seat_limit=None,
         user=None,
         projects=[],
-        hint=(
-            None
-            if project is not None
-            else "Choose a project with --project, SOLWYN_PROJECT_ID, or config."
-        ),
+        hint=(None if project is not None else PROJECT_HINT),
     )
 
 
@@ -209,7 +206,7 @@ def _stored_in(credential: _CredentialSummary) -> str:
 
 def _credential_text(credential: _CredentialSummary) -> str:
     if credential.kind == "project_key":
-        return f"project key ({credential.source})"
+        return f"API key ({credential.source})"
     scope = ", ".join(credential.scope or []) or "unknown scope"
     expires = (
         credential.expires_at.date().isoformat()

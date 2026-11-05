@@ -106,9 +106,8 @@ def test_doctor_login_json_reports_all_checks_and_redis_degraded_is_non_gating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        'default_project = "proj_be76331b95dfc399cd776d2f"\n', encoding="utf-8"
-    )
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("SOLWYN_PROJECT", "proj_be76331b95dfc399cd776d2f")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = login_credential("access-secret")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
@@ -141,9 +140,8 @@ def test_doctor_key_table_keeps_503_readiness_body_informative(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        'default_project = "proj_be76331b95dfc399cd776d2f"\n', encoding="utf-8"
-    )
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("SOLWYN_PROJECT", "proj_be76331b95dfc399cd776d2f")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="environment")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
@@ -187,9 +185,8 @@ def test_doctor_key_budget_503_is_reported_as_backend_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        'default_project = "proj_be76331b95dfc399cd776d2f"\n', encoding="utf-8"
-    )
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("SOLWYN_PROJECT", "proj_be76331b95dfc399cd776d2f")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     credential = auth.ApiKeyCredential(api_key=VALID_KEY, source="keyring")
     monkeypatch.setattr(doctor_module, "resolve_credential", lambda **_: credential)
@@ -416,7 +413,8 @@ def test_doctor_labels_degraded_advisory_checks_non_gating(
     name: str, output_format: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text('default_project = "proj_be76331b95dfc399cd776d2f"\n')
+    config_path.write_text("")
+    monkeypatch.setenv("SOLWYN_PROJECT", "proj_be76331b95dfc399cd776d2f")
     monkeypatch.setattr(config_module, "get_config_path", lambda: config_path)
     monkeypatch.setattr(
         doctor_module,

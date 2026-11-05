@@ -26,6 +26,7 @@ from solwyn_cli.approvals import pin_retry_value
 from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -155,14 +156,7 @@ def _client(
         )
     runtime = command_context(context)
     if not runtime.project:
-        exit_with_error(
-            context,
-            OutputError(
-                code="project_required",
-                message="Select a project with --project or SOLWYN_PROJECT_ID.",
-            ),
-            semantic=ErrorSemantic.USAGE,
-        )
+        exit_project_required(context)
     runtime = with_project(context, credential)
     try:
         with SolwynClient(api_url=runtime.api_url, credential=credential) as client:

@@ -8,7 +8,7 @@ import anyio
 import httpx
 import pytest
 from click.utils import strip_ansi
-from test_mcp_conformance import VALID_KEY, _call_tool, _install_http
+from test_mcp_conformance import auth_key_answer, VALID_KEY, _call_tool, _install_http
 from test_mcp_sdk_migration import raw_connection
 from typer.testing import CliRunner
 
@@ -492,6 +492,11 @@ def test_public_lost_confirm_recovery_preserves_first_event_only_with_explicit_m
     _install_http(monkeypatch, responses=[], credentials=[KEY, KEY, KEY])
 
     def handle(request):
+        if request.url.path == "/api/v1/auth/key":
+            # The reporting tools check the launch project once.
+            return httpx.Response(
+                200, json=auth_key_answer(request.headers.get("Solwyn-Project"))
+            )
         sent.append((request.url.path, bytes(request.content)))
         if len(sent) == 1:
             raise httpx.ReadError("PRIVATE_CANARY", request=request)

@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import anyio
 import typer
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from solwyn_cli import __version__, auth
 from solwyn_cli._mcp_doctor_ipc import HelperResult, PrivateRequest
@@ -46,6 +46,16 @@ class KeyContext(Check):
     scope: Literal["full", "read_only"] | None = None
 
 
+class KeyProject(Check):
+    """The key and launch-project pair, as GET /api/v1/auth/key answers it."""
+
+    code: str | None = None
+    project_id: str | None = None
+    project_name: str | None = None
+    budget_mode: Literal["alert_only", "hard_deny"] | None = None
+    expires_at: str | None = None
+
+
 class ToolConstraint(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str
@@ -61,11 +71,10 @@ class McpDoctorData(BaseModel):
     config: Check
     executable: Check
     selected_project: str | None
-    project_source: Literal[
-        "cli", "environment", "repo", "legacy_environment", "config", "none"
-    ]
+    project_source: Literal["cli", "environment", "repo", "none"]
     credential: CredentialCheck
     key_context: KeyContext
+    key_project: KeyProject
     http_read: Check
     profile: Profile
     mcp: HelperResult
@@ -75,11 +84,35 @@ class McpDoctorData(BaseModel):
 
 
 class _KeyResponse(BaseModel):
-    """The fields of ``GET /api/v1/auth/key`` this diagnostic reports."""
+    """``GET /api/v1/auth/key`` (Core spec 2.5): the key and its project."""
 
-    model_config = ConfigDict(extra="ignore", strict=True, hide_input_in_errors=True)
-    project_id: str = Field(pattern=r"^proj_[a-f0-9]{24}$")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    account_id: str
+    key_id: str
+    key_prefix: str
+    key_name: str
     scope: Literal["full", "read_only"]
+    created_via: Literal["dashboard", "cli"]
+    expires_at: AwareDatetime
+    rotation_grace_until: AwareDatetime | None
+    project_id: str = Field(pattern=r"^proj_[a-f0-9]{24}$")
+    project_name: str
+    budget_mode: Literal["alert_only", "hard_deny"]
+
+
+# Refusals on the API-key path a doctor names by code (Core spec 2.4).
+_KEY_PROJECT_CODES = frozenset(
+    {
+        "api_key_invalid",
+        "api_key_expired",
+        "api_key_not_allowed",
+        "project_selector_required",
+        "project_not_found",
+        "project_selector_conflict",
+        "key_not_dedicated",
+        "read_only_key",
+    }
+)
 
 
 class _ReadResponse(BaseModel):
@@ -154,35 +187,86 @@ def _stored_kind() -> Literal["keyring", "file"]:
         return "file"
 
 
-def key_context(client: SolwynClient, credential: ResolvedCredential) -> KeyContext:
+def key_context(
+    client: SolwynClient, credential: ResolvedCredential
+) -> tuple[KeyContext, KeyProject]:
+    """One GET /api/v1/auth/key: the key's identity and its launch-project pair."""
     if isinstance(credential, LoginCredential):
-        return KeyContext(
-            status="skipped",
-            detail="A login has no project-key identity or write scope.",
+        return (
+            KeyContext(
+                status="skipped",
+                detail="A login has no project-key identity or write scope.",
+            ),
+            KeyProject(
+                status="skipped",
+                detail="A login is not checked against a project; MCP reporting tools need an API key.",
+            ),
+        )
+    if not isinstance(credential, ApiKeyCredential) or credential.project is None:
+        return (
+            KeyContext(
+                status="skipped",
+                detail="Select a project to check the key's identity.",
+            ),
+            KeyProject(
+                status="skipped",
+                detail="Select the launch project with --project before mcp, SOLWYN_PROJECT or the repo's .solwyn.env.",
+            ),
         )
     try:
         response = client.request("GET", "/api/v1/auth/key", retry_rate_limit=False)
         body = _KeyResponse.model_validate(response.json())
-        return KeyContext(
+    except ApiError as error:
+        if error.code in _KEY_PROJECT_CODES:
+            return (
+                KeyContext(
+                    status="failed",
+                    detail="Key identity request was refused; see key_project.",
+                ),
+                KeyProject(status="failed", code=error.code, detail=error.message),
+            )
+        if error.status_code == 404:
+            return (
+                KeyContext(
+                    status="unsupported",
+                    detail="Key identity is unavailable on this Core version. Roll out Core's read-only key identity endpoint; scope remains unknown.",
+                ),
+                KeyProject(
+                    status="unsupported",
+                    detail="This Core version cannot check a key against a project.",
+                ),
+            )
+        failed = "Key identity request failed; check credentials and API availability."
+        return (
+            KeyContext(status="failed", detail=failed),
+            KeyProject(status="failed", detail=failed),
+        )
+    except Exception:
+        failed = "Key identity response could not be verified."
+        return (
+            KeyContext(status="failed", detail=failed),
+            KeyProject(status="failed", detail=failed),
+        )
+    expires = body.expires_at.date().isoformat()
+    return (
+        KeyContext(
             status="ok",
             detail="Identity of the supplied project key.",
             project_id=body.project_id,
             scope=body.scope,
-        )
-    except ApiError as error:
-        if error.status_code == 404:
-            return KeyContext(
-                status="unsupported",
-                detail="Key identity is unavailable on this Core version. Roll out Core's read-only key identity endpoint; scope remains unknown.",
-            )
-        return KeyContext(
-            status="failed",
-            detail="Key identity request failed; check credentials and API availability.",
-        )
-    except Exception:
-        return KeyContext(
-            status="failed", detail="Key identity response could not be verified."
-        )
+        ),
+        KeyProject(
+            status="ok",
+            detail=(
+                f"The API key reaches {body.project_name} ({body.project_id}); "
+                f"budget mode {body.budget_mode}; expires {expires}."
+            ),
+            project_id=body.project_id,
+            project_name=body.project_name,
+            budget_mode=body.budget_mode,
+            expires_at=body.expires_at.isoformat().replace("+00:00", "Z"),
+        ),
+    )
 
 
 def http_read(
@@ -191,7 +275,7 @@ def http_read(
     if project is None and not isinstance(credential, LoginCredential):
         return Check(
             status="skipped",
-            detail="Select a project with --project, SOLWYN_PROJECT_ID or config to verify project reads.",
+            detail="Select a project with --project, SOLWYN_PROJECT or the repo's .solwyn.env to verify project reads.",
         )
     try:
         endpoint = (
@@ -253,6 +337,9 @@ def diagnose(
     context = KeyContext(
         status="skipped", detail="No valid captured credential or API URL is available."
     )
+    pair = KeyProject(
+        status="skipped", detail="No valid captured credential or API URL is available."
+    )
     read = Check(
         status="skipped", detail="No valid captured credential or API URL is available."
     )
@@ -272,7 +359,7 @@ def diagnose(
         )
         try:
             with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
-                context = key_context(client, credential)
+                context, pair = key_context(client, credential)
                 read = http_read(
                     client,
                     credential,
@@ -302,6 +389,7 @@ def diagnose(
                 profile=profile,
                 expected_tools=[tool.definition.name for tool in declarations],
                 expected_version=__version__,
+                expected_project_id=pair.project_id,
                 api_key=credential.api_key
                 if isinstance(credential, ApiKeyCredential)
                 and runtime.api_url_source != "fallback"
@@ -342,6 +430,7 @@ def diagnose(
         and read.status == "ok"
         and helper.status == "ok"
         and (context.status == "ok" and mcp_read.status == "ok")
+        and pair.status == "ok"
     )
     return McpDoctorData(
         status="ok" if complete else "degraded",
@@ -352,6 +441,7 @@ def diagnose(
         project_source=runtime.project_source,
         credential=credential_check,
         key_context=context,
+        key_project=pair,
         http_read=read,
         profile=profile,
         mcp=helper,
@@ -392,6 +482,12 @@ def doctor_mcp(
             f"{data.key_context.project_id or 'unknown'} / {data.key_context.scope or 'unknown'}",
         ),
         ("Key context", data.key_context.detail),
+        (
+            "Key and launch project",
+            f"{data.key_project.status}"
+            + (f" ({data.key_project.code})" if data.key_project.code else "")
+            + f": {data.key_project.detail}",
+        ),
         ("HTTP read", f"{data.http_read.status}: {data.http_read.detail}"),
         ("MCP discovery", data.mcp.status),
         ("MCP read", f"{data.mcp_read.status}: {data.mcp_read.detail}"),

@@ -1,6 +1,6 @@
 # Connect a harness to Solwyn MCP
 
-This guide describes Solwyn CLI 0.4.3 (PyPI package `solwyn-cli`). It uses local stdio;
+This guide describes Solwyn CLI 0.5.0 (PyPI package `solwyn-cli`). It uses local stdio;
 there is no hosted MCP endpoint. Account/project access is a separate prerequisite.
 
 ## Install and make one read
@@ -11,22 +11,24 @@ Install the published package (MCP is included; no extra is required):
 uv tool install --python 3.11 solwyn-cli
 uv tool dir --bin
 solwyn --version
-solwyn login --with-key
+solwyn login
+solwyn init            # in the repo: names the project in .solwyn.env and stores its API key
 ```
 
 Alternatively, use `pipx install solwyn-cli`. The command/tool reference and
-example clients below describe 0.4.3 (33 read / 37 guardrails tools); 0.2.0 exposes
-13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.4.3 is not
+example clients below describe 0.5.0 (33 read / 37 guardrails tools); 0.2.0 exposes
+13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.5.0 is not
 yet available from your package index, build an authorized checkout:
 
 ```sh
 uv sync --locked --all-groups
 uv build --wheel
-uv tool install --force --python 3.11 dist/solwyn_cli-0.4.3-py3-none-any.whl
+uv tool install --force --python 3.11 dist/solwyn_cli-0.5.0-py3-none-any.whl
 ```
 
-The login command prompts for a project key and stores it in the CLI's
-credential store: the OS keychain on macOS and Windows, and a private `0600`
+`solwyn init` stores the repo project's API key in the CLI's credential store
+(`solwyn keys create --project PROJECT --store-key` does the same for an
+existing project): the OS keychain on macOS and Windows, and a private `0600`
 file (`~/.local/share/solwyn/credentials.json`) on Linux. See
 [login](commands/login.mdx) for the stores and their tradeoffs. Use a
 `read_only` key for first setup. A desktop host must run under the same OS
@@ -120,7 +122,8 @@ solwyn --json --project proj_0123456789abcdef01234567 --api-url https://api.solw
 ```
 
 `doctor --mcp` checks discovery plus one authenticated MCP `budget_status` read
-when it has a project key and selected project. No reservation, settlement,
+when it has an API key and a launch project, and checks that key and project
+together with `GET /api/v1/auth/key` (`key_project`). No reservation, settlement,
 recording, provider call, credential refresh or host edit occurs. Its exit codes are
 0 for all selected-key checks passing, 1 for degraded checks, and 2 for usage.
 
@@ -128,9 +131,9 @@ recording, provider call, credential refresh or host edit occurs. Its exit codes
 
 | Diagnostic or setting | Meaning |
 | --- | --- |
-| Selected read project | Explicit global `--project`, then `SOLWYN_PROJECT_ID`, then configured default. A read tool's `project_id` can override it. |
-| Authenticated key project | Core's `GET /api/v1/auth/key` identifies the supplied key. Key-bound writes use this project; a read selector cannot redirect them. |
-| Credential kind/source | Metering tools (`budget_check`, `budget_check_batch`, `budget_confirm`, `record_call`) use only a project key: `SOLWYN_API_KEY`, then the keychain key. Every other tool uses the stored Solwyn login, then `SOLWYN_API_KEY`, then the keychain key. `SOLWYN_AUTH=project_key` skips the login; `SOLWYN_AUTH=login` requires it. Without a login, an empty or invalid environment key prevents fallback. |
+| Launch project | Global `--project` before `mcp`, then `SOLWYN_PROJECT`, then `SOLWYN_PROJECT` in the repo's `.solwyn.env` (from the server's working directory). They, the environment and the credential store selection (`SOLWYN_CREDENTIAL_STORE` or config `credential_store`, and `SOLWYN_CREDENTIALS_FILE`) are read once when the server starts; editing them later changes nothing until it restarts. If the stored login is replaced, removed or added before the reporting tools are bound, every reporting call returns `credentials_changed` until the server restarts; once bound, the key it chose is kept. The reporting tools always use it; a read tool's `project` (a name or `proj_` id) can read another project. |
+| Key and project pair | On the first reporting call the server checks the key and launch project with `GET /api/v1/auth/key`, then sends the project id as `Solwyn-Project` on every reporting call. If the launch project cannot be used (`project_mismatch` with `.solwyn.env`, `api_key_not_stored`, `api_key_account_mismatch`, `credentials_changed`, an expired or revoked key), every reporting call returns that error until the server restarts and no other key is tried; read tools keep working. |
+| Credential kind/source | Metering tools (`budget_check`, `budget_check_batch`, `budget_confirm`, `record_call`) use only an API key: `SOLWYN_API_KEY`, then the key stored for the launch project. They take no project argument and refuse one. Every other tool uses the stored Solwyn login, then `SOLWYN_API_KEY`, then the stored key for the selected project. `SOLWYN_AUTH=project_key` skips the login; `SOLWYN_AUTH=login` requires it. Without a login, an empty or invalid environment key prevents fallback. |
 | Key scope | `full`, `read_only`, or unknown when it cannot be established. A successful read does not prove write scope. `full` does not promise a future allowed decision. |
 | Profile and annotations | Discovery aids. `read` exposes 33 tools; `guardrails` exposes all 37. Core still authorizes every request. Plain `solwyn mcp` defaults to `guardrails`; setup/doctor default to `read`. |
 
@@ -156,7 +159,7 @@ See [diagnostic fields and lifecycle](mcp-diagnostics.md).
 | Headless machine, CI or cloud agent | Set `SOLWYN_TOKEN` (a `solwyn login --no-store` login) for reads and `SOLWYN_API_KEY` for metering in the host environment. |
 | Read/key project mismatch | Correct the read selector or choose the intended key. Do not test identity by reserving budget. |
 | Identity endpoint unsupported/404 | Deploy the dependent Core release. Scope stays unknown on older Core. |
-| Read-only key or login cannot write | Use the appropriate authorized project key for the caller-owned workflow; changing profiles does not change scope. |
+| Read-only key or login cannot write | Use an authorized API key for the caller-owned workflow; changing profiles does not change scope. |
 | Parent HTTP fails but helper discovery/read works | Check proxy/certificate settings. Invalid proxy or unavailable certificate settings safely degrade parent checks; the isolated helper has its own environment. |
 
 ## Run the actual clients

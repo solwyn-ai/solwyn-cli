@@ -335,7 +335,7 @@ def _mutate_fallback_model_item_bound(contract: list[dict[str, Any]]) -> None:
 
 
 def _mutate_nullable(contract: list[dict[str, Any]]) -> None:
-    contract[0]["inputSchema"]["properties"]["project_id"]["anyOf"].pop()
+    contract[0]["inputSchema"]["properties"]["project"]["anyOf"].pop()
 
 
 def _mutate_additional_properties(contract: list[dict[str, Any]]) -> None:
@@ -397,6 +397,31 @@ def test_complete_tool_contract_guard_rejects_schema_drift(
         _assert_tool_contract(contract)
 
 
+AUTH_KEY_CALLS: list[str | None] = []
+
+
+def auth_key_answer(project: str | None) -> dict[str, Any]:
+    """A GET /api/v1/auth/key 200 for the project a key request names."""
+    project_id = (
+        project
+        if project and project.startswith("proj_") and len(project) == 29
+        else "proj_be76331b95dfc399cd776d2f"
+    )
+    return {
+        "account_id": "acct_synthetic",
+        "key_id": "6f1d0c9e-0000-4000-8000-000000000001",
+        "key_prefix": "solwyn_sk_" + "a1" * 8,
+        "key_name": "checkout-bot",
+        "scope": "full",
+        "created_via": "cli",
+        "expires_at": "2027-11-04T10:12:00Z",
+        "rotation_grace_until": None,
+        "project_id": project_id,
+        "project_name": "checkout-bot",
+        "budget_mode": "hard_deny",
+    }
+
+
 def _install_http(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -413,6 +438,15 @@ def _install_http(
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.read()
+        if request.method == "GET" and request.url.path == "/api/v1/auth/key":
+            # The reporting tools validate their launch key once (spec 7.7);
+            # answered here so each test's queue stays its own calls.
+            AUTH_KEY_CALLS.append(request.headers.get("Solwyn-Project"))
+            return httpx.Response(
+                200,
+                json=auth_key_answer(request.headers.get("Solwyn-Project")),
+                request=request,
+            )
         requests.append(
             (
                 request.method,
@@ -572,8 +606,8 @@ def mcp_http(
     requests, clients, response_queue = _install_http(
         monkeypatch,
         responses=responses,
+        # budget_check and budget_confirm share one launch binding per server.
         credentials=[
-            project_key,
             project_key,
             project_key,
             project_key,
@@ -617,7 +651,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
             assert all(tool.description for tool in tools)
             assert all(tool.output_schema is not None for tool in tools)
             assert [set(tool.input_schema["properties"]) for tool in tools] == [
-                {"project_id"},
+                {"project"},
                 {
                     "estimated_input_tokens",
                     "model",
@@ -671,10 +705,10 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "tags",
                     "no_record",
                 },
-                {"project_id"},
-                {"project_id"},
+                {"project"},
+                {"project"},
                 {
-                    "project_id",
+                    "project",
                     "time_range",
                     "group_by",
                     "account",
@@ -694,7 +728,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 },
                 set(),
                 {
-                    "project_id",
+                    "project",
                     "time_range",
                     "from_",
                     "to",
@@ -710,7 +744,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "provider_fallback",
                     "tag",
                 },
-                {"project_id", "with_last_fired"},
+                {"project", "with_last_fired"},
                 {
                     "model",
                     "provider",
@@ -729,10 +763,10 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "agent_run_name",
                     "tags",
                 },
-                {"project_id"},
-                {"key", "project_id", "prefix", "limit", "cursor"},
+                {"project"},
+                {"key", "project", "prefix", "limit", "cursor"},
                 {
-                    "project_id",
+                    "project",
                     "time_range",
                     "from_time",
                     "to_time",
@@ -742,9 +776,9 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "limit",
                     "cursor",
                 },
-                {"run", "project_id"},
+                {"run", "project"},
                 {
-                    "project_id",
+                    "project",
                     "account",
                     "time_range",
                     "from_",
@@ -781,13 +815,13 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "service_tier",
                     "all_pages",
                     "failover_reason",
-                    "project_id",
+                    "project",
                     "time_range",
                 },
-                {"days", "project_id"},
-                {"vs_prev", "cause", "project_id", "time_range"},
-                {"to", "from_", "project_id", "time_range"},
-                {"project_id"},
+                {"days", "project"},
+                {"vs_prev", "cause", "project", "time_range"},
+                {"to", "from_", "project", "time_range"},
+                {"project"},
                 {
                     "to",
                     "region",
@@ -795,11 +829,11 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                     "from_",
                     "time_range",
                     "service_tier",
-                    "project_id",
+                    "project",
                     "provider",
                 },
-                {"project_id", "time_range"},
-                {"project_id", "time_range"},
+                {"project", "time_range"},
+                {"project", "time_range"},
                 {"cursor", "all_pages", "action", "time_range"},
                 set(),
                 set(),
@@ -807,7 +841,7 @@ def test_exact_tool_contract_and_mocked_http_conformance(
                 set(),
                 {"cursor", "all_pages", "time_range", "event_type"},
                 {"cursor", "all_pages"},
-                {"project_id"},
+                {"project"},
                 {"with_last_fired"},
                 {"tier", "interval"},
                 set(),
@@ -1505,7 +1539,7 @@ def test_read_only_key_403_keeps_its_code_and_points_agents_at_key_scope(
         "hint": (
             "The configured project key is read-only; set SOLWYN_API_KEY to a "
             "write-scoped key, then retry. Confirm a key's scope with "
-            "solwyn keys show."
+            "solwyn keys list."
         ),
         "status_code": 403,
     }

@@ -1,7 +1,7 @@
 # Team members and invitations
 
 Team commands use your Solwyn login and current account, without a selected
-project. A stored login is used before any project key. Team writes (invitations,
+project. A stored login is used before any API key. Team writes (invitations,
 role changes and removals) need a one-time browser approval for each change; see
 [approvals](approvals.mdx).
 Core authorizes every request, including requests after a captured effects preview.
@@ -33,8 +33,8 @@ login sees a changed role on its next request. The CLI cannot
 assign or transfer ownership.
 
 Owners can remove admins/members; admins can remove members. Any role may remove
-itself. Removal revokes the member's sessions, invalidates access tokens, and
-revokes project keys they created in this account. `team leave` resolves the actual
+itself. Removal revokes the member's sessions and invalidates access tokens. API keys
+belong to the account and keep working. `team leave` resolves the actual
 logged-in user's identity, never a supplied user ID. The last owner cannot leave (409).
 Keep the membership and contact support about ownership; role changes cannot
 create another owner. `solwyn.team.remove.v1` acknowledges the confirmed removal and marks

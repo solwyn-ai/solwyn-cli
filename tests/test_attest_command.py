@@ -210,7 +210,7 @@ def test_project_attestation_requires_a_project_before_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[None] = []
-    monkeypatch.setattr(runtime, "load_config", lambda: Config(default_project=None))
+    monkeypatch.setattr(runtime, "load_config", lambda: Config())
     monkeypatch.setattr(
         attest_module, "resolve_credential", lambda **_: calls.append(None)
     )

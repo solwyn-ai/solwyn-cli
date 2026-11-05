@@ -167,11 +167,6 @@ def test_config_set_credential_store_auto_writes_no_defaults(
 @pytest.mark.parametrize(
     ("key", "value", "expected"),
     [
-        (
-            "default_project",
-            "proj_11f6ad8ec52a2984abaafd7c",
-            'default_project = "proj_11f6ad8ec52a2984abaafd7c"\n',
-        ),
         ("format", "json", 'format = "json"\n'),
         ("credential_store", "file", 'credential_store = "file"\n'),
     ],
@@ -189,24 +184,13 @@ def test_config_set_keeps_other_saved_keys_and_adds_no_defaults(
     config_path: Path,
 ) -> None:
     runner.invoke(app, ["config", "set", "format", "json"])
-    runner.invoke(
-        app, ["config", "set", "default_project", "proj_11f6ad8ec52a2984abaafd7c"]
-    )
+    runner.invoke(app, ["config", "set", "credential_store", "file"])
 
-    assert (
-        config_path.read_text()
-        == 'default_project = "proj_11f6ad8ec52a2984abaafd7c"\nformat = "json"\n'
-    )
+    assert config_path.read_text() == 'format = "json"\ncredential_store = "file"\n'
 
 
-def test_login_store_and_clearing_a_project_write_no_defaults(
-    config_path: Path,
-) -> None:
+def test_login_store_writes_no_defaults(config_path: Path) -> None:
     auth.save_store_mode("keyring")
-    assert config_path.read_text() == 'credential_store = "keyring"\n'
-
-    config.update_config_values({"default_project": "proj_11f6ad8ec52a2984abaafd7c"})
-    assert config.clear_default_project("proj_11f6ad8ec52a2984abaafd7c") is True
     assert config_path.read_text() == 'credential_store = "keyring"\n'
 
 

@@ -23,6 +23,7 @@ exact ``proj_`` id. Turning a project name into an id is the resolver's job
 (``runtime.resolve_project``), never the store's.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -30,6 +31,7 @@ import sys
 from collections.abc import Callable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
+from pathlib import Path
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal, TypeAlias
 
@@ -322,8 +324,57 @@ def current_origin(api_url: str | None = None) -> str:
 # --- Store selection --------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class StoreSelection:
+    """Which credential store to read, chosen once: the store mode and the
+    credentials file (each, or the error choosing it raised)."""
+
+    mode: StoreMode | CredentialStorageError
+    path: Path | StoreUnavailableError
+
+
+_PINNED_MODE: ContextVar[StoreMode | CredentialStorageError | None] = ContextVar(
+    "solwyn_pinned_store_mode", default=None
+)
+
+
+def store_selection(environ: Mapping[str, str] | None = None) -> StoreSelection:
+    """The store mode and credentials file as they read now (no network)."""
+    try:
+        mode: StoreMode | CredentialStorageError = store_mode(environ)
+    except CredentialStorageError as error:
+        mode = error
+    try:
+        path: Path | StoreUnavailableError = credential_store.credentials_path()
+    except StoreUnavailableError as error:
+        path = error
+    return StoreSelection(mode=mode, path=path)
+
+
+def use_store_selection(selection: StoreSelection) -> Callable[[], None]:
+    """Read and write only the selected store in this context; return the reset.
+
+    Every nested store read (the login, the key index, one key) then uses it,
+    whatever SOLWYN_CREDENTIAL_STORE, SOLWYN_CREDENTIALS_FILE or the config
+    say by then.
+    """
+    mode_token = _PINNED_MODE.set(selection.mode)
+    reset_path = credential_store.pin_credentials_path(selection.path)
+
+    def reset() -> None:
+        reset_path()
+        _PINNED_MODE.reset(mode_token)
+
+    return reset
+
+
 def store_mode(environ: Mapping[str, str] | None = None) -> StoreMode:
     """Return SOLWYN_CREDENTIAL_STORE, then config credential_store, then auto."""
+    pinned = _PINNED_MODE.get()
+    if isinstance(pinned, CredentialStorageError):
+        raise CredentialStorageError(str(pinned), pinned.hint)
+    if pinned is not None:
+        return pinned
     environment = os.environ if environ is None else environ
     value = environment.get(STORE_ENV, "")
     if value:
@@ -761,6 +812,24 @@ def _stored_login(api_url: str | None = None) -> LoginCredential | None:
         ) from None
 
 
+def stored_login_fingerprint(api_url: str | None = None) -> str | None:
+    """A digest of the stored login (its account and token, expired or not),
+    or None without one. It tells whether the login changed; it is never
+    stored or shown. It leaves last_lookup() as it was: a later
+    missing-credential hint describes that command's own lookup."""
+    lookup = _LAST_LOOKUP.get()
+    try:
+        login = _stored_login(api_url)
+    finally:
+        _LAST_LOOKUP.set(lookup)
+    if login is None:
+        return None
+    account = "" if login.meta is None else login.meta.account_id
+    return hashlib.sha256(
+        f"{account}\0{login.token.get_secret_value()}".encode()
+    ).hexdigest()
+
+
 def stored_login(
     *, include_expired: bool = False, api_url: str | None = None
 ) -> LoginCredential | None:
@@ -802,7 +871,9 @@ def _stored_key_from(
         )
         raise MalformedCredentialFileError(
             f"The API key stored for {project_id} in {where} is not valid. "
-            f"Run solwyn keys revoke for it, or remove it, then store a new key."
+            f"Remove it, then store a new key with solwyn keys create --project "
+            f"{project_id} --store-key. To revoke the old key too, run solwyn keys "
+            f"revoke KEY_ID with its id from the dashboard (Settings > API keys)."
         ) from None
 
 

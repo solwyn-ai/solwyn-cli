@@ -3,7 +3,7 @@ title: Overview
 ---
 
 `solwyn overview` reads the logged-in user's calendar-month summary across all
-projects. It requires a Solwyn login; with only a project key it stops locally with a
+projects. It requires a Solwyn login; with only an API key it stops locally with a
 `solwyn login` hint and no account request.
 
 ```sh
@@ -28,5 +28,5 @@ retention-clamped analytics windows.
 
 MCP `get_overview` returns the same typed data in
 `solwyn.mcp.overview.v1`. It is read-only and requires a Solwyn login; with only
-a project key it returns an authentication error with a login hint before making
+an API key it returns an authentication error with a login hint before making
 an account request.

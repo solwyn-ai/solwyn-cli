@@ -15,7 +15,9 @@ from solwyn_cli.auth import (
 )
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._cost_filters import window_params
+from solwyn_cli.project_resolver import PROJECT_HINT
 from solwyn_cli.commands._shared import (
+    exit_project_required,
     exit_with_error,
     required_credential,
     with_project,
@@ -220,14 +222,10 @@ def attest(
     """Stream a project or account spend-control attestation to stdout."""
     runtime = command_context(context)
     if not account and runtime.project is None:
-        exit_with_error(
+        exit_project_required(
             context,
-            OutputError(
-                code="project_required",
-                message="A project is required for a project attestation.",
-                hint="Choose a project with --project, SOLWYN_PROJECT_ID, or config default_project; use --account for account-wide evidence.",
-            ),
-            semantic=ErrorSemantic.USAGE,
+            message="A project is required for a project attestation.",
+            hint=PROJECT_HINT + " Use --account for account-wide evidence.",
         )
 
     try:

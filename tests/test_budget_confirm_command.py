@@ -376,8 +376,8 @@ def test_budget_confirm_read_only_key_403_exits_auth_with_an_actionable_hint(
     error = json.loads(result.stderr)
     assert error["code"] == "read_only_key"
     assert error["hint"] == (
-        "Set SOLWYN_API_KEY to a write-scoped key, or run solwyn login and "
-        "solwyn keys rotate --scope full to replace this project's key with one."
+        "This key is read-only. Rotate it to a full-scope key with solwyn keys "
+        "rotate KEY_ID --scope full, or create one with solwyn keys create."
     )
 
 

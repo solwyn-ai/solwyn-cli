@@ -35,7 +35,7 @@ def _hold_lock_then_update(config_path: str, ready: Any, release: Any) -> None:
             Config.model_validate(
                 {
                     **current.model_dump(),
-                    "default_project": "proj_adec79fd87d0496004662853",
+                    "credential_store": "file",
                 }
             )
         )
@@ -61,9 +61,7 @@ def config_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def test_missing_config_returns_defaults(config_path: Path) -> None:
     config = load_config()
 
-    assert config == Config(
-        api_url="https://api.solwyn.ai", default_project=None, format="table"
-    )
+    assert config == Config(api_url="https://api.solwyn.ai", format="table")
     assert not config_path.exists()
 
 
@@ -95,7 +93,7 @@ def test_save_intersects_subclass_fields_with_config_allowlist(
     save_config(
         ExtendedConfig(
             api_url="https://example.test",
-            default_project="proj_bf31c52c32b0fcda1dc3e7c0",
+            credential_store="file",
             format="json",
             api_key="must-not-persist",
         )
@@ -104,7 +102,7 @@ def test_save_intersects_subclass_fields_with_config_allowlist(
     persisted = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert persisted == {
         "api_url": "https://example.test",
-        "default_project": "proj_bf31c52c32b0fcda1dc3e7c0",
+        "credential_store": "file",
         "format": "json",
     }
 
@@ -113,9 +111,9 @@ def test_save_atomically_overwrites_without_temp_residue(config_path: Path) -> N
     config_path.parent.mkdir(parents=True)
     config_path.write_text('format = "table"\n', encoding="utf-8")
 
-    save_config(Config(default_project="proj_c2a6b03f190dfb2b4aa91f8a", format="json"))
+    save_config(Config(credential_store="file", format="json"))
 
-    assert load_config().default_project == "proj_c2a6b03f190dfb2b4aa91f8a"
+    assert load_config().credential_store == "file"
     assert load_config().format == "json"
     assert list(config_path.parent.iterdir()) == [config_path]
 
@@ -195,7 +193,7 @@ def test_replace_failure_preserves_old_file_and_removes_temporary_file(
     config_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path.parent.mkdir(parents=True)
-    original = 'default_project = "proj_c00dbbc9dadfbe1e232e93a7"\n'
+    original = 'format = "json"\n'
     config_path.write_text(original, encoding="utf-8")
 
     def fail_replace(source: Path, destination: Path) -> None:
@@ -204,7 +202,7 @@ def test_replace_failure_preserves_old_file_and_removes_temporary_file(
     monkeypatch.setattr(config_module.os, "replace", fail_replace)
 
     with pytest.raises(ConfigWriteError) as exc_info:
-        save_config(Config(default_project="proj_c2a6b03f190dfb2b4aa91f8a"))
+        save_config(Config(format="table"))
 
     assert "replace detail" not in str(exc_info.value)
     assert config_path.read_text(encoding="utf-8") == original
@@ -222,7 +220,7 @@ def test_save_fsyncs_file_and_parent_directory(
 
     monkeypatch.setattr(config_module.os, "fsync", record_fsync)
 
-    save_config(Config(default_project="proj_6802cb5d70b48e54c03a8384"))
+    save_config(Config(format="json"))
 
     assert any(stat.S_ISREG(mode) for mode in fsynced_modes)
     assert any(stat.S_ISDIR(mode) for mode in fsynced_modes)
@@ -264,9 +262,7 @@ def test_concurrent_different_key_updates_are_serialized(config_path: Path) -> N
         if second.pid is not None:
             second.join(timeout=1)
 
-    assert load_config() == Config(
-        default_project="proj_adec79fd87d0496004662853", format="json"
-    )
+    assert load_config() == Config(credential_store="file", format="json")
 
 
 def test_multi_field_update_preserves_unrelated_config(config_path: Path) -> None:
@@ -274,55 +270,17 @@ def test_multi_field_update_preserves_unrelated_config(config_path: Path) -> Non
 
     updated = config_module.update_config_values(
         {
-            "default_project": "proj_fd62812fbd9ec4c7f99aa4f6",
+            "credential_store": "file",
             "api_url": "https://staging.example.test",
         }
     )
 
     assert updated == Config(
-        default_project="proj_fd62812fbd9ec4c7f99aa4f6",
+        credential_store="file",
         api_url="https://staging.example.test",
         format="json",
     )
     assert load_config() == updated
-
-
-def test_clear_default_project_removes_only_a_matching_default(
-    config_path: Path,
-) -> None:
-    save_config(
-        Config(
-            api_url="https://staging.example.test",
-            default_project="proj_b639f5cc719831458c839993",
-            format="json",
-        )
-    )
-
-    cleared = config_module.clear_default_project("proj_b639f5cc719831458c839993")
-
-    assert cleared is True
-    assert load_config() == Config(
-        api_url="https://staging.example.test",
-        default_project=None,
-        format="json",
-    )
-    assert "default_project" not in config_path.read_text(encoding="utf-8")
-
-
-def test_clear_default_project_preserves_a_different_default_without_writing(
-    config_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    save_config(Config(default_project="proj_1264bdfe5ff3215cf6abac21", format="json"))
-    monkeypatch.setattr(
-        config_module,
-        "save_config",
-        lambda *_args, **_kwargs: pytest.fail("must not rewrite unrelated config"),
-    )
-
-    cleared = config_module.clear_default_project("proj_d0941e68da8f38151ff86a61")
-
-    assert cleared is False
 
 
 def test_concurrent_init_update_preserves_other_update_field(
@@ -372,7 +330,7 @@ def test_concurrent_init_update_preserves_other_update_field(
         name="init-update",
         args=(
             {
-                "default_project": "proj_fd62812fbd9ec4c7f99aa4f6",
+                "credential_store": "file",
                 "api_url": "https://staging.example.test",
             },
         ),
@@ -390,7 +348,26 @@ def test_concurrent_init_update_preserves_other_update_field(
     assert not init_thread.is_alive()
     assert errors == []
     assert state["config"] == Config(
-        default_project="proj_fd62812fbd9ec4c7f99aa4f6",
+        credential_store="file",
         api_url="https://staging.example.test",
         format="json",
     )
+
+
+def test_a_default_project_left_in_config_is_ignored_and_dropped_on_write(
+    config_path: Path,
+) -> None:
+    """0.4.x wrote a computer-wide default_project; 0.5 has none."""
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        'default_project = "proj_c00dbbc9dadfbe1e232e93a7"\nformat = "json"\n',
+        encoding="utf-8",
+    )
+
+    loaded = load_config()
+    assert not hasattr(loaded, "default_project")
+    assert "default_project" not in CONFIG_KEYS
+
+    config_module.update_config_value("format", "table")
+
+    assert config_path.read_text(encoding="utf-8") == 'format = "table"\n'
