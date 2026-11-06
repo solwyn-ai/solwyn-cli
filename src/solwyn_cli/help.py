@@ -3,8 +3,20 @@
 import re
 
 import typer
-from typer import _click as click
-from typer.core import HAS_RICH, TyperCommand
+
+try:
+    from typer import _click as click
+except ImportError:  # Typer releases before the bundled Click boundary.
+    import click
+
+from typer.core import TyperCommand
+
+try:
+    from typer.core import HAS_RICH
+except ImportError:  # Typer releases that only expose the optional rich module.
+    from typer.core import rich as _rich
+
+    HAS_RICH = _rich is not None
 
 from solwyn_cli.approvals import may_need_approval
 from solwyn_cli.output import _terminal_safe
