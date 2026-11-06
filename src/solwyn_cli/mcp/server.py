@@ -1175,6 +1175,15 @@ class _ReportingBinding:
                 context=context, environ=environ, store=store, login=login
             )
 
+    def launch_project(self, launch: McpLaunchOptions) -> str | None:
+        """The project the reporting tools spend from, as chosen at launch
+        (--project, SOLWYN_PROJECT or .solwyn.env then), or None."""
+        self.freeze(launch)
+        inputs = self._inputs
+        if inputs is None or isinstance(inputs.context, Exception):
+            return None
+        return inputs.context.project_selector or inputs.context.project
+
     def _keep(self, error: Exception) -> None:
         if isinstance(error, _LocalProjectError) or (
             isinstance(error, ApiError) and error.status_code in _KEPT_REFUSAL_STATUSES
@@ -2767,7 +2776,10 @@ def _read_operation(
             if project_read:
                 options["project_id"] = _project_id(command_runtime, project_id)
             if identity:
-                options["project"] = command_runtime.project
+                # The launch project the reporting tools use, never the repo
+                # file as it reads now: an edit after launch must not make
+                # whoami name a project the server does not spend from.
+                options["project"] = launch._reporting.launch_project(launch)
             data = reader(client=client, **options)
         return _success(result_type, data)
     except (ApiError, AuthError, ValidationError, ValueError, TypeError) as error:

@@ -841,3 +841,79 @@ def test_an_environment_login_ignores_the_stored_login(
     assert second["ok"], second
     assert second["project_id"] == PROJECT_ID
     assert not core.used_other_key()
+
+
+# --- PR #58 review: get_whoami names the frozen launch project -----------------
+
+
+class _IdentityCore(Core):
+    """Core plus the three identity reads a login's get_whoami makes."""
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/account/me":
+            self.requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "user_id": "user_123",
+                    "email_verified": True,
+                    "email": "person@example.com",
+                    "display_name": "Person Example",
+                    "subscription_tier": "production",
+                    "first_name": "Person",
+                    "marketing_emails_subscribed": True,
+                    "account_id": ACCOUNT_ID,
+                    "alert_email_override": None,
+                },
+            )
+        if path == "/api/v1/accounts/me":
+            self.requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "id": ACCOUNT_ID,
+                    "display_name": "Person Example",
+                    "subscription_tier": "production",
+                    "alert_email_override": None,
+                    "seat_limit": 2,
+                    "seats_used": 1,
+                    "your_role": "owner",
+                },
+            )
+        if path == "/api/v1/projects" and request.method == "GET":
+            self.requests.append(request)
+            return httpx.Response(200, json=[])
+        return super().handle(request)
+
+
+def test_get_whoami_names_the_launch_project_after_the_repo_file_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repo_root(tmp_path, monkeypatch, "checkout-bot")
+    auth.store_login(LOGIN_TOKEN, login_meta(account_id=ACCOUNT_ID))
+    monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+    core = _IdentityCore(monkeypatch)
+    server = mcp_server.create_server()
+
+    async def probe() -> list[dict]:
+        async with Client(server, cache=None) as client:
+            before = await client.call_tool("get_whoami", {})
+            (root / ".solwyn.env").write_text(repo_file.render("research"))
+            after = await client.call_tool("get_whoami", {})
+            spend = await client.call_tool("budget_check", CHECK_ARGS)
+            return [
+                before.structured_content,
+                after.structured_content,
+                spend.structured_content,
+            ]
+
+    before, after, spend = anyio.run(probe)
+
+    assert before["ok"] and after["ok"] and spend["ok"], (before, after, spend)
+    assert before["data"]["auth_type"] == "login"
+    assert before["data"]["configured_project"] == "checkout-bot"
+    # The project calls actually spend from, not the edited file's.
+    assert after["data"]["configured_project"] == "checkout-bot"
+    assert spend["project_id"] == PROJECT_ID
+    assert _sent_projects(core) == {PROJECT_ID}

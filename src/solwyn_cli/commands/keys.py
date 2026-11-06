@@ -45,7 +45,7 @@ from solwyn_cli.commands._shared import (
 from solwyn_cli.config import DEFAULT_API_URL
 from solwyn_cli.errors import DASHBOARD_KEYS_URL, ApiError, redact_secrets_except
 from solwyn_cli.exit_codes import ErrorSemantic
-from solwyn_cli.help import help_contract
+from solwyn_cli.help import ContractCommand, help_contract, verbatim
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, TableData, _terminal_safe
 from solwyn_cli.project_resolver import (
     Candidates,
@@ -932,6 +932,7 @@ KEYS_ENV_SUBSHELL = '(solwyn_env="$(solwyn --format table keys env)" && eval "$s
 
 @app.command(
     "env",
+    cls=ContractCommand,
     epilog=help_contract(
         endpoint=(
             "local credential store read; with a login, GET /api/v1/projects "
@@ -942,7 +943,8 @@ KEYS_ENV_SUBSHELL = '(solwyn_env="$(solwyn --format table keys env)" && eval "$s
         schema="solwyn.keys-env.v2",
         guidance=(
             "Prints export lines to stdout. Hand them to one command in a "
-            f"subshell: {KEYS_ENV_SUBSHELL}.",
+            "subshell, typed or copied as one line, exactly as shown below:",
+            verbatim(KEYS_ENV_SUBSHELL),
             "Prints JSON only with --json or --format json on the command line; "
             "SOLWYN_FORMAT and config format never apply. Never eval JSON output.",
             "Exports SOLWYN_API_KEY and SOLWYN_PROJECT, and SOLWYN_API_URL when "

@@ -158,7 +158,8 @@ Endpoint: local credential store read; with a login, GET /api/v1/projects (and G
 Auth: local (the stored key; SOLWYN_API_KEY is never read)
 Exit codes: 0 success; 2 usage or project mismatch; 3 no stored key or account unresolved
 JSON schema: solwyn.keys-env.v2
-Prints export lines to stdout. Hand them to one command in a subshell: (solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec <command>).
+Prints export lines to stdout. Hand them to one command in a subshell, typed or copied as one line, exactly as shown below:
+(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec <command>)
 Prints JSON only with --json or --format json on the command line; SOLWYN_FORMAT and config format never apply. Never eval JSON output.
 Exports SOLWYN_API_KEY and SOLWYN_PROJECT, and SOLWYN_API_URL when the API URL is not the default.
 Refuses a project other than the one the repo's .solwyn.env names.
