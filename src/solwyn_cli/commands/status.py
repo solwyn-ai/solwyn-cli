@@ -28,6 +28,7 @@ from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData
 from solwyn_cli.runtime import command_context, output_engine
+from solwyn_cli.money import money
 
 
 class _BudgetSummary(BaseModel):
@@ -117,9 +118,9 @@ def _table(data: _StatusData, *, include_savings: bool = False) -> TableData:
     budget = data.budget
     rows: list[tuple[str, str]] = [
         ("Project", data.project_id),
-        ("Budget limit", f"{budget.budget_limit:.2f}"),
-        ("Current usage", f"{budget.current_usage:.2f}"),
-        ("Remaining budget", f"{budget.remaining_budget:.2f}"),
+        ("Budget limit", f"{money(budget.budget_limit)}"),
+        ("Current usage", f"{money(budget.current_usage)}"),
+        ("Remaining budget", f"{money(budget.remaining_budget)}"),
         (
             "Budget period",
             f"{budget.budget_period} ({budget.period_date})",

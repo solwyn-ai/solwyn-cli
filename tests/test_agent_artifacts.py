@@ -724,7 +724,12 @@ def test_guidance_keeps_the_agent_on_this_repos_project_and_key() -> None:
 
     assert "This repo's Solwyn project is set in .solwyn.env (SOLWYN_PROJECT)." in text
     assert "Do not change it to reach another project's budget." in text
-    assert 'eval "$(solwyn keys env)"' in text
+    # The key goes to one command in a subshell, never a bare eval (0.5.1).
+    assert (
+        '(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" '
+        "&& exec <command>)" in text
+    )
+    assert 'eval "$(solwyn keys env)"' not in text
     assert "Never point SOLWYN_PROJECT or `--project` at another project" in text
     assert "a change a person makes in the dashboard" in text
     # Never a CLI route to widen a key.

@@ -63,6 +63,7 @@ from solwyn_cli.output import (
     _terminal_safe,
 )
 from solwyn_cli.runtime import check_setup, command_context, output_engine
+from solwyn_cli.money import money
 
 
 app = typer.Typer(
@@ -268,7 +269,7 @@ def _list_table(data: _ProjectsListData) -> TableData:
             (
                 project.id,
                 project.name,
-                f"{project.budget_limit:.2f}",
+                f"{money(project.budget_limit)}",
                 project.budget_period,
                 project.budget_mode,
                 _date_time(project.created_at),
@@ -285,7 +286,7 @@ def _show_table(project: _Project) -> TableData:
         rows=(
             ("ID", project.id),
             ("Name", project.name),
-            ("Budget limit", f"{project.budget_limit:.2f}"),
+            ("Budget limit", f"{money(project.budget_limit)}"),
             ("Budget period", project.budget_period),
             ("Budget mode", project.budget_mode),
             ("Created", _date_time(project.created_at)),
@@ -298,7 +299,7 @@ def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableDat
     rows = (
         ("ID", project.id),
         ("Name", project.name),
-        ("Budget limit", f"{project.budget_limit:.2f}"),
+        ("Budget limit", f"{money(project.budget_limit)}"),
         ("Budget period", project.budget_period),
         ("Budget mode", project.budget_mode),
         ("Created", _date_time(project.created_at)),

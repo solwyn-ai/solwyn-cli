@@ -26,6 +26,7 @@ from key_fixtures import (
 )
 from login_fixtures import LOGIN_TOKEN, login_credential, login_meta
 from solwyn_cli import auth
+from solwyn_cli import config as config_module
 from solwyn_cli.commands import keys as keys_module
 from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
@@ -379,8 +380,12 @@ def test_keys_create_refuses_a_repo_mismatch_before_creating_anything(
     error = json.loads(result.stderr)
     assert error["code"] == "project_mismatch"
     assert error["message"] == (
-        "This repo is set to research in .solwyn.env, but --project says "
-        f"{PROJECT_ID}. Edit .solwyn.env if the repo should use another project."
+        f"This repo is set to research in .solwyn.env, but --project says {PROJECT_ID}."
+    )
+    assert error["hint"] == (
+        "The repo's .solwyn.env names research. Ask a person to change it if "
+        "this repo should use another project. Never switch projects to get "
+        "past a budget limit."
     )
     assert FakeClient.instances == []
 
@@ -893,6 +898,40 @@ def test_keys_env_exports_the_stored_key_and_project(
     )
 
 
+@pytest.mark.parametrize("source", ["environment", "config"])
+def test_keys_env_ignores_a_json_format_not_given_on_its_command_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, source: str
+) -> None:
+    # A shell that evals one JSON word and fails echoes the word, key included.
+    store_key()
+    if source == "environment":
+        monkeypatch.setenv("SOLWYN_FORMAT", "json")
+    else:
+        config = config_module.get_config_path()
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('format = "json"\n')
+
+    result = runner.invoke(app, ["keys", "env", "--project", "checkout-bot"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == (
+        f"export SOLWYN_API_KEY='{KEY}'\nexport SOLWYN_PROJECT='checkout-bot'\n"
+    )
+
+
+@pytest.mark.parametrize("flags", [["--json"], ["--format", "json"]])
+def test_keys_env_prints_json_when_its_command_line_asks(
+    monkeypatch: pytest.MonkeyPatch, flags: list[str]
+) -> None:
+    store_key()
+    monkeypatch.setenv("SOLWYN_FORMAT", "table")
+
+    result = runner.invoke(app, [*flags, "keys", "env", "--project", "checkout-bot"])
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["schema"] == "solwyn.keys-env.v2"
+
+
 def test_keys_env_uses_the_repo_file_value_as_given(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -925,7 +964,12 @@ def test_keys_env_refuses_a_project_other_than_the_repo_file(
     assert error["code"] == "project_mismatch"
     assert error["message"] == (
         "This repo is set to checkout-bot in .solwyn.env, but SOLWYN_PROJECT says "
-        "research. Edit .solwyn.env if the repo should use another project."
+        "research."
+    )
+    assert error["hint"] == (
+        "The repo's .solwyn.env names checkout-bot. Ask a person to change it if "
+        "this repo should use another project. Never switch projects to get "
+        "past a budget limit."
     )
     assert KEY not in _rendered(result)
     assert OTHER_KEY not in _rendered(result)

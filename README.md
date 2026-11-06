@@ -4,7 +4,7 @@
 
 Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and manage your account's API keys, from your terminal, your scripts, or your coding agent.
 
-This README describes solwyn-cli 0.5.0. The package is distributed on PyPI as `solwyn-cli`;
+This README describes solwyn-cli 0.5.1. The package is distributed on PyPI as `solwyn-cli`;
 run `solwyn --version` to see which version you have installed, and use `solwyn --help`
 and MCP discovery to inspect its exact surface.
 
@@ -27,11 +27,11 @@ Requires Python 3.11 or newer. The package installs two identical executables: `
 ```console
 solwyn login          # approve this CLI in your browser
 solwyn init           # set up this repo's Solwyn project and write .solwyn.env
-eval "$(solwyn keys env)"   # hand this repo's API key and project to the SDK
+(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec python app.py)   # run the app with this repo's key
 solwyn status         # project budget and provider health at a glance
 ```
 
-`solwyn login` prints a URL and a code. Open the URL in any browser, sign in or sign up, and approve. It works over SSH and in agent sandboxes, and an agent can relay the code to you. The login is scoped: it can read, stop agent runs and lower caps. Raising a cap, changing enforcement mode, pausing rules, keys, billing and team changes ask for your approval in the browser each time, and the command waits for it (exit 6 if it is not given). `eval "$(solwyn keys env)"` exports the API key stored for this repo's project as `SOLWYN_API_KEY`, with `SOLWYN_PROJECT`, for the SDK in your shell. See [login](docs/commands/login.mdx), [API keys](docs/commands/keys.mdx) and [approvals](docs/commands/approvals.mdx).
+`solwyn login` prints a URL and a code. Open the URL in any browser, sign in or sign up, and approve. It works over SSH and in agent sandboxes, and an agent can relay the code to you. The login is scoped: it can read, stop agent runs and lower caps. Raising a cap, changing enforcement mode, pausing rules, keys, billing and team changes ask for your approval in the browser each time, and the command waits for it (exit 6 if it is not given). `solwyn keys env` prints the API key stored for this repo's project as `SOLWYN_API_KEY`, with `SOLWYN_PROJECT`; the subshell above hands them to one command only, and runs nothing if `keys env` fails. See [login](docs/commands/login.mdx), [API keys](docs/commands/keys.mdx) and [approvals](docs/commands/approvals.mdx).
 
 `solwyn init` authenticates and sets up the repo's project: the one its `.solwyn.env` names, else an existing project you select with `--project` or `SOLWYN_PROJECT`, else a new project named after the repo whose API key it stores on this computer. It writes `.solwyn.env` (the project name, no secret; commit it), detects the provider SDKs your code imports, prints the wiring for each, and verifies your budget end to end. Add `--agents` to also write guidance files for Claude, Cursor, and `AGENTS.md`. See [repository setup](docs/commands/init.mdx).
 

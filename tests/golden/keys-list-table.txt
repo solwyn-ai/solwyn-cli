@@ -1,9 +1,3 @@
-ID           Name        Prefix     Scope  Status  Projects      Expires  Stored
-6f1d0c9e-00  checkout-b  solwyn_sk  full   active  checkout-b  2027-11-0  yes   
-00-4000-800  ot          _a1a1a1a1                 ot          4T10:12:0        
-0-000000000              a1a1a1a1                                     0Z        
-001                                                                             
-6f1d0c9e-00  shared      solwyn_sk  full   grace   checkout-b  2027-11-0  no    
-00-4000-800              _b2b2b2b2                 ot,         4T10:12:0        
-0-000000000              b2b2b2b2                  research           0Z        
-002                                                                             
+ID                                    Name          Prefix                      Scope  Status  Projects                             Expires  Stored
+6f1d0c9e-0000-4000-8000-000000000001  checkout-bot  solwyn_sk_a1a1a1a1a1a1a1a1  full   active  checkout-bot            2027-11-04T10:12:00Z  yes   
+6f1d0c9e-0000-4000-8000-000000000002  shared        solwyn_sk_b2b2b2b2b2b2b2b2  full   grace   checkout-bot, research  2027-11-04T10:12:00Z  no    

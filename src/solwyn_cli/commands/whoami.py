@@ -163,7 +163,9 @@ def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _Whoa
             scope=scope,
             expires_at=expires_at,
         ),
-        configured_project=None,
+        # The selected project (--project, SOLWYN_PROJECT or .solwyn.env; the
+        # launch project over MCP), as for an API key.
+        configured_project=project,
         account_id=account.id,
         your_role=account.your_role,
         seats_used=account.seats_used,
@@ -175,11 +177,10 @@ def fetch_identity(*, client: SolwynClient, project: str | None = None) -> _Whoa
 
 
 def _jwt_data(context: typer.Context, credential: LoginCredential) -> _WhoamiData:
+    runtime = command_context(context)
     try:
-        with SolwynClient(
-            api_url=command_context(context).api_url, credential=credential
-        ) as client:
-            return fetch_identity(client=client)
+        with SolwynClient(api_url=runtime.api_url, credential=credential) as client:
+            return fetch_identity(client=client, project=runtime.project)
     except ApiError as error:
         exit_with_error(context, error)
     except AuthError as error:

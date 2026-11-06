@@ -63,7 +63,7 @@ def memory_keyring(
     config_home = tmp_path_factory.mktemp("config")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     monkeypatch.setattr(config, "user_config_dir", lambda *a, **kw: str(config_home))
-    for name in (credential_store.STORE_ENV, auth.TOKEN_ENV):
+    for name in (credential_store.STORE_ENV, auth.TOKEN_ENV, "COLUMNS"):
         monkeypatch.delenv(name, raising=False)
     auth._LAST_LOOKUP.set(None)
     auth._LAST_WRITE.set(None)
