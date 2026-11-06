@@ -1,6 +1,7 @@
 """End-to-end contract tests for ``solwyn init``."""
 
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ import httpx
 import pytest
 from click import unstyle
 from golden.harness import assert_matches_golden
-from key_fixtures import OTHER_PROJECT_ID
+from key_fixtures import OTHER_PROJECT_ID, store_key
 from login_fixtures import login_credential
 from typer.testing import CliRunner
 
@@ -969,6 +970,31 @@ def test_the_repo_file_selects_the_project_and_is_left_untouched(
     assert payload["repo_file_written"] is False
     assert repo_file.read_bytes() == before
     assert _requests() == [("GET", f"/api/v1/projects/{PROJECT_ID}/budget")]
+
+
+@pytest.mark.parametrize("output", ["json", "table"])
+def test_init_says_a_key_is_stored_when_one_already_is(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch, fake_core: Any, output: str
+) -> None:
+    # Run-through finding 4: init said "Key stored: no" while the project's
+    # key was stored; key_stored means "stored on this computer".
+    _git(isolated_init)
+    store_key(project_id=PROJECT_ID, project_name="Alpha")
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    fake_core.on("GET", "/api/v1/projects", httpx.Response(200, json=[PROJECT]))
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = runner.invoke(
+        app,
+        [*(["--json"] if output == "json" else ["--no-color"]), "init"],
+        env={"SOLWYN_PROJECT": "alpha"},
+    )
+
+    assert result.exit_code == 0, result.stderr
+    if output == "json":
+        assert json.loads(result.stdout)["key_stored"] is True
+    else:
+        assert re.search(r"Key stored\s+yes", result.stdout), result.stdout
 
 
 def test_an_env_selection_uses_the_existing_project_and_writes_it_as_given(

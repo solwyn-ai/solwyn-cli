@@ -6,6 +6,7 @@ import socket
 import sys
 import time
 from collections.abc import Callable
+from functools import partial
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
@@ -351,8 +352,13 @@ def _poll(
     poll_first: bool,
     continue_command: str | None,
     store: StoreMode | None = None,
+    on_pending: Callable[[], None] | None = None,
 ) -> TokenResponse:
-    """Poll the token endpoint at the server's interval until a result or the wait ends."""
+    """Poll the token endpoint at the server's interval until a result or the wait ends.
+
+    ``on_pending`` runs once, at the first answer that the login is not
+    approved yet (``login --continue`` shows the code again only then).
+    """
     started = now()
     interval = pending.interval
     first = poll_first
@@ -371,6 +377,9 @@ def _poll(
                 client, device_code=pending.device_code.get_secret_value()
             )
         except OAuthError as error:
+            if error.error in ("authorization_pending", "slow_down") and on_pending:
+                on_pending()
+                on_pending = None
             if error.error == "authorization_pending":
                 continue
             if error.error == "slow_down":
@@ -457,7 +466,11 @@ def _device_token(
                 persist=continue_command is not None,
                 store=store,
             )
-        _print_instructions(pending, waiting=wait > 0 or resume)
+        # A resumed login polls first: when it was already approved, the
+        # page and code are not shown again.
+        show = partial(_print_instructions, pending, waiting=wait > 0 or resume)
+        if not resume:
+            show()
         token = _poll(
             context,
             client,
@@ -466,6 +479,7 @@ def _device_token(
             poll_first=resume,
             continue_command=continue_command,
             store=store,
+            on_pending=show if resume else None,
         )
     issued = token.solwyn_credential
     meta = LoginMetadata(

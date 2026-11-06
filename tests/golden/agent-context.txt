@@ -13,7 +13,7 @@ Use Solwyn to enforce and attribute caller-owned AI-provider spend without expos
 ## This repo's project and keys
 
 - This repo's Solwyn project is set in .solwyn.env (SOLWYN_PROJECT). Do not change it to reach another project's budget.
-- To hand the key to an SDK, run `eval "$(solwyn keys env)"`; it exports SOLWYN_API_KEY and SOLWYN_PROJECT for this repo's project only.
+- To hand the key to an SDK, run the one command that needs it in a subshell: `(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec <command>)`. It exports SOLWYN_API_KEY and SOLWYN_PROJECT for this repo's project to that command only. Never eval its output in your own shell, and never print it.
 - Never point SOLWYN_PROJECT or `--project` at another project to get past a budget limit or a denial.
 - Never ask for a key that holds more projects. Giving a key another project is a change a person makes in the dashboard.
 

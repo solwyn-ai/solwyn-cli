@@ -925,6 +925,11 @@ def add_project(
     )
 
 
+# How to hand a stored key to one command: a subshell, so neither the key nor
+# the exports outlive the command, and nothing runs when keys env fails.
+KEYS_ENV_SUBSHELL = '(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec <command>)'
+
+
 @app.command(
     "env",
     epilog=help_contract(
@@ -936,7 +941,10 @@ def add_project(
         exits="0 success; 2 usage or project mismatch; 3 no stored key or account unresolved",
         schema="solwyn.keys-env.v2",
         guidance=(
-            'Prints export lines to stdout, so eval "$(solwyn keys env)" works.',
+            "Prints export lines to stdout. Hand them to one command in a "
+            f"subshell: {KEYS_ENV_SUBSHELL}.",
+            "Prints JSON only with --json or --format json on the command line; "
+            "SOLWYN_FORMAT and config format never apply. Never eval JSON output.",
             "Exports SOLWYN_API_KEY and SOLWYN_PROJECT, and SOLWYN_API_URL when "
             "the API URL is not the default.",
             "Refuses a project other than the one the repo's .solwyn.env names.",
@@ -971,7 +979,12 @@ def env_key(
         return
     api_url = command_context(context).api_url
     line, names = export_lines(credential.bearer_value(), selection.selector, api_url)
-    if command_context(context).output_format.value == "json":
+    # JSON only when asked for on this command line. SOLWYN_FORMAT or config
+    # format=json must never turn the export lines into one JSON word: a
+    # shell that evals it and fails (zsh: "no matches found") echoes the
+    # whole word, key included.
+    runtime = command_context(context)
+    if runtime.output_format.value == "json" and runtime.output_format_explicit:
         output_engine(context).write_success(
             schema="solwyn.keys-env.v2",
             data=_KeysEnvData(

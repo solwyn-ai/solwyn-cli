@@ -67,6 +67,7 @@ from solwyn_cli.exit_codes import ErrorSemantic, ExitCode
 from solwyn_cli.help import help_contract
 from solwyn_cli.output import OutputError, TableData, _terminal_safe
 from solwyn_cli.runtime import command_context, output_engine
+from solwyn_cli.money import money
 
 
 app = typer.Typer(
@@ -1043,16 +1044,16 @@ def _table(data: _BudgetStatusOutput) -> TableData:
         columns=("Field", "Value"),
         rows=(
             ("Project", data.project_id),
-            ("Budget limit", f"{data.budget_limit:.2f}"),
-            ("Current usage", f"{data.current_usage:.2f}"),
-            ("Remaining budget", f"{data.remaining_budget:.2f}"),
+            ("Budget limit", f"{money(data.budget_limit)}"),
+            ("Current usage", f"{money(data.current_usage)}"),
+            ("Remaining budget", f"{money(data.remaining_budget)}"),
             ("Budget period", data.budget_period),
             ("Budget mode", data.budget_mode),
             ("Utilization", f"{data.utilization_pct:.2f}%"),
-            ("Outage overspend ceiling", f"{data.outage_overspend_ceiling_usd:.2f}"),
+            ("Outage overspend ceiling", f"{money(data.outage_overspend_ceiling_usd)}"),
             (
                 "Lease float (included in usage)",
-                f"{data.lease_float_usd:.2f}"
+                f"{money(data.lease_float_usd)}"
                 if data.lease_float_usd is not None
                 else "—",
             ),
@@ -1071,16 +1072,21 @@ def _rule_rows(thresholds: list[_ThresholdState]) -> list[tuple[str, str]]:
                 if rule.scope == "tag"
                 else rule.match
             )
-            usage = "—" if rule.current_usage is None else f"{rule.current_usage:.2f}"
+            usage = (
+                "—" if rule.current_usage is None else f"{money(rule.current_usage)}"
+            )
             rows.append(
                 (
                     f"Scoped {rule.scope}: {selector}",
-                    f"{usage} / {rule.limit:.2f} ({rule.mode.value})",
+                    f"{usage} / {money(rule.limit)} ({rule.mode.value})",
                 )
             )
         elif isinstance(rule, _RunawayRunState):
             rows.append(
-                ("Runaway run", f"{rule.spend_threshold_usd:.2f} ({rule.mode.value})")
+                (
+                    "Runaway run",
+                    f"{money(rule.spend_threshold_usd)} ({rule.mode.value})",
+                )
             )
     return rows
 
@@ -1093,9 +1099,9 @@ def _check_table(data: _BudgetCheckData) -> TableData:
             ("Reservation ID", data.reservation_id or "-"),
             ("Project", data.project_id),
             ("Budget mode", data.mode.value),
-            ("Budget limit", f"{data.budget_limit:.2f}"),
-            ("Current usage", f"{data.current_usage:.2f}"),
-            ("Remaining budget", f"{data.remaining_budget:.2f}"),
+            ("Budget limit", f"{money(data.budget_limit)}"),
+            ("Current usage", f"{money(data.current_usage)}"),
+            ("Remaining budget", f"{money(data.remaining_budget)}"),
             (
                 "Denied by period",
                 data.denied_by_period or "-",
@@ -1236,9 +1242,9 @@ def _set_table(data: _BudgetSetData) -> TableData:
         columns=("Field", "Value"),
         rows=(
             ("Project", data.project_id),
-            ("Budget limit", f"{data.budget_limit:.2f}"),
-            ("Current usage", f"{data.current_usage:.2f}"),
-            ("Remaining budget", f"{data.remaining_budget:.2f}"),
+            ("Budget limit", f"{money(data.budget_limit)}"),
+            ("Current usage", f"{money(data.current_usage)}"),
+            ("Remaining budget", f"{money(data.remaining_budget)}"),
             ("Budget period", data.budget_period.value),
             ("Budget mode", data.budget_mode.value),
             (
@@ -1247,7 +1253,7 @@ def _set_table(data: _BudgetSetData) -> TableData:
             ),
             (
                 "Sub-limit",
-                f"{data.sub_limit:.2f}" if data.sub_limit is not None else "-",
+                f"{money(data.sub_limit)}" if data.sub_limit is not None else "-",
             ),
             ("Threshold rules", len(data.thresholds)),
             ("Utilization", f"{data.utilization_pct:.2f}%"),

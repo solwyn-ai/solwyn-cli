@@ -180,6 +180,20 @@ def test_approved_change_is_resent_once_with_the_exact_prepared_bytes() -> None:
     assert text.endswith("Approved. Applying the change.\n")
 
 
+def test_a_local_clock_behind_the_server_never_adds_a_minute() -> None:
+    # Run-through finding 11: "expires in 11 minutes" for a 10-minute approval.
+    server = Server(
+        writes=[_approval_required(), httpx.Response(200, json={"ok": True})],
+        statuses=["approved"],
+    )
+    clock = FakeClock()
+    clock.current = START - timedelta(seconds=30)
+
+    _, written = _run(server, clock=clock)
+
+    assert "expires in 10 minutes, Ctrl-C to stop" in "".join(written)
+
+
 def test_get_requests_never_hand_off() -> None:
     server = Server(writes=[_approval_required()], statuses=["approved"])
 

@@ -275,8 +275,17 @@ class ProjectSelection:
 def _mismatch_message(candidates: Candidates) -> str:
     return (
         f"This repo is set to {candidates.repo} in {REPO_FILE_NAME}, but "
-        f"{SOURCE_LABELS[candidates.source]} says {candidates.selected}. Edit "
-        f"{REPO_FILE_NAME} if the repo should use another project."
+        f"{SOURCE_LABELS[candidates.source]} says {candidates.selected}."
+    )
+
+
+def _mismatch_hint(candidates: Candidates) -> str:
+    # Addressed to a person: an agent that read "edit .solwyn.env" as an
+    # instruction could switch a repo to a project whose key it also holds.
+    return (
+        f"The repo's {REPO_FILE_NAME} names {candidates.repo}. Ask a person to "
+        "change it if this repo should use another project. Never switch "
+        "projects to get past a budget limit."
     )
 
 
@@ -371,8 +380,10 @@ def _apply_mismatch(
         return None
     message = _mismatch_message(candidates)
     if purpose == "read":
-        return message
-    raise ProjectResolutionError("project_mismatch", message)
+        return f"{message} {_mismatch_hint(candidates)}"
+    raise ProjectResolutionError(
+        "project_mismatch", message, _mismatch_hint(candidates)
+    )
 
 
 def _repo_error(candidates: Candidates) -> None:

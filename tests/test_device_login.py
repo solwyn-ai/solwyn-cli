@@ -326,6 +326,40 @@ def test_continue_polls_the_stored_code_at_once_and_finishes(
     assert json.loads(keychain[auth.LOGIN_ENTRY])["token"] == ISSUED_TOKEN
 
 
+def test_continue_after_approval_does_not_show_the_code_again(
+    keychain: dict[str, str], clock: FakeClock, server: Callable[..., OAuthServer]
+) -> None:
+    # Run-through finding 10: login --continue reprinted the page and code
+    # after the login was already approved.
+    server()
+    runner.invoke(app, ["--json", "login", "--wait", "0"])
+    server(httpx.Response(200, json=TOKEN))
+
+    result = runner.invoke(app, ["--json", "login", "--continue"])
+
+    assert result.exit_code == 0, result.stderr
+    assert USER_CODE not in result.stderr
+    assert "open this page" not in result.stderr
+
+
+def test_continue_while_still_pending_shows_the_code_once(
+    keychain: dict[str, str], clock: FakeClock, server: Callable[..., OAuthServer]
+) -> None:
+    server()
+    runner.invoke(app, ["--json", "login", "--wait", "0"])
+    server(
+        _oauth_error("authorization_pending"),
+        _oauth_error("authorization_pending"),
+        httpx.Response(200, json=TOKEN),
+    )
+
+    result = runner.invoke(app, ["--json", "login", "--continue"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stderr.count("and enter this code:") == 1
+    assert result.stderr.count("To log in, open this page in a browser:") == 1
+
+
 def test_continue_without_a_pending_login_exits_three(
     keychain: dict[str, str], clock: FakeClock, server: Callable[..., OAuthServer]
 ) -> None:

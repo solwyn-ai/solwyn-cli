@@ -47,6 +47,7 @@ from solwyn_cli.runtime import (
     output_engine,
     resolve_project,
 )
+from solwyn_cli.money import money
 
 _DEFAULT_API_URL = Config().api_url
 _MAX_PROVIDER_SOURCE_FILES = 2_000
@@ -127,6 +128,7 @@ class _InitData(BaseModel):
     project_id: str
     project_name: str | None
     project_created: bool
+    # A key for the project is stored on this computer (by this run or before).
     key_stored: bool
     # The repo's .solwyn.env (null outside a git repo) and whether init wrote it.
     repo_file: str | None
@@ -286,9 +288,21 @@ def _use_selected(context: typer.Context, credential: ResolvedCredential) -> _Ch
         project_id=selection.project_id,
         project_name=selection.project_name,
         created=False,
-        key_stored=False,
+        key_stored=_key_stored_here(
+            selection.project_id, command_context(context).api_url
+        ),
         credential=bound,
     )
+
+
+def _key_stored_here(project_id: str, api_url: str) -> bool:
+    """Whether this computer holds a key for the project (key_stored means
+    that, not "stored by this run": a stored key read as "no" sent people to
+    create another)."""
+    try:
+        return auth.stored_api_key(project_id, api_url) is not None
+    except AuthError:
+        return False
 
 
 def _create_for_repo(
@@ -560,7 +574,7 @@ def _table(data: _InitData) -> TableData:
             ("Providers", ", ".join(data.detected_providers) or "none detected"),
             ("SDK wiring", snippet_text),
             ("Budget verification", data.verification.status),
-            ("Budget remaining", f"{data.verification.remaining_budget:.2f}"),
+            ("Budget remaining", f"{money(data.verification.remaining_budget)}"),
             ("Utilization", f"{data.verification.utilization_pct:.2f}%"),
         ),
         right_align=("Value",),

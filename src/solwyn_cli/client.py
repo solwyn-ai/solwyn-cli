@@ -703,7 +703,13 @@ class SolwynClient:
             if effect:
                 line += f" ({effect.replace('_', ' ')})"
             lines.append(_terminal_safe(line))
-        remaining = (view.expires_at - self._clock()).total_seconds()
+        # Never more than the server's own window (expires_at - created_at):
+        # a local clock behind the server's said "11 minutes" for a 10-minute
+        # approval.
+        remaining = min(
+            (view.expires_at - self._clock()).total_seconds(),
+            (view.expires_at - view.created_at).total_seconds(),
+        )
         minutes = max(1, math.ceil(remaining / 60))
         lines.extend(
             [

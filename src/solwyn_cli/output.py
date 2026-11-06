@@ -118,6 +118,22 @@ def resolve_output_format(
     return OutputFormat.TABLE
 
 
+def table_width(environ: Mapping[str, str], *, stdout_is_tty: bool) -> int:
+    """COLUMNS when set (so `COLUMNS=200 solwyn keys list | less` does not
+    wrap at 80), else the terminal's width on a TTY, else 80."""
+    try:
+        columns = int(environ.get("COLUMNS", ""))
+    except ValueError:
+        columns = 0
+    if columns >= 40:
+        return columns
+    if stdout_is_tty:
+        import shutil
+
+        return max(40, shutil.get_terminal_size((80, 24)).columns)
+    return 80
+
+
 def color_enabled(
     *,
     is_tty: bool,

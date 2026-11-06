@@ -19,7 +19,7 @@ solwyn keys create --project checkout-bot --store-key
 solwyn keys rotate 6f1d0c9e-0000-4000-8000-000000000001 --grace-seconds 3600 --yes
 solwyn keys revoke 6f1d0c9e-0000-4000-8000-000000000001 --yes
 solwyn keys remove-project 6f1d0c9e-0000-4000-8000-000000000001 --project research --yes
-eval "$(solwyn keys env)"
+(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec python app.py)
 ```
 
 ## Keys stored on this computer
@@ -39,7 +39,15 @@ and says so once.
 ## Handing a key to an SDK: `keys env`
 
 `keys env` prints export lines for the key stored for the selected project, and
-nothing else, so `eval "$(solwyn keys env)"` sets up the current shell:
+nothing else. Hand them to the one command that needs them, in a subshell, so
+neither the key nor the exports outlive it and nothing runs when `keys env`
+fails:
+
+```sh
+(solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec python app.py)
+```
+
+It prints:
 
 ```text
 export SOLWYN_API_KEY='solwyn_sk_0123...cdef'
@@ -49,8 +57,11 @@ export SOLWYN_PROJECT='checkout-bot'
 `SOLWYN_PROJECT` is the value from the repo's `.solwyn.env`, else as given with
 `--project` or `SOLWYN_PROJECT`. When the effective API URL is not the default
 `https://api.solwyn.ai`, `SOLWYN_API_URL` is exported too, so the key is never
-sent to production from a shell that lacks it. With `--json`, `export` holds the
-same lines, `names` lists the variables and `project` holds the selector and id.
+sent to production from a shell that lacks it. With `--json` or `--format json`
+on its own command line, `export` holds the same lines, `names` lists the
+variables and `project` holds the selector and id. `SOLWYN_FORMAT` and config
+`format` never apply to `keys env`: a shell that evals JSON fails, and zsh's
+error repeats the whole failing word, key included. Never eval JSON output.
 
 `keys env` only ever prints a stored key; it never reads `SOLWYN_API_KEY`. It
 refuses, before printing anything:
@@ -147,7 +158,8 @@ Endpoint: local credential store read; with a login, GET /api/v1/projects (and G
 Auth: local (the stored key; SOLWYN_API_KEY is never read)
 Exit codes: 0 success; 2 usage or project mismatch; 3 no stored key or account unresolved
 JSON schema: solwyn.keys-env.v2
-Prints export lines to stdout, so eval "$(solwyn keys env)" works.
+Prints export lines to stdout. Hand them to one command in a subshell: (solwyn_env="$(solwyn --format table keys env)" && eval "$solwyn_env" && exec <command>).
+Prints JSON only with --json or --format json on the command line; SOLWYN_FORMAT and config format never apply. Never eval JSON output.
 Exports SOLWYN_API_KEY and SOLWYN_PROJECT, and SOLWYN_API_URL when the API URL is not the default.
 Refuses a project other than the one the repo's .solwyn.env names.
 Never writes .env or any other file.

@@ -665,7 +665,12 @@ def test_spend_exits_on_a_mismatch_with_the_repo_file_before_any_request(
     assert error["code"] == "project_mismatch"
     assert error["message"] == (
         "This repo is set to checkout-bot in .solwyn.env, but SOLWYN_PROJECT says "
-        "research. Edit .solwyn.env if the repo should use another project."
+        "research."
+    )
+    assert error["hint"] == (
+        "The repo's .solwyn.env names checkout-bot. Ask a person to change it if "
+        "this repo should use another project. Never switch projects to get "
+        "past a budget limit."
     )
     assert requests == []
 
@@ -688,6 +693,9 @@ def test_a_read_warns_once_on_a_mismatch_and_uses_the_selected_value(
     assert result.exit_code == 0, result.stderr
     assert result.stderr.count("This repo is set to checkout-bot in .solwyn.env") == 1
     assert "--project says research" in result.stderr
+    assert "Ask a person to change it if this repo should use another" in (
+        " ".join(result.stderr.split())
+    )
     assert paths(requests) == [f"GET /api/v1/projects/{OTHER_PROJECT_ID}/costs"]
 
 

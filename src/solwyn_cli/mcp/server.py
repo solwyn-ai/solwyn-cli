@@ -1682,9 +1682,9 @@ _LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
     ),
     "project_mismatch": (
         "The project selected for this server does not match the repo's .solwyn.env.",
-        "Edit .solwyn.env if the repo should use another project, or restart the "
-        "server with the project it names. Never switch projects to get around a "
-        "budget limit.",
+        "Ask a person to change .solwyn.env if this repo should use another "
+        "project, or to restart the server with the project it names. Never "
+        "switch projects to get past a budget limit.",
     ),
     "repo_file_invalid": (
         "The repo's .solwyn.env is not valid.",

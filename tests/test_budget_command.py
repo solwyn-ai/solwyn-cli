@@ -207,6 +207,29 @@ def test_budget_status_supports_both_auth_modes_with_one_get_and_no_reservation(
         assert secret not in rendered
 
 
+def test_budget_status_table_shows_sub_cent_amounts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A $0.002 cap used to read "Budget limit 0.00" (run-through finding 5).
+    monkeypatch.setattr(budget_module, "resolve_credential", _key, raising=False)
+    _queue_budget_response(
+        budget_limit=0.002,
+        current_usage=0.0014810000000000001,
+        remaining_budget=0.000519,
+        utilization_pct=74.05,
+    )
+
+    result = runner.invoke(
+        app, ["--no-color", "-p", "proj_be76331b95dfc399cd776d2f", "budget", "status"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    rows = {" ".join(line.split()) for line in result.stdout.splitlines()}
+    assert any("Budget limit 0.002" in row for row in rows), result.stdout
+    assert any("Current usage 0.001481" in row for row in rows), result.stdout
+    assert any("Remaining budget 0.000519" in row for row in rows), result.stdout
+
+
 def test_budget_status_reads_every_threshold_rule_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

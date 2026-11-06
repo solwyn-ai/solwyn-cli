@@ -10,7 +10,12 @@ import typer
 from pydantic import BaseModel, ConfigDict
 
 from solwyn_cli.config import DEFAULT_API_URL, Config, ConfigLoadError, load_config
-from solwyn_cli.output import OutputEngine, OutputFormat, resolve_output_format
+from solwyn_cli.output import (
+    OutputEngine,
+    OutputFormat,
+    resolve_output_format,
+    table_width,
+)
 
 if TYPE_CHECKING:
     from solwyn_cli.auth import ApiKeyCredential, ResolvedCredential
@@ -72,6 +77,9 @@ class CommandContext(BaseModel):
     repo_project: str | None = None
     repo_error: str | None = None
     output_format: OutputFormat
+    # Whether --json or --format chose the format on this command line (not
+    # SOLWYN_FORMAT or config): keys env prints JSON only then.
+    output_format_explicit: bool = False
     no_color: bool
     environment_no_color: bool
 
@@ -121,6 +129,7 @@ def resolve_command_context(
             environ=environment,
             config_format=config.format,
         ),
+        output_format_explicit=json_flag or output_format is not None,
         no_color=no_color,
         environment_no_color="NO_COLOR" in environment,
     )
@@ -253,6 +262,7 @@ def output_engine(context: typer.Context) -> OutputEngine:
         stderr_is_tty=sys.stderr.isatty(),
         no_color=resolved.no_color,
         environ={"NO_COLOR": ""} if resolved.environment_no_color else {},
+        width=table_width(os.environ, stdout_is_tty=sys.stdout.isatty()),
     )
 
 
@@ -278,4 +288,5 @@ def bootstrap_output_engine(
         stderr_is_tty=sys.stderr.isatty(),
         no_color=no_color,
         environ={"NO_COLOR": ""} if "NO_COLOR" in environment else {},
+        width=table_width(environment, stdout_is_tty=sys.stdout.isatty()),
     )

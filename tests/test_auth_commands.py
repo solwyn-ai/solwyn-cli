@@ -611,3 +611,62 @@ def test_whoami_production_tier(output_format, monkeypatch):
         GOLDEN_DIR
         / f"whoami-production-{output_format}.{'json' if output_format == 'json' else 'txt'}",
     )
+
+
+def _identity_responses() -> list[httpx.Response]:
+    return [
+        httpx.Response(
+            200,
+            json={
+                "user_id": "user_123",
+                "email_verified": True,
+                "email": "person@example.com",
+                "display_name": "Person Example",
+                "subscription_tier": "production",
+                "first_name": "Person",
+                "marketing_emails_subscribed": True,
+                "account_id": "acct_123",
+                "alert_email_override": None,
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "id": "acct_123",
+                "display_name": "Person Example",
+                "subscription_tier": "production",
+                "alert_email_override": None,
+                "seat_limit": 2,
+                "seats_used": 1,
+                "your_role": "owner",
+            },
+        ),
+        httpx.Response(200, json=[]),
+    ]
+
+
+def test_whoami_with_a_login_names_the_selected_project(monkeypatch):
+    # Run-through finding 7: a login always reported configured_project null.
+    credential = login_credential(ACCESS_TOKEN)
+    monkeypatch.setattr(whoami_module, "resolve_credential", lambda: credential)
+    monkeypatch.setattr(whoami_module, "SolwynClient", FakeClient)
+    FakeClient.responses = _identity_responses()
+
+    result = runner.invoke(app, ["--json", "--project", "ws14rt-orders", "whoami"])
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["configured_project"] == "ws14rt-orders"
+
+
+def test_mcp_get_whoami_with_a_login_names_the_launch_project():
+    # The MCP tool passes the launch project to fetch_identity.
+    class Client:
+        current_credential = login_credential(ACCESS_TOKEN)
+        responses = _identity_responses()
+
+        def request(self, method, path, **_):
+            return self.responses.pop(0)
+
+    data = whoami_module.fetch_identity(client=Client(), project="ws14rt-orders")
+
+    assert data.configured_project == "ws14rt-orders"
