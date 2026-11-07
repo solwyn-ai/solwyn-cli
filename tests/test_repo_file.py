@@ -245,3 +245,104 @@ def test_rename_keeps_a_write_through_an_already_open_file(
     assert raised.value.kept == aside[0]
     assert repo_file.parse_repo_file(aside[0].read_text()) == "research"
     assert _hidden(repo) == [aside[0].name]
+
+
+# --- A failed or interrupted update puts the file back (audit F7) --------------
+
+
+def _link_fails(
+    monkeypatch: pytest.MonkeyPatch, path: Path, error: BaseException
+) -> None:
+    """The new content's link into ``path`` fails; other links still work."""
+    real_link = os.link
+
+    def link(source: object, target: object) -> None:
+        if Path(target) == path and Path(source).name.endswith(".tmp"):
+            raise error
+        real_link(source, target)
+
+    monkeypatch.setattr(os, "link", link)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [PermissionError(1, "Operation not permitted"), KeyboardInterrupt()],
+    ids=["eperm", "ctrl-c"],
+)
+def test_a_failed_update_puts_the_old_file_back(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+    _link_fails(monkeypatch, path, error)
+
+    with pytest.raises(type(error)):
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert repo_file.parse_repo_file(path.read_text()) == "checkout-bot"
+    assert _hidden(repo) == []
+
+
+def test_without_hard_links_the_old_file_is_still_put_back(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+
+    def no_links(source: object, target: object) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", no_links)
+
+    with pytest.raises(PermissionError):
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert repo_file.parse_repo_file(path.read_text()) == "checkout-bot"
+    assert _hidden(repo) == []
+
+
+def test_a_file_written_during_a_failed_update_is_never_overwritten(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+    real_link = os.link
+
+    def link(source: object, target: object) -> None:
+        if Path(target) == path and Path(source).name.endswith(".tmp"):
+            # Someone writes the file while it is aside, then the link fails.
+            path.write_text(repo_file.render("research"))
+            raise PermissionError(1, "Operation not permitted")
+        real_link(source, target)
+
+    monkeypatch.setattr(os, "link", link)
+
+    with pytest.raises(repo_file.RepoFileError) as raised:
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert repo_file.parse_repo_file(path.read_text()) == "research"
+    (kept,) = _hidden(repo)
+    assert kept in str(raised.value)
+    assert repo_file.parse_repo_file((repo / kept).read_text()) == "checkout-bot"
+
+
+def test_an_interrupt_after_the_new_file_names_the_copy_left_behind(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repo / ".solwyn.env"
+    path.write_text(repo_file.render("checkout-bot"))
+    real_unlink = Path.unlink
+
+    def unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name.endswith(".old"):
+            raise KeyboardInterrupt
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        repo_file.rename_if_named("checkout-bot", "renamed", repo)
+
+    assert repo_file.parse_repo_file(path.read_text()) == "renamed"
+    (kept,) = _hidden(repo)
+    assert any(kept in note for note in getattr(raised.value, "__notes__", []))

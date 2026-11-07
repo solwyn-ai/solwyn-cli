@@ -560,3 +560,91 @@ def test_delete_requires_204_without_replaying_unexpected_success(api):
     assert result.exit_code == 1
     assert len(calls) == 1
     assert calls[0][2] == {}
+
+
+# --- channels update never reads SOLWYN_CHANNEL_SECRET unasked (audit F3) ------
+
+TEAM_A_HOOK = "https://hooks.slack.com/services/TEAM/A/" + "a" * 24
+
+
+def test_update_name_ignores_a_leftover_channel_secret(api, monkeypatch):
+    _, calls, responses = api
+    monkeypatch.setenv("SOLWYN_CHANNEL_SECRET", TEAM_A_HOOK)
+    responses.append(httpx.Response(200, json=CHANNEL))
+
+    result = invoke(["channels", "update", "ch_teamb", "--name", "Team B alerts"])
+
+    assert result.exit_code == 0, result.output
+    assert [call[:2] for call in calls] == [("PUT", CHANNELS + "/ch_teamb")]
+    assert calls[0][2]["json"] == {"name": "Team B alerts"}
+    assert TEAM_A_HOOK not in result.output
+    assert "--secret-env" in result.stderr
+
+
+def test_update_with_only_a_leftover_channel_secret_refuses(api, monkeypatch):
+    _, calls, _ = api
+    monkeypatch.setenv("SOLWYN_CHANNEL_SECRET", TEAM_A_HOOK)
+
+    result = invoke(["channels", "update", "ch_teamb"])
+
+    assert result.exit_code == 2
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert "--secret-env" in error["hint"]
+    assert calls == []
+
+
+def test_update_secret_env_opts_in_and_names_the_field(api, monkeypatch):
+    _, calls, responses = api
+    monkeypatch.setenv("SOLWYN_CHANNEL_SECRET", TEAM_A_HOOK)
+    responses.extend([httpx.Response(200, json=CHANNEL)] * 2)
+
+    result = invoke(["channels", "update", "ch_one", "--secret-env"])
+
+    assert result.exit_code == 0, result.output
+    assert calls[1][2]["json"] == {"slack_config": {"webhook_url": TEAM_A_HOOK}}
+    assert TEAM_A_HOOK not in result.output
+
+
+def test_update_secret_env_without_the_variable_is_a_usage_error(api):
+    _, calls, _ = api
+
+    result = invoke(["channels", "update", "ch_one", "--secret-env"])
+
+    assert result.exit_code == 2
+    assert "SOLWYN_CHANNEL_SECRET" in json.loads(result.stderr)["message"]
+    assert calls == []
+
+
+def test_update_secret_env_conflicts_with_secret_stdin(api, monkeypatch):
+    _, calls, _ = api
+    monkeypatch.setenv("SOLWYN_CHANNEL_SECRET", TEAM_A_HOOK)
+
+    result = invoke(
+        ["channels", "update", "ch_one", "--secret-env", "--secret-stdin"],
+        input="other\n",
+    )
+
+    assert result.exit_code == 2
+    assert calls == []
+
+
+def test_update_channel_option_alone_never_sends_the_leftover_secret(api, monkeypatch):
+    _, calls, responses = api
+    monkeypatch.setenv("SOLWYN_CHANNEL_SECRET", TEAM_A_HOOK)
+    responses.extend([httpx.Response(200, json=CHANNEL)] * 2)
+
+    result = invoke(["channels", "update", "ch_one", "--channel", "C123"])
+
+    assert result.exit_code == 0, result.output
+    assert calls[1][2]["json"] == {"slack_config": {"channel": "C123"}}
+
+
+def test_create_still_reads_the_channel_secret(api, monkeypatch):
+    _, calls, responses = api
+    monkeypatch.setenv("SOLWYN_CHANNEL_SECRET", TEAM_A_HOOK)
+    responses.append(httpx.Response(201, json=CHANNEL))
+
+    result = invoke(["channels", "create", "--type", "slack", "--name", "Ops"])
+
+    assert result.exit_code == 0, result.output
+    assert calls[0][2]["json"]["slack_config"] == {"webhook_url": TEAM_A_HOOK}

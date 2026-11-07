@@ -157,6 +157,49 @@ def _publish_new(path: Path, content: str) -> None:
         staged.unlink(missing_ok=True)
 
 
+class RepoFileStrandedError(RepoFileError):
+    """An update stopped part way; the previous content is still in ``kept``."""
+
+    def __init__(self, path: Path, kept: Path) -> None:
+        self.path = path
+        self.kept = kept
+        super().__init__(_stranded_message(path, kept))
+
+
+def _stranded_message(path: Path, kept: Path) -> str:
+    return (
+        f"The update of {path} did not finish; its previous content is in "
+        f"{kept}. If {path.name} is missing or wrong, move that file back to {path}."
+    )
+
+
+def _put_back(aside: Path, path: Path) -> bool:
+    """Move ``aside`` back to a missing ``path``; never replace a file there.
+
+    A hard link refuses an existing file, so a concurrent writer's file wins
+    and the aside copy is kept. Where hard links are unavailable (some
+    network and FAT file systems) the copy is renamed back only while
+    ``path`` is still missing. Returns whether ``path`` holds the copy again.
+    """
+    try:
+        os.link(aside, path)
+    except FileExistsError:
+        return False
+    except OSError:
+        if os.path.lexists(path):
+            return False
+        try:
+            os.replace(aside, path)
+        except OSError:
+            return False
+        return True
+    try:
+        aside.unlink()
+    except OSError:
+        pass  # path holds the content; a leftover hidden copy is harmless.
+    return True
+
+
 def _replace_if_unchanged(path: Path, content: str, expected: bytes) -> None:
     """Replace ``path`` with ``content`` only while it still holds ``expected``.
 
@@ -166,11 +209,20 @@ def _replace_if_unchanged(path: Path, content: str, expected: bytes) -> None:
     moved-aside file is put back (or kept beside it when ``path`` was written
     again meanwhile). Nothing unexpected is ever deleted: on any conflict
     this raises RepoFileConflictError naming where the other change is.
+
+    Any other failure or interrupt (Ctrl+C included) moves the aside file
+    back while ``path`` is missing, then re-raises. A copy that cannot be put
+    back is named: RepoFileStrandedError for an error, a note on an
+    interrupt.
     """
     staged = _stage(path, content, "tmp")
     aside = path.with_name(f".{path.name}.{secrets.token_hex(8)}.old")
     try:
         os.rename(path, aside)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+    try:
         if aside.read_bytes() != expected:
             try:
                 os.link(aside, path)
@@ -190,6 +242,18 @@ def _replace_if_unchanged(path: Path, content: str, expected: bytes) -> None:
         if aside.read_bytes() != expected:
             raise RepoFileConflictError(path, kept=aside)
         aside.unlink()
+    except RepoFileConflictError:
+        raise
+    except BaseException as error:
+        if not os.path.lexists(aside) or (
+            not os.path.lexists(path) and _put_back(aside, path)
+        ):
+            raise
+        # The previous content is left beside the file: say where.
+        if isinstance(error, Exception):
+            raise RepoFileStrandedError(path, aside) from error
+        error.add_note(_stranded_message(path, aside))
+        raise
     finally:
         staged.unlink(missing_ok=True)
 

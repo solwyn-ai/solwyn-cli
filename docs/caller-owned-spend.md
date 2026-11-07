@@ -138,9 +138,12 @@ solwyn budget rule add --type unit_cost_anomaly --multiplier 3
 Runaway `--calls N` and `--window MIN` must be supplied together. Scoped caps also
 accept `--scope model|provider|agent_run`; `--value` is valid only for tag scope.
 The rule count limit includes all six types. Adding a rule preserves the complete
-budget configuration and re-reads it before writing. Core has no concurrency token,
-so this detects changes before the final write but cannot eliminate the remaining
-race. A 503 after a write triggers a read to confirm the complete configuration;
+budget configuration and re-reads it before writing; `budget set` does the same.
+A write that needs a browser approval can wait for minutes, so after the approval
+the configuration is read once more, and the approved write is sent only if it is
+unchanged; otherwise the command exits 6 with `budget_changed_during_approval`
+and nothing is sent. Core has no concurrency token, so this detects changes before
+the final write but cannot eliminate the remaining milliseconds-long race. A 503 after a write triggers a read to confirm the complete configuration;
 an unconfirmed outcome requires reviewing the budget before retrying.
 
 ```sh

@@ -1112,3 +1112,119 @@ def test_keys_env_needs_a_project() -> None:
     assert result.exit_code == 2
     assert json.loads(result.stderr)["code"] == "project_required"
     assert KEY not in _rendered(result)
+
+
+# --- A minted key is stored, shown once, or revoked (audit F1) ----------------
+
+
+def _store_fails(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
+    def fail(**_fields: Any) -> Any:
+        raise error
+
+    monkeypatch.setattr(keys_module.auth, "store_api_key", fail)
+
+
+def _terminal(monkeypatch: pytest.MonkeyPatch, tty: bool) -> None:
+    from solwyn_cli.commands import _minted
+
+    monkeypatch.setattr(_minted, "_stdout_is_terminal", lambda: tty)
+
+
+def test_keys_create_store_key_revokes_a_key_it_cannot_store_or_show(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _login(monkeypatch)
+    _terminal(monkeypatch, False)
+    _store_fails(monkeypatch, auth.CredentialStorageError("Synthetic keychain locked."))
+    FakeClient.responses = [httpx.Response(201, json=CREATED), httpx.Response(204)]
+
+    result = runner.invoke(
+        app, ["--json", "keys", "create", "-p", PROJECT_ID, "--store-key"]
+    )
+
+    assert result.exit_code == 3
+    error = _last_error(result)
+    assert error["code"] == "credential_storage_failed"
+    assert f"The new key {NEW_KEY_ID} was revoked" in error["message"]
+    assert NEW_KEY not in _rendered(result)
+    revoke = FakeClient.instances[-1].requests
+    assert [(method, path) for method, path, _ in revoke] == [
+        ("DELETE", f"/api/v1/keys/{NEW_KEY_ID}")
+    ]
+
+
+def test_keys_create_store_key_says_how_to_revoke_a_key_it_could_not_revoke(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _login(monkeypatch)
+    _terminal(monkeypatch, False)
+    _store_fails(monkeypatch, auth.CredentialStorageError("Synthetic keychain locked."))
+    FakeClient.responses = [
+        httpx.Response(201, json=CREATED),
+        ApiError(
+            status_code=None,
+            code="transport_error",
+            message="Could not connect to the Solwyn API.",
+            hint=None,
+            detail=None,
+        ),
+    ]
+
+    result = runner.invoke(
+        app, ["--json", "keys", "create", "-p", PROJECT_ID, "--store-key"]
+    )
+
+    assert result.exit_code == 3
+    message = _last_error(result)["message"]
+    assert f"solwyn keys revoke {NEW_KEY_ID} --yes" in message
+    assert NEW_KEY not in _rendered(result)
+
+
+@pytest.mark.parametrize("output_format", ["table", "json"])
+def test_keys_create_store_key_shows_a_key_it_cannot_store_once_on_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    _login(monkeypatch)
+    _terminal(monkeypatch, True)
+    _store_fails(monkeypatch, RuntimeError("synthetic backend crash"))
+    FakeClient.responses = [httpx.Response(201, json=CREATED)]
+
+    result = runner.invoke(
+        app,
+        [*_options(output_format), "keys", "create", "-p", PROJECT_ID, "--store-key"],
+        env={"COLUMNS": "200"},
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert NEW_KEY in result.stdout
+    assert NEW_KEY not in result.stderr
+    assert "Could not store the new key" in result.stderr
+    if output_format == "json":
+        payload = json.loads(result.stdout)
+        assert payload["key"] == NEW_KEY
+        assert payload["stored"] is False
+    assert [request[0] for request in FakeClient.instances[0].requests] == ["POST"]
+    assert len(FakeClient.instances) == 1
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt(), SystemExit(143)])
+def test_keys_create_store_key_revokes_the_key_when_interrupted_while_storing(
+    monkeypatch: pytest.MonkeyPatch, interrupt: BaseException
+) -> None:
+    _login(monkeypatch)
+    _terminal(monkeypatch, True)
+    _store_fails(monkeypatch, interrupt)
+    FakeClient.responses = [httpx.Response(201, json=CREATED), httpx.Response(204)]
+
+    result = runner.invoke(
+        app, ["--json", "keys", "create", "-p", PROJECT_ID, "--store-key"]
+    )
+
+    assert result.exit_code != 0
+    assert NEW_KEY not in _rendered(result)
+    assert f"the new key {NEW_KEY_ID} was stored or shown; it was revoked" in (
+        result.stderr
+    )
+    assert [(m, p) for m, p, _ in FakeClient.instances[-1].requests] == [
+        ("DELETE", f"/api/v1/keys/{NEW_KEY_ID}")
+    ]

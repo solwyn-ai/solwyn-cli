@@ -501,3 +501,55 @@ def test_a_first_write_without_an_approval_still_gets_one_capacity_retry() -> No
 
     assert response.json() == {"ok": True}
     assert len(server.sent_writes) == 2
+
+
+# --- Audit F2: a body built from a read is re-checked before the resend -------
+
+
+def test_the_before_resend_check_runs_after_approval_and_before_the_resend() -> None:
+    server = Server(
+        writes=[_approval_required(), httpx.Response(200, json={"ok": True})],
+        statuses=["approved"],
+    )
+    checked: list[int] = []
+
+    def call(client: SolwynClient) -> httpx.Response:
+        return client.request(
+            "PUT",
+            BUDGET_PATH,
+            json={"mode": "alert_only"},
+            before_resend=lambda: checked.append(len(server.sent_writes)),
+        )
+
+    response, _ = _run(server, call=call)
+
+    assert response.json() == {"ok": True}
+    # Called once, after the first write and before the approved resend.
+    assert checked == [1]
+    assert len(server.sent_writes) == 2
+
+
+def test_a_failed_before_resend_check_sends_nothing_more() -> None:
+    server = Server(writes=[_approval_required()], statuses=["approved"])
+    stale = ApiError(
+        status_code=0,
+        code="budget_changed_during_approval",
+        message="changed",
+        hint=None,
+        detail=None,
+    )
+
+    def refuse() -> None:
+        raise stale
+
+    def call(client: SolwynClient) -> httpx.Response:
+        return client.request(
+            "PUT", BUDGET_PATH, json={"mode": "alert_only"}, before_resend=refuse
+        )
+
+    with pytest.raises(ApiError) as raised:
+        _run(server, call=call)
+
+    assert raised.value is stale
+    assert exit_code_for_error(raised.value) == ExitCode.APPROVAL_REQUIRED
+    assert len(server.sent_writes) == 1

@@ -1,7 +1,9 @@
 """Shared command authentication and error dispatch."""
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import NoReturn
 
 import typer
@@ -269,6 +271,25 @@ def required_login(
     return credential
 
 
+_BEFORE_ERROR: ContextVar[tuple[Callable[[], None], ...]] = ContextVar(
+    "solwyn_before_error", default=()
+)
+
+
+@contextmanager
+def before_error(callback: Callable[[], None]) -> Iterator[None]:
+    """Run ``callback`` (innermost first) before exit_with_error writes an error.
+
+    Notes about what a failed run left behind (a created project, a revoked
+    key) then come before the error, which stays the last stderr line.
+    """
+    token = _BEFORE_ERROR.set((callback, *_BEFORE_ERROR.get()))
+    try:
+        yield
+    finally:
+        _BEFORE_ERROR.reset(token)
+
+
 def exit_with_error(
     context: typer.Context,
     error: ApiError | OutputError,
@@ -276,6 +297,10 @@ def exit_with_error(
     semantic: ErrorSemantic | None = None,
 ) -> None:
     """Render one safe error and stop with its stable process exit code."""
+    callbacks = _BEFORE_ERROR.get()
+    _BEFORE_ERROR.set(())
+    for callback in callbacks:
+        callback()
     output_engine(context).write_error(error)
     raise typer.Exit(code=int(exit_code_for_error(error, semantic=semantic)))
 

@@ -35,7 +35,9 @@ An existing `.solwyn.env` is never overwritten; if it names another project the
 command says so on stderr. Existing key material cannot be retrieved.
 
 Rename warns that apps setting `SOLWYN_PROJECT` to the old name fail at their
-next start, and updates `.solwyn.env` when it names the old name. Delete
+next start, and updates `.solwyn.env` when it names the old name. If that update
+fails or is interrupted, the old file is put back; when it cannot be, stderr names
+the hidden `..solwyn.env.*.old` copy that holds it. Delete
 displays effects and requires confirmation or `--yes`; it irreversibly archives
 the project, keys stop reaching it in the same transaction (a key left with no
 project is revoked), and this computer's stored key for it is deleted. The
@@ -82,6 +84,7 @@ Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-create.v1
 The new project's API key holds only this project. It is shown exactly once with export lines, or stored on this computer for the project (--store-key).
+A key that cannot be stored is shown once on a terminal and revoked otherwise (exit 3); Ctrl+C before it is stored revokes it.
 --name defaults to the git repo's name; -2, -3, ... is added when that name is taken.
 --store-key also writes the repo's .solwyn.env (SOLWYN_PROJECT) when there is none; an existing one is never overwritten.
 ```

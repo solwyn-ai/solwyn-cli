@@ -27,8 +27,11 @@ solwyn keys remove-project 6f1d0c9e-0000-4000-8000-000000000001 --project resear
 Keys are stored per (API, project id), in the operating system keychain or the
 private credentials file (see [login](login.mdx)), with the key's id, the
 account that owns it and the project's name. `keys create --store-key`,
-`projects create --store-key`, `init` and `login --with-key` store a key;
-`keys rotate` replaces the stored copy of the key it rotates, and `keys revoke`,
+`projects create --store-key`, `init` and `login --with-key` store a key.
+A key one of the first three just created never stays live unheld: when the
+store fails it is shown once on a terminal (the command still exits 0, and
+its JSON says `stored: false`, or `key_stored: false` for `init`), and
+anywhere else, or on Ctrl+C, it is revoked. `keys rotate` replaces the stored copy of the key it rotates, and `keys revoke`,
 `keys remove-project` and `projects delete` remove stored copies. `logout`
 clears every key stored for the API.
 
@@ -139,6 +142,7 @@ Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth or storage; 6 approval
 JSON schema: solwyn.keys-create.v1
 Creates a key for exactly one project.
 --store-key stores it on this computer for that project and prints no secret; otherwise it is shown once with export lines.
+A key that cannot be stored is shown once on a terminal and revoked otherwise (exit 3); Ctrl+C before it is stored revokes it.
 ```
 
 ## `solwyn keys env`

@@ -190,6 +190,8 @@ class FakeClient:
         return None
 
     def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        # The approval re-check hook is exercised by the approval tests below.
+        kwargs.pop("before_resend", None)
         self.requests.append((method, path, kwargs))
         result = self.__class__.responses.pop(0)
         if isinstance(result, BaseException):
@@ -229,6 +231,7 @@ def test_budget_set_partial_limit_preserves_every_untouched_configuration(
     monkeypatch.setattr(budget_module, "resolve_credential", lambda **_: credential)
     FakeClient.responses = [
         httpx.Response(200, json=_response(project_id=project_id)),
+        httpx.Response(200, json=_response(project_id=project_id)),
         httpx.Response(
             200,
             json=_response(
@@ -249,6 +252,7 @@ def test_budget_set_partial_limit_preserves_every_untouched_configuration(
     client = FakeClient.instances[0]
     assert same_credential(client.credential, credential)
     assert client.requests == [
+        ("GET", "/api/v1/projects/proj_d25187dc137f35c88bc80ec8/budget", {}),
         ("GET", "/api/v1/projects/proj_d25187dc137f35c88bc80ec8/budget", {}),
         (
             "PUT",
@@ -296,6 +300,7 @@ def test_budget_set_period_or_mode_only_changes_its_matching_field(
     }
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=BUDGET_RESPONSE),
         httpx.Response(200, json=_response(**put_overrides)),
     ]
 
@@ -313,7 +318,7 @@ def test_budget_set_period_or_mode_only_changes_its_matching_field(
     )
 
     assert result.exit_code == 0
-    body = FakeClient.instances[0].requests[1][2]["json"]
+    body = FakeClient.instances[0].requests[2][2]["json"]
     expected = {
         "limit_usd": 100.0,
         "period": "monthly",
@@ -464,6 +469,7 @@ def test_budget_set_put_failure_is_preserved_after_one_get(
     monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=BUDGET_RESPONSE),
         error_from_response(
             httpx.Response(
                 422,
@@ -493,6 +499,7 @@ def test_budget_set_put_failure_is_preserved_after_one_get(
     assert result.exit_code == 1
     assert json.loads(result.stderr)["code"] == "unknown_notification_channel"
     assert [request[0] for request in FakeClient.instances[0].requests] == [
+        "GET",
         "GET",
         "PUT",
     ]
@@ -553,6 +560,7 @@ def test_budget_set_rejects_malformed_or_mismatched_put_response(
     monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=BUDGET_RESPONSE),
         httpx.Response(200, json=invalid_put),
     ]
 
@@ -574,6 +582,7 @@ def test_budget_set_rejects_malformed_or_mismatched_put_response(
     assert json.loads(result.stderr)["code"] == "invalid_budget_response"
     assert [request[0] for request in FakeClient.instances[0].requests] == [
         "GET",
+        "GET",
         "PUT",
     ]
 
@@ -585,6 +594,7 @@ def test_budget_set_success_matches_stable_goldens(
 ) -> None:
     monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
     FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
         httpx.Response(200, json=BUDGET_RESPONSE),
         httpx.Response(
             200,
@@ -631,6 +641,7 @@ def test_budget_set_uses_global_project_precedence(
     FakeClient.responses = [
         httpx.Response(200, json=_response(project_id="proj_c6e454d960df4845f9d69eb1")),
         httpx.Response(200, json=_response(project_id="proj_c6e454d960df4845f9d69eb1")),
+        httpx.Response(200, json=_response(project_id="proj_c6e454d960df4845f9d69eb1")),
     ]
 
     result = runner.invoke(
@@ -641,6 +652,7 @@ def test_budget_set_uses_global_project_precedence(
 
     assert result.exit_code == 0
     assert [request[1] for request in FakeClient.instances[0].requests] == [
+        "/api/v1/projects/proj_c6e454d960df4845f9d69eb1/budget",
         "/api/v1/projects/proj_c6e454d960df4845f9d69eb1/budget",
         "/api/v1/projects/proj_c6e454d960df4845f9d69eb1/budget",
     ]
@@ -680,6 +692,7 @@ def test_budget_set_reconciles_post_commit_503_without_replaying_put(
     monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=BUDGET_RESPONSE),
         error_from_response(
             httpx.Response(
                 503, json={"detail": "Budget backend temporarily unavailable; retry"}
@@ -702,6 +715,7 @@ def test_budget_set_reconciles_post_commit_503_without_replaying_put(
     assert result.exit_code == 0
     assert json.loads(result.stdout)["budget_limit"] == 125.0
     assert [request[0] for request in FakeClient.instances[0].requests] == [
+        "GET",
         "GET",
         "PUT",
         "GET",
@@ -751,6 +765,7 @@ def test_budget_set_503_unreconciled_is_explicitly_indeterminate(
     monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
     FakeClient.responses = [
         httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=BUDGET_RESPONSE),
         error_from_response(
             httpx.Response(
                 503, json={"detail": "Budget backend temporarily unavailable; retry"}
@@ -778,6 +793,143 @@ def test_budget_set_503_unreconciled_is_explicitly_indeterminate(
     assert "budget status" in error["hint"]
     assert [request[0] for request in FakeClient.instances[0].requests] == [
         "GET",
+        "GET",
         "PUT",
         "GET",
     ]
+
+
+# --- Audit F2: budget set re-reads before the PUT and after an approval -------
+
+PROJECT = "proj_be76331b95dfc399cd776d2f"
+BUDGET_PATH = f"/api/v1/projects/{PROJECT}/budget"
+APPROVAL_ID = "0b7d2c4e-0000-4000-8000-000000000001"
+GUARDRAIL = {
+    "type": "runaway_run",
+    "mode": "hard_deny",
+    "rule_key": "runaway:5",
+    "spend_threshold_usd": 5.0,
+    "call_threshold": None,
+    "window_minutes": None,
+    "channel_ids": [],
+    "routing": ROUTING,
+    "snoozed_until": None,
+    "paused": False,
+}
+EDITED = _response(thresholds=[*THRESHOLDS, GUARDRAIL])
+
+
+def _set_limit() -> Any:
+    return runner.invoke(
+        app, ["--json", "-p", PROJECT, "budget", "set", "--limit", "500"]
+    )
+
+
+def test_budget_set_refuses_when_the_configuration_changes_before_the_put(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=BUDGET_RESPONSE),
+        httpx.Response(200, json=EDITED),
+    ]
+
+    result = _set_limit()
+
+    assert result.exit_code == 1
+    assert json.loads(result.stderr)["code"] == "budget_configuration_changed"
+    assert [r[0] for r in FakeClient.instances[0].requests] == ["GET", "GET"]
+
+
+class _ApprovingCore:
+    """Real client over a fake Core: the PUT needs approval, which is granted
+    after ``edit`` (a dashboard change) has replaced the configuration."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, edit: dict | None) -> None:
+        from solwyn_cli.client import SolwynClient as RealSolwynClient
+
+        self.requests: list[httpx.Request] = []
+        self.current: dict = BUDGET_RESPONSE
+        self.edit = edit
+        self.puts = 0
+
+        def factory(*, api_url: str, credential: object) -> Any:
+            return RealSolwynClient(
+                api_url=api_url,
+                credential=credential,
+                transport=httpx.MockTransport(self.handle),
+                sleeper=lambda _: None,
+            )
+
+        monkeypatch.setattr(budget_module, "SolwynClient", factory)
+        monkeypatch.setattr(budget_module, "resolve_credential", _jwt)
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path = request.url.path
+        if path == f"/api/v1/cli/approvals/{APPROVAL_ID}":
+            if self.edit is not None:
+                self.current = self.edit  # edited while the CLI waited
+            return httpx.Response(200, json=_approval_view())
+        if path == BUDGET_PATH and request.method == "GET":
+            return httpx.Response(200, json=self.current)
+        if path == BUDGET_PATH and request.method == "PUT":
+            self.puts += 1
+            if "Solwyn-Approval" not in request.headers:
+                return httpx.Response(
+                    403,
+                    json={
+                        "detail": {
+                            "code": "approval_required",
+                            "message": "This change needs your approval.",
+                            "approval_id": APPROVAL_ID,
+                            "approval_url": f"https://app.solwyn.ai/approve/{APPROVAL_ID}",
+                        }
+                    },
+                )
+            body = json.loads(request.content)
+            return httpx.Response(200, json=_response(budget_limit=body["limit_usd"]))
+        return httpx.Response(599, json={"detail": "unexpected"})
+
+
+def _approval_view() -> dict:
+    return {
+        "id": APPROVAL_ID,
+        "status": "approved",
+        "action": "budget.update",
+        "title": "Change the budget",
+        "reasons": ["raises_cap"],
+        "changes": [],
+        "request": {"method": "PUT", "path": BUDGET_PATH, "query": ""},
+        "credential": {"id": "c", "label": "dev-laptop"},
+        "project": {"id": PROJECT, "name": "checkout"},
+        "request_ip": "203.0.113.7",
+        "created_at": "2026-10-30T14:20:00+00:00",
+        "expires_at": "2099-10-30T14:30:00+00:00",
+    }
+
+
+def test_budget_set_never_resends_a_stale_body_after_an_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = _ApprovingCore(monkeypatch, edit=EDITED)
+
+    result = _set_limit()
+
+    assert result.exit_code == 6, result.stderr
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "budget_changed_during_approval"
+    # The approved resend was never sent: the dashboard's guardrail survives.
+    assert core.puts == 1
+
+
+def test_budget_set_resends_after_an_approval_when_nothing_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = _ApprovingCore(monkeypatch, edit=None)
+
+    result = _set_limit()
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["budget_limit"] == 500.0
+    assert core.puts == 2

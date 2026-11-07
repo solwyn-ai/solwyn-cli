@@ -72,8 +72,10 @@ Auth: a login (a browser login when none is stored); an API key only for an exis
 Exit codes: 0 success; 1 generic/API; 2 usage or project mismatch; 3 auth; 5 not found; 6 approval or login pending
 JSON schema: solwyn.init.v2
 Project: the repo's .solwyn.env, else --project or SOLWYN_PROJECT (the project must exist), else a new project named after the git repo (-2, -3, ... when taken) whose key is stored on this computer.
+A new key that cannot be stored is shown once on a terminal and revoked otherwise (exit 3); Ctrl+C before it is stored revokes it.
 A --project or SOLWYN_PROJECT that disagrees with .solwyn.env exits 2 before anything is created or written.
 Writes .solwyn.env (SOLWYN_PROJECT, no secret, commit it) when there is none; never overwrites one. No computer-wide configuration is written.
+A new project's .solwyn.env is written as soon as the project exists; if a later step fails, init names the project and the command that finishes the setup (solwyn --project proj_... init). A --run-cap that cannot be added exits 1 with run_cap_failed.
 Remote operations: conditional browser login; GET /api/v1/projects; optional POST /api/v1/projects; final GET /api/v1/projects/{project}/budget; --run-cap adds a rule after creation.
 Local operations: scan Python imports; render SDK snippets; optionally write agent artifacts with --agents.
 Provider credentials are never collected; --agents writes safe agent guidance.

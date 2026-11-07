@@ -6,7 +6,9 @@ Channels belong to the account. Reads require a Solwyn login; create/update/test
 login and a one-time browser approval for each change (see [approvals](approvals.mdx)). Integrations
 require Production or above. Supported types are Slack, PagerDuty, Teams,
 Discord and Telegram. Secret input comes from stdin or `SOLWYN_CHANNEL_SECRET`,
-never secret arguments. `--config-stdin` reads a type-specific JSON object.
+never secret arguments. `channels update` reads `SOLWYN_CHANNEL_SECRET` only
+with `--secret-env`, so a variable left over from `channels create` never
+replaces another channel's webhook URL, routing key or bot token. `--config-stdin` reads a type-specific JSON object.
 List/show responses mask integration secrets.
 
 ```sh
@@ -163,6 +165,7 @@ Usage: solwyn channels update [OPTIONS] CHANNEL_ID
 | `channel_id` | ` (STRING; required)` | `None` |
 | `--name` | ` (STRING)` | `None` |
 | `--secret-stdin` | ` (BOOL)` | `False` |
+| `--secret-env` | `Replace the channel's secret with SOLWYN_CHANNEL_SECRET; without this flag update never reads the variable. (BOOL)` | `False` |
 | `--config-stdin` | ` (BOOL)` | `False` |
 | `--secret-field` | ` (STRING)` | `None` |
 | `--channel` | ` (STRING)` | `None` |
@@ -173,6 +176,6 @@ Endpoint: GET then PUT /api/v1/account/notification-channels/{channel_id}
 Auth: login; owner for mutations
 Exit codes: 0 success; 1 generic/API or delivery failure; 2 usage; 3 auth; 5 not found; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.channels.v1
-Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET; never command arguments.
+Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET with --secret-env; never command arguments. Without --secret-env a set SOLWYN_CHANNEL_SECRET is ignored (a stderr note says so) and, as the only input, exits 2.
 Omitted values stay unchanged. Masked secrets retain stored credentials. JSON null clears individual config fields only if the channel remains usable. Type is immutable.
 ```

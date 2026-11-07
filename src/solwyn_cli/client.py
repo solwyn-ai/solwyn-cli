@@ -501,6 +501,7 @@ class SolwynClient:
         *,
         retry_rate_limit: bool = True,
         _stream: bool = False,
+        before_resend: Callable[[], None] | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
         """Make one logical request with bounded capacity retries.
@@ -509,6 +510,9 @@ class SolwynClient:
         503 responses still share the single capacity retry budget. A write
         that needs a browser approval waits for it when the invocation allows,
         then re-sends the exact prepared request once with Solwyn-Approval.
+        ``before_resend`` runs after the approval and before that resend: a
+        body built from an earlier read checks the read still holds, and
+        raises to send nothing more.
         """
         relative_path, request_headers = self._prepare_request(path, kwargs)
         credential = self._resolve_credential()
@@ -559,6 +563,7 @@ class SolwynClient:
                     evidence=evidence,
                     retry_rate_limit=retry_rate_limit,
                     stream=_stream,
+                    before_resend=before_resend,
                 )
         except httpx.HTTPError:
             transport = ApiError(
@@ -620,6 +625,7 @@ class SolwynClient:
         evidence: _RequestEvidence,
         retry_rate_limit: bool,
         stream: bool,
+        before_resend: Callable[[], None] | None = None,
     ) -> httpx.Response:
         """Print the approval URL, wait for a decision, then re-send once."""
         required = error_from_response(response)
@@ -664,6 +670,10 @@ class SolwynClient:
                 hint="Run the command again to request a new approval.",
                 approval_id=approval_id,
             )
+        if before_resend is not None:
+            # The wait can last minutes: a body built from an earlier read is
+            # sent only while that read still holds.
+            before_resend()
         settings.write("Approved. Applying the change.\n")
         retry_headers = prepared.headers.copy()
         retry_headers[APPROVAL_HEADER] = approval_id

@@ -35,12 +35,12 @@ from solwyn_cli._vendor.wire import (
 )
 from solwyn_cli.auth import (
     AuthError,
-    CredentialStorageError,
     LoginCredential,
     ApiKeyCredential,
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._minted import MintedKey
 from solwyn_cli.commands._shared import (
     command_project,
     credential_saved_note,
@@ -295,7 +295,7 @@ def _show_table(project: _Project) -> TableData:
     )
 
 
-def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableData:
+def _create_table(project: _CreatedProject, *, stored: bool | None = None) -> TableData:
     rows = (
         ("ID", project.id),
         ("Name", project.name),
@@ -308,8 +308,8 @@ def _create_table(project: _CreatedProject, *, stored: bool = False) -> TableDat
         ("Scope", project.scope.value),
         ("Key expires", _date_time(project.expires_at)),
     )
-    if stored:
-        rows = (*rows, ("Stored", "true"))
+    if stored is not None:
+        rows = (*rows, ("Stored", "true" if stored else "false"))
     return TableData(
         columns=("Field", "Value"),
         rows=rows,
@@ -421,6 +421,8 @@ def _invalid_projects_response(context: typer.Context) -> None:
             "The new project's API key holds only this project. It is shown "
             "exactly once with export lines, or stored on this computer for the "
             "project (--store-key).",
+            "A key that cannot be stored is shown once on a terminal and revoked "
+            "otherwise (exit 3); Ctrl+C before it is stored revokes it.",
             "--name defaults to the git repo's name; -2, -3, ... is added when "
             "that name is taken.",
             "--store-key also writes the repo's .solwyn.env (SOLWYN_PROJECT) "
@@ -551,40 +553,52 @@ def create_project(
 
     raw_key = created.key.get_secret_value()
     if store_key:
-        try:
-            stored_key = auth.store_api_key(
-                project_id=created.id,
-                key=raw_key,
-                key_id=created.key_id,
-                account_id=account_id or "",
-                project_name=created.name,
-                api_url=runtime.api_url,
-            )
-        except CredentialStorageError as error:
-            exit_with_error(
-                context,
-                OutputError(
-                    code="credential_storage_failed",
-                    message=str(error),
-                    hint=error.hint or "Retry after fixing the credential store.",
+        # Core minted the key: from here it is stored, shown once, or revoked.
+        with MintedKey(
+            key=created.key,
+            key_id=created.key_id,
+            project=created.id,
+            api_url=runtime.api_url,
+            credential=credential,
+            client=SolwynClient,
+        ) as minted:
+            minted.store(
+                lambda: auth.store_api_key(
+                    project_id=created.id,
+                    key=raw_key,
+                    key_id=created.key_id,
+                    account_id=account_id or "",
+                    project_name=created.name,
+                    api_url=runtime.api_url,
                 ),
-                semantic=ErrorSemantic.AUTH,
+                context,
+                hint=(
+                    f"Project {created.id} was created. Fix the credential store, "
+                    f"then run solwyn keys create --project {created.id} --store-key."
+                ),
             )
-        if isinstance(stored_key, ApiKeyCredential):
-            if note := credential_saved_note(stored_key):
-                typer.echo(_terminal_safe(note), err=True)
-        repo_path = write_repo_file(created.name)
-        stored_data = _ProjectCreateStoredData.model_validate(
-            {
-                **created.model_dump(),
-                "repo_file": None if repo_path is None else str(repo_path),
-            }
-        )
-        output_engine(context).write_success(
-            schema="solwyn.projects-create.v1",
-            data=stored_data,
-            table=_create_table(stored_data, stored=True),
-        )
+            if isinstance(minted.stored, ApiKeyCredential):
+                if note := credential_saved_note(minted.stored):
+                    typer.echo(_terminal_safe(note), err=True)
+            repo_path = write_repo_file(created.name)
+            stored_data = _ProjectCreateStoredData.model_validate(
+                {
+                    **created.model_dump(),
+                    "stored": minted.stored is not None,
+                    "repo_file": None if repo_path is None else str(repo_path),
+                }
+            )
+            output_engine(context).write_success(
+                schema="solwyn.projects-create.v1",
+                data=stored_data,
+                table=_create_table(stored_data, stored=minted.stored is not None),
+                one_time_secret=minted.panel(
+                    "One-time API key",
+                    export_lines(raw_key, created.name, runtime.api_url)[0],
+                ),
+                reveal=minted.reveal(),
+            )
+            minted.shown()
         return
 
     display_data = _ProjectCreateDisplayData.model_validate(created.model_dump())
@@ -786,6 +800,15 @@ def rename_project(
                     "was updating it, and the other change was kept"
                     + ("" if conflict.kept is None else f" in {conflict.kept}")
                     + f'. Check it names the project you want (now "{project.name}").'
+                ),
+                err=True,
+            )
+        except repo_file.RepoFileStrandedError as stranded:
+            updated = None
+            typer.echo(
+                _terminal_safe(
+                    f"{stranded} It should name the project you want (now "
+                    f'"{project.name}").'
                 ),
                 err=True,
             )

@@ -160,12 +160,20 @@ def usage(context: typer.Context, message: str) -> None:
     )
 
 
-def secret_input(context: typer.Context, *, stdin: bool, required: bool) -> str | None:
-    # A flag opts into stdin, so interactive invocations never block unexpectedly.
+CHANNEL_SECRET_ENV = "SOLWYN_CHANNEL_SECRET"
+
+
+def secret_input(
+    context: typer.Context, *, stdin: bool, required: bool, env: bool = True
+) -> str | None:
+    """The secret from stdin (a flag opts in, so interactive invocations never
+    block unexpectedly), else SOLWYN_CHANNEL_SECRET when ``env`` allows it."""
     value = (
         sys.stdin.read().rstrip("\r\n")
         if stdin
-        else os.environ.get("SOLWYN_CHANNEL_SECRET")
+        else os.environ.get(CHANNEL_SECRET_ENV)
+        if env
+        else None
     )
     if value is not None and not value.strip():
         usage(context, "Channel secret must not be empty.")

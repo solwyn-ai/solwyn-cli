@@ -1183,21 +1183,62 @@ def _configuration_from_status(data: BudgetStatusData) -> BudgetUpdateRequest:
     )
 
 
+def configuration_changed_error() -> ApiError:
+    """The configuration a full-replace PUT was built from changed first."""
+    return ApiError(
+        status_code=0,
+        code="budget_configuration_changed",
+        message="Budget configuration changed while it was being updated; no update was sent.",
+        hint="Review solwyn budget status and solwyn budget rules list, then retry.",
+        detail=None,
+    )
+
+
 def request_budget_update(
-    *, client: SolwynClient, project_id: str, request: BudgetUpdateRequest
+    *,
+    client: SolwynClient,
+    project_id: str,
+    request: BudgetUpdateRequest,
+    basis: BudgetUpdateRequest,
 ) -> BudgetStatusData:
     """Write configuration; reconcile a possibly committed 503 without replaying it.
+
+    ``request`` replaces the whole configuration and was built from ``basis``,
+    the configuration read before. After a browser approval (a wait of up to
+    minutes) the configuration is read again and the approved request is
+    resent only while it still equals ``basis``; otherwise nothing is sent and
+    budget_changed_during_approval (exit 6) says so, so a rule added in the
+    dashboard meanwhile is never erased.
 
     Core commits before reading the response snapshot. A matching follow-up GET
     proves the intended configuration is now present; any other result leaves
     the write outcome indeterminate. Ordinary bounded 429 handling is unchanged.
     """
     project_path = quote(project_id, safe="")
+
+    def still_basis() -> None:
+        current = request_budget_status(client=client, project_id=project_id)
+        if _configuration_from_status(current) != basis:
+            raise ApiError(
+                status_code=0,
+                code="budget_changed_during_approval",
+                message=(
+                    "The budget configuration changed while the change waited for "
+                    "approval; the approved change was not sent."
+                ),
+                hint=(
+                    "Review solwyn budget status and solwyn budget rules list, then "
+                    "run the command again to request a new approval."
+                ),
+                detail=None,
+            )
+
     try:
         response = client.request(
             "PUT",
             f"/api/v1/projects/{project_path}/budget",
             json=request.model_dump(mode="json"),
+            before_resend=still_basis,
         )
     except ApiError as error:
         if error.status_code != 503:
@@ -1970,6 +2011,13 @@ def confirm(
         auth="login",
         exits="0 success; 1 generic/API; 2 usage; 3 auth; 5 not found",
         schema="solwyn.budget-set.v1",
+        guidance=(
+            "The PUT replaces the whole configuration, so it is built from a "
+            "read and sent only while a second read matches "
+            "(budget_configuration_changed, exit 1, otherwise). After a browser "
+            "approval the configuration is read again; if it changed during the "
+            "wait nothing is sent (budget_changed_during_approval, exit 6).",
+        ),
     ),
 )
 def set_budget(
@@ -2039,6 +2087,7 @@ def set_budget(
             if current.project_id != project_id:
                 raise ValueError("Budget response project did not match the request.")
 
+            basis = _configuration_from_status(current)
             request = BudgetUpdateRequest(
                 limit_usd=limit if limit is not None else current.budget_limit,
                 period=period if period is not None else current.budget_period,
@@ -2047,8 +2096,13 @@ def set_budget(
                 sub_limit_usd=current.sub_limit,
                 thresholds=_threshold_configs(current),
             )
+            # The PUT replaces the whole configuration: send it only while
+            # the configuration it was built from still holds.
+            again = request_budget_status(client=client, project_id=project_id)
+            if _configuration_from_status(again) != basis:
+                raise configuration_changed_error()
             updated = request_budget_update(
-                client=client, project_id=project_id, request=request
+                client=client, project_id=project_id, request=request, basis=basis
             )
     except ApiError as error:
         exit_with_error(context, error)
