@@ -35,6 +35,7 @@ from solwyn_cli._vendor.wire import (
 from solwyn_cli.auth import AuthError, LoginCredential, resolve_credential
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
+from solwyn_cli.commands._minted import MintedKey
 from solwyn_cli.commands._shared import (
     credential_saved_note,
     exit_for_resolution,
@@ -451,6 +452,8 @@ def list_keys(context: typer.Context) -> None:
             "Creates a key for exactly one project.",
             "--store-key stores it on this computer for that project and prints "
             "no secret; otherwise it is shown once with export lines.",
+            "A key that cannot be stored is shown once on a terminal and revoked "
+            "otherwise (exit 3); Ctrl+C before it is stored revokes it.",
         ),
     ),
 )
@@ -526,43 +529,67 @@ def create_key(
         _invalid_response(context)
 
     project_name = created.projects[0].name
-    if store_key:
-        try:
-            stored = auth.store_api_key(
+    if not store_key:
+        lines, _ = export_lines(
+            created.key.get_secret_value(),
+            selection.selector or project_name,
+            runtime.api_url,
+        )
+        output_engine(context).write_success(
+            schema="solwyn.keys-create.v1",
+            data=_KeyCreateData(**_summary_fields(created), stored=False),
+            table=_field_table((*_summary_rows(created), ("Stored", "no"))),
+            one_time_secret=OneTimeSecretPanel(
+                title="One-time API key", value=created.key, footer=lines
+            ),
+            reveal={"key": created.key},
+        )
+        return
+    # Core minted the key: from here it is stored, shown once, or revoked.
+    with MintedKey(
+        key=created.key,
+        key_id=created.id,
+        project=project_id,
+        api_url=runtime.api_url,
+        credential=credential,
+        client=SolwynClient,
+    ) as minted:
+        minted.store(
+            lambda: auth.store_api_key(
                 project_id=project_id,
                 key=created.key.get_secret_value(),
                 key_id=created.id,
                 account_id=selection.account_id or "",
                 project_name=project_name,
                 api_url=runtime.api_url,
-            )
-        except AuthError as error:
-            _storage_failure(context, error)
-        if note := credential_saved_note(stored):
-            _note(note)
-    data = _KeyCreateData(**_summary_fields(created), stored=store_key)
-    table = _field_table(
-        (*_summary_rows(created), ("Stored", "yes" if store_key else "no"))
-    )
-    if store_key:
-        output_engine(context).write_success(
-            schema="solwyn.keys-create.v1", data=data, table=table
+            ),
+            context,
+            hint=(
+                "Fix the credential store, then run solwyn keys create "
+                f"--project {project_id} --store-key."
+            ),
         )
-        return
-    lines, _ = export_lines(
-        created.key.get_secret_value(),
-        selection.selector or project_name,
-        runtime.api_url,
-    )
-    output_engine(context).write_success(
-        schema="solwyn.keys-create.v1",
-        data=data,
-        table=table,
-        one_time_secret=OneTimeSecretPanel(
-            title="One-time API key", value=created.key, footer=lines
-        ),
-        reveal={"key": created.key},
-    )
+        if minted.stored is not None:
+            if note := credential_saved_note(minted.stored):
+                _note(note)
+        stored = minted.stored is not None
+        output_engine(context).write_success(
+            schema="solwyn.keys-create.v1",
+            data=_KeyCreateData(**_summary_fields(created), stored=stored),
+            table=_field_table(
+                (*_summary_rows(created), ("Stored", "yes" if stored else "no"))
+            ),
+            one_time_secret=minted.panel(
+                "One-time API key",
+                export_lines(
+                    created.key.get_secret_value(),
+                    selection.selector or project_name,
+                    runtime.api_url,
+                )[0],
+            ),
+            reveal=minted.reveal(),
+        )
+        minted.shown()
 
 
 @app.command(

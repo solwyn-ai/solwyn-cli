@@ -437,6 +437,37 @@ def test_keychain_failure_after_issue_revokes_and_exits_three(
     assert ISSUED_TOKEN not in result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt(), SystemExit(143)])
+def test_an_interrupt_while_storing_the_issued_login_revokes_it(
+    keychain: dict[str, str],
+    clock: FakeClock,
+    server: Callable[..., OAuthServer],
+    monkeypatch: pytest.MonkeyPatch,
+    interrupt: BaseException,
+) -> None:
+    """Audit F10: Ctrl+C after Core issued the login must not leave it live."""
+    server(httpx.Response(200, json=TOKEN))
+    revoked: list[str] = []
+    monkeypatch.setattr(
+        login_module,
+        "revoke_token",
+        lambda api_url, token: revoked.append(token) or True,
+    )
+
+    def store_login(
+        token: str, meta: auth.LoginMetadata, **_: object
+    ) -> auth.LoginCredential:
+        raise interrupt
+
+    monkeypatch.setattr(auth, "store_login", store_login)
+
+    result = runner.invoke(app, ["--json", "login"])
+
+    assert result.exit_code != 0
+    assert revoked == [ISSUED_TOKEN]
+    assert ISSUED_TOKEN not in result.stdout + result.stderr
+
+
 def test_pending_store_failure_stops_before_polling(
     keychain: dict[str, str],
     clock: FakeClock,

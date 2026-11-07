@@ -82,6 +82,7 @@ Auth: login
 Exit codes: 0 success; 1 generic/API; 2 usage; 3 auth; 6 browser approval required, pending, denied or expired
 JSON schema: solwyn.projects-create.v1
 The new project's API key holds only this project. It is shown exactly once with export lines, or stored on this computer for the project (--store-key).
+A key that cannot be stored is shown once on a terminal and revoked otherwise (exit 3); Ctrl+C before it is stored revokes it.
 --name defaults to the git repo's name; -2, -3, ... is added when that name is taken.
 --store-key also writes the repo's .solwyn.env (SOLWYN_PROJECT) when there is none; an existing one is never overwritten.
 ```

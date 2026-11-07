@@ -1373,3 +1373,106 @@ def test_init_never_writes_a_project_it_could_not_verify(
     assert result.exit_code != 0
     assert not (isolated_init / ".solwyn.env").exists()
     assert not (isolated_init / "AGENTS.md").exists()
+
+
+# --- A minted key is stored, shown once, or revoked (audit F1) ----------------
+
+CREATED_KEY_ID = CREATED_KEY_FIELDS["key_id"]
+
+
+def _init_store_fails(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException, *, tty: bool
+) -> None:
+    from solwyn_cli.commands import _minted
+
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(_minted, "_stdout_is_terminal", lambda: tty)
+
+    def fail(**_fields: Any) -> Any:
+        raise error
+
+    monkeypatch.setattr(init_module.auth, "store_api_key", fail)
+
+
+def test_init_revokes_a_key_it_cannot_store_or_show(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    _init_store_fails(
+        monkeypatch, auth.CredentialStorageError("Keychain timed out."), tty=False
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(204),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "credential_storage_failed"
+    assert f"The new key {CREATED_KEY_ID} was revoked" in error["message"]
+    assert ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}") in _requests()
+    assert CREATED_KEY not in result.stdout + result.stderr
+
+
+def test_init_shows_a_key_it_cannot_store_once_on_a_terminal(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    _init_store_fails(monkeypatch, RuntimeError("synthetic crash"), tty=True)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(200, json=BUDGET),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["key"] == CREATED_KEY
+    assert payload["key_stored"] is False
+    assert payload["project_created"] is True
+    assert "Could not store the new key" in result.stderr
+    assert CREATED_KEY not in result.stderr
+    assert not any(method == "DELETE" for method, _ in _requests())
+
+
+def test_init_revokes_an_unshown_key_when_a_later_step_fails(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    _init_store_fails(monkeypatch, RuntimeError("synthetic crash"), tty=True)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        auth.AuthError("Authentication refresh failed."),
+        httpx.Response(204),
+    ]
+
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "5"])
+
+    assert result.exit_code == 3
+    assert CREATED_KEY not in result.stdout + result.stderr
+    assert ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}") in _requests()
+    assert "it was revoked" in result.stderr
+
+
+def test_init_revokes_the_key_on_ctrl_c_while_storing(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    _init_store_fails(monkeypatch, KeyboardInterrupt(), tty=True)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(204),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code != 0
+    assert CREATED_KEY not in result.stdout + result.stderr
+    assert ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}") in _requests()

@@ -1904,3 +1904,94 @@ def test_create_from_the_repo_name_refuses_a_leftover_solwyn_project_id(
     assert json.loads(result.stderr)["code"] == "usage_error"
     assert FakeClient.instances == []
     assert not (root / ".solwyn.env").exists()
+
+
+# --- A minted key is stored, shown once, or revoked (audit F1) ----------------
+
+CREATED_KEY_ID = PROJECT_CREATE_RESPONSE["key_id"]
+CREATED_PROJECT_ID = PROJECT_CREATE_RESPONSE["id"]
+
+
+def _create_store_fails(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
+    from solwyn_cli.commands import _minted
+
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+    monkeypatch.setattr(_minted, "_stdout_is_terminal", lambda: False)
+
+    def fail_store(**_fields: Any) -> None:
+        raise error
+
+    monkeypatch.setattr(projects_module.auth, "store_api_key", fail_store)
+
+
+def _create_with_store_key(*extra: str) -> Any:
+    return runner.invoke(
+        app,
+        [*extra, "projects", "create", "--name", "Created project", "--store-key"],
+    )
+
+
+def test_projects_create_store_key_revokes_a_key_it_cannot_store_or_show(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_store_fails(
+        monkeypatch, auth.CredentialStorageError("Keychain unavailable.")
+    )
+    FakeClient.responses = [
+        httpx.Response(201, json=PROJECT_CREATE_RESPONSE),
+        httpx.Response(204),
+    ]
+
+    result = _create_with_store_key("--json")
+
+    assert result.exit_code == 3
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "credential_storage_failed"
+    assert f"The new key {CREATED_KEY_ID} was revoked" in error["message"]
+    assert (
+        f"solwyn keys create --project {CREATED_PROJECT_ID} --store-key"
+        in error["hint"]
+    )
+    assert CREATED_KEY not in result.stdout + result.stderr
+    assert [(m, p) for m, p, _ in FakeClient.instances[-1].requests] == [
+        ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}")
+    ]
+
+
+def test_projects_create_store_key_shows_a_key_it_cannot_store_on_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solwyn_cli.commands import _minted
+
+    _create_store_fails(monkeypatch, RuntimeError("synthetic backend crash"))
+    monkeypatch.setattr(_minted, "_stdout_is_terminal", lambda: True)
+    FakeClient.responses = [httpx.Response(201, json=PROJECT_CREATE_RESPONSE)]
+
+    result = _create_with_store_key("--json")
+
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["key"] == CREATED_KEY
+    assert payload["stored"] is False
+    assert "Could not store the new key" in result.stderr
+    assert CREATED_KEY not in result.stderr
+    assert len(FakeClient.instances) == 1
+
+
+def test_projects_create_store_key_revokes_the_key_on_ctrl_c(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_store_fails(monkeypatch, KeyboardInterrupt())
+    FakeClient.responses = [
+        httpx.Response(201, json=PROJECT_CREATE_RESPONSE),
+        httpx.Response(204),
+    ]
+
+    result = _create_with_store_key("--json")
+
+    assert result.exit_code != 0
+    assert CREATED_KEY not in result.stdout + result.stderr
+    assert "it was revoked" in result.stderr
+    assert [(m, p) for m, p, _ in FakeClient.instances[-1].requests] == [
+        ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}")
+    ]

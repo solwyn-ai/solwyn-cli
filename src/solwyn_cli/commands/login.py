@@ -526,9 +526,12 @@ def device_login(
     )
     try:
         credential = auth.store_login(token, meta, expect_mode=pinned)
-    except Exception as error:  # noqa: BLE001 - never leave an issued login live.
-        # The server issued a credential we cannot keep; do not leave it live.
+    except BaseException as error:  # noqa: BLE001 - never leave an issued login live.
+        # The server issued a credential we cannot keep; do not leave it live,
+        # not even when Ctrl+C or an exit lands while it is being stored.
         revoked = revoke_token(command_context(context).api_url, token)
+        if not isinstance(error, Exception):
+            raise
         storage = isinstance(error, CredentialStorageError)
         _fail(
             context,

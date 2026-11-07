@@ -4,6 +4,7 @@ import ast
 import math
 import os
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -24,6 +25,7 @@ from solwyn_cli.auth import (
     resolve_credential,
 )
 from solwyn_cli.client import SolwynClient
+from solwyn_cli.commands._minted import MintedKey
 from solwyn_cli.commands._shared import (
     credential_saved_note,
     exit_for_resolution,
@@ -34,6 +36,7 @@ from solwyn_cli.commands._shared import (
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
 from solwyn_cli.commands.budget_rules import build_rule, request_rule_add
 from solwyn_cli.commands.login import device_login, store_supplied_key
+from solwyn_cli.commands.keys import export_lines
 from solwyn_cli.commands.projects import create_named_project, write_repo_file
 from solwyn_cli.config import Config
 from solwyn_cli.errors import ApiError
@@ -81,6 +84,8 @@ INIT_HELP = help_contract(
         "Project: the repo's .solwyn.env, else --project or SOLWYN_PROJECT (the "
         "project must exist), else a new project named after the git repo (-2, "
         "-3, ... when taken) whose key is stored on this computer.",
+        "A new key that cannot be stored is shown once on a terminal and revoked "
+        "otherwise (exit 3); Ctrl+C before it is stored revokes it.",
         "A --project or SOLWYN_PROJECT that disagrees with .solwyn.env exits 2 "
         "before anything is created or written.",
         "Writes .solwyn.env (SOLWYN_PROJECT, no secret, commit it) when there is "
@@ -271,6 +276,8 @@ class _Chosen(BaseModel):
     created: bool
     key_stored: bool
     credential: Any
+    # A key this run minted and could not store: init's output shows it once.
+    minted: MintedKey | None = None
 
 
 def _use_selected(context: typer.Context, credential: ResolvedCredential) -> _Chosen:
@@ -311,8 +318,13 @@ def _create_for_repo(
     account_id: str,
     fields: dict[str, Any],
     run_cap: float | None,
+    guard: ExitStack,
 ) -> _Chosen:
-    """Nothing selects a project: create one named after the repo, store its key."""
+    """Nothing selects a project: create one named after the repo, store its key.
+
+    The new key is kept by a ``MintedKey`` on ``guard``: stored, shown once in
+    init's output, or revoked if the run stops before either.
+    """
     name = repo_file.default_project_name()
     if name is None:
         exit_project_required(
@@ -329,16 +341,34 @@ def _create_for_repo(
             created = create_named_project(
                 client=client, name=name or "", fields=fields, derived=True
             )
-            stored = auth.store_api_key(
-                project_id=created.id,
-                key=created.key.get_secret_value(),
-                key_id=created.key_id,
-                account_id=account_id,
-                project_name=created.name,
-                api_url=runtime.api_url,
+            minted = guard.enter_context(
+                MintedKey(
+                    key=created.key,
+                    key_id=created.key_id,
+                    project=created.id,
+                    api_url=runtime.api_url,
+                    credential=credential,
+                    client=SolwynClient,
+                )
             )
-            if note := credential_saved_note(stored):
-                typer.echo(_terminal_safe(note), err=True)
+            minted.store(
+                lambda: auth.store_api_key(
+                    project_id=created.id,
+                    key=created.key.get_secret_value(),
+                    key_id=created.key_id,
+                    account_id=account_id,
+                    project_name=created.name,
+                    api_url=runtime.api_url,
+                ),
+                context,
+                hint=(
+                    f"Project {created.id} was created. Fix the credential store, "
+                    f"then run solwyn keys create --project {created.id} --store-key."
+                ),
+            )
+            if minted.stored is not None:
+                if note := credential_saved_note(minted.stored):
+                    typer.echo(_terminal_safe(note), err=True)
             if run_cap is not None:
                 _add_run_cap(context, client, created.id, run_cap)
     except ProjectResolutionError as error:
@@ -373,8 +403,9 @@ def _create_for_repo(
         project_id=created.id,
         project_name=created.name,
         created=True,
-        key_stored=True,
+        key_stored=minted.stored is not None,
         credential=credential,
+        minted=minted,
     )
 
 
@@ -637,109 +668,126 @@ def init(
         "budget_period": period.value,
         "budget_mode": mode.value,
     }
-    # A leftover SOLWYN_PROJECT_ID names a project the user meant; never
-    # create one in its place.
-    refuse_retired_project_id(context)
-    credential = _resolve_auth(context)
-    # Before any project, key or file is created: the repo file agrees with
-    # --project and SOLWYN_PROJECT, and a login's account is known.
-    try:
-        account_id = check_setup(context, credential)
-    except (ProjectResolutionError, ApiError, AuthError) as error:
-        exit_for_resolution(context, error)
-    runtime = command_context(context)
-    if runtime.project_selector is not None:
-        if run_cap is not None:
-            _run_cap_requires_creation(context)
-        chosen = _use_selected(context, credential)
-    elif isinstance(credential, LoginCredential):
-        chosen = _create_for_repo(
-            context, credential, account_id or "", fields, run_cap
-        )
-    else:
-        exit_project_required(
-            context,
-            message="An API key cannot create a project.",
-            hint=(
-                "Select the key's project with --project or SOLWYN_PROJECT, or run "
-                "solwyn login so init can create one."
+    # A key init mints is stored, shown once in the output below, or revoked
+    # when the run stops before either (any error, Ctrl+C).
+    with ExitStack() as guard:
+        # A leftover SOLWYN_PROJECT_ID names a project the user meant; never
+        # create one in its place.
+        refuse_retired_project_id(context)
+        credential = _resolve_auth(context)
+        # Before any project, key or file is created: the repo file agrees with
+        # --project and SOLWYN_PROJECT, and a login's account is known.
+        try:
+            account_id = check_setup(context, credential)
+        except (ProjectResolutionError, ApiError, AuthError) as error:
+            exit_for_resolution(context, error)
+        runtime = command_context(context)
+        if runtime.project_selector is not None:
+            if run_cap is not None:
+                _run_cap_requires_creation(context)
+            chosen = _use_selected(context, credential)
+        elif isinstance(credential, LoginCredential):
+            chosen = _create_for_repo(
+                context, credential, account_id or "", fields, run_cap, guard
+            )
+        else:
+            exit_project_required(
+                context,
+                message="An API key cannot create a project.",
+                hint=(
+                    "Select the key's project with --project or SOLWYN_PROJECT, or run "
+                    "solwyn login so init can create one."
+                ),
+            )
+        # The repo file: one that selected the project is already right; a flag or
+        # env value (as given) or a new project's name is written when there is
+        # none, and an existing file is never overwritten. A new project's name is
+        # written at once, so a rerun finds it instead of creating another; a
+        # selected project's is written last, after the project answered and
+        # every other step succeeded, so a project that could not be used is never
+        # recorded.
+        repo_path: Path | None = None
+        written = False
+        if runtime.project_source == "repo":
+            repo_path = repo_file.find_repo_file()
+        elif chosen.created:
+            repo_path, written = _record_repo_project(
+                chosen.project_name or chosen.project_id
+            )
+        providers, module_imports = _detect_providers(Path.cwd())
+        snippets = _snippets(providers, module_imports)
+        status = _verify_budget(context, chosen.credential, chosen.project_id)
+        if agents:
+            try:
+                write_agent_artifacts(_provider_scan_root(Path.cwd()))
+            except ArtifactRecoveryError as error:
+                details: list[str] = []
+                if error.recovery_paths:
+                    details.append(
+                        "retained backup(s): "
+                        + ", ".join(str(path) for path in error.recovery_paths)
+                    )
+                if error.conflict_paths:
+                    details.append(
+                        "preserved concurrent target(s): "
+                        + ", ".join(str(path) for path in error.conflict_paths)
+                    )
+                exit_with_error(
+                    context,
+                    OutputError(
+                        code="agent_artifact_recovery_required",
+                        message="Agent guidance could not be fully restored.",
+                        hint=("Manual recovery is required; " + "; ".join(details)),
+                    ),
+                )
+            except (OSError, UnicodeError, ValueError):
+                exit_with_error(
+                    context,
+                    OutputError(
+                        code="agent_artifact_write_failed",
+                        message="Agent guidance could not be written.",
+                        hint="Check repository permissions and AGENTS.md markers.",
+                    ),
+                )
+        if runtime.project_source != "repo" and not chosen.created:
+            repo_path, written = _record_repo_project(
+                runtime.project_selector or chosen.project_id
+            )
+        data = _InitData(
+            project_id=chosen.project_id,
+            project_name=chosen.project_name,
+            project_created=chosen.created,
+            key_stored=chosen.key_stored,
+            repo_file=None if repo_path is None else str(repo_path),
+            repo_file_written=written,
+            api_url=runtime.api_url,
+            detected_providers=providers,
+            snippets=snippets,
+            verification=_Verification(
+                budget_limit=status.budget_limit,
+                current_usage=status.current_usage,
+                remaining_budget=status.remaining_budget,
+                utilization_pct=status.utilization_pct,
+                budget_mode=status.budget_mode.value,
+                budget_period=status.budget_period.value,
             ),
         )
-    # The repo file: one that selected the project is already right; a flag or
-    # env value (as given) or a new project's name is written when there is
-    # none, and an existing file is never overwritten. A new project's name is
-    # written at once, so a rerun finds it instead of creating another; a
-    # selected project's is written last, after the project answered and
-    # every other step succeeded, so a project that could not be used is never
-    # recorded.
-    repo_path: Path | None = None
-    written = False
-    if runtime.project_source == "repo":
-        repo_path = repo_file.find_repo_file()
-    elif chosen.created:
-        repo_path, written = _record_repo_project(
-            chosen.project_name or chosen.project_id
+        minted = chosen.minted
+        output_engine(context).write_success(
+            schema="solwyn.init.v2",
+            data=data,
+            table=_table(data),
+            one_time_secret=None
+            if minted is None
+            else minted.panel(
+                "One-time API key",
+                export_lines(
+                    minted.key.get_secret_value(),
+                    chosen.project_name or chosen.project_id,
+                    runtime.api_url,
+                )[0],
+            ),
+            reveal=None if minted is None else minted.reveal(),
         )
-    providers, module_imports = _detect_providers(Path.cwd())
-    snippets = _snippets(providers, module_imports)
-    status = _verify_budget(context, chosen.credential, chosen.project_id)
-    if agents:
-        try:
-            write_agent_artifacts(_provider_scan_root(Path.cwd()))
-        except ArtifactRecoveryError as error:
-            details: list[str] = []
-            if error.recovery_paths:
-                details.append(
-                    "retained backup(s): "
-                    + ", ".join(str(path) for path in error.recovery_paths)
-                )
-            if error.conflict_paths:
-                details.append(
-                    "preserved concurrent target(s): "
-                    + ", ".join(str(path) for path in error.conflict_paths)
-                )
-            exit_with_error(
-                context,
-                OutputError(
-                    code="agent_artifact_recovery_required",
-                    message="Agent guidance could not be fully restored.",
-                    hint=("Manual recovery is required; " + "; ".join(details)),
-                ),
-            )
-        except (OSError, UnicodeError, ValueError):
-            exit_with_error(
-                context,
-                OutputError(
-                    code="agent_artifact_write_failed",
-                    message="Agent guidance could not be written.",
-                    hint="Check repository permissions and AGENTS.md markers.",
-                ),
-            )
-    if runtime.project_source != "repo" and not chosen.created:
-        repo_path, written = _record_repo_project(
-            runtime.project_selector or chosen.project_id
-        )
-    data = _InitData(
-        project_id=chosen.project_id,
-        project_name=chosen.project_name,
-        project_created=chosen.created,
-        key_stored=chosen.key_stored,
-        repo_file=None if repo_path is None else str(repo_path),
-        repo_file_written=written,
-        api_url=runtime.api_url,
-        detected_providers=providers,
-        snippets=snippets,
-        verification=_Verification(
-            budget_limit=status.budget_limit,
-            current_usage=status.current_usage,
-            remaining_budget=status.remaining_budget,
-            utilization_pct=status.utilization_pct,
-            budget_mode=status.budget_mode.value,
-            budget_period=status.budget_period.value,
-        ),
-    )
-    output_engine(context).write_success(
-        schema="solwyn.init.v2",
-        data=data,
-        table=_table(data),
-    )
+        if minted is not None:
+            minted.shown()
