@@ -4,7 +4,8 @@ import ast
 import math
 import os
 import sys
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -27,6 +28,7 @@ from solwyn_cli.auth import (
 from solwyn_cli.client import SolwynClient
 from solwyn_cli.commands._minted import MintedKey
 from solwyn_cli.commands._shared import (
+    before_error,
     credential_saved_note,
     exit_for_resolution,
     exit_project_required,
@@ -34,7 +36,11 @@ from solwyn_cli.commands._shared import (
     exit_with_error,
 )
 from solwyn_cli.commands.budget import BudgetStatusData, fetch_budget_status
-from solwyn_cli.commands.budget_rules import build_rule, request_rule_add
+from solwyn_cli.commands.budget_rules import (
+    RuleRequestError,
+    build_rule,
+    request_rule_add,
+)
 from solwyn_cli.commands.login import device_login, store_supplied_key
 from solwyn_cli.commands.keys import export_lines
 from solwyn_cli.commands.projects import create_named_project, write_repo_file
@@ -90,6 +96,10 @@ INIT_HELP = help_contract(
         "before anything is created or written.",
         "Writes .solwyn.env (SOLWYN_PROJECT, no secret, commit it) when there is "
         "none; never overwrites one. No computer-wide configuration is written.",
+        "A new project's .solwyn.env is written as soon as the project exists; "
+        "if a later step fails, init names the project and the command that "
+        "finishes the setup (solwyn --project proj_... init). A --run-cap that "
+        "cannot be added exits 1 with run_cap_failed.",
         "Remote operations: conditional browser login (POST /oauth/device_authorization, "
         "POST /oauth/token); "
         "GET /api/v1/projects; optional POST /api/v1/projects; "
@@ -255,14 +265,37 @@ def _add_run_cap(
             project_id=project_id,
             rule=build_rule(kind="runaway_run", spend=run_cap, mode="hard_deny"),
         )
-    except (ApiError, AuthError, ValueError, TypeError):
+    except (ApiError, AuthError, ValueError, TypeError) as error:
         typer.echo(
             _terminal_safe(
                 f"Project {project_id} was created; review its budget rules before retrying the run-cap setup."
             ),
             err=True,
         )
-        raise
+        if isinstance(error, (ApiError, AuthError)):
+            raise
+        # A local refusal or an invalid budget response: the project and its
+        # key exist, so this is not a project creation failure.
+        reason = (
+            str(error)
+            if isinstance(error, RuleRequestError)
+            else "The budget response was invalid."
+        )
+        exit_with_error(
+            context,
+            OutputError(
+                code="run_cap_failed",
+                message=(
+                    f"Project {project_id} was created, but its run cap could not "
+                    f"be added: {reason}"
+                ),
+                hint=(
+                    f"Review solwyn --project {project_id} budget rules list, then "
+                    f"run solwyn --project {project_id} budget rule add --type "
+                    f"runaway_run --spend {run_cap} --mode hard_deny."
+                ),
+            ),
+        )
     typer.echo("Per-run hard cap configured: caps every run at min(caps).", err=True)
 
 
@@ -278,6 +311,9 @@ class _Chosen(BaseModel):
     credential: Any
     # A key this run minted and could not store: init's output shows it once.
     minted: MintedKey | None = None
+    # A created project's .solwyn.env, written as soon as the project existed.
+    repo_path: Path | None = None
+    repo_written: bool = False
 
 
 def _use_selected(context: typer.Context, credential: ResolvedCredential) -> _Chosen:
@@ -312,6 +348,34 @@ def _key_stored_here(project_id: str, api_url: str) -> bool:
         return False
 
 
+@contextmanager
+def _names_created_project(project_id: str) -> Iterator[None]:
+    """On any failure or interrupt, say which project this run created and
+    how to finish setting it up (before the error, which stays last)."""
+    said = False
+
+    def say() -> None:
+        nonlocal said
+        if said:
+            return
+        said = True
+        typer.echo(
+            _terminal_safe(
+                f"Project {project_id} was created. Finish setting it up with: "
+                f"solwyn --project {project_id} init"
+            ),
+            err=True,
+        )
+
+    with before_error(say):
+        try:
+            yield
+        except BaseException as error:
+            if getattr(error, "exit_code", getattr(error, "code", 1)) not in (0, None):
+                say()
+            raise
+
+
 def _create_for_repo(
     context: typer.Context,
     credential: LoginCredential,
@@ -341,6 +405,12 @@ def _create_for_repo(
             created = create_named_project(
                 client=client, name=name or "", fields=fields, derived=True
             )
+            # The project exists from here: every later failure names it and
+            # the command that finishes the setup, and the repo file is written
+            # first (it holds no secret), so a rerun finds this project
+            # instead of creating <repo>-2.
+            guard.enter_context(_names_created_project(created.id))
+            repo_path, written = _record_repo_project(created.name)
             minted = guard.enter_context(
                 MintedKey(
                     key=created.key,
@@ -406,6 +476,8 @@ def _create_for_repo(
         key_stored=minted.stored is not None,
         credential=credential,
         minted=minted,
+        repo_path=repo_path,
+        repo_written=written,
     )
 
 
@@ -701,19 +773,19 @@ def init(
             )
         # The repo file: one that selected the project is already right; a flag or
         # env value (as given) or a new project's name is written when there is
-        # none, and an existing file is never overwritten. A new project's name is
-        # written at once, so a rerun finds it instead of creating another; a
+        # none, and an existing file is never overwritten. A new project's name
+        # was written by _create_for_repo straight after the project was
+        # created, before its key was stored or its run cap added, so a rerun
+        # after any later failure finds it instead of creating another. A
         # selected project's is written last, after the project answered and
-        # every other step succeeded, so a project that could not be used is never
-        # recorded.
+        # every other step succeeded, so a project that could not be used is
+        # never recorded.
         repo_path: Path | None = None
         written = False
         if runtime.project_source == "repo":
             repo_path = repo_file.find_repo_file()
         elif chosen.created:
-            repo_path, written = _record_repo_project(
-                chosen.project_name or chosen.project_id
-            )
+            repo_path, written = chosen.repo_path, chosen.repo_written
         providers, module_imports = _detect_providers(Path.cwd())
         snippets = _snippets(providers, module_imports)
         status = _verify_budget(context, chosen.credential, chosen.project_id)

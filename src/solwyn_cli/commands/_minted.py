@@ -13,6 +13,7 @@ interrupt) is never a moment to print a secret, so an interrupted run revokes.
 
 import sys
 from collections.abc import Callable
+from contextlib import ExitStack
 from types import TracebackType
 from typing import Any
 from urllib.parse import quote
@@ -22,7 +23,7 @@ from pydantic import SecretStr
 
 from solwyn_cli.approvals import approval_settings
 from solwyn_cli.auth import ApiKeyCredential, AuthError
-from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.commands._shared import before_error, exit_with_error
 from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.output import OneTimeSecretPanel, OutputError, _terminal_safe
 
@@ -62,6 +63,7 @@ class MintedKey:
         self.stored: ApiKeyCredential | None = None
         # Neither stored nor shown yet: an exit now must revoke.
         self._pending = True
+        self._hooks = ExitStack()
 
     @property
     def needs_showing(self) -> bool:
@@ -69,6 +71,9 @@ class MintedKey:
         return self._pending and self.stored is None
 
     def __enter__(self) -> "MintedKey":
+        # An error exit revokes before its error is written, so the note
+        # saying so comes first and the error stays the last stderr line.
+        self._hooks.enter_context(before_error(lambda: self._settle("Stopped early")))
         return self
 
     def __exit__(
@@ -77,11 +82,18 @@ class MintedKey:
         error: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if kind is None or not self._pending:
+        self._hooks.close()
+        if kind is not None:
+            self._settle(
+                "Stopped early" if isinstance(error, Exception) else "Interrupted"
+            )
+
+    def _settle(self, reason: str) -> None:
+        """Revoke a key that is still neither stored nor shown, once."""
+        if not self._pending:
             return
         self._pending = False
         revoked = self.revoke()
-        reason = "Interrupted" if not isinstance(error, Exception) else "Stopped early"
         _note(
             f"{reason} before the new key {self.key_id} was stored or shown; "
             + (

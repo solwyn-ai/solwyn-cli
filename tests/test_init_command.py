@@ -21,6 +21,7 @@ from solwyn_cli.commands import budget as budget_module
 from solwyn_cli.commands import init as init_module
 from solwyn_cli.commands import login as login_module
 from solwyn_cli.commands import projects as projects_module
+from solwyn_cli.errors import ApiError
 from solwyn_cli.main import app
 
 runner = CliRunner()
@@ -1476,3 +1477,116 @@ def test_init_revokes_the_key_on_ctrl_c_while_storing(
     assert result.exit_code != 0
     assert CREATED_KEY not in result.stdout + result.stderr
     assert ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}") in _requests()
+
+
+# --- The repo file is written right after the project exists (audit F1) -------
+
+RERUN = f"solwyn --project {PROJECT_ID} init"
+
+
+def _repo_names(root: Path) -> str | None:
+    path = root / ".solwyn.env"
+    return path.read_text() if path.exists() else None
+
+
+def test_a_key_store_failure_leaves_the_repo_file_and_the_rerun_command(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    _init_store_fails(
+        monkeypatch, auth.CredentialStorageError("Keychain timed out."), tty=False
+    )
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(204),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code == 3
+    assert 'SOLWYN_PROJECT="repo"' in (_repo_names(isolated_init) or "")
+    assert PROJECT_ID in result.stderr
+    assert RERUN in result.stderr
+
+
+def test_a_run_cap_failure_has_its_own_code_and_leaves_the_repo_file(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(200, json={"unexpected": True}),
+    ]
+
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "5"])
+
+    assert result.exit_code == 1
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "run_cap_failed"
+    assert PROJECT_ID in error["message"]
+    assert 'SOLWYN_PROJECT="repo"' in (_repo_names(isolated_init) or "")
+    assert RERUN in result.stderr
+    # The key was stored before the run cap: it is kept, never revoked.
+    assert list(auth.stored_api_keys()) == [PROJECT_ID]
+    assert not any(method == "DELETE" for method, _ in _requests())
+
+
+def test_ctrl_c_after_creation_leaves_the_repo_file_and_the_rerun_command(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        KeyboardInterrupt(),
+    ]
+
+    result = runner.invoke(app, ["--json", "init", "--run-cap", "5"])
+
+    assert result.exit_code != 0
+    assert 'SOLWYN_PROJECT="repo"' in (_repo_names(isolated_init) or "")
+    assert RERUN in result.stderr
+
+
+def test_a_verification_failure_after_creation_prints_the_rerun_command(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        ApiError(
+            status_code=None,
+            code="transport_error",
+            message="Could not connect to the Solwyn API.",
+            hint=None,
+            detail=None,
+        ),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code == 1
+    assert RERUN in result.stderr
+    assert 'SOLWYN_PROJECT="repo"' in (_repo_names(isolated_init) or "")
+
+
+def test_a_rerun_with_the_printed_command_finishes_without_a_new_project(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch, fake_core: Any
+) -> None:
+    _git(isolated_init)
+    (isolated_init / ".solwyn.env").write_text('SOLWYN_PROJECT="Alpha"\n')
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+    fake_core.on("GET", "/api/v1/projects", httpx.Response(200, json=[PROJECT]))
+    FakeClient.responses = [httpx.Response(200, json=BUDGET)]
+
+    result = runner.invoke(app, ["--json", "--project", PROJECT_ID, "init"])
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["project_created"] is False
+    assert not any(method == "POST" for method, _ in _requests())
