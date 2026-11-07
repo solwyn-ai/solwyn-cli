@@ -16,6 +16,7 @@ from solwyn_cli._vendor.notification_wire import (
 )
 from solwyn_cli.approvals import add_retry_note
 from solwyn_cli.commands._notifications_common import (
+    CHANNEL_SECRET_ENV,
     ChannelDeleted,
     ChannelList,
     DeliveryResponse,
@@ -31,8 +32,10 @@ from solwyn_cli.commands._notifications_common import (
     usage,
 )
 from solwyn_cli.commands._confirmation import check_confirmation, confirm_effects
+from solwyn_cli.commands._shared import exit_with_error
+from solwyn_cli.exit_codes import ErrorSemantic
 from solwyn_cli.help import help_contract
-from solwyn_cli.output import TableData
+from solwyn_cli.output import OutputError, TableData, _terminal_safe
 
 app = typer.Typer(
     help="Manage reusable account notification channels.", epilog=group_help("channels")
@@ -53,6 +56,12 @@ DEFAULT_SECRET = {
     "telegram": "bot_token",
 }
 SECRET_HELP = "Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET; never command arguments."
+UPDATE_SECRET_HELP = "Secrets only through --secret-stdin, --config-stdin JSON, or SOLWYN_CHANNEL_SECRET with --secret-env; never command arguments. Without --secret-env a set SOLWYN_CHANNEL_SECRET is ignored (a stderr note says so) and, as the only input, exits 2."
+_SECRET_FIELDS_TEXT = (
+    "secret ("
+    + ", ".join(f"{kind} {field}" for kind, field in DEFAULT_SECRET.items())
+    + ", or --secret-field)"
+)
 
 
 def path(channel_id: str) -> str:
@@ -117,11 +126,16 @@ def config_input(
     channel: str | None,
     chat_id: str | None,
     create: bool,
+    secret_env: bool = True,
 ) -> tuple[dict, tuple[str, ...]]:
     if kind not in CONFIG_FIELDS:
         usage(context, "This channel type is not supported for configuration updates.")
     if config_stdin and (
-        secret_stdin or secret_field or channel is not None or chat_id is not None
+        secret_stdin
+        or (secret_env and not create)
+        or secret_field
+        or channel is not None
+        or chat_id is not None
     ):
         usage(
             context,
@@ -137,7 +151,9 @@ def config_input(
             usage(context, "Channel configuration stdin must contain a JSON object.")
     else:
         config = {}
-        secret = secret_input(context, stdin=secret_stdin, required=create)
+        secret = secret_input(
+            context, stdin=secret_stdin, required=create, env=secret_env
+        )
         if secret is not None:
             config[secret_field or DEFAULT_SECRET[kind]] = secret
         elif secret_field:
@@ -249,7 +265,7 @@ def create(
         "GET then PUT " + BASE + "/{channel_id}",
         "solwyn.channels.v1",
         guidance=(
-            SECRET_HELP,
+            UPDATE_SECRET_HELP,
             "Omitted values stay unchanged. Masked secrets retain stored credentials. JSON null clears individual config fields only if the channel remains usable. Type is immutable.",
         ),
     ),
@@ -259,20 +275,64 @@ def update(
     channel_id: Annotated[str, typer.Argument()],
     name: Annotated[str | None, typer.Option("--name")] = None,
     secret_stdin: Annotated[bool, typer.Option("--secret-stdin")] = False,
+    secret_env: Annotated[
+        bool,
+        typer.Option(
+            "--secret-env",
+            help=(
+                "Replace the channel's secret with SOLWYN_CHANNEL_SECRET; without "
+                "this flag update never reads the variable."
+            ),
+        ),
+    ] = False,
     config_stdin: Annotated[bool, typer.Option("--config-stdin")] = False,
     secret_field: Annotated[str | None, typer.Option("--secret-field")] = None,
     channel: Annotated[str | None, typer.Option("--channel")] = None,
     chat_id: Annotated[str | None, typer.Option("--chat-id")] = None,
 ) -> None:
     """Update selected fields; Core retains masked secret values on write-back."""
+    # SOLWYN_CHANNEL_SECRET left over from a channels create must never
+    # rewrite another channel's destination: update reads it only when asked.
+    if secret_env and secret_stdin:
+        usage(context, "Use --secret-env or --secret-stdin, not both.")
+    if secret_env and os.environ.get(CHANNEL_SECRET_ENV) is None:
+        usage(context, "--secret-env needs SOLWYN_CHANNEL_SECRET to be set.")
     configuring = (
         secret_stdin
+        or secret_env
         or config_stdin
         or secret_field is not None
         or channel is not None
         or chat_id is not None
-        or os.environ.get("SOLWYN_CHANNEL_SECRET") is not None
     )
+    leftover = not secret_env and os.environ.get(CHANNEL_SECRET_ENV) is not None
+    if leftover and name is None and not configuring:
+        exit_with_error(
+            context,
+            OutputError(
+                code="invalid_notification_request",
+                message=(
+                    "SOLWYN_CHANNEL_SECRET is set, but channels update reads it "
+                    "only with --secret-env."
+                ),
+                hint=(
+                    "Pass --secret-env to replace the channel's "
+                    + _SECRET_FIELDS_TEXT
+                    + " with it, or unset SOLWYN_CHANNEL_SECRET."
+                ),
+            ),
+            semantic=ErrorSemantic.USAGE,
+        )
+    if leftover and not secret_stdin and not config_stdin:
+        typer.echo(
+            _terminal_safe(
+                "Ignoring SOLWYN_CHANNEL_SECRET: channels update reads it only with "
+                "--secret-env (which replaces the channel's "
+                + _SECRET_FIELDS_TEXT
+                + ")."
+            ),
+            err=True,
+        )
     if name is not None and not name.strip():
         usage(context, "Channel name must not be blank.")
     if name is None and not configuring:
@@ -290,6 +350,7 @@ def update(
             channel=channel,
             chat_id=chat_id,
             create=False,
+            secret_env=secret_env,
         )
         values[f"{current.channel_type}_config"] = config
     try:

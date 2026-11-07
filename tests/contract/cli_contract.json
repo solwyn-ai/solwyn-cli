@@ -3310,6 +3310,20 @@
         },
         {
           "cli_names": [
+            "--secret-env"
+          ],
+          "default": false,
+          "help": "Replace the channel's secret with SOLWYN_CHANNEL_SECRET; without this flag update never reads the variable.",
+          "hidden": false,
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "secret_env",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "cli_names": [
             "--config-stdin"
           ],
           "default": false,
