@@ -458,7 +458,7 @@ def request_rule_add(
             detail=None,
         )
     updated = request_budget_update(
-        client=client, project_id=project_id, request=request
+        client=client, project_id=project_id, request=request, basis=config
     )
     for result in updated.thresholds:
         candidate = _RULE_ADAPTER.validate_python(

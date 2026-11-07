@@ -194,7 +194,9 @@ def retry_argv(approval_id: str) -> list[str] | None:
     """Rebuild this invocation as an exact re-run that carries the approval.
 
     Only values the user typed, plus pinned generated values, are repeated, so
-    the re-run rebuilds byte-identical requests. Nothing is stored.
+    the re-run rebuilds byte-identical requests, except for a request built
+    from state the command reads (the budget configuration), which differs
+    when that state changed and then gets approval_invalid. Nothing is stored.
     """
     settings = current_settings()
     try:

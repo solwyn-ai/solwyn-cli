@@ -49,6 +49,9 @@ APPROVAL_ERROR_CODES = frozenset(
         "approval_invalid",
         "approval_limit_reached",
         "login_pending",
+        # Approved, but what the change was built from changed during the wait;
+        # nothing was resent.
+        "budget_changed_during_approval",
     }
 )
 

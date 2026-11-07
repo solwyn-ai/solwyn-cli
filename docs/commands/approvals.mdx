@@ -26,7 +26,10 @@ approval every 3 seconds. The global `--approval-wait SECONDS` option sets how
 long; the default is 600 seconds when stdin and stderr are terminals, else 90
 seconds. Once approved, the CLI re-sends the identical request once, the same
 method, URL bytes and body bytes, with the approval attached. It never re-sends
-without the approval and never retries a second time.
+without the approval and never retries a second time. A change built from a
+read of the current state (`budget set`, `budget rule add`, `init --run-cap`
+replace the whole budget configuration) reads it again first, after the
+approval, and is re-sent only if nothing changed while it waited.
 
 Every outcome other than success exits 6, and nothing else is sent:
 
@@ -37,6 +40,7 @@ Every outcome other than success exits 6, and nothing else is sent:
 | `approval_expired` | The approval expired. Run the command again to request a new one. |
 | `approval_invalid` | The attached approval was not usable. `mismatch` means the request changed since it was approved, for example because the state a command reads changed. Run the command again. |
 | `approval_limit_reached` | Five approvals are already pending for this login. |
+| `budget_changed_during_approval` | Approved, but the budget configuration the change was built from changed while it waited (for example, a rule added in the dashboard). The approved change was not sent, so that edit is kept. Review the budget and run the command again. |
 
 A failure after the approved request was sent keeps its normal exit code, for
 example `rate_limited` exits 1. The CLI never re-sends a request that carries an
@@ -65,7 +69,8 @@ That command repeats only what you typed, plus every value the CLI generated
 for the request, pinned as an explicit flag: `plan upgrade`'s
 `--client-request-id`, and an absolute `--until` time for a relative snooze such
 as `--until +2h`. Re-running it rebuilds the same request bytes, so the approval
-matches. The approval hand-off stores nothing: no request body, secret or
+matches, unless the command builds its request from state it reads (the budget
+configuration) and that state changed: then the request differs too. The approval hand-off stores nothing: no request body, secret or
 prepared request is written anywhere. If you change any argument, the request
 differs, the server answers `approval_invalid` with reason `mismatch`, and you
 run the command again to request a new approval. Secrets never appear in the
