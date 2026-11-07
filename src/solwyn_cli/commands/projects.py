@@ -803,6 +803,15 @@ def rename_project(
                 ),
                 err=True,
             )
+        except repo_file.RepoFileStrandedError as stranded:
+            updated = None
+            typer.echo(
+                _terminal_safe(
+                    f"{stranded} It should name the project you want (now "
+                    f'"{project.name}").'
+                ),
+                err=True,
+            )
         except (OSError, repo_file.RepoFileError):
             updated = None
             typer.echo(

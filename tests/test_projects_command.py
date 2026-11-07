@@ -1995,3 +1995,38 @@ def test_projects_create_store_key_revokes_the_key_on_ctrl_c(
     assert [(m, p) for m, p, _ in FakeClient.instances[-1].requests] == [
         ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}")
     ]
+
+
+# --- A repo file update that stops part way says where the old file is (F7) ---
+
+
+def test_projects_rename_names_the_old_repo_file_it_could_not_put_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import os
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    repo_path = root / ".solwyn.env"
+    repo_path.write_text(repo_file.render(PROJECTS_RESPONSE[0]["name"]))
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(projects_module, "resolve_credential", _jwt)
+
+    def no_links(source: object, target: object) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", no_links)
+    monkeypatch.setattr(os, "replace", no_links)  # cannot even be put back
+    FakeClient.responses = [
+        httpx.Response(200, json=PROJECTS_RESPONSE[0]),
+        httpx.Response(200, json={**PROJECTS_RESPONSE[0], "name": "Renamed"}),
+    ]
+
+    result = runner.invoke(
+        app, ["--json", "projects", "rename", "proj/lifecycle", "--name", "Renamed"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    (kept,) = [p for p in root.iterdir() if p.name.endswith(".old")]
+    assert str(kept) in result.stderr
+    assert "previous content is in" in result.stderr
