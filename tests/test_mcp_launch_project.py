@@ -917,3 +917,89 @@ def test_get_whoami_names_the_launch_project_after_the_repo_file_changes(
     assert after["data"]["configured_project"] == "checkout-bot"
     assert spend["project_id"] == PROJECT_ID
     assert _sent_projects(core) == {PROJECT_ID}
+
+
+# --- Audit F4: a failed /accounts/me is retried, kept refusals say restart ------
+
+
+class _FlakyAccountCore(_TwoAccountCore):
+    """/api/v1/accounts/me fails the first times with the given failures."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, failures: list[Any]) -> None:
+        super().__init__(monkeypatch)
+        self.account_failures = failures
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/accounts/me" and self.account_failures:
+            self.requests.append(request)
+            failure = self.account_failures.pop(0)
+            if isinstance(failure, int):
+                return httpx.Response(
+                    failure, json={"detail": "busy"}, headers={"Retry-After": "0"}
+                )
+            raise httpx.ConnectError("synthetic Wi-Fi blip", request=request)
+        return super().handle(request)
+
+
+@pytest.mark.parametrize(
+    "failures",
+    [["transport"], [429, 429], [503, 503]],
+    ids=["transport", "429", "503"],
+)
+def test_a_transient_accounts_me_failure_is_retried_on_the_next_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failures: list[Any]
+) -> None:
+    _repo(tmp_path, monkeypatch, "checkout-bot")
+    store_key(project_name="checkout-bot")
+    monkeypatch.setenv("SOLWYN_TOKEN", LOGIN_TOKEN)
+    core = _FlakyAccountCore(monkeypatch, list(failures))
+
+    first, second = call(
+        mcp_server.McpLaunchOptions(),
+        ("budget_check", CHECK_ARGS),
+        ("budget_check", CHECK_ARGS),
+    )
+
+    assert first["ok"] is False
+    assert first["error"]["code"] == "account_unresolved"
+    assert "Restart" not in (first["error"]["hint"] or "")
+    assert second["ok"], second
+    assert second["project_id"] == PROJECT_ID
+    assert core.paths().count("GET /api/v1/accounts/me") >= 2
+
+
+def test_a_kept_refusal_says_to_restart_the_mcp_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _repo(tmp_path, monkeypatch, "checkout-bot")
+    Core(monkeypatch)
+    monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+
+    first, second = call(
+        mcp_server.McpLaunchOptions(project_id="research"),
+        ("budget_check", CHECK_ARGS),
+        ("budget_check", CHECK_ARGS),
+    )
+
+    for refused in (first, second):
+        assert refused["error"]["code"] == "project_mismatch"
+        assert "Restart the MCP server" in refused["error"]["hint"]
+
+
+def test_a_kept_core_refusal_says_to_restart_the_mcp_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = Core(monkeypatch)
+    core.auth_key_status = [401]
+    monkeypatch.setenv("SOLWYN_API_KEY", KEY)
+
+    first, second = call(
+        mcp_server.McpLaunchOptions(project_id=PROJECT_ID),
+        ("budget_check", CHECK_ARGS),
+        ("budget_check", CHECK_ARGS),
+    )
+
+    assert first["ok"] is False and second["ok"] is False
+    assert first["error"]["code"] == second["error"]["code"]
+    assert "Restart the MCP server" in (second["error"]["hint"] or "")
+    assert core.paths().count("GET /api/v1/auth/key") == 1

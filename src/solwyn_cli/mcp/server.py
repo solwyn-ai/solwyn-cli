@@ -1114,8 +1114,23 @@ class _EchoingClient:
 
 # Refusals that stay true for the server's lifetime are kept and returned on
 # every reporting call; a transport failure, busy service or locked store is
-# retried on the next call.
+# retried on the next call. A kept refusal's hint says to restart the server.
 _KEPT_REFUSAL_STATUSES = frozenset({400, 401, 403, 404})
+_RESTART_HINT = (
+    "Restart the MCP server after fixing this: until then every reporting call "
+    "returns this answer."
+)
+
+
+def _restart_hint(hint: str | None) -> str:
+    """A kept refusal's hint, which always says to restart the MCP server."""
+    if hint is not None and "Restart the MCP server" in hint:
+        return hint
+    return _RESTART_HINT if not hint else f"{hint} {_RESTART_HINT}"
+
+
+def _is_kept(error: BaseException) -> bool:
+    return getattr(error, "_solwyn_kept_for_process", False) is True
 
 
 class _ReportingBinding:
@@ -1185,9 +1200,11 @@ class _ReportingBinding:
         return inputs.context.project_selector or inputs.context.project
 
     def _keep(self, error: Exception) -> None:
-        if isinstance(error, _LocalProjectError) or (
+        if (isinstance(error, _LocalProjectError) and not error.retryable) or (
             isinstance(error, ApiError) and error.status_code in _KEPT_REFUSAL_STATUSES
         ):
+            # Marked so its hint says to restart: nothing else clears it.
+            error._solwyn_kept_for_process = True  # type: ignore[attr-defined]
             self._outcome = error
 
     def get(self, launch: McpLaunchOptions) -> tuple[str, ResolvedCredential, bool]:
@@ -1673,13 +1690,15 @@ class _LocalProjectError(ValueError):
     fixed message and hint per code.
     """
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, retryable: bool = False) -> None:
         super().__init__(code)
         self.code = code
+        # From a transport failure or busy service: tried again next call.
+        self.retryable = retryable
 
 
 _LAUNCH_PROJECT_HINT = (
-    "Restart the server with --project before mcp, set SOLWYN_PROJECT, or set it "
+    "Restart the MCP server with --project before mcp, set SOLWYN_PROJECT, or set it "
     "in the repo's .solwyn.env."
 )
 _LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
@@ -1692,7 +1711,7 @@ _LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
     "project_mismatch": (
         "The project selected for this server does not match the repo's .solwyn.env.",
         "Ask a person to change .solwyn.env if this repo should use another "
-        "project, or to restart the server with the project it names. Never "
+        "project, or to restart the MCP server with the project it names. Never "
         "switch projects to get past a budget limit.",
     ),
     "repo_file_invalid": (
@@ -1716,7 +1735,7 @@ _LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
     ),
     "account_unresolved": (
         "Could not confirm which account the Solwyn login belongs to.",
-        "Check the connection, then restart the server.",
+        "Check the Solwyn login (solwyn whoami).",
     ),
     "project_not_found": (
         "The project was not found.",
@@ -1726,7 +1745,7 @@ _LOCAL_PROJECT_ERRORS: dict[str, tuple[str, str | None]] = {
     "invalid_auth_key_response": ("The API key response was invalid.", None),
     "credentials_changed": (
         "The Solwyn login on this computer changed after the server started.",
-        "Restart the server. It never switches logins, projects or keys while it runs.",
+        "Restart the MCP server. It never switches logins, projects or keys while it runs.",
     ),
 }
 
@@ -1736,7 +1755,8 @@ def _local_project_error(error: project_resolver.ProjectResolutionError) -> Exce
     if error.code == "authentication_required":
         return LoginRequiredError(error.message)
     return _LocalProjectError(
-        error.code if error.code in _LOCAL_PROJECT_ERRORS else "project_not_found"
+        error.code if error.code in _LOCAL_PROJECT_ERRORS else "project_not_found",
+        retryable=getattr(error, "retryable", False),
     )
 
 
@@ -1750,6 +1770,10 @@ def _operation_error(
 ) -> ResultT:
     if isinstance(error, _LocalProjectError):
         message, hint = _LOCAL_PROJECT_ERRORS[error.code]
+        if error.retryable:
+            hint = "Check the connection, then call again; the next call retries."
+        elif _is_kept(error):
+            hint = _restart_hint(hint)
         return _error(result_type, code=error.code, message=message, hint=hint)
     if isinstance(error, AccountProjectConflictError):
         return _error(
@@ -1802,7 +1826,11 @@ def _operation_error(
                 if error.status_code is not None
                 else "Could not connect to the Solwyn API."
             ),
-            hint=_safe_remote_error_hint(error, code),
+            hint=(
+                _restart_hint(_safe_remote_error_hint(error, code))
+                if _is_kept(error)
+                else _safe_remote_error_hint(error, code)
+            ),
             status_code=error.status_code,
         )
     if isinstance(error, CredentialStorageError):

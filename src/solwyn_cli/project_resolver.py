@@ -77,21 +77,32 @@ class ProjectResolutionError(Exception):
         hint: str | None = None,
         *,
         semantic: ErrorSemantic = ErrorSemantic.USAGE,
+        retryable: bool = False,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.hint = hint
         self.semantic = semantic
+        # A transport failure or busy service, not an answer: a long-running
+        # caller (the MCP server) asks again instead of keeping the refusal.
+        self.retryable = retryable
 
 
-def account_unresolved() -> ProjectResolutionError:
+def account_unresolved(*, retryable: bool = False) -> ProjectResolutionError:
     return ProjectResolutionError(
         "account_unresolved",
         "Could not confirm which account your Solwyn login belongs to. Check your "
         "connection and try again.",
         semantic=ErrorSemantic.AUTH,
+        retryable=retryable,
     )
+
+
+def _transient(error: ApiError) -> bool:
+    """No answer (transport), rate limited or a busy/failing service."""
+    status = error.status_code
+    return status is None or status == 429 or status >= 500
 
 
 PROJECT_HINT = (
@@ -202,7 +213,9 @@ class _Reads:
             with self._client(api_url=self.api_url, credential=login) as client:
                 response = client.request("GET", "/api/v1/accounts/me")
             account = _AccountRef.model_validate(response.json())
-        except (ApiError, AuthError, ValidationError, ValueError, TypeError):
+        except ApiError as error:
+            raise account_unresolved(retryable=_transient(error)) from None
+        except (AuthError, ValidationError, ValueError, TypeError):
             raise account_unresolved() from None
         self._account = (account.id, account.display_name)
         return self._account
