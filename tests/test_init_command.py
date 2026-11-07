@@ -1590,3 +1590,27 @@ def test_a_rerun_with_the_printed_command_finishes_without_a_new_project(
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["project_created"] is False
     assert not any(method == "POST" for method, _ in _requests())
+
+
+def test_ctrl_c_while_writing_the_repo_file_revokes_the_new_key(
+    isolated_init: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(isolated_init)
+    monkeypatch.setattr(init_module, "resolve_credential", _jwt)
+
+    def interrupted(value: str) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(init_module, "_record_repo_project", interrupted)
+    FakeClient.responses = [
+        httpx.Response(200, json=[]),
+        httpx.Response(201, json=_created("repo")),
+        httpx.Response(204),
+    ]
+
+    result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code != 0
+    assert ("DELETE", f"/api/v1/keys/{CREATED_KEY_ID}") in _requests()
+    assert CREATED_KEY not in result.stdout + result.stderr
+    assert RERUN in result.stderr

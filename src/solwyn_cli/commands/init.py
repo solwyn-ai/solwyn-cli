@@ -410,7 +410,6 @@ def _create_for_repo(
             # first (it holds no secret), so a rerun finds this project
             # instead of creating <repo>-2.
             guard.enter_context(_names_created_project(created.id))
-            repo_path, written = _record_repo_project(created.name)
             minted = guard.enter_context(
                 MintedKey(
                     key=created.key,
@@ -421,6 +420,7 @@ def _create_for_repo(
                     client=SolwynClient,
                 )
             )
+            repo_path, written = _record_repo_project(created.name)
             minted.store(
                 lambda: auth.store_api_key(
                     project_id=created.id,
