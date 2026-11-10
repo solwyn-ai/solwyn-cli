@@ -3,7 +3,7 @@
 The Registry entry is [`server.json`](../server.json) at the repository root, named
 `ai.solwyn/solwyn`. It is not published yet. The published 0.3.0 package predates
 the README ownership marker. 0.4.0 is the first release that carries it. The
-version in `server.json` (0.5.1) must be live on PyPI before the Registry publish. Neither local validation nor MCP
+version in `server.json` (0.5.2) must be live on PyPI before the Registry publish. Neither local validation nor MCP
 discovery proves Registry publication, ownership, safety certification or
 availability of checkout-only features in a published wheel.
 
@@ -34,7 +34,7 @@ resolution remains separate; this is not a claim of byte-identical wheel builds.
 Inspect the final distribution before uploading; for the current version:
 
 ```sh
-uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.5.1-py3-none-any.whl
+uv run --no-sync python scripts/inspect_wheel.py dist/solwyn_cli-0.5.2-py3-none-any.whl
 ```
 
 Protected checks keep their existing names: `Quality`, `Tests (Python 3.11)`,
