@@ -1,6 +1,6 @@
 # Connect a harness to Solwyn MCP
 
-This guide describes Solwyn CLI 0.5.1 (PyPI package `solwyn-cli`). It uses local stdio;
+This guide describes Solwyn CLI 0.5.2 (PyPI package `solwyn-cli`). It uses local stdio;
 there is no hosted MCP endpoint. Account/project access is a separate prerequisite.
 
 ## Install and make one read
@@ -16,14 +16,14 @@ solwyn init            # in the repo: names the project in .solwyn.env and store
 ```
 
 Alternatively, use `pipx install solwyn-cli`. The command/tool reference and
-example clients below describe 0.5.1 (33 read / 37 guardrails tools); 0.2.0 exposes
-13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.5.1 is not
+example clients below describe 0.5.2 (33 read / 37 guardrails tools); 0.2.0 exposes
+13 / 17. Check `solwyn --version`, `solwyn --help` and MCP discovery. If 0.5.2 is not
 yet available from your package index, build an authorized checkout:
 
 ```sh
 uv sync --locked --all-groups
 uv build --wheel
-uv tool install --force --python 3.11 dist/solwyn_cli-0.5.1-py3-none-any.whl
+uv tool install --force --python 3.11 dist/solwyn_cli-0.5.2-py3-none-any.whl
 ```
 
 `solwyn init` stores the repo project's API key in the CLI's credential store

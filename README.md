@@ -4,7 +4,7 @@
 
 Work with Solwyn from the command line: enforce and attribute LLM spend for calls the Solwyn SDK does not instrument, inspect budgets, costs, and provider health, and manage your account's API keys, from your terminal, your scripts, or your coding agent.
 
-This README describes solwyn-cli 0.5.1. The package is distributed on PyPI as `solwyn-cli`;
+This README describes solwyn-cli 0.5.2. The package is distributed on PyPI as `solwyn-cli`;
 run `solwyn --version` to see which version you have installed, and use `solwyn --help`
 and MCP discovery to inspect its exact surface.
 

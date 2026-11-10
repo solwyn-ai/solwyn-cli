@@ -3,13 +3,13 @@
   "name": "ai.solwyn/solwyn",
   "title": "Solwyn",
   "description": "Check budgets before AI spend, record what your code spends and read Solwyn costs.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "solwyn-cli",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "runtimeHint": "uvx",
       "transport": {"type": "stdio"},
       "packageArguments": [
