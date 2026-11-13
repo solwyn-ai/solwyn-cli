@@ -787,6 +787,9 @@
               }
             }
           },
+          "429": {
+            "description": "Route-level refresh rate limit exceeded"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3439,11 +3442,11 @@
             }
           },
           "409": {
-            "description": "Keys that also hold other projects reach this project",
+            "description": "Keys that also hold other projects reach this project (shared_keys_reach_project), or the project has a hard budget limit and must stay dedicated (hard_deny_requires_dedicated_keys)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SharedKeysReachProjectResponse"
+                  "$ref": "#/components/schemas/KeyPolicyConflictResponse"
                 }
               }
             }
@@ -14977,6 +14980,7 @@
               "billing_subscription_past_due",
               "billing_subscription_unusable",
               "billing_subscription_active",
+              "billing_checkout_in_progress",
               "billing_plan_no_change",
               "billing_cancel_pending",
               "billing_plan_change_scheduled",
@@ -18839,6 +18843,25 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HardDenyRequiresDedicatedKeysDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "hard_deny_requires_dedicated_keys",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "HardDenyRequiresDedicatedKeysDetail"
+      },
       "HealthResponse": {
         "properties": {
           "status": {
@@ -18899,7 +18922,7 @@
               "call_id"
             ],
             "title": "Reason",
-            "description": "Which dedup surface hit: `legacy_key` for the (timestamp, sdk_instance_id) uniqueness key, `call_id` for the (project_id, call_id, attempt_index) ledger identity. Attribution is the probe that hit, legacy first — exactly one per event."
+            "description": "Which dedup surface hit: `legacy_key` for the durable (timestamp, call_id, attempt_index) event key, `call_id` for the (project_id, call_id, attempt_index) ledger identity. Attribution is the probe that hit, legacy first — exactly one per event."
           },
           "call_id": {
             "type": "string",
@@ -19673,6 +19696,26 @@
           "detail"
         ],
         "title": "KeyErrorResponse"
+      },
+      "KeyPolicyConflictResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SharedKeysReachProjectDetail"
+              },
+              {
+                "$ref": "#/components/schemas/HardDenyRequiresDedicatedKeysDetail"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "KeyPolicyConflictResponse"
       },
       "LeaseErrorDetail": {
         "properties": {
@@ -23270,7 +23313,7 @@
           "pricing_version": {
             "type": "string",
             "title": "Pricing Version",
-            "default": "2026-10-17"
+            "default": "2026-11-09"
           },
           "current_rates_snapshot": {
             "type": "boolean",
@@ -25551,6 +25594,6 @@
       }
     }
   },
-  "x-solwyn-snapshot-date": "2026-11-05",
-  "x-solwyn-core-ref": "ac5a5df31b011d932bfb28f4e2fc2676e82cc95f"
+  "x-solwyn-snapshot-date": "2026-11-13",
+  "x-solwyn-core-ref": "b90b99541b29416e08801ad4967ba6354580e444"
 }
