@@ -32,6 +32,7 @@ billing = billing_fixture
         ("billing_plan_change_scheduled", "plan change --discard"),
         ("billing_plan_payment_failed", "plan portal"),
         ("billing_subscription_active", "plan change"),
+        ("billing_checkout_in_progress", "wait a few minutes"),
         ("billing_subscription_past_due", "plan portal"),
         ("billing_subscription_unusable", "solwyn plan"),
         ("billing_plan_no_change", "plan list"),
@@ -437,6 +438,23 @@ def test_cli_conflict_status_preserves_presence_and_null(billing, status_value):
     error = json.loads(result.stderr.splitlines()[-1])
     assert error["detail"] == detail
     assert "plan change" in error["hint"]
+
+
+def test_checkout_in_progress_is_reported_once_never_replayed(billing):
+    queue, calls = billing
+    detail = {
+        "code": "billing_checkout_in_progress",
+        "message": "A checkout for this account is already starting.",
+    }
+    queue.append(httpx.Response(409, json={"detail": detail}))
+    result = invoke("upgrade", "--tier", "team", "--interval", "month", "--yes")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr.splitlines()[-1])
+    assert error["code"] == "billing_checkout_in_progress"
+    assert error["detail"] == detail
+    assert "solwyn plan" in error["hint"]
+    assert len([c for c in calls if c[1] == "/api/v1/billing/checkout"]) == 1
 
 
 @pytest.mark.parametrize(
