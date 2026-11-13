@@ -1,6 +1,6 @@
 """MCP servers find stored credentials, and say where they looked.
 
-WS-9a finding 13: Codex starts stdio MCP servers with a minimal environment,
+Codex starts stdio MCP servers with a minimal environment,
 which drops the desktop session bus the Linux keyring needs. The credentials
 file needs only HOME, so on Linux the server now reads the login with no host
 configuration. Auth errors name the store and path, never a secret.
@@ -213,7 +213,7 @@ class _ProjectsApi(BaseHTTPRequestHandler):
 
 
 def _minimal_env_list_projects(home: Path, api_url: str) -> Any:
-    # The WS-9a host: only HOME, PATH and USER reach the server (no D-Bus, no
+    # A Codex-like host: only HOME, PATH and USER reach the server (no D-Bus, no
     # XDG_*, no SOLWYN_*), as Codex does by default.
     environment = {
         "HOME": str(home),
