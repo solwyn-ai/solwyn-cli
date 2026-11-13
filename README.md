@@ -125,7 +125,7 @@ Solwyn CLI:
 ## Development
 
 The project uses [uv](https://docs.astral.sh/uv/) for dependency and environment management.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full local workflow and contract-update rules.
+This repo is published for transparency and auditability. We do not accept external contributions at this time; bug reports are welcome via Issues. See the pinned [Contribution Policy](https://github.com/solwyn-ai/solwyn-cli/issues/61).
 
 ```console
 uv sync --locked --all-groups
@@ -135,16 +135,11 @@ uv run ruff format --check .
 uv run pytest
 ```
 
-Two test-suite properties worth knowing before contributing:
+Two test-suite properties worth knowing:
 
 - Any change to the CLI surface (commands, flags, help text, exit codes, JSON output) requires regenerating the machine-readable contract snapshot with `scripts/generate_contract.py`; `tests/test_contract_snapshot.py` fails until you do.
 - The vendored OpenAPI snapshot and its drift guards are self-invalidating by design: adopt fields properly or record a decline in the registry; never loosen a guard to make a test pass.
-
-The vendored snapshot has two independent safeguards: public CLI CI checks its age and the
-checked-in request/response contracts, while a proposed private monitor compares its content
-with Core. The private monitor, ownership, and verified Core follow-ups are documented in
-[Core contract follow-ups](docs/core-followups.md) and tracked in
-[Core issue #403](https://github.com/solwyn-ai/core/issues/403).
+  Maintainers refresh it from a clean Core checkout with `scripts/sync_spec.py`.
 
 Further in-repo references: [MCP release checklist](docs/mcp-release.md), [bounded MCP work and recovery](docs/mcp-bounded-work.md), [MCP diagnostics](docs/mcp-diagnostics.md), [media confirmation](docs/media-confirmation.md), and [staging smoke tests](docs/staging-smoke.md).
 
